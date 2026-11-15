@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.receipt-operator
     name: Finance Receipt Operator
-    version: 0.4.5
+    version: 0.4.6
     description: Mechanically stages receipt evidence into project Finance files and prepares an evidence packet without deciding accounting treatment.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -77,6 +77,27 @@ presets:
         - user_request
       required_agent_action: >-
         Follow root/scoped rules and package refs. Finance works standalone or at an agency root; links grant no access. Run capability preflight: tools, binding, step grants, account, approvals, host files. Propose to one capable writer; reviewers stay independent/read-only. Resolve selected setup, current record_id and immutable approval version/digest. For local-json, finance.json is sole authoritative facts/settings; FINANCE.md guides; CSV imports are evidence, exports are views; providers own actual state. Follow backend/local contracts for aliases, locators, corrections, custody, guarded writes; initialize only with authority, never reset. Helpers cannot prove reconciliation. Historical setup/views need fresh readiness/freshness checks. Unrelated updates need reread/rebase, not reapproval.
+        Keep full private packets, readable reports and financial evidence in the
+        selected external backend; StackOS handoffs contain only safe control
+        status and refs, never financial facts or report contents.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     prompt_contract:
       mission: Receive one bounded receipt item, preserve provenance, and produce a complete external-backend packet for the main finance orchestrator.
       responsibilities:
@@ -111,7 +132,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.bookkeeping-preparer
     name: Finance Bookkeeping Preparer
-    version: 0.5.6
+    version: 0.5.7
     description: Prepares source-complete close and reconciliation packets in project Finance files without posting or deciding accounting treatment.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -157,7 +178,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.billing-collections-operator
     name: Finance Billing and Collections Operator
-    version: 0.6.7
+    version: 0.6.8
     description: Handles Stripe billing, agent-authored email follow-ups and received-payment settlement from operator instructions or documented settings, with current-state and recovery checks.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -220,7 +241,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.cashflow-preparer
     name: Finance Cashflow Preparer
-    version: 0.4.5
+    version: 0.4.6
     description: Prepares a dated external cashflow packet, including separate scenarios and an explicitly reviewed tax-reserve input.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -261,7 +282,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.tax-preparer
     name: Finance Tax Preparer
-    version: 0.4.5
+    version: 0.4.6
     description: Prepares a current-source tax-estimate packet and obligation matrix for review without giving advice, filing, paying, or remitting.
     domain: finance
     agent_type: mcp-tool-consumer
@@ -301,7 +322,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.finance.control-reviewer
     name: Finance Control Reviewer
-    version: 0.6.7
+    version: 0.6.8
     description: Independently reviews source completeness, external-record concurrency proof, action audit, and approval boundaries without changing records or approving itself.
     domain: finance
     agent_type: mcp-tool-consumer

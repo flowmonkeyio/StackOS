@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.finance.department-orchestrator
     name: Finance Department Orchestrator
-    version: 0.8.1
+    version: 0.8.2
     description: Main-agent guidance for a seven-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals, and audit.
     domain: finance
     skill_type: main-agent-orchestration
@@ -102,6 +102,27 @@ presets:
         missing tools mean a proposed packet and one capable execution owner, not
         a permission bypass. Ask only for missing current-work decisions and
         preserve independent partial work.
+        Keep full private packets, readable reports and financial evidence in the
+        selected external backend; StackOS handoffs contain only safe control
+        status and refs, never financial facts or report contents.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     operating_contract:
       mission: >-
         Coordinate a practical agent-managed finance department while the selected

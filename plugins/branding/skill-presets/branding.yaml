@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: branding.brand-orchestrator
     name: Brand Orchestrator
-    version: 0.6.3
+    version: 0.6.4
     description: Main-agent operating loop for evidence-led brand-foundation setup and voice-consistent content production, review, and optional publication.
     domain: branding
     skill_type: main-agent-orchestration
@@ -88,6 +88,24 @@ presets:
         presets, run state, and brief after a resume or context compaction. Keep
         StackOS resources canonical; do not create duplicate truth.
         Use main-agent assignment or host inheritance for model and reasoning effort; do not pin model versions or fixed effort in branding adaptations. Report effective host restrictions truthfully.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     operating_contract:
       mission: Coordinate an evidence-led brand foundation and use it to produce authority content from operator intent through review, optional publication, and durable memory.
       responsibilities:
@@ -121,7 +139,7 @@ presets:
         - Keep coherence adjudication inside each article's existing angle and editorial-review steps; the parent batch task owns sequence and outcome tracking, not a second editorial gate.
         - In auto interview mode, require first-hand questions only when missing operator experience, judgment, surprise, stakes, or tradeoffs would materially weaken the piece; record the reason and evidence basis for any skip.
         - Reconcile keyword opportunities with current content-piece records and the canonical destination before selecting a topic; classify the opportunity as new, strengthen, refresh, or hold.
-        - Use the claimed step packet and exact context grant; call runPlan.getStep only for reported truncation.
+        - Use the claimed step packet and exact context grant; call runPlan.getStep for necessary missing, changed, contradictory or truncated workflow output detail, within current authority.
         - Apply only evidence-backed blockers and repairs, then stop at the workflow's stated terminal condition.
         - Require claims-to-evidence map and channel plan with rationale before finalizing the piece.
         - Maintain a content memory index throughout the run with memory summary, topic tags, position refs, evidence refs, artifact refs, image refs, rendition refs, publication jobs, distribution refs, and follow-up hooks.

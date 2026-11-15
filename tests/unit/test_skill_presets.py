@@ -7,6 +7,7 @@ import shutil
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 import stackos.agents.loader as agent_loader_module
@@ -52,7 +53,7 @@ def test_generic_workflow_orchestrator_keeps_the_normal_loop_small() -> None:
     ).lower()
 
     assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True
-    assert loaded.preset.version == "0.1.6"
+    assert loaded.preset.version == "0.1.7"
     assert len(loaded.preset.applies_to_workflows) == 23
     assert {"agency.setup", "agency.project-setup"} <= set(loaded.preset.applies_to_workflows)
     assert "seo.website-analysis" in loaded.preset.applies_to_workflows
@@ -467,7 +468,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
     ]
 
     assert loaded.summary.plugin_slug == "finance"
-    assert loaded.preset.version == "0.8.1"
+    assert loaded.preset.version == "0.8.2"
     assert loaded.preset.skill_type == "main-agent-orchestration"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
@@ -595,6 +596,114 @@ def test_branding_writing_reference_resolves_from_bundled_preset_origins(
         resolved = (origin.parent / ".." / "references" / "natural-writing.md").resolve()
         assert resolved == bundled_root / "branding" / "references" / "natural-writing.md"
         assert resolved.read_text(encoding="utf-8").strip()
+
+
+@pytest.mark.parametrize(
+    ("kind", "plugin"),
+    [
+        ("agent", plugin)
+        for plugin in (
+            "core",
+            "branding",
+            "communications",
+            "finance",
+            "gtm",
+            "marketing",
+            "media-buying",
+            "seo",
+            "support",
+            "trackbooth",
+        )
+    ]
+    + [("skill", plugin) for plugin in ("core", "branding", "finance", "marketing")],
+)
+def test_domain_handoffs_resolve_complete_from_source_and_package(
+    kind: str,
+    plugin: str,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Exercise every authored role/alias without a customer clone or repo docs."""
+    root = Path(__file__).resolve().parents[2]
+    module = agent_loader_module if kind == "agent" else loader_module
+    loader_type = AgentPresetLoader if kind == "agent" else SkillPresetLoader
+    source_dir = root / "plugins" / plugin / f"{kind}-presets"
+    authored = [
+        preset
+        for path in source_dir.glob("*.yaml")
+        for preset in yaml.safe_load(path.read_text(encoding="utf-8"))["presets"]
+    ]
+    assert authored
+    monkeypatch.setattr(module, "_clone_plugins_root", lambda: root / "plugins")
+    monkeypatch.setattr(module, "_bundled_plugins_root", lambda: None)
+    source = {
+        preset["key"]: loader_type().describe_preset(key=preset["key"]) for preset in authored
+    }
+
+    bundled_root = tmp_path / "package" / "plugins"
+    shutil.copytree(source_dir, bundled_root / plugin / f"{kind}-presets")
+    monkeypatch.setattr(module, "_clone_plugins_root", lambda: None)
+    monkeypatch.setattr(module, "_bundled_plugins_root", lambda: bundled_root)
+    packaged_loader = loader_type()
+    assert {item.key for item in packaged_loader.list_presets().presets} == set(source)
+    for key, original in source.items():
+        loaded = packaged_loader.describe_preset(key=key)
+        assert loaded.preset == original.preset
+        assert loaded.summary.version == original.summary.version
+        assert loaded.summary.plugin_slug == plugin
+        assert Path(loaded.summary.origin_path).is_relative_to(bundled_root)
+        action = loaded.preset.project_adaptation.required_agent_action
+        for requirement in (
+            "summary retains disposition",
+            "actual outcome/scope",
+            "material limits",
+            "once in existing outputs or evidence",
+            "complete substantive deliverables",
+            "nested domain followups",
+            "where the schema permits",
+            "owner, project, record/step",
+            "runPlan.getStep(raw)",
+            "tracker.brief(raw)",
+            "projectSetup.get(raw)",
+            "missing, stale or inaccessible refs",
+            "current amendments",
+            "remaining repair allowance",
+            "frozen native instructions",
+            "separate explicit adaptation/adoption",
+        ):
+            assert requirement in action, (key, requirement)
+        # The method travels in the effective contract, not a checkout-only link.
+        assert "docs/agent-operating-model.md" not in action
+        if plugin == "finance":
+            assert "never financial facts or report contents" in action
+        if key == "communications.workflow.customer-feedback-intake":
+            rules = " ".join(loaded.preset.prompt_contract.must_do)
+            assert "intake outcome" in rules
+            assert "Return compact handoff refs" not in rules
+        if key == "branding.brand-orchestrator":
+            rules = " ".join(loaded.preset.operating_contract.must_do)
+            assert "necessary missing, changed, contradictory or truncated" in rules
+            assert "only for reported truncation" not in rules
+
+
+@pytest.mark.parametrize(
+    ("key", "target"),
+    [
+        ("stackos.workflow-orchestrator", "workflow-orchestrator.md"),
+        ("branding.brand-orchestrator", "branding-content-orchestrator.md"),
+        ("stackos.finance.department-orchestrator", "finance-department-orchestrator.md"),
+    ],
+)
+def test_domain_orchestrator_source_updates_preserve_explicit_local_adoption(
+    key: str,
+    target: str,
+) -> None:
+    root = Path(__file__).resolve().parents[2]
+    text = (root / ".codex" / "orchestrator" / target).read_text(encoding="utf-8")
+    match = re.search(rf"Source skill preset: `{re.escape(key)}` v(\d+\.\d+\.\d+)", text)
+    assert match
+    source = SkillPresetLoader().describe_preset(key=key).preset
+    assert_preset_adoption(key, match[1], source.version)
 
 
 def test_skill_preset_resolution_reports_optional_and_unresolved_refs() -> None:

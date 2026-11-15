@@ -706,10 +706,28 @@ def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
     session, project_id, tmp_path, monkeypatch
 ):
     from copy import deepcopy
+    from hashlib import sha256
 
     from stackos import task_delivery
 
-    domain = {"report": {"followups": [{"text": "Domain next action"}]}}
+    # The complete source is the expectation, independently of prompt projection.
+    # Its size and Unicode make accidental summary/truncation or byte changes visible.
+    source_body = "\n\n".join(
+        f"## Finding {index}: source coverage\n"
+        "Observed: the reader needs the original evidence, its scope and uncertainty. "
+        "Keep the complete explanation and design rationale, including naïve joins, "
+        "dates, excluded populations and the next validation. A summary alone does "
+        "not preserve this substantive report."
+        for index in range(48)
+    )
+    source_hash = sha256(source_body.encode("utf-8")).hexdigest()
+    domain = {
+        "report": {
+            "body": source_body,
+            "body_sha256": source_hash,
+            "followups": [{"text": "Domain next action", "evidence_refs": ["source:48"]}],
+        }
+    }
     summary = 'Required report.followups must retain {"followups": []} in its schema.'
     expected = {
         "report": {
@@ -717,8 +735,12 @@ def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
             "type": "object",
             "schema_json": {
                 "type": "object",
-                "required": ["followups"],
-                "properties": {"followups": {"type": "array", "items": {"type": "object"}}},
+                "required": ["body", "body_sha256", "followups"],
+                "properties": {
+                    "body": {"type": "string"},
+                    "body_sha256": {"type": "string"},
+                    "followups": {"type": "array", "items": {"type": "object"}},
+                },
             },
         }
     }
@@ -828,6 +850,19 @@ def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
     assert "result_json" not in recovered.ticket.model_dump()
     full_step = plans.get_step(plan.id, "collect", project_id=project_id, full_context=True)
     assert full_step.result_json == domain
+    for result in (
+        json.loads(receipt["outputs"]),
+        json.loads(
+            recovered.ticket.completion_evidence_json["automatic_delivery"]["delivery"]["result"][
+                "outputs"
+            ]
+        ),
+        full_step.result_json,
+        plans.get_step(plan.id, "report", project_id=project_id, full_context=True).result_json,
+    ):
+        assert result["report"]["body"] == source_body
+        assert sha256(result["report"]["body"].encode("utf-8")).hexdigest() == source_hash
+        assert result["report"]["followups"] == domain["report"]["followups"]
     with pytest.raises(NotFoundError):
         plans.get_step(plan.id, "missing-step", project_id=project_id)
 

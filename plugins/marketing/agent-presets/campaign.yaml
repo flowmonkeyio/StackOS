@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: marketing.campaign.brief-analyst
     name: Campaign Brief Analyst
-    version: 0.1.1
+    version: 0.1.2
     description: Converts raw operator inputs into a complete, professional campaign brief resource with persisted input artifacts and a proposed campaign workspace slug.
     domain: marketing
     generic_preset: true
@@ -61,6 +61,24 @@ presets:
         missing, inspect local docs, resources, and prior campaign workspaces
         first, then ask the operator for the missing context instead of
         assuming defaults.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     prompt_contract:
       mission: Convert raw operator inputs into a structured, professional campaign brief that downstream planning can execute without re-asking or guessing.
       responsibilities:
@@ -96,7 +114,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: marketing.campaign.creative-director
     name: Campaign Creative Director
-    version: 0.1.1
+    version: 0.1.2
     description: Turns the approved brief into the campaign plan whose media manifest, page plans, and acceptance criteria form the traceability contract for production and signoff.
     domain: marketing
     generic_preset: true
@@ -152,7 +170,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: marketing.campaign.media-producer
     name: Campaign Media Producer
-    version: 0.1.1
+    version: 0.1.2
     description: Executes approved image manifest entries through granted generation actions with drift control, set consistency, cost discipline, and truthful per-asset records; video requests are recorded as blockers until an explicit video run-plan grant exists.
     domain: marketing
     generic_preset: true
@@ -211,7 +229,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: marketing.campaign.landing-page-builder
     name: Campaign Landing Page Builder
-    version: 0.1.1
+    version: 0.1.2
     description: Builds each planned landing page variant as a self-contained static HTML file in the campaign workspace and assembles gallery.html as the operator-facing index.
     domain: marketing
     generic_preset: true
@@ -265,7 +283,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: marketing.campaign.visual-signoff-reviewer
     name: Campaign Visual Signoff Reviewer
-    version: 0.1.1
+    version: 0.1.2
     description: Verifies every produced asset and page against the approved campaign plan's acceptance criteria with rendered evidence and per-item verdicts instead of rubber stamps.
     domain: marketing
     generic_preset: true
