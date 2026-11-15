@@ -559,6 +559,16 @@ Harmless questions need no workflow run; a newly relevant goal can set up the
 appropriate method within current authority. The public getting-started guide
 remains the human walkthrough.
 
+The shared method also applies the
+[internal handoff rules](agent-operating-model.md#internal-handoffs-and-complete-deliverables):
+keep scope/status, identities, decisive outcomes, missing obligations and next
+action inline; retain detailed source-to-target mappings and checks once in the
+existing setup receipt. Both entrypoints preserve complete adapted guidance,
+required reports, partial/reused evidence and activation obligations. Continuation
+uses current amendments and remaining work with retained identities, not a replay
+of unchanged history. A concise report does not prove native consumption or
+authorize adoption; missing/stale detail remains an explicit gap.
+
 ### 1. Workflow Infrastructure Setup
 
 Bind the intended workspace, describe the effective workflow, inspect its

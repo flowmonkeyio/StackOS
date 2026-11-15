@@ -842,7 +842,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.6.8"
+    assert architecture.version == "0.6.9"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -911,13 +911,13 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
     expected_versions = {
-        "requirements-flow-definer": "0.6.7",
-        "codebase-explorer": "0.6.7",
-        "planning": "0.7.25",
-        "architecture": "0.6.8",
-        "test-designer": "0.6.12",
-        "delivery": "0.7.24",
-        "delivery-reviewer": "0.6.23",
+        "requirements-flow-definer": "0.6.8",
+        "codebase-explorer": "0.6.8",
+        "planning": "0.7.26",
+        "architecture": "0.6.9",
+        "test-designer": "0.6.13",
+        "delivery": "0.7.25",
+        "delivery-reviewer": "0.6.24",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -948,6 +948,18 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert len(conditional_protocols.pop()) == 2
 
     shared = presets["delivery"].project_adaptation.required_agent_action.lower()
+    for decision_fact in (
+        "summary-only prerequisite readers",
+        "actual outcome/scope",
+        "candidate or revision",
+        "material limits",
+        "nested domain followups",
+        "runplan.getstep(raw)",
+        "tracker.brief(raw)",
+        "explicit gap",
+        "remaining repair allowance",
+    ):
+        assert decision_fact in shared
     assert "sole writer of durable run/tracker state" in shared
     assert "delegation and model choice" in shared
     assert "do not pin a model or reasoning effort" in shared
@@ -1055,7 +1067,9 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert "gemini and hermes" in reviewer and "normal native sessions" in reviewer
     assert "no enforced read-only guarantee" in reviewer
     # The shared adaptation also changes the release role's effective source.
-    assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.2"
+    assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.3"
+    release = loader.describe_preset(key="stackos.sdlc.release-ops").preset
+    assert any("assembled outcome/scope" in rule for rule in release.prompt_contract.must_do)
 
 
 def test_sdlc_final_result_rule_resolves_identically_for_delivery_and_review() -> None:

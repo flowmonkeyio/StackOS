@@ -1,10 +1,14 @@
 """Exact source-only updates awaiting the operator's project adaptation."""
 
 PENDING_PRESET_ADOPTIONS = {
-    "stackos.sdlc.planning": ("0.7.23", "0.7.25"),
-    "stackos.sdlc.delivery": ("0.7.22", "0.7.24"),
-    "stackos.sdlc.delivery-reviewer": ("0.6.21", "0.6.23"),
-    "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.27"),
+    "stackos.sdlc.requirements-flow-definer": ("0.6.7", "0.6.8"),
+    "stackos.sdlc.codebase-explorer": ("0.6.7", "0.6.8"),
+    "stackos.sdlc.planning": ("0.7.23", "0.7.26"),
+    "stackos.sdlc.architecture": ("0.6.8", "0.6.9"),
+    "stackos.sdlc.test-designer": ("0.6.12", "0.6.13"),
+    "stackos.sdlc.delivery": ("0.7.22", "0.7.25"),
+    "stackos.sdlc.delivery-reviewer": ("0.6.21", "0.6.24"),
+    "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.28"),
 }
 
 

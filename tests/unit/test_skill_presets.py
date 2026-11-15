@@ -73,7 +73,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.27"
+    assert loaded.preset.version == "0.8.28"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -81,6 +81,10 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "existing run/ticket" in action
     assert "rehydrate" in action
     assert "targeted raw resolution/description" in action
+    assert "summary-only prerequisite readers" in action
+    assert "complete substantive deliverables" in action
+    assert "runplan.getstep(raw)" in action and "tracker.brief(raw)" in action
+    assert "remaining repair allowance" in action
     assert "subagent role" in " ".join(contract.responsibilities)
     assert "schema-valid" in " ".join(contract.required_outputs).lower()
     assert "tracker.brief" in loaded.preset.recommended_tools

@@ -127,6 +127,22 @@ outputs:
     from stackos.workflows.authoring_guide import project_setup_method
 
     assert authoring_guide["project_setup_method"] == project_setup_method().model_dump()
+    method = authoring_guide["project_setup_method"]
+    assert method["version"] == "2"
+    for obligation in (
+        "source-to-target role identities",
+        "complete adapted operating guidance",
+        "nested domain followups",
+        "runPlan.getStep(raw)",
+        "tracker.brief(raw)",
+        "projectSetup.get(raw)",
+        "explicit gap",
+        "frozen native instructions",
+        "required_role_claims",
+        "setup_activation_checks",
+        "Missing required proof leaves ready_to_use unfinished",
+    ):
+        assert obligation in method["shared_prompt"]
     method_ref = compact_authoring_guide["project_setup_method"]
     assert set(method_ref["modes"]) == {"setup", "update"}
     assert method_ref["guidance_ref"]["arguments"] == {"response_mode": "raw"}

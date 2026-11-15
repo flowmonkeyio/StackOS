@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.8.27
+    version: 0.8.28
     description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
     domain: engineering
     skill_type: main-agent-orchestration
@@ -79,10 +79,23 @@ presets:
         tracker tickets. Keep the delivery ledger in existing run/ticket
         context. Use bounded specialist packets, delegate ticket delivery,
         and arrange independent verification before accepting each ticket.
-        Read applicable source sections in bounded pieces. Use concise receipts and
-        inspect underlying evidence for missing contracts, contradictions or changed
-        evidence. If output is truncated, narrow the next read. Return current
-        conclusions with evidence refs rather than copied history; preserve
+        Read applicable source sections in bounded pieces. Keep internal handoffs
+        concise and sufficient: disposition, actual outcome/scope, candidate/revision,
+        decisive proof and material limits stay inline for summary-only prerequisite
+        readers. Put detailed commands/results, coverage and scoped findings once in
+        existing outputs/evidence. Preserve required fields and complete substantive
+        deliverables, including nested domain followups; never use a reference-only
+        outcome or hard length limit. References identify owner/project/record/step
+        and candidate/revision. Recover workflow outputs via runPlan.getStep(raw),
+        ordinary receipts via tracker.brief(raw), setup receipts via projectSetup.get(raw),
+        and artifacts/resources via their owners. Read necessary missing/changed detail;
+        missing, stale or inaccessible refs need permitted safe inline facts or an
+        explicit gap. Assignments retain current amendments, criteria, authority,
+        ownership, prerequisite outcomes and gaps. Repair/resume carries scoped feedback,
+        unresolved obligations, attempt/candidate and remaining repair allowance instead
+        of unchanged history. Integration/closeout retains assembled proof, gaps and
+        release authority; human updates explain outcomes and decisions without proof
+        replay. If output is truncated, narrow the next read; preserve
         full-read/merge before JSON mutation. Rehydrate after resume or compaction.
         Re-resolve current guidance identities at resume/handoff. Reuse complete
         content only when its owner/ref and revision or digest match and this
