@@ -542,3 +542,105 @@ def test_stream_decoding_failure_is_not_a_successful_partial_native_result(tmp_p
     assert isinstance(caught.value.__cause__, UnicodeDecodeError)
     assert "UnicodeDecodeError" in str(caught.value)
     assert isinstance(caught.value.process.returncode, int)
+
+
+def test_session_persistence_failure_stops_native_process(tmp_path):
+    import os
+    import sys
+
+    def persist(_):
+        raise RuntimeError("identity commit failed")
+
+    with pytest.raises(CodexStreamError, match="identity commit failed") as caught:
+        run_codex_process(
+            [
+                sys.executable,
+                "-c",
+                "import json,time; "
+                "print(json.dumps({'type':'thread.started','thread_id':'native'}),flush=True); "
+                "time.sleep(.2)",
+            ],
+            input="",
+            cwd=tmp_path,
+            env=dict(os.environ),
+            on_session=persist,
+        )
+    assert caught.value.process.returncode != 0
+    assert '"thread_id": "native"' in caught.value.process.stdout
+
+
+@pytest.mark.parametrize("fence", ["resume", "cancelled", "finished", "retired", "competing"])
+def test_session_attachment_does_not_notify_rejected_identity(tmp_path, fence):
+    invocation = call()
+    invocation.session_id = None
+    service._active_invocations[invocation.invocation_id] = invocation
+    if fence == "cancelled":
+        invocation.cancelled.set()
+    elif fence == "finished":
+        invocation.finished = True
+    elif fence == "retired":
+        service._unregister(invocation)
+    elif fence == "competing":
+        owner = call(2)
+        service._active_invocations[owner.invocation_id] = owner
+    observed = []
+    service._attach_session(
+        invocation, "native", tmp_path, "expected" if fence == "resume" else None, observed.append
+    )
+    assert observed == [] and invocation.session_id is None
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_required_session_callback_is_once_and_failure_is_not_observability(
+    tmp_path, monkeypatch, failure
+):
+    reader = Reader()
+    observed = []
+
+    def attached(invocation):
+        # SQL owners can take the registry lock from another thread: the host
+        # must have released it before calling required persistence.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(1) as pool:
+            assert pool.submit(service.active_execution, 1, "task").result(timeout=2)
+        observed.append(invocation.thread_id)
+        if failure:
+            raise RuntimeError("commit failed")
+
+    def runner(*args, on_session, **kwargs):
+        on_session("native")
+        on_session("native")
+        return AgentRunResult(0, thread_id="different-result", result={})
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(service, "CodexCounterReader", lambda *a, **kw: reader)
+    original_stop = service.ManagedProcessControl.stop
+
+    def stop(control):
+        from concurrent.futures import ThreadPoolExecutor
+
+        def lock_available():
+            acquired = service.managed_launch_lock.acquire(timeout=1)
+            if acquired:
+                service.managed_launch_lock.release()
+            return acquired
+
+        with ThreadPoolExecutor(1) as pool:
+            assert pool.submit(lock_available).result(timeout=2), "cleanup held launch lock"
+        return original_stop(control)
+
+    monkeypatch.setattr(service.ManagedProcessControl, "stop", stop)
+    kwargs = dict(
+        execution_scope=service.AgentExecutionScope(1, "task", "child", "worker", 2, "delivery"),
+        on_session_attached=attached,
+    )
+    if failure:
+        with pytest.raises(RuntimeError, match="commit failed"):
+            service.run_agent("codex", tmp_path, "instructions", "prompt", {}, **kwargs)
+    else:
+        result = service.run_agent("codex", tmp_path, "instructions", "prompt", {}, **kwargs)
+        assert not result.ok and result.error == "Native session identity mismatch"
+    assert observed == ["native"] and reader.closed
+    assert not service._active_invocations and not service.provisional_usage(1)

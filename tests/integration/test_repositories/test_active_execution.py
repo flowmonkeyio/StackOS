@@ -33,6 +33,93 @@ def stream_session(session, project_id, tmp_path):
 
 
 @pytest.mark.parametrize(
+    "defect", ["handoff", "attempt", "phase", "invocation", "terminal", "session", "source"]
+)
+def test_native_session_commit_rejects_stale_receipt_without_mutation(
+    stream_session, project_id, tmp_path, defect
+):
+    from stackos.repositories.base import ValidationError
+    from stackos.task_delivery import _record_native_session
+
+    repo = TrackerRepository(stream_session)
+    repo.create_task(project_id=project_id, key="native", title="Native")
+    repo.create_ticket(project_id=project_id, task_key="native", key="native-child", title="Child")
+    repo.update_ticket(
+        project_id=project_id, ticket_key="native-child", patch_json={"status": "in-progress"}
+    )
+    repo.update_task(
+        project_id=project_id,
+        task_key="native",
+        patch_json={
+            "metadata_json": {
+                "delivery": {
+                    "handoff_id": "new" if defect == "handoff" else "owned",
+                    "status": "running",
+                    "ticket_key": "native-child",
+                }
+            }
+        },
+    )
+    call = service.ActiveInvocation(
+        invocation_id="owned-invocation",
+        scope=service.AgentExecutionScope(
+            project_id, "native", "native-child", "worker", 2, "delivery"
+        ),
+        host_key="codex",
+        model=None,
+        started_at=datetime.now(UTC).isoformat(),
+        thread_id="announced",
+        session_id="announced",
+    )
+    identity = {"agent": "worker", "host_key": "codex", "project_dir": str(tmp_path)}
+    evidence = {
+        "attempt": 2,
+        "repair_count": 2,
+        "sessions": {},
+        "delivery": {
+            "launch": {**identity, "source_digest": "frozen"},
+            "occurrence": {"attempt": 2},
+            "execution": {"invocation_id": call.invocation_id},
+        },
+    }
+    current = deepcopy(evidence)
+    if defect == "attempt":
+        current["attempt"] = 3
+    elif defect == "phase":
+        current["review"] = current.pop("delivery")
+    elif defect == "invocation":
+        current["delivery"]["execution"]["invocation_id"] = "new-owner"
+    elif defect == "terminal":
+        current["delivery"].update(exit_code=0, result={"status": "success"})
+    elif defect == "session":
+        current["sessions"]["delivery"] = {**identity, "thread_id": "prior"}
+    elif defect == "source":
+        current["delivery"]["launch"]["source_digest"] = "new-source"
+    completion = {"keep": "unrelated", "automatic_delivery": current}
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="native-child",
+        patch_json={"completion_evidence_json": completion},
+    )
+    with pytest.raises(ValidationError, match="Native session persistence"):
+        _record_native_session(
+            lambda: Session(stream_session.get_bind()),
+            call,
+            handoff_id="owned",
+            evidence=evidence,
+            identity=identity,
+            session_snapshot={},
+        )
+    with Session(stream_session.get_bind()) as reader:
+        saved = (
+            TrackerRepository(reader)
+            .brief(project_id=project_id, ticket_key="native-child")
+            .ticket.completion_evidence_json
+        )
+    assert saved == completion and evidence["sessions"] == {}
+
+
+@pytest.mark.parametrize(
     "mode",
     ["brief", "stream", "index", "get", "project", "global", "active-project", "active-global"],
 )

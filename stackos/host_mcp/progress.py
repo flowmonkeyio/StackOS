@@ -196,13 +196,16 @@ def run_codex_process(
             if '"thread.started"' in line:
                 try:
                     event = json.loads(line)
-                    if event.get("type") == "thread.started" and isinstance(
-                        event.get("thread_id"), str
-                    ):
-                        on_session(event["thread_id"])
-                except Exception:
-                    # Optional telemetry cannot affect execution or final handling.
-                    pass
+                except ValueError:
+                    continue
+                if (
+                    isinstance(event, dict)
+                    and event.get("type") == "thread.started"
+                    and isinstance(event.get("thread_id"), str)
+                ):
+                    # Session attachment can commit required recovery identity.
+                    # Its failures must reach read_safely and stop the process.
+                    on_session(event["thread_id"])
 
     def read_errors() -> None:
         assert process.stderr is not None

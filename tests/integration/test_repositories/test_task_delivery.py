@@ -18,6 +18,7 @@ import pytest
 from pydantic import ValidationError as SchemaValidationError
 from sqlmodel import Session, select
 
+from stackos.context import ContextRepository
 from stackos.db.connection import make_engine
 from stackos.db.models import RunPlanStepStatus, TrackerRevision
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
@@ -1497,6 +1498,152 @@ def prepared_task(session: Session, project_id: int) -> None:
     )
 
 
+def test_announced_session_is_durable_before_exit_and_controller_loss_resumes_it(
+    session, project_id, tmp_path, monkeypatch
+):
+    import os
+    from types import SimpleNamespace
+
+    from stackos import task_delivery
+    from stackos.host_mcp import service
+    from stackos.host_mcp.progress import run_codex_process
+
+    class ControllerLost(BaseException):
+        pass
+
+    engine = make_engine(tmp_path.with_suffix(".db"))
+    restore_database_snapshot(engine, capture_database_snapshot(session.get_bind()))
+    with Session(engine) as session:
+        prepared_task(session, project_id)
+        repo = TrackerRepository(session)
+        accepted = {"accepted": {"commit": "unchanged", "review": "independent"}}
+        announced = Event()
+        release = tmp_path.with_suffix(".exit")
+        calls = []
+
+        def native(_dir, _instructions, prompt, _schema, *, on_session, **kwargs):
+            packet = json.loads(prompt)
+            phase = packet["phase"]
+            calls.append((phase, kwargs.get("resume_thread_id")))
+            if len(calls) == 1:
+
+                def attached(identity):
+                    on_session(identity)
+                    announced.set()
+
+                process = run_codex_process(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import json,pathlib,sys,time; "
+                        "print(json.dumps({'type':'thread.started','thread_id':'second-delivery'}),"
+                        "flush=True); "
+                        "gate=pathlib.Path(sys.argv[1]); "
+                        "exec('while not gate.exists(): time.sleep(.01)')",
+                        str(release),
+                    ],
+                    input="",
+                    cwd=tmp_path,
+                    env=dict(os.environ),
+                    on_session=attached,
+                    process_control=kwargs["process_control"],
+                )
+                assert process.returncode == 0
+                raise ControllerLost()
+            on_session(f"second-{phase}")
+            return AgentRunResult(0, thread_id=f"second-{phase}", result=generic_result())
+
+        scheduler = QueuedScheduler()
+        cursor = ContextRepository(session).latest_tracker_status_event_id(project_id=project_id)
+        submit(session, project_id, tmp_path, scheduler)
+        definition = service._definition_by_key("codex")
+        monkeypatch.setattr(
+            service,
+            "_definition_by_key",
+            lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
+        )
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"status": "complete", "completion_evidence_json": accepted},
+        )
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="second",
+            patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 2}}},
+        )
+        try:
+            with ThreadPoolExecutor(1) as executor:
+                work = executor.submit(scheduler.run)
+                try:
+                    assert announced.wait(5)
+                    with Session(engine) as reader:
+                        evidence = (
+                            TrackerRepository(reader)
+                            .brief(project_id=project_id, ticket_key="second")
+                            .ticket.completion_evidence_json["automatic_delivery"]
+                        )
+                    retained = evidence["sessions"]["delivery"]
+                    assert retained["thread_id"] == "second-delivery"
+                    assert retained["agent_snapshot"]["name"] == "project-builder"
+                    assert (
+                        retained["source_digest"] == evidence["delivery"]["launch"]["source_digest"]
+                    )
+                    assert evidence["repair_count"] == 2
+                    assert "exit_code" not in evidence["delivery"]
+                    assert not work.done()
+                finally:
+                    release.touch()
+                with pytest.raises(ControllerLost):
+                    work.result(timeout=5)
+            # Disposable fixture: explicit operator recovery/rehandoff through
+            # the existing owner, without manufacturing a native result.
+            task_delivery._update_delivery(
+                repo, project_id, "deliver", status="stopped", reason="Controller lost"
+            )
+            repo.update_ticket(
+                project_id=project_id,
+                ticket_key="second",
+                patch_json={"status": "not-started"},
+            )
+            submit(session, project_id, tmp_path, scheduler)
+            scheduler.run()
+            session.expire_all()
+            first = repo.brief(project_id=project_id, ticket_key="first").ticket
+            second = repo.brief(project_id=project_id, ticket_key="second").ticket
+            final = second.completion_evidence_json["automatic_delivery"]
+            assert first.completion_evidence_json == accepted and first.status == "complete"
+            assert second.status == "complete", (
+                repo.get(project_id=project_id, task_key="deliver")
+                .tasks[0]
+                .metadata_json["delivery"]
+                .get("reason"),
+                calls,
+                second.outcome,
+            )
+            assert calls == [("delivery", None), ("delivery", "second-delivery"), ("review", None)]
+            assert final["sessions"]["delivery"] == retained
+            assert final["repair_count"] == 2 and final["attempt"] == 2
+            assert final["attempts"][0]["attempt"] == 1
+            assert "exit_code" not in final["attempts"][0]["delivery"]
+            events = (
+                ContextRepository(session)
+                .tracker_status_timeline(
+                    project_id=project_id, task_key="deliver", after_id=cursor, limit=50
+                )
+                .items
+            )
+            assert [
+                event.metadata_json["active"]
+                for event in events
+                if event.event_type == "tracker.execution.changed"
+            ] == [True, False] * 3
+            assert not service._active_invocations and not service.provisional_usage(project_id)
+        finally:
+            service.shutdown_usage()
+    engine.dispose()
+
+
 def test_task_mcp_route_frozen_through_rehandoff_and_role_resume(
     session, project_id, tmp_path, monkeypatch
 ):
@@ -1689,6 +1836,18 @@ def test_delivery_directory_is_retained_on_rehandoff(session, project_id, tmp_pa
     assert state["project_dir"] == str(tmp_path.resolve())
     assert state["job_ref"] == first["job_ref"]
     assert len(scheduler.jobs) == 1
+
+
+@pytest.fixture
+def native_task_session(session, project_id, tmp_path_factory):
+    """The real stdout callback commits on a separate thread/connection."""
+    engine = make_engine(tmp_path_factory.mktemp("native-task-state") / "state.sqlite")
+    restore_database_snapshot(engine, capture_database_snapshot(session.get_bind()))
+    try:
+        with Session(engine) as reader:
+            yield reader
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture
@@ -2463,6 +2622,7 @@ def test_role_host_model_provider_reach_launch_and_receipt(
         assert "named disposable, isolated test fixtures" in packet["lifecycle"]
         assert "no control over the current task, production state" in packet["lifecycle"]
         assert callable(selection.pop("on_execution_change"))
+        assert callable(selection.pop("on_session_attached"))
         assert selection.pop("launch_allowed")()
         calls.append((host, selection))
         key = packet["brief"]["ticket"]["key"]
@@ -5792,12 +5952,13 @@ def test_native_collector_failure_persists_session_and_available_usage(
 @pytest.mark.parametrize("fault", ["read", "decode"])
 @pytest.mark.parametrize("final_status", [None, "blocked", "success"])
 def test_native_stream_exception_persists_primary_final_without_replay(
-    session, project_id, tmp_path, tmp_path_factory, monkeypatch, fault, final_status
+    native_task_session, project_id, tmp_path, tmp_path_factory, monkeypatch, fault, final_status
 ):
     """The real stream decoder and an injected read failure reach the same receipt gate."""
     from stackos.host_mcp import progress
     from stackos.host_mcp.adapters import codex
 
+    session = native_task_session
     prepared_task(session, project_id)
     final = (
         generic_result(final_status, summary="Available structured final")

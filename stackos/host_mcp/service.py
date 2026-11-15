@@ -544,6 +544,7 @@ def run_agent(
     resume_thread_id: str | None = None,
     execution_scope: AgentExecutionScope | None = None,
     on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
+    on_session_attached: Callable[[ActiveInvocation], None] | None = None,
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
     native_settings: dict[str, Any] | None = None,
@@ -621,7 +622,7 @@ def run_agent(
     request_admitted = False
     if call is not None and host_key == "codex":
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
-            call, session_id, Path(project_dir), resume_thread_id
+            call, session_id, Path(project_dir), resume_thread_id, on_session_attached
         )
     if call is not None:
         progress_kwargs["process_control"] = call.process_control
@@ -672,13 +673,14 @@ def run_agent(
                 if value is not None
             },
         )
-        if (
-            request_id is not None
-            and call is not None
-            and call.thread_id is not None
-            and (result.thread_id != call.thread_id)
-        ):
-            result = replace(result, error="Native request session identity mismatch", usage=None)
+        if call is not None and call.thread_id is not None and (result.thread_id != call.thread_id):
+            result = replace(
+                result,
+                error="Native request session identity mismatch"
+                if request_id is not None
+                else "Native session identity mismatch",
+                usage=None,
+            )
     finally:
         if call is not None and registered:
             finished_at = datetime.now(UTC).isoformat()
@@ -710,37 +712,49 @@ def run_agent(
 
 
 def _attach_session(
-    call: ActiveInvocation, session_id: str, project_dir: Path, resume_thread_id: str | None
+    call: ActiveInvocation,
+    session_id: str,
+    project_dir: Path,
+    resume_thread_id: str | None,
+    on_session_attached: Callable[[ActiveInvocation], None] | None = None,
 ) -> None:
-    with _active_invocations_lock:
-        if (
-            call.invocation_id not in _active_invocations
-            or call.finished
-            or call.cancelled.is_set()
-            or call.session_id is not None
-        ):
-            return
-        if resume_thread_id is not None and session_id != resume_thread_id:
-            return
-        if any(
-            other.session_id == session_id and other.reader is not None
-            for other in _active_invocations.values()
-            if other is not call
-        ):
-            return
-        call.session_id = session_id
-        call.thread_id = session_id
-        call.reader = CodexCounterReader(session_id, project_dir, resumed=call.resumed)
-    # Retain native identity as soon as the host announces it, including if the
-    # daemon later crashes before terminal handoff. Never perform SQL under the
-    # registry lock.
-    if call.request_execution is not None:
-        try:
-            call.request_execution.renew(call)
-        except Exception:
-            call.cancelled.set()
-            call.process_control.stop()
-            raise
+    # Serialize identity persistence with cancellation/rehandoff, but never do
+    # SQL under the invocation registry lock used by telemetry readers.
+    try:
+        with managed_launch_lock:
+            with _active_invocations_lock:
+                if (
+                    _active_invocations.get(call.invocation_id) is not call
+                    or call.finished
+                    or call.cancelled.is_set()
+                    or call.session_id is not None
+                    or not session_id.strip()
+                ):
+                    return
+                if resume_thread_id is not None and session_id != resume_thread_id:
+                    return
+                if any(
+                    other.session_id == session_id and not other.finished
+                    for other in _active_invocations.values()
+                    if other is not call
+                ):
+                    return
+                call.session_id = session_id
+                call.thread_id = session_id
+                call.reader = CodexCounterReader(session_id, project_dir, resumed=call.resumed)
+            if call.request_execution is not None:
+                try:
+                    call.request_execution.renew(call)
+                except Exception:
+                    call.cancelled.set()
+                    raise
+            if on_session_attached is not None:
+                on_session_attached(call)
+    except Exception:
+        # Durability failures propagate. Native cleanup must release the launch
+        # lock first: stop() owns its process lock before taking the launch lock.
+        call.process_control.stop()
+        raise
 
 
 def agent_review_sandbox(host_key: str) -> AgentSandbox:

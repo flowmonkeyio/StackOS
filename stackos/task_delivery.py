@@ -10,6 +10,7 @@ from contextlib import suppress
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
+from functools import partial
 from hashlib import sha256
 from pathlib import Path
 from threading import Event
@@ -1774,6 +1775,61 @@ def start_delivery(
     return _receipt(task_key, state)
 
 
+def _record_native_session(
+    session_factory: Callable[[], Session],
+    call: ActiveInvocation,
+    *,
+    handoff_id: str,
+    evidence: dict[str, Any],
+    identity: dict[str, Any],
+    session_snapshot: dict[str, Any],
+) -> None:
+    """Commit the announced identity only into this still-owned phase receipt."""
+    phase = call.scope.phase
+    task_key, ticket_key = call.scope.task_key, call.scope.ticket_key
+    if task_key is None or ticket_key is None or phase is None:
+        raise ValidationError("Native session persistence requires a task phase")
+    with managed_launch_lock, session_factory() as session:
+        repo = TrackerRepository(session)
+        task = _task(repo, call.scope.project_id, task_key)
+        ticket = repo.brief(project_id=call.scope.project_id, ticket_key=ticket_key).ticket
+        automatic = deepcopy((ticket.completion_evidence_json or {}).get("automatic_delivery", {}))
+        receipt = automatic.get(phase)
+        expected = evidence.get(phase, {})
+        if (
+            call.finished
+            or call.cancelled.is_set()
+            or not call.thread_id
+            or not _delivery_active(task, handoff_id)
+            or (task.metadata_json or {}).get("delivery", {}).get("ticket_key") != ticket.key
+            or ticket.task_key != call.scope.task_key
+            or ticket.status != TrackerItemStatus.IN_PROGRESS
+            or phase not in {"delivery", "review"}
+            or automatic.get("attempt") != call.scope.attempt
+            or call.scope.agent != identity["agent"]
+            or call.host_key != identity["host_key"]
+            or not isinstance(receipt, dict)
+            or any(key in receipt for key in ("exit_code", "result", "finished_at"))
+            or receipt.get("execution", {}).get("invocation_id") != call.invocation_id
+            or receipt.get("launch") != expected.get("launch")
+            or receipt.get("occurrence") != expected.get("occurrence")
+        ):
+            raise ValidationError("Native session persistence lost current phase ownership")
+        retained = {**identity, "thread_id": call.thread_id, **session_snapshot}
+        sessions = automatic.setdefault("sessions", {})
+        previous = sessions.get(phase)
+        other = sessions.get("review" if phase == "delivery" else "delivery")
+        if (previous is not None and previous != retained) or (
+            other and other["host_key"] == call.host_key and other["thread_id"] == call.thread_id
+        ):
+            raise ValidationError("Native session persistence identity mismatch")
+        sessions[phase] = retained
+        _save_evidence(repo, call.scope.project_id, ticket.key, automatic)
+        # Keep the controller's eventual terminal write consistent with the
+        # independent committed receipt, including its exception path.
+        evidence.setdefault("sessions", {})[phase] = deepcopy(retained)
+
+
 def _record_execution_transition(
     session_factory: Callable[[], Session], call: ActiveInvocation, active: bool
 ) -> None:
@@ -2166,6 +2222,14 @@ def run_delivery(
                         phase=phase,
                     ),
                     on_execution_change=execution_changed,
+                    on_session_attached=partial(
+                        _record_native_session,
+                        session_factory,
+                        handoff_id=handoff_id,
+                        evidence=evidence,
+                        identity=deepcopy(identity),
+                        session_snapshot=deepcopy(session_snapshot),
+                    ),
                     launch_allowed=launch_allowed,
                     **(
                         {"mcp_config_ref": state["mcp_config_ref"]}

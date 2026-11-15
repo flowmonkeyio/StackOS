@@ -538,6 +538,15 @@ without that persisted progress, blocked/failed, malformed output and native
 failure stop the same task.
 No ready work with unfinished tickets is stopped, never reported complete.
 
+For Codex, `thread.started` commits the exact native ID and frozen role identity
+into `automatic_delivery.sessions[phase]` before native exit. The write requires
+the current handoff, ticket, attempt, phase and invocation receipt; stale or
+terminal receipts cannot be replaced. Persistence runs outside the invocation
+registry lock and emits no extra start event. A failed identity commit stops the
+native process and remains failed proof. Explicit recovery reuses this session;
+it does not automatically restart work. Hosts without an early identity event
+retain their existing terminal session handling.
+
 After native, session, schema and applicable candidate validation, an ordinary
 delivery or review `blocked` result keeps the ticket `in-progress`, with a safe
 summary (or a phase-specific reason for a blank summary) in `blocker_reason`
