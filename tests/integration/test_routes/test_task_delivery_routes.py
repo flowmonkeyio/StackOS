@@ -180,9 +180,16 @@ def test_review_replacement_registered_surfaces_and_authority(
         )
         assert inspected.status_code == 200, inspected.text
         automatic = inspected.json()["tickets"][0]["completion_evidence_json"]["automatic_delivery"]
-        assert (
-            automatic["review_replacements"][0]["review"] == before["automatic_delivery"]["review"]
+        replacement = automatic["review_replacements"][0]
+        archived = next(
+            item
+            for item in automatic["attempts"]
+            if item["attempt"] == replacement["target"]["expected_attempt"]
         )
+        assert archived["review"] == before["automatic_delivery"]["review"]
+        assert archived["candidate"] == before["automatic_delivery"]["candidate"]
+        assert "review" not in replacement
+        assert "candidate" not in replacement
         assert automatic["review"]["thread_id"] == "new-review"
         assert automatic["repair_count"] == 3
         assert len(calls) == 3
