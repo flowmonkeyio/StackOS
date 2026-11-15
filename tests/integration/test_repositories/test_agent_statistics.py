@@ -67,6 +67,83 @@ def _store(session, project_id, key, automatic):
     )
 
 
+@pytest.mark.parametrize(
+    "case,expected,basis",
+    [
+        ("inherited", None, None),
+        ("selected", "requested", "selected"),
+        ("observed", "native-model", "observed"),
+        ("ambiguous", None, None),
+        ("wrong-session", None, None),
+        ("unsupported-host", None, None),
+        ("conflicting-handoff", None, None),
+        ("malformed", None, None),
+    ],
+)
+def test_model_attribution_keeps_selection_separate_and_rejects_unproven_evidence(
+    session, project_id, case, expected, basis
+):
+    value = _receipt(model=None if case == "inherited" else "requested")
+    value["thread_id"] = "exact-native-session"
+    observation = {
+        "status": "observed",
+        "model": "native-model",
+        "source": "codex.turn_context",
+        "session_id": value["thread_id"],
+    }
+    if case not in {"inherited", "selected"}:
+        value["model_observation"] = deepcopy(observation)
+    if case == "ambiguous":
+        value["model_observation"].update(status="ambiguous", model=None)
+    elif case == "wrong-session":
+        value["model_observation"]["session_id"] = "neighbor-session"
+    elif case == "unsupported-host":
+        value["launch"]["host_key"] = "gemini-cli"
+    elif case == "conflicting-handoff":
+        value["execution"] = {
+            "host_key": "codex",
+            "thread_id": value["thread_id"],
+            "model_observation": {**observation, "model": "different-native-model"},
+        }
+    elif case == "malformed":
+        value["model_observation"] = {"status": "observed", "model": "guessed"}
+    _store(session, project_id, "model-proof", {"attempt": 1, "delivery": value})
+    repo = TrackerRepository(session)
+    for group_by in ("model", "agent_model"):
+        for stats in (
+            repo.agent_stats(project_id=project_id, group_by=group_by),
+            repo.agent_stats_all(group_by=group_by),
+        ):
+            assert stats.totals.reported_usage.total == 30
+            assert len(stats.rows) == 1
+            assert (stats.rows[0].model, stats.rows[0].model_basis) == (expected, basis)
+    saved = repo.brief(
+        project_id=project_id, ticket_key="model-proof"
+    ).ticket.completion_evidence_json
+    assert saved["automatic_delivery"]["delivery"]["launch"]["model"] == value["launch"]["model"]
+
+
+def test_model_group_exposes_mixed_observation_and_selection_provenance(session, project_id):
+    observed = _receipt(model="requested")
+    observed.update(
+        thread_id="exact-native-session",
+        model_observation={
+            "status": "observed",
+            "model": "native-model",
+            "source": "codex.turn_context",
+            "session_id": "exact-native-session",
+        },
+    )
+    _store(session, project_id, "observed", {"attempt": 1, "delivery": observed})
+    _store(
+        session, project_id, "selected", {"attempt": 1, "delivery": _receipt(model="native-model")}
+    )
+    stats = TrackerRepository(session).agent_stats(project_id=project_id, group_by="model")
+    assert len(stats.rows) == 1
+    assert stats.rows[0].model == "native-model" and stats.rows[0].model_basis == "mixed"
+    assert stats.rows[0].reported_usage.total == 60
+
+
 def seed_dated_statistics(session: Session, project_id: int):
     """Shared deterministic source fixture for API and downstream UI proof; no live state."""
     fixture = json.loads(

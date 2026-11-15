@@ -660,6 +660,7 @@ class AgentStatsRowOut(AgentStatsMetricsOut):
     selected_role: str | None
     host_key: str | None
     model: str | None
+    model_basis: Literal["observed", "selected", "mixed"] | None = None
 
 
 class AgentStatsDayOut(AgentStatsMetricsOut):

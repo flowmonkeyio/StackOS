@@ -3008,6 +3008,197 @@ def test_operator_adopts_legacy_dirty_work_without_replacing_original_baseline(t
             task_delivery._launch_baseline(str(tmp_path), key, evidence, phase, native)
 
 
+def test_observed_model_native_to_live_final_resume_and_rebuilt_statistics(
+    session, project_id, tmp_path, tmp_path_factory, monkeypatch
+):
+    """Real adapter/service/controller/receipts; only the native process is substituted."""
+    import sqlite3
+    from datetime import UTC, datetime
+
+    from sqlalchemy import delete
+
+    from stackos.db.models import TrackerReceiptProjection, TrackerTicket
+    from stackos.host_mcp import progress, service
+    from stackos.host_mcp.adapters import codex
+    from stackos.repositories.tracker.receipt_projection import sync_receipt_projection
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    repo.create_task(project_id=project_id, key="historical", title="Historical")
+    historical = {}
+    for key, model, count in (("unknown", None, 11), ("known", "known-selection", 7)):
+        repo.create_ticket(project_id=project_id, task_key="historical", key=key, title=key)
+        old = {
+            "launch": {"agent": "legacy", "host_key": "codex", "model": model},
+            "usage": {
+                "unit": "tokens",
+                "status": "measured",
+                "measured": {"input": count, "output": 0, "total": count},
+            },
+        }
+        data = {"automatic_delivery": {"attempt": 1, "delivery": old}}
+        repo.update_ticket(
+            project_id=project_id, ticket_key=key, patch_json={"completion_evidence_json": data}
+        )
+        historical[key] = deepcopy(data)
+
+    home = tmp_path_factory.mktemp("native-model-home")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    ids = {
+        "delivery": "01a1b94c-eb2a-7280-b3c5-d55cd290801b",
+        "review": "01a1b94c-eb2a-7280-b3c5-d55cd290801c",
+    }
+    with sqlite3.connect(home / "state_5.sqlite") as db:
+        db.execute("CREATE TABLE threads(id TEXT PRIMARY KEY, rollout_path TEXT)")
+        for sid in ids.values():
+            path = home / f"{sid}.jsonl"
+            path.write_text(
+                json.dumps({"type": "session_meta", "payload": {"id": sid, "cwd": str(tmp_path)}})
+                + "\n"
+            )
+            db.execute("INSERT INTO threads VALUES (?, ?)", (sid, str(path)))
+    calls = []
+
+    def stream(command, *, input, on_session, **kwargs):
+        packet = json.loads(input)
+        phase = packet["phase"]
+        resumed = "resume" in command
+        sid = ids[phase]
+        model = "observed-new" if resumed else "observed-native"
+        count = 150 if resumed else 100
+        on_session(sid)
+        at = datetime.now(UTC).isoformat()
+        with (home / f"{sid}.jsonl").open("a") as out:
+            for event in (
+                {
+                    "type": "turn_context",
+                    "payload": {"cwd": str(tmp_path), "model": model, "turn_id": "redacted-turn"},
+                },
+                {
+                    "type": "event_msg",
+                    "timestamp": at,
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "total_token_usage": {
+                                "input_tokens": count,
+                                "output_tokens": 0,
+                                "total_tokens": count,
+                            }
+                        },
+                    },
+                },
+            ):
+                out.write(json.dumps(event) + "\n")
+        service._sample_invocations()
+        # The real live statistics owner must use the observed inherited model
+        # before the native result or final receipt exists.
+        for stats in (
+            repo.agent_stats(project_id=project_id, group_by="model"),
+            repo.agent_stats_all(group_by="model"),
+        ):
+            row = next(row for row in stats.rows if row.model == model)
+            assert row.model_basis == "observed"
+            assert row.reported_usage.total == (
+                50 if resumed else 200 if phase == "review" else 100
+            )
+        calls.append((phase, resumed))
+        value = generic_result("blocked" if len(calls) == 1 else "success")
+        Path(command[command.index("-o") + 1]).write_text(json.dumps(value))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "\n".join(
+                map(
+                    json.dumps,
+                    (
+                        {"type": "thread.started", "thread_id": sid},
+                        {
+                            "type": "turn.completed",
+                            "usage": {"input_tokens": count, "output_tokens": 0},
+                        },
+                    ),
+                )
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(progress, "run_codex_process", stream)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="first").ticket
+    initial = deepcopy(first.completion_evidence_json["automatic_delivery"]["delivery"])
+    assert "model_observation" in initial, json.dumps(initial)
+    assert initial["model_observation"]["model"] == "observed-native"
+    assert initial["execution"]["model_observation"] == initial["model_observation"]
+    assert initial["launch"].get("model") is None
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"status": "not-started", "blocker_reason": None},
+    )
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert first.status == "complete", (calls, first.blocker_reason, first.completion_evidence_json)
+    assert calls == [("delivery", False), ("delivery", True), ("review", False)]
+    automatic = first.completion_evidence_json["automatic_delivery"]
+    assert automatic["attempts"][0]["delivery"] == initial
+    assert automatic["delivery"]["model_observation"]["model"] == "observed-new"
+    assert automatic["delivery"]["usage"]["measured"]["total"] == 50
+    assert first.agent_stats.reported_usage.total == 250
+    assert automatic["review"]["model_observation"]["model"] == "observed-native"
+
+    def check_groups():
+        for group_by in ("model", "agent_model"):
+            for stats in (
+                repo.agent_stats(project_id=project_id, group_by=group_by),
+                repo.agent_stats_all(group_by=group_by),
+            ):
+                assert stats.totals.reported_usage.total == 268
+                assert stats.totals.launch_attempts == 5
+                amounts = {}
+                for row in stats.rows:
+                    amounts[row.model] = amounts.get(row.model, 0) + row.reported_usage.total
+                assert amounts == {
+                    None: 11,
+                    "known-selection": 7,
+                    "observed-native": 200,
+                    "observed-new": 50,
+                }
+                assert all(
+                    row.model_basis
+                    == (
+                        "observed"
+                        if row.model and row.model.startswith("observed")
+                        else "selected"
+                        if row.model
+                        else None
+                    )
+                    for row in stats.rows
+                )
+
+    check_groups()
+    # Rebuild only this disposable fixture index from canonical receipts.
+    session.execute(delete(TrackerReceiptProjection))
+    for ticket in session.exec(select(TrackerTicket)).all():
+        sync_receipt_projection(session.connection(), ticket.id, ticket.completion_evidence_json)
+    session.commit()
+    check_groups()
+    for key, old in historical.items():
+        assert (
+            repo.brief(project_id=project_id, ticket_key=key).ticket.completion_evidence_json == old
+        )
+
+
 def test_role_host_model_provider_reach_launch_and_receipt(
     session: Session, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

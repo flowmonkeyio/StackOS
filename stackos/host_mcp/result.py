@@ -2,12 +2,58 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from jsonschema import ValidationError, validate
 
 AgentSandbox = Literal["read-only", "workspace-write", "normal"]
+
+
+class ModelObservation(TypedDict):
+    """Native evidence for one invocation, separate from requested launch.model.
+
+    Ambiguous evidence never permits selection fallback or allocation of mixed
+    totals. Absence permits selection-only attribution, without claiming native
+    observation. Unsupported hosts leave this absent.
+    """
+
+    status: Literal["observed", "ambiguous"]
+    model: str | None
+    source: Literal["codex.turn_context"]
+    session_id: str
+
+
+def normalize_model_observation(
+    value: Any, *, session_id: str | None, host_key: str | None
+) -> ModelObservation | None:
+    """Allowlist structured evidence only; a requested model cannot supply it."""
+    if (
+        not isinstance(value, dict)
+        or host_key != "codex"
+        or not session_id
+        or value.get("session_id") != session_id
+        or value.get("source") != "codex.turn_context"
+        or value.get("status") not in ("observed", "ambiguous")
+    ):
+        return None
+    model = value.get("model")
+    if value["status"] == "observed":
+        if (
+            not isinstance(model, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,199}", model) is None
+            or looks_secretish(model)
+        ):
+            return None
+    elif model is not None:
+        return None
+    return {
+        "status": value["status"],
+        "model": model,
+        "source": "codex.turn_context",
+        "session_id": session_id,
+    }
 
 
 @dataclass(frozen=True)
@@ -19,6 +65,7 @@ class AgentRunResult:
     result: dict[str, Any] | None = None
     error: str | None = None
     usage: dict[str, Any] | None = None
+    model_observation: ModelObservation | None = None
 
     @property
     def ok(self) -> bool:

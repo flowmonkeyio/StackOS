@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
+import { AgentStatsRowOutModel_basisAnyOf0 as ModelBasis } from '@/api'
 import { agentStatsFixture, groupedAgentStatsFixture } from '@/views/home/agentStatsFixtures'
-import { activitySeries, agentLabel, cacheShare, exactUsage, fieldCoverage, formatTokens, formatUsage, localActivityFilters, reviewFacts, usageFields, usageValue } from './agentActivity'
+import { activitySeries, agentLabel, cacheShare, exactUsage, fieldCoverage, formatTokens, formatUsage, groupLabel, localActivityFilters, reviewFacts, usageFields, usageValue } from './agentActivity'
 
 describe('Shared recorded token formatting', () => {
+  it('renders the canonical observed model and preserves unknown labels without UI attribution', () => {
+    const row = { ...agentStatsFixture().rows[0]!, model: 'observed-native', model_basis: ModelBasis.observed }
+    expect(groupLabel(row, 'model')).toBe('observed-native')
+    expect(groupLabel(row, 'agent_model')).toBe('same-name · observed-native')
+    const unknown = { ...row, model: null, model_basis: null }
+    expect(groupLabel(unknown, 'model')).toBe('Model not recorded')
+    expect(groupLabel(unknown, 'agent_model')).toBe('same-name · Model not recorded')
+  })
+
   it.each(['agent', 'model', 'agent_model'] as const)('projects canonical %s groups with exact labels and stable colors', group => {
     const fixture = groupedAgentStatsFixture(group)
     const series = activitySeries(fixture.daily, 'agents', false, group)

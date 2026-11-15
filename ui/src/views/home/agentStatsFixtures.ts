@@ -1,4 +1,4 @@
-import { AgentStatsCoverageOutClassification_status as Classification, AgentStatsCoverageOutUsage_status as Usage, AgentStatsFieldCoverageOutStatus as Field, DeliveryMetricCoverageOutStatus, TrackerAgentStatsOutGroup_by as Group } from '@/api'
+import { AgentStatsCoverageOutClassification_status as Classification, AgentStatsCoverageOutUsage_status as Usage, AgentStatsFieldCoverageOutStatus as Field, AgentStatsRowOutModel_basisAnyOf0 as ModelBasis, DeliveryMetricCoverageOutStatus, TrackerAgentStatsOutGroup_by as Group } from '@/api'
 import type { ActivityGroup, AgentStats, AgentStatsMetrics, AgentStatsRow } from '@/lib/agentActivity'
 
 export function emptyDeliveryTrendsFixture(): AgentStats['delivery_trends'] {
@@ -24,7 +24,7 @@ export function agentStatsFixture(overrides: Partial<AgentStats> = {}): AgentSta
       fields: Object.fromEntries(['input', 'output', 'total', 'cache_read', 'cache_write', 'reasoning'].map(key => [key, { status: Field.complete, measured_attempts: 4, unavailable_attempts: 0 }])),
     },
   }
-  const row: AgentStatsRow = { ...structuredClone(metrics), group_key: 'fixture-model', project_ids: [1], project_id: 1, project_name: 'Fixture project', project_slug: 'fixture-project', agent_name: 'same-name', selected_role: 'delivery_agent', host_key: 'codex', model: 'recorded-sol' }
+  const row: AgentStatsRow = { ...structuredClone(metrics), group_key: 'fixture-model', project_ids: [1], project_id: 1, project_name: 'Fixture project', project_slug: 'fixture-project', agent_name: 'same-name', selected_role: 'delivery_agent', host_key: 'codex', model: 'recorded-sol', model_basis: ModelBasis.selected }
   const empty = structuredClone(metrics)
   empty.launch_attempts = 0
   empty.recorded_reviewer_rejects = 0

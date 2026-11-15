@@ -29,6 +29,8 @@ from stackos.host_mcp.result import (
     HostMcpConnectionState,
     HostMcpResult,
     HostMcpSetupPolicy,
+    ModelObservation,
+    normalize_model_observation,
     normalize_usage,
 )
 
@@ -81,6 +83,7 @@ class ActiveInvocation:
     request_execution: AgentRequestExecution | None = None
     reader: CodexCounterReader | None = None
     usage: dict[str, Any] | None = None
+    model_observation: ModelObservation | None = None
     samples: deque = field(default_factory=lambda: deque(maxlen=120))
     measured_at: str | None = None
     finished: bool = False
@@ -98,6 +101,8 @@ class ActiveInvocation:
             "agent": self.scope.agent,
             "host_key": self.host_key,
             "model": self.model,
+            "thread_id": self.thread_id,
+            "model_observation": deepcopy(self.model_observation),
             "started_at": self.started_at,
             "ticket_key": self.scope.ticket_key,
             **(
@@ -234,6 +239,7 @@ def _sample_invocations(now: datetime | None = None) -> None:
                 continue
             try:
                 samples = call.reader.read()
+                call.model_observation = deepcopy(getattr(call.reader, "model_observation", None))
             except (OSError, ValueError):
                 call.reader.close()
                 call.reader = None
@@ -300,6 +306,7 @@ def _unregister(call: ActiveInvocation) -> None:
             call.reader = None
         call.samples.clear()
         call.usage = None
+        call.model_observation = None
         call.previous_usage = None
         call.request_execution = None
         call.session_id = None
@@ -695,6 +702,15 @@ def run_agent(
             try:
                 _sample_invocations()
                 _finish(call, result, resume_thread_id, finished_at=finished_at)
+                if result is not None:
+                    result = replace(
+                        result,
+                        model_observation=normalize_model_observation(
+                            call.model_observation,
+                            session_id=result.thread_id,
+                            host_key=host_key,
+                        ),
+                    )
                 if request_execution is not None and request_admitted:
                     request_execution.finish(call, result)
                 # The caller may persist usage after native exit. During that

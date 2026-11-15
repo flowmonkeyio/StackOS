@@ -927,9 +927,17 @@ Agent and Agent+model preserve project identity globally. Explicit Model groups
 combine the visible projects and expose `project_ids`; singular project fields
 are null for a multi-project group. `group_key` is an opaque stable series key.
 Role and host do not split groups. They remain metadata when uniform, otherwise
-null. Agent/model labels come from recorded launch selections, never current
-defaults or name-inferred roles. `model` is the **selected model**, not a claim
-about a measured actual model; missing identity stays null/unrecorded.
+null. Agent labels come from recorded launches. Model attribution prefers an
+unambiguous native `model_observation` for that exact invocation/session, then
+falls back to the recorded `launch.model` selection only when observation is
+absent. Requested `launch.model` and execution `model` remain unchanged and
+separately traceable. Row `model_basis` is `observed`, `selected`, or `mixed`
+when a group combines those bases; it is null for unknown identity. A selected
+model is intent, without a claim of native observation. Conflicting, malformed
+or mismatched observation leaves attribution unknown even with a selection.
+No current defaults, role names, neighboring runs or transcript prose supply
+identity. Missing historical identity stays null/unrecorded; historical receipts
+are not backfilled or rewritten, and their known selections remain intact.
 
 Statistics exclude exactly `usage.status="unavailable"`,
 `usage.reason="operator_reset"`, and an explicitly present `usage.measured=null`
@@ -2396,6 +2404,20 @@ announced file may not exist yet;
 the reader waits for that exact path, without searching historical sessions.
 Resumes skip the pre-invocation file prefix and use the unchanged previous
 invocation baseline and native ID.
+
+The same bounded reader also allowlists Codex `turn_context.payload.model`
+and checks its `cwd` against the owning directory. Optional `model_observation`
+in the native result and safe execution receipt carries `status`, nullable
+`model`, `source="codex.turn_context"` and exact `session_id`. A single consistent
+model is `observed`; conflicting models, invalid context, records exceeding the
+reader's 64 KiB bound, or known usage preceding the first model context make
+attribution `ambiguous` for the whole invocation.
+Without per-model counters, mixed totals cannot be allocated to one model.
+Resumes require new context after their cursor rather than inheriting model
+evidence from the old prefix. Other hosts supply no model observation through
+this reader. Final handoff, retained receipt indexing and index rebuild preserve
+this evidence without changing counter normalization or deduplication. This
+adds no native-session scan, poller, ledger or historical repair.
 
 The newest source instant owns provisional totals independently of retained
 history. Previously unseen in-window checkpoints arriving later are retained in

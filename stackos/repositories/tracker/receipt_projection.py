@@ -16,9 +16,10 @@ from sqlalchemy.engine import Connection
 from sqlmodel import col
 
 from stackos.db.models import TrackerReceiptProjection, TrackerTicket
+from stackos.host_mcp.result import normalize_model_observation
 
 _FIELDS = ("input", "output", "total", "cache_read", "cache_write", "reasoning")
-_IDENTITY = ("agent", "host_key", "model", "started_at", "invocation_id", "ticket_key")
+_IDENTITY = ("agent", "host_key", "model", "started_at", "invocation_id", "ticket_key", "thread_id")
 
 
 def _pick(value: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
@@ -50,10 +51,20 @@ def receipt_input(receipt: dict[str, Any]) -> dict[str, Any]:
             "thread_id",
             "result",
             "usage",
+            "model_observation",
         ),
     )
     if isinstance(result.get("launch"), dict):
         result["launch"] = _pick(result["launch"], _IDENTITY)
+    if result.get("model_observation") is not None:
+        result["model_observation"] = (
+            normalize_model_observation(
+                result["model_observation"],
+                session_id=result.get("thread_id"),
+                host_key=(result.get("launch") or {}).get("host_key"),
+            )
+            or {}
+        )  # Retain invalid evidence as unknown, never selection fallback.
     if "result" in result:
         result["result"] = {} if isinstance(result["result"], dict) else None
     if "usage" in result:
@@ -61,6 +72,15 @@ def receipt_input(receipt: dict[str, Any]) -> dict[str, Any]:
     execution = result.get("execution")
     if isinstance(execution, dict):
         result["execution"] = _pick(execution, _IDENTITY)
+        if execution.get("model_observation") is not None:
+            result["execution"]["model_observation"] = (
+                normalize_model_observation(
+                    execution["model_observation"],
+                    session_id=execution.get("thread_id"),
+                    host_key=execution.get("host_key"),
+                )
+                or {}
+            )
         live = execution.get("live_usage")
         if isinstance(live, dict):
             result["execution"]["live_usage"] = _pick(live, ("measured_at", "usage"))

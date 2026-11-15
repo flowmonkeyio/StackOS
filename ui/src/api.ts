@@ -2922,6 +2922,11 @@ export interface components {
             launch_attempts: number;
             /** Model */
             model: string | null;
+            /**
+             * Model Basis
+             * @default null
+             */
+            model_basis: AgentStatsRowOutModel_basisAnyOf0 | null;
             /** Project Id */
             project_id: number | null;
             /** Project Ids */
@@ -15138,6 +15143,11 @@ export enum AgentStatsFieldCoverageOutStatus {
     complete = "complete",
     partial = "partial",
     unavailable = "unavailable"
+}
+export enum AgentStatsRowOutModel_basisAnyOf0 {
+    observed = "observed",
+    selected = "selected",
+    mixed = "mixed"
 }
 export enum ApprovalRequestStatus {
     pending = "pending",
