@@ -294,7 +294,7 @@ def test_source_bumps_do_not_advance_applied_and_previous_content_survives(
     )
     assert state.setup_reminder_dismissed_at == dismissed.setup_reminder_dismissed_at
     assert state.update_reminder_dismissed_at == dismissed.update_reminder_dismissed_at
-    assert original["verification"]["sources"][0]["content"]["version"] == "0.8.6"
+    assert original["verification"]["sources"][0]["content"]["version"] == "0.8.7"
     with pytest.raises(ConflictError, match="sources changed"):
         repo.record_result(project, key, expected_revision=1, result=result)
     # Source disappearance does not discard the receipt-owned previous base.

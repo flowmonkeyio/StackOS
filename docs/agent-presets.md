@@ -136,6 +136,22 @@ StackOS as daemon-managed agents. They are generic contracts that a main agent
 may adapt into whatever the host/project supports: `.codex` agents, markdown
 frontmatter files, plugin-specific agent files, or no local files at all.
 
+Applicable engineering setup proof includes the selected reviewer's own bounded
+native tool/scratch/fixture check under its actual role/settings and environment,
+as declared by the effective method's `required_role_claims`. Generic native success
+cannot substitute for it. Reuse completed matching coverage and run only missing
+checks under normal approvals. Record `setup_activation_checks` in that native
+result and bind its canonical completed `task_phase` or actual specialist
+`native_request` reference in the existing
+setup receipt. Preserve frozen sessions and inline-host snapshots; editing sources
+does not activate them. A denial stops its write and dependent proof; authorized
+alternatives and unrelated work continue. Required unavailable proof stays
+unfinished. Explicit `replace_review` recovery requires a quiescent stopped review
+and current authority, retaining candidate, delivery, failed attempts and repair
+allowance. See [setup evidence](workflow-templates.md#agent-workflow-setup-lifecycle)
+for the execution binding and observation fields; concrete commands belong to the
+project, never a generic host matrix.
+
 ### Actual project Codex definitions
 
 The local console operations `projectAgent.list`, `projectAgent.get`,

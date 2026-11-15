@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.8.6
+version: 0.8.7
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -218,7 +218,18 @@ resource_contracts:
 policies:
   - key: setup_activation_method
     kind: setup
+    config_json:
+      required_role_claims:
+        reviewer_verification:
+          role: review_agent
+          when_execution_requirements:
+            filesystem_write: true
     description: >-
+      The selected reviewer performs a project-selected bounded native tool/scratch/fixture
+      check for reviewer_verification, bound to actual role, source/settings, invocation
+      and environment in the existing setup receipt. Generic native conversation success
+      is insufficient. Reuse valid completed coverage and execute only missing checks
+      under normal approvals; no extra proof task, global trust change or host matrix.
       Ordinary ready_to_use Setup/Update includes adaptation, canonical saved-default
       adoption/readback and actual native consumption; only explicit infrastructure_only
       stops at preparation and creates no execution state. Inspect exact role sources

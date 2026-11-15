@@ -73,6 +73,13 @@ class TrackerTaskResultsInput(TrackerTaskActivityInput):
     source_kind: ResultSourceKind | None = None
 
 
+class AgentExecutionRequirements(BaseModel):
+    """Assignment needs, never native permission grants."""
+
+    model_config = ConfigDict(extra="forbid")
+    filesystem_write: bool = Field(default=False, strict=True)
+
+
 class TaskDeliveryAgentOverride(BaseModel):
     """Task choices may omit fields supplied by project defaults."""
 
@@ -85,6 +92,7 @@ class TaskDeliveryAgentOverride(BaseModel):
     profile: str | None = Field(default=None, min_length=1)
     source_ref: AgentSourceRef | None = None
     model_reasoning_effort: str | None = Field(default=None, min_length=1)
+    execution_requirements: AgentExecutionRequirements | None = None
 
     @model_validator(mode="after")
     def one_instruction_owner(self):
@@ -149,6 +157,24 @@ class TaskMcpConfigRef(BaseModel):
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class ReviewReplacementSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    binding_id: int = Field(gt=0)
+    source_ref: AgentSourceRef
+    expected_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ReviewReplacement(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+    ticket_key: str = Field(min_length=1)
+    expected_attempt: int = Field(gt=0)
+    expected_review_thread_id: str = Field(min_length=1)
+    expected_candidate_commit_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    expected_reviewer_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reason: str = Field(min_length=1, max_length=4000)
+    reviewer_source: ReviewReplacementSource | None = None
+
+
 class TrackerStartDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     project_id: int
@@ -169,12 +195,32 @@ class TrackerStartDeliveryInput(MCPInput):
     agent_assignments: dict[str, AgentRole] | None = None
     run_plan_id: int | None = Field(default=None, ge=1)
     step_id: str | None = Field(default=None, min_length=1)
+    replace_review: ReviewReplacement | None = Field(
+        default=None,
+        description=(
+            "Explicit operator-authorized replacement of one quiescent stopped review; "
+            "never restarts delivery."
+        ),
+    )
     response_mode: TrackerResponseMode = "compact"
 
     @model_validator(mode="after")
     def workflow_scope_pair(self):
         if (self.run_plan_id is None) != (self.step_id is None):
             raise ValueError("run_plan_id and step_id must be provided together")
+        if self.replace_review is not None and any(
+            value is not None
+            for value in (
+                self.host_key,
+                self.delivery_agent,
+                self.review_agent,
+                self.agents,
+                self.agent_assignments,
+            )
+        ):
+            raise ValueError(
+                "replace_review cannot override agents, assignments or execution settings"
+            )
         return self
 
 

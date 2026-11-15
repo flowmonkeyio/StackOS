@@ -40,6 +40,7 @@ from stackos.host_mcp.service import (
     agent_review_sandbox,
     agent_selection_error,
     cancel_task_invocations,
+    effective_agent_sandbox,
     run_agent,
 )
 from stackos.operations.tracker.schemas import TaskDeliveryAgent, TaskDeliveryAgentOverride
@@ -52,6 +53,7 @@ from stackos.repositories.tracker.schema import (
     TaskDeliveryStateOut,
     TrackerCorrectionIntent,
     TrackerDeliveryScopeExclusion,
+    TrackerTicketOut,
 )
 from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
@@ -433,6 +435,23 @@ def _select_work(repo, plans, project_id, task_key, state):
     """Activate containers through their owner; dispatch only executable work."""
     tickets = repo.get(project_id=project_id, task_key=task_key, include_graph=False).tickets
     tickets_by_key = {ticket.key: ticket for ticket in tickets}
+    recovery = state.get("review_replacement", {})
+    target = tickets_by_key.get(recovery.get("target", {}).get("ticket_key"))
+    if target and (target.completion_evidence_json or {}).get("automatic_delivery", {}).get(
+        "review_replacement_pending"
+    ) == recovery.get("replacement_id"):
+        if target.status != TrackerItemStatus.IN_PROGRESS or target.blocked_by:
+            raise _replacement_error("prerequisites", "Replacement review prerequisites changed")
+        if target.run_plan_step_id is not None:
+            plan = plans.get(target.run_plan_id, project_id=project_id)
+            if (
+                next(s for s in plan.steps if s.id == target.run_plan_step_id).status
+                != RunPlanStepStatus.RUNNING
+            ):
+                raise _replacement_error(
+                    "prerequisites", "Replacement review attachment step is not running"
+                )
+        return target, None, False
     for ticket in repo.delivery_ready(project_id=project_id, task_key=task_key):
         step = _workflow_step(plans, state, ticket)
         children = _descendants(tickets, ticket.key)
@@ -551,6 +570,176 @@ def _retain_reservation(previous: dict[str, Any], admission_id: str) -> None:
         )
 
 
+def _replacement_error(code, message):
+    return ValidationError(
+        message,
+        data={
+            "code": f"review_replacement_{code}",
+            "next_operations": ["tracker.get", "tracker.brief"],
+            "recovery": (
+                "Inspect the stopped review and obtain explicit authorization "
+                "for its exact candidate and reviewer selection."
+            ),
+        },
+    )
+
+
+def _review_replacement_replay(previous, request):
+    receipt = previous.get("review_replacement") or {}
+    digest = sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
+    if receipt.get("request_digest") == digest:
+        return True
+    if receipt.get("target") == {
+        key: request[key] for key in ("ticket_key", "expected_attempt", "expected_review_thread_id")
+    }:
+        raise _replacement_error(
+            "conflict", "This retired review already has a different replacement request"
+        )
+    return False
+
+
+def _prepare_review_replacement(session, repo, project_id, task, previous, request):
+    """Validate and stage one transition inside the existing admission transaction."""
+    from stackos.artifacts import redact_secret_text
+    from stackos.host_mcp.service import invocation_timings
+
+    if previous.get("slot_reserved") or any(
+        call["project_id"] == project_id and call.get("task_key") == task.key
+        for call in invocation_timings()
+    ):
+        raise _replacement_error(
+            "not_quiescent", "The previous task invocation or capacity owner has not retired"
+        )
+    ticket = repo.brief(project_id=project_id, ticket_key=request["ticket_key"]).ticket
+    evidence = deepcopy((ticket.completion_evidence_json or {}).get("automatic_delivery", {}))
+    review, delivery = evidence.get("review", {}), evidence.get("delivery", {})
+    retired = evidence.get("sessions", {}).get("review", {})
+    candidate = evidence.get("candidate", {})
+    if (
+        not previous.get("handoff_id")
+        or previous.get("job_ref")
+        != f"task-delivery:{project_id}:{task.id}:{previous['handoff_id']}"
+        or task.status not in {TrackerItemStatus.IN_PROGRESS, TrackerItemStatus.FAILED}
+        or ticket.task_id != task.id
+        or ticket.kind != TrackerTicketKind.TICKET
+        or ticket.status not in {TrackerItemStatus.IN_PROGRESS, TrackerItemStatus.FAILED}
+        or previous.get("ticket_key") != ticket.key
+        or _workflow_step(RunPlanRepository(session), previous, ticket) is not None
+        or ticket.blocked_by
+        or delivery.get("validated_outcome") != "success"
+        or delivery.get("selected_role")
+        != (previous.get("agent_assignments") or {}).get(ticket.key, "delivery_agent")
+        or delivery.get("selected_role") == "review_agent"
+        or review.get("selected_role") != "review_agent"
+        or review.get("validated_outcome") in {"success", "repair"}
+        or not retired.get("thread_id")
+        or not retired.get("agent_snapshot")
+        or not evidence.get("sessions", {}).get("delivery")
+        or evidence.get("review_replacement_pending")
+    ):
+        raise _replacement_error(
+            "ineligible",
+            "Replacement requires an ordinary stopped independent review "
+            "after successful candidate-ready delivery",
+        )
+    if (
+        evidence.get("attempt") != request["expected_attempt"]
+        or retired["thread_id"] != request["expected_review_thread_id"]
+        or candidate.get("commit_sha") != request["expected_candidate_commit_sha"]
+        or (review.get("thread_id") is not None and review["thread_id"] != retired["thread_id"])
+        or any(
+            review.get("launch", {}).get(key) != value
+            for key, value in retired.items()
+            if key not in {"thread_id", "agent_snapshot"}
+        )
+    ):
+        raise _replacement_error(
+            "stale_target", "Stopped review attempt, native identity or candidate changed"
+        )
+    directory = previous["project_dir"]
+    try:
+        _candidate_commit(directory, candidate["commit_sha"], candidate.get("base_commit_sha"))
+    except ValidationError as error:
+        raise _replacement_error("candidate", str(error)) from None
+    source = request.get("reviewer_source")
+    settings = resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=directory,
+        role_keys={"review_agent"},
+        mcp_config_ref=previous.get("mcp_config_ref"),
+        review_agent={"source_ref": source["source_ref"]} if source else None,
+        _source_bindings={"review_agent": source["binding_id"]} if source else None,
+    )
+    reviewer = settings["agents"]["review_agent"]
+    if source and reviewer.get("source_digest") != source["expected_digest"]:
+        raise _replacement_error("stale_source", "Selected reviewer source digest changed")
+    digest = sha256(json.dumps(reviewer, sort_keys=True).encode()).hexdigest()
+    if digest != request["expected_reviewer_snapshot_digest"]:
+        raise _replacement_error("stale_snapshot", "Current resolved reviewer snapshot changed")
+    old_agent = retired["agent_snapshot"]
+    if any(reviewer.get(key) != old_agent.get(key) for key in ("host_key", "provider", "profile")):
+        raise _replacement_error(
+            "execution_identity", "Replacement must preserve reviewer host, provider and profile"
+        )
+    writer = evidence["sessions"]["delivery"]
+    if (reviewer["host_key"], reviewer["name"]) == (writer["host_key"], writer["agent"]):
+        raise _replacement_error(
+            "independence", "Delivery and review identities must remain independent"
+        )
+    replacement_id = uuid4().hex
+    recovery = {
+        "replacement_id": replacement_id,
+        "request_digest": sha256(json.dumps(request, sort_keys=True).encode()).hexdigest(),
+        "target": {
+            key: request[key]
+            for key in ("ticket_key", "expected_attempt", "expected_review_thread_id")
+        },
+        "candidate_commit_sha": candidate["commit_sha"],
+        "reviewer_snapshot_digest": digest,
+    }
+    history = {
+        **recovery,
+        "reason": redact_secret_text(request["reason"]),
+        "created_at": datetime.now(UTC).isoformat(),
+        "review": deepcopy(review),
+        "session": deepcopy(retired),
+        "candidate": deepcopy(candidate),
+        "replacement_agent": deepcopy(reviewer),
+        **({"source_origin": deepcopy(source)} if source else {}),
+    }
+    evidence.setdefault("review_replacements", []).append(history)
+    delivery_attempt = evidence.get("delivery_reused_from_attempt", evidence["attempt"])
+    _archive_attempt(evidence)
+    evidence["delivery"] = delivery
+    evidence["delivery_reused_from_attempt"] = delivery_attempt
+    evidence["sessions"].pop("review")
+    evidence["repair_count"] = evidence.get(
+        "repair_count", int(bool(evidence.get("repair_pass_used")))
+    )
+    evidence["review_replacement_pending"] = replacement_id
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=ticket.key,
+        patch_json={
+            "status": "in-progress",
+            "blocker_reason": None,
+            "completion_evidence_json": {
+                **(ticket.completion_evidence_json or {}),
+                "automatic_delivery": evidence,
+            },
+        },
+        actor=ACTOR,
+        commit=False,
+    )
+    return {
+        "status": "queued",
+        "slot_reserved": False,
+        "reason": None,
+        "review_replacement": recovery,
+    }
+
+
 def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_key, **changes):
     """Reserve a directory in the existing snapshot before scheduling its task job."""
     from stackos.repositories.projects import ProjectRepository
@@ -565,6 +754,16 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         session.expire_all()
         task = _task(repo, project_id, task_key)
         previous = (task.metadata_json or {}).get("delivery", {})
+        replacement = changes.pop("replace_review", None)
+        if replacement is not None:
+            replay = _review_replacement_replay(previous, replacement)
+            if replay:
+                session.rollback()
+                return previous, False
+            if previous.get("status") != "stopped":
+                raise _replacement_error(
+                    "not_stopped", "Review replacement requires a stopped task"
+                )
         directory = Path(changes["project_dir"])
         _retain_directory(previous, directory)
         _retain_mcp_config(previous, changes.get("mcp_config_ref"))
@@ -585,7 +784,8 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
             changes.get("step_id"),
             starting=True,
         )
-        _validate_start_placement(task, workflow=changes.get("run_plan_id") is not None)
+        if replacement is None:
+            _validate_start_placement(task, workflow=changes.get("run_plan_id") is not None)
         # Directory ownership spans this daemon's task jobs. Git metadata is
         # deliberately absent from this identity; non-Git directories work too.
         active_directories = session.exec(
@@ -615,6 +815,10 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
                 "The working directory is already owned by an active task",
                 data={"project_dir": str(directory), "next_operations": ["tracker.get"]},
             )
+        if replacement is not None:
+            changes.update(
+                _prepare_review_replacement(session, repo, project_id, task, previous, replacement)
+            )
         handoff_id = uuid4().hex
         return _update_delivery(
             repo,
@@ -637,6 +841,11 @@ def _receipt(task_key: str, state: dict[str, Any]) -> dict[str, Any]:
         "job_ref": state["job_ref"],
         "run_plan_id": state.get("run_plan_id"),
         "step_id": state.get("step_id"),
+        **(
+            {"review_replacement": state["review_replacement"]}
+            if state.get("review_replacement")
+            else {}
+        ),
         **({"mcp_config_ref": state["mcp_config_ref"]} if state.get("mcp_config_ref") else {}),
         "recommended_tool": "tracker.get",
         "message": "Inspect this task with tracker.get, task_key and response_mode=raw.",
@@ -936,12 +1145,14 @@ def _archive_attempt(evidence: dict[str, Any]) -> None:
                     "review",
                     "owned_work",
                     "repair_count",
+                    "delivery_reused_from_attempt",
                 )
                 if key in evidence
             }
         )
     evidence.pop("delivery", None)
     evidence.pop("review", None)
+    evidence.pop("delivery_reused_from_attempt", None)
     evidence["attempt"] = len(evidence.setdefault("attempts", [])) + 1
 
 
@@ -961,14 +1172,25 @@ def _save_evidence(repo, project_id, ticket_key, evidence, **patch) -> None:
     )
 
 
-def _project_agent_source(session: Session, project_id: int, directory: Path, ref):
+def _project_agent_source(session: Session, project_id: int, directory: Path, ref, binding_id=None):
     """Explicit handoff/setup authorizes this bounded read in its bound workspace."""
     from stackos.host_mcp.project_agents import ProjectAgentError, ProjectAgentService
     from stackos.repositories.workspaces import WorkspaceRepository
 
+    bindings = WorkspaceRepository(session).list_bindings()
+    if binding_id is not None:
+        selected = next((binding for binding in bindings if binding.id == binding_id), None)
+        if (
+            selected is None
+            or selected.project_id != project_id
+            or selected.binding_kind != "directory"
+            or not selected.last_known_root
+        ):
+            raise ValidationError("Project agent missing_scope", data={"code": "missing_scope"})
+        directory = Path(selected.last_known_root).resolve()
     matching = {
         binding.project_id
-        for binding in WorkspaceRepository(session).list_bindings()
+        for binding in bindings
         if binding.last_known_root and Path(binding.last_known_root).resolve() == directory
     }
     if matching != {project_id}:
@@ -977,6 +1199,80 @@ def _project_agent_source(session: Session, project_id: int, directory: Path, re
         return ProjectAgentService(directory).get(ref)
     except ProjectAgentError as error:
         raise ValidationError(f"Project agent {error.data['code']}", data=error.data) from None
+
+
+def _phase_agent(agent: dict[str, Any], native_session: dict[str, Any] | None):
+    if native_session and native_session.get("agent_snapshot"):
+        frozen = native_session["agent_snapshot"]
+        if agent.get("source_ref") != frozen.get("source_ref"):
+            raise ValidationError("Ticket source selection changed; cannot resume")
+        return frozen
+    return agent
+
+
+def _validate_execution_requirements(
+    role: str,
+    selected: dict[str, Any],
+    *,
+    phase: str,
+    native_session: dict[str, Any] | None = None,
+) -> AgentSandbox:
+    """Compare current obligations to actual selected/retained authority."""
+    actual = _phase_agent(selected, native_session)
+    # Legacy sessions have no agent_snapshot. Their recorded native identity
+    # still owns permissions; launch's identity guard continues to apply.
+    if native_session and not native_session.get("agent_snapshot"):
+        actual = {**actual, **native_session}
+    host_key = actual["host_key"]
+    sandbox = effective_agent_sandbox(
+        host_key,
+        agent_review_sandbox(host_key) if phase == "review" else "workspace-write",
+        actual.get("native_settings"),
+    )
+    requirements = selected.get("execution_requirements") or {}
+    if requirements.get("filesystem_write") and sandbox == "read-only":
+
+        def source_identity(agent):
+            return {
+                key: agent[key]
+                for key in ("name", "host_key", "source_ref", "source_digest", "native_settings")
+                if key in agent
+            }
+
+        basis = "retained" if native_session else "selected"
+        raise ValidationError(
+            f"{role} requires filesystem_write but {basis} {host_key} execution is {sandbox}",
+            data={
+                "code": "execution_requirement_mismatch",
+                "role": role,
+                "phase": phase,
+                "required": requirements,
+                "effective_sandbox": sandbox,
+                "execution_basis": basis,
+                "selected_source": source_identity(selected),
+                "effective_source": source_identity(actual),
+                "repair_owner": "task delivery admission",
+                "next_action": (
+                    "Select a compatible agent for fresh execution, or ask the task admission "
+                    "owner to reconcile the stopped retained session. Source edits "
+                    "do not refresh retained sessions; do not broaden permissions automatically."
+                ),
+            },
+        )
+    return sandbox
+
+
+def _validate_ticket_execution(agents, role, evidence, *, workflow=False):
+    sessions = evidence.get("sessions") or {}
+    phases = (
+        [("review" if role == "review_agent" else "delivery", role)]
+        if workflow
+        else [("delivery", role), ("review", "review_agent")]
+    )
+    for phase, selected_role in phases:
+        _validate_execution_requirements(
+            selected_role, agents[selected_role], phase=phase, native_session=sessions.get(phase)
+        )
 
 
 def resolve_delivery_settings(
@@ -991,6 +1287,8 @@ def resolve_delivery_settings(
     mcp_config_ref: dict[str, str] | None = None,
     role_keys: set[str] | None = None,
     _retained_agents: Mapping[str, dict[str, Any]] | None = None,
+    _defer_requirements_to_tickets: bool = False,
+    _source_bindings: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     """Read-only execution preflight for explicit task delivery.
 
@@ -1061,7 +1359,13 @@ def resolve_delivery_settings(
                     f"Codex {role} adoption_required: select an exact project source_ref",
                     data={"code": "adoption_required", "role": role},
                 )
-            source = _project_agent_source(session, project_id, directory, choice["source_ref"])
+            source = _project_agent_source(
+                session,
+                project_id,
+                directory,
+                choice["source_ref"],
+                (_source_bindings or {}).get(role),
+            )
             execution_fields = {
                 "model",
                 "model_reasoning_effort",
@@ -1136,9 +1440,18 @@ def resolve_delivery_settings(
                 agent = TaskDeliveryAgent.model_validate(choice).model_dump(exclude_none=True)
             except SchemaValidationError as schema_error:
                 raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from None
-        sandbox: AgentSandbox = (
-            agent_review_sandbox(agent["host_key"]) if role == "review_agent" else "workspace-write"
-        )
+        if _defer_requirements_to_tickets:
+            sandbox = effective_agent_sandbox(
+                agent["host_key"],
+                agent_review_sandbox(agent["host_key"])
+                if role == "review_agent"
+                else "workspace-write",
+                agent.get("native_settings"),
+            )
+        else:
+            sandbox = _validate_execution_requirements(
+                role, agent, phase="review" if role == "review_agent" else "delivery"
+            )
         error = agent_selection_error(
             agent["host_key"],
             sandbox=sandbox,
@@ -1519,6 +1832,7 @@ def start_delivery(
     controller_run_id: int | None = None,
     mcp_config_ref: dict[str, str] | None = None,
     agents: Mapping[str, dict[str, Any]] | None = None,
+    replace_review: dict[str, Any] | None = None,
     _resolved_settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Freeze handoff settings; schedules may retain their internal preflight snapshot.
@@ -1528,20 +1842,40 @@ def start_delivery(
     """
     repo = TrackerRepository(session)
     task = _task(repo, project_id, task_key)
-    _workflow_scope(repo, project_id, task, run_plan_id, step_id)
+    previous = (task.metadata_json or {}).get("delivery", {})
+    replaying = False
+    if replace_review is not None:
+        from stackos.operations.tracker.schemas import ReviewReplacement
+
+        if _resolved_settings is not None or any(
+            value is not None
+            for value in (host_key, delivery_agent, review_agent, agents, agent_assignments)
+        ):
+            raise _replacement_error(
+                "settings_override", "Review replacement cannot override execution settings"
+            )
+        replace_review = ReviewReplacement.model_validate(replace_review).model_dump(
+            exclude_none=True
+        )
+        if (previous.get("run_plan_id"), previous.get("step_id")) != (run_plan_id, step_id):
+            raise _replacement_error("scope", "Replacement must retain its admitted workflow scope")
+        if controller_run_id is not None and previous.get("controller_run_id") != controller_run_id:
+            raise _replacement_error("scope", "Replacement controller run changed")
+        replaying = _review_replacement_replay(previous, replace_review)
+    if not replaying:
+        _workflow_scope(repo, project_id, task, run_plan_id, step_id)
     plan = (
         RunPlanRepository(session).get(run_plan_id, project_id=project_id) if run_plan_id else None
     )
     if plan and controller_run_id is not None and controller_run_id != plan.run_id:
         raise ValidationError("Delivery controller run does not match the workflow plan")
-    if plan:
+    if plan and not replaying:
         RunPlanRepository(session).validate_delivery_controller(
             run_plan_id=plan.id, project_id=project_id, run_id=plan.run_id
         )
     directory = Path(project_dir).expanduser().resolve()
     if not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
-    previous = (task.metadata_json or {}).get("delivery", {})
     _retain_directory(previous, directory)
     # Omission on rehandoff preserves the frozen route, including its digest.
     mcp_config_ref = mcp_config_ref or previous.get("mcp_config_ref")
@@ -1555,6 +1889,25 @@ def start_delivery(
     _retain_mcp_config(previous, mcp_config_ref)
     if previous.get("project_dir"):
         directory = Path(previous["project_dir"])
+    if replace_review is not None:
+        with managed_launch_lock:
+            state, queued = _queue_delivery(
+                session,
+                repo,
+                project_id,
+                task_key,
+                status="queued",
+                admission_id=_admission_id(scheduler),
+                slot_reserved=False,
+                project_dir=str(directory),
+                mcp_config_ref=mcp_config_ref,
+                run_plan_id=run_plan_id,
+                step_id=step_id,
+                replace_review=replace_review,
+            )
+        if queued:
+            drain_delivery(session_factory=session_factory, scheduler=scheduler)
+        return _receipt(task_key, state)
     if previous.get("status") in {"queued", "running"}:
         if (previous.get("run_plan_id"), previous.get("step_id")) != (run_plan_id, step_id):
             raise ValidationError("Task already has automatic delivery for a different scope")
@@ -1592,7 +1945,10 @@ def start_delivery(
                 supplied.append((role, override))
         if any(
             role not in saved_agents
-            or any(saved_agents[role].get(key) != value for key, value in override.items())
+            or any(
+                key != "execution_requirements" and saved_agents[role].get(key) != value
+                for key, value in override.items()
+            )
             for role, override in supplied
         ) or any(
             (previous.get("agent_assignments") or {}).get(key) != role
@@ -1600,6 +1956,15 @@ def start_delivery(
         ):
             raise ValidationError("Task delivery must retain its admitted agent selection")
         retained_agents = deepcopy(saved_agents)
+        current_defaults = repo.delivery_defaults(project_id=project_id)
+        for role, agent in retained_agents.items():
+            current = _delivery_role_defaults(current_defaults, role)
+            for supplied_role, override in supplied:
+                if supplied_role == role:
+                    current = {**current, **override}
+            if "execution_requirements" in current:
+                # Current obligations do not refresh the admitted native selection.
+                agent["execution_requirements"] = current["execution_requirements"]
         host_key = previous["host_key"]
         agents = retained_agents
         delivery_agent = review_agent = None
@@ -1678,6 +2043,7 @@ def start_delivery(
             role_keys=selected_roles,
             mcp_config_ref=mcp_config_ref,
             _retained_agents=retained_agents,
+            _defer_requirements_to_tickets=True,
         )
     else:
         if _resolved_settings.get("project_id") != project_id or _resolved_settings.get(
@@ -1735,6 +2101,18 @@ def start_delivery(
     keys = {ticket.key for ticket in snapshot.tickets}
     if any(key not in keys or role not in resolved for key, role in assignments.items()):
         raise ValidationError("agent_assignments must map task ticket keys to existing roles")
+    for ticket in snapshot.tickets:
+        if ticket.status == TrackerItemStatus.COMPLETE:
+            continue
+        ticket_role = assignments.get(ticket.key)
+        if ticket_role is not None:
+            assert isinstance(ticket, TrackerTicketOut)
+            _validate_ticket_execution(
+                resolved,
+                ticket_role,
+                (ticket.completion_evidence_json or {}).get("automatic_delivery", {}),
+                workflow=ticket.key in mirror_keys,
+            )
     state, queued = _queue_delivery(
         session,
         repo,
@@ -1825,8 +2203,18 @@ def _record_native_session(
         sessions = automatic.setdefault("sessions", {})
         previous = sessions.get(phase)
         other = sessions.get("review" if phase == "delivery" else "delivery")
-        if (previous is not None and previous != retained) or (
-            other and other["host_key"] == call.host_key and other["thread_id"] == call.thread_id
+        if (
+            (previous is not None and previous != retained)
+            or (
+                other
+                and other["host_key"] == call.host_key
+                and other["thread_id"] == call.thread_id
+            )
+            or any(
+                item.get("session", {}).get("host_key") == call.host_key
+                and item.get("session", {}).get("thread_id") == call.thread_id
+                for item in automatic.get("review_replacements", [])
+            )
         ):
             raise ValidationError("Native session persistence identity mismatch")
         sessions[phase] = retained
@@ -1965,11 +2353,58 @@ def run_delivery(
                 evidence = deepcopy(
                     (selected.completion_evidence_json or {}).get("automatic_delivery", {})
                 )
+                role = state["agent_assignments"].get(ticket_key, "delivery_agent")
+                selected_agents = state.get("agents", state)
+                if evidence.get("review_replacements"):
+                    # Explicit replacement is ticket-local. Untouched tickets keep
+                    # the original task-wide admitted selection.
+                    selected_agents = {
+                        **selected_agents,
+                        "review_agent": evidence["review_replacements"][-1]["replacement_agent"],
+                    }
+                _validate_ticket_execution(
+                    selected_agents, role, evidence, workflow=workflow_step is not None
+                )
                 if workflow_step is None:
                     evidence.setdefault("repair_count", int(bool(evidence.get("repair_pass_used"))))
-                _archive_attempt(evidence)
+                replacement = evidence.get("review_replacement_pending")
+                continuation = evidence.get("review_replacement_active")
+                review_only = replacement or continuation
+                if review_only:
+                    recovery = state.get("review_replacement", {})
+                    if (
+                        workflow_step is not None
+                        or recovery.get("replacement_id") != review_only
+                        or recovery.get("target", {}).get("ticket_key") != ticket_key
+                        or recovery.get("reviewer_snapshot_digest")
+                        != sha256(
+                            json.dumps(selected_agents["review_agent"], sort_keys=True).encode()
+                        ).hexdigest()
+                        or recovery.get("candidate_commit_sha")
+                        != evidence.get("candidate", {}).get("commit_sha")
+                    ):
+                        raise _replacement_error(
+                            "transition", "Review replacement transition lost ownership"
+                        )
+                    if continuation:
+                        receipt = evidence.get("review", {})
+                        if not evidence.get("sessions", {}).get("review") or any(
+                            key in receipt for key in ("exit_code", "result", "validation_error")
+                        ):
+                            raise _replacement_error(
+                                "continuation",
+                                "Interrupted replacement requires its saved review session",
+                            )
+                        # Preserve the interrupted invocation in attempt history,
+                        # while retaining the same delivered candidate and writer.
+                        delivered = evidence["delivery"]
+                        delivery_attempt = evidence["delivery_reused_from_attempt"]
+                        _archive_attempt(evidence)
+                        evidence["delivery"] = delivered
+                        evidence["delivery_reused_from_attempt"] = delivery_attempt
+                else:
+                    _archive_attempt(evidence)
                 baseline_pending = True
-                role = state["agent_assignments"].get(ticket_key, "delivery_agent")
                 if workflow_step is None:
                     repo.update_ticket(
                         project_id=project_id,
@@ -1984,20 +2419,23 @@ def run_delivery(
                     repo, project_id, task_key, status="running", ticket_key=ticket_key
                 )
 
-            phase = "review" if workflow_step is not None and role == "review_agent" else "delivery"
+            phase = (
+                "review"
+                if review_only or (workflow_step is not None and role == "review_agent")
+                else "delivery"
+            )
             while True:
                 schema = RESULT_SCHEMA
                 selected_role = (
                     role if workflow_step is not None or phase == "delivery" else "review_agent"
                 )
-                agent = state.get("agents", state)[selected_role]
+                agent = selected_agents[selected_role]
                 sessions = evidence.setdefault("sessions", {})
                 native_session = sessions.get(phase)
-                if native_session and native_session.get("agent_snapshot"):
-                    frozen = native_session["agent_snapshot"]
-                    if agent.get("source_ref") != frozen.get("source_ref"):
-                        raise ValidationError("Ticket source selection changed; cannot resume")
-                    agent = frozen
+                sandbox = _validate_execution_requirements(
+                    selected_role, agent, phase=phase, native_session=native_session
+                )
+                agent = _phase_agent(agent, native_session)
                 # New inline-host sessions need the same immutable contract as
                 # source-backed sessions when project defaults change on rehandoff.
                 # Preserve the identity shape of already admitted legacy sessions.
@@ -2007,13 +2445,6 @@ def run_delivery(
                     else {}
                 )
                 host_key = agent.get("host_key") or state["host_key"]
-                sandbox: AgentSandbox = (
-                    "workspace-write" if phase == "delivery" else agent_review_sandbox(host_key)
-                )
-                if host_key == "codex":
-                    from stackos.host_mcp.adapters.codex import native_agent_sandbox
-
-                    sandbox = native_agent_sandbox(sandbox, agent.get("native_settings") or {})
                 selection = {
                     key: agent[key]
                     for key in ("model", "model_reasoning_effort", "provider", "profile")
@@ -2050,7 +2481,7 @@ def run_delivery(
                             "Ticket role session selection changed; cannot resume"
                         )
                     resume_thread_id = native_session["thread_id"]
-                elif any(phase in attempt for attempt in evidence["attempts"]):
+                elif any(phase in attempt for attempt in evidence["attempts"]) and not replacement:
                     raise ValidationError(f"Cannot resume {phase}: missing native session ID")
                 if baseline_pending:
                     candidate_required = bool(
@@ -2068,9 +2499,16 @@ def run_delivery(
                             )
                         )
                     )
-                    evidence["candidate"] = _launch_baseline(
-                        state["project_dir"], ticket_key, evidence, phase, native_session
-                    )
+                    if review_only:
+                        _candidate_commit(
+                            state["project_dir"],
+                            evidence["candidate"]["commit_sha"],
+                            evidence["candidate"].get("base_commit_sha"),
+                        )
+                    else:
+                        evidence["candidate"] = _launch_baseline(
+                            state["project_dir"], ticket_key, evidence, phase, native_session
+                        )
                     baseline_clean = bool(
                         evidence["candidate"].get("base_commit_sha")
                         and not _git(
@@ -2111,6 +2549,14 @@ def run_delivery(
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                     )
+                    if replacement:
+                        evidence.pop("review_replacement_pending")
+                        evidence["review_replacement_active"] = replacement
+                        evidence["review_replacements"][-1]["replacement_attempt"] = evidence[
+                            "attempt"
+                        ]
+                        replacement = None
+                    review_only = None
                     _save_evidence(repo, project_id, ticket_key, evidence)
                     brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(
                         mode="json"
@@ -2118,7 +2564,7 @@ def run_delivery(
                     occurrence = _assignment_occurrence(
                         brief,
                         evidence,
-                        state.get("agents", state)[selected_role],
+                        selected_agents[selected_role],
                         agent,
                         resume_thread_id,
                     )
@@ -2321,6 +2767,14 @@ def run_delivery(
                             raise ValidationError(
                                 "Delivery and review require distinct native sessions"
                             )
+                        if any(
+                            item.get("session", {}).get("host_key") == host_key
+                            and item.get("session", {}).get("thread_id") == thread_id
+                            for item in evidence.get("review_replacements", [])
+                        ):
+                            raise ValidationError(
+                                "Replacement reviewer must use a fresh native session"
+                            )
                         sessions[phase] = {
                             **identity,
                             "thread_id": thread_id,
@@ -2408,7 +2862,15 @@ def run_delivery(
                         evidence[phase]["validation_error"] = validation_error
                         valid = False
                 # Error receipts can still identify the exact native session for explicit requeue.
-                elif sessions.get(phase) is None and result.thread_id:
+                elif (
+                    sessions.get(phase) is None
+                    and result.thread_id
+                    and not any(
+                        item.get("session", {}).get("host_key") == host_key
+                        and item.get("session", {}).get("thread_id") == result.thread_id
+                        for item in evidence.get("review_replacements", [])
+                    )
+                ):
                     sessions[phase] = {
                         **identity,
                         "thread_id": result.thread_id,
@@ -2438,6 +2900,10 @@ def run_delivery(
 
                 if workflow_step is None and valid:
                     evidence[phase]["validated_outcome"] = decision
+                if phase == "review":
+                    # Terminal results end this continuation even when blocked,
+                    # invalid or rejected. Only controller loss retains it.
+                    evidence.pop("review_replacement_active", None)
 
                 repair = (
                     valid
@@ -2624,6 +3090,7 @@ def run_delivery(
                     break
             ticket_key = None
     except Exception as error:
+        evidence.pop("review_replacement_active", None)
         with managed_launch_lock, session_factory() as session:
             repo = TrackerRepository(session)
             task = _task(repo, project_id, task_key)
@@ -2637,6 +3104,10 @@ def run_delivery(
                     _save_evidence(repo, project_id, ticket_key, evidence)
                 return
             if ticket_key is not None:
+                if isinstance(error, ValidationError) and (error.data or {}).get("code") == (
+                    "execution_requirement_mismatch"
+                ):
+                    evidence["execution_requirement_mismatch"] = deepcopy(error.data)
                 plans = RunPlanRepository(session)
                 ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
                 step = _workflow_step(plans, state, ticket)

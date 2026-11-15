@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.24
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.25
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.8.6 source contract
+Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -526,6 +526,8 @@ unsupported frozen/live jobs; manual reviewed adoption remains separate.
 
 ## Explicit Current-Project Source Adoption
 
+For engineering ready_to_use setup, consume the effective method's required_role_claims, including reviewer_verification bound to review_agent when review requires tools, scratch writes or isolated fixtures. Save execution_requirements.filesystem_write=true for test/scratch-running reviewers through the canonical defaults owner; preserve explicit false for inspection-only review. The selected reviewer itself executes one project-selected bounded representative check under its actual native snapshot and normal approvals. Generic native success or coordinator verification_status cannot prove reviewer capability. Record claims, status, environment_ref and evidence_ref in setup_activation_checks in the reviewer's native outputs; the evidence ref retains command, exit status and observed results. The existing setup receipt binds completed task_phase evidence (task_id, ticket_id, attempt, phase, invocation_id, outcome_digest), or a setup-owned native_request carrying the actual frozen specialist snapshot and retired outcome, to current project/binding, role/host, source ref/digest when source-backed, resolved settings and environment. Inline hosts retain their actual snapshot without invented refs. Reuse valid completed coverage, including retained attempts; changed relevant source/settings/capability or environment invalidates only affected claims. For fresh managed setup, verification reports one role_verification_request with role, exact missing claims, project-selected bounded instructions, environment_ref and evidence_ref. The existing owner runs that selected specialist in a distinct native session through its finite request continuation, then resumes the retained coordinator with completed_role_verifications. Explicit recovery retains both actual sessions. Run only missing harmless checks in the existing authorized setup/task; no new receipt store, whole-workflow canary, separate proof task or all-host matrix. A denial stops that write and dependent proof; continue authorized alternatives and unrelated work, leaving required unavailable proof unfinished. Preserve infrastructure_only preparation and frozen sessions. Explicit replace_review recovery requires operator authorization and a quiescent stopped review, preserves candidate/delivery/failed reviewer history and consumed repair allowance, and never implies automatic retry, global trust changes or installed activation.
+
 For ordinary `ready_to_use` Setup/Update or explicit automatic-delivery activation,
 apply the effective `engineering.tracked-delivery` `setup_activation_method` policy.
 Only explicit `infrastructure_only` stops at preparation and creates no execution
@@ -583,6 +585,8 @@ not authorize a restart of the daemon orchestrating the active task. Source vali
 adoption, isolated native consumption or installed activation complete.
 
 ## Recovery And Closeout
+
+Use tracker.startDelivery with replace_review only under explicit operator authorization for one quiescent stopped ordinary review on its exact clean successful delivery candidate. Pin the expected attempt, native review thread, candidate and current resolved reviewer snapshot digest; optional reviewer_source pins an approved existing same-project binding/source/digest. Use canonical current reviewer selection, preserve host/provider/profile and task-only routing, and never supply raw execution overrides. Retain completed delivery, retired review/session/snapshot/findings/attempts and consumed repair allowance. This explicit transition launches only fresh independent review; ordinary rehandoff and source edits never imply replacement. Reject live, stale, foreign, dirty or ineligible work; replacement failure stays stopped. Inspect original and replacement evidence through existing tracker reads. Specialists return evidence unless explicitly assigned recovery authority; never repair tracker metadata manually or claim installed activation from source proof.
 
 Ordinary scoped repairs stay in the active step. On a stop use concrete
 command/tool results and prerequisite state to distinguish a repairable owner

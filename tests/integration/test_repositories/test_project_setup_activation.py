@@ -8,6 +8,7 @@ for this checkout or any installed host.
 # ruff: noqa: F811
 
 import copy
+import json
 
 import pytest
 from pydantic import ValidationError as ModelValidationError
@@ -51,9 +52,125 @@ def report_result(attempt, opened, *, status="success", result=None, revision=1)
     )
 
 
-def activation_result(attempt, session, *, workflow_key=KEY):
+def reviewer_check(attempt, session, result, *, agent=None):
+    """Synthetic native envelope, never a claim of real host execution."""
+    from stackos.db.models import TrackerTicket
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.tracker import TrackerRepository
+    from stackos.task_delivery import resolve_delivery_settings
+
+    project, _, repo = attempt
+    tracker = TrackerRepository(session)
+    defaults = tracker.delivery_defaults(project_id=project)
+    if agent is None and not defaults.get("agents", {}).get("review_agent"):
+        tracker.configure_delivery(
+            project_id=project,
+            delivery={
+                **defaults,
+                "host_key": "claude-code",
+                "agents": {
+                    "review_agent": {
+                        "name": "fixture-reviewer",
+                        "instructions": "Run a bounded check",
+                        "execution_requirements": {"filesystem_write": True},
+                    }
+                },
+            },
+        )
+    root = ProjectRepository(session).get(project).project_dir
+    agent = (
+        agent
+        or resolve_delivery_settings(
+            session, project_id=project, project_dir=root, role_keys={"review_agent"}
+        )["agents"]["review_agent"]
+    )
+    binding = repo.execution_binding(project, "review_agent", agent)
+    observation = dict(
+        claims=["reviewer_verification"],
+        status="passed",
+        environment_ref="fixture/native",
+        evidence_ref="fixture/reviewer-check",
+    )
+    raw = dict(
+        status="success",
+        summary="Synthetic reviewer check",
+        followups=[],
+        outputs=json.dumps({"setup_activation_checks": [observation]}),
+    )
+    phase = dict(
+        agent=agent["name"],
+        selected_role="review_agent",
+        thread_id="fixture-review-session",
+        launch={
+            "agent": agent["name"],
+            "project_dir": root,
+            "sandbox": repo._launch_sandbox(agent, "review_agent"),
+            **{
+                key: agent[key]
+                for key in (
+                    "host_key",
+                    "source_ref",
+                    "source_digest",
+                    "model",
+                    "model_reasoning_effort",
+                    "provider",
+                    "profile",
+                    "native_settings",
+                )
+                if key in agent
+            },
+        },
+        execution={
+            "invocation_id": "fixture-review-invocation",
+            "ticket_key": "setup-proof-check",
+            "agent": agent["name"],
+            "host_key": agent["host_key"],
+        },
+        finished_at="2026-11-14T00:00:00Z",
+        exit_code=0,
+        error=None,
+        validated_outcome="success",
+        result=raw,
+    )
+    tracker.create_task(project_id=project, key="setup-proof", title="Disposable proof")
+    ticket = tracker.create_ticket(
+        project_id=project, task_key="setup-proof", key="setup-proof-check", title="Check"
+    )
+    row = session.get(TrackerTicket, ticket.data.ticket.id)
+    row.completion_evidence_json = {
+        "automatic_delivery": {
+            "attempt": 1,
+            "review": phase,
+            "sessions": {"review": {"thread_id": phase["thread_id"], "agent_snapshot": agent}},
+        }
+    }
+    session.add(row)
+    session.commit()
+    return dict(
+        claims=observation["claims"],
+        origin="reused",
+        status="passed",
+        basis=repo.activation_basis(project, result.verification, environment_ref="fixture/native"),
+        reference=dict(
+            kind="task_phase",
+            task_id=row.task_id,
+            ticket_id=row.id,
+            attempt=1,
+            phase="review",
+            invocation_id="fixture-review-invocation",
+            outcome_digest=_digest(raw),
+        ),
+        evidence_ref=observation["evidence_ref"],
+        execution=binding,
+    )
+
+
+def activation_result(attempt, session, *, workflow_key=KEY, reviewer=True):
     project, _, repo = attempt
     result = verified_result(repo, project, workflow_key)
+    role_check = (
+        reviewer_check(attempt, session, result) if reviewer and workflow_key == KEY else None
+    )
     basis = repo.activation_basis(project, result.verification, environment_ref="fixture/native")
     native_result = {"status": "success", "summary": "Checked native setup", "run_plan_id": None}
     native = AgentRequest(
@@ -77,7 +194,8 @@ def activation_result(attempt, session, *, workflow_key=KEY):
     result.verification.activation_proof = SetupActivationEvidence(
         method_ref="fixture/selected-workflow-method",
         status="verified",
-        required_claims=["saved_defaults", "native_consumption", "behavior"],
+        required_claims=["saved_defaults", "native_consumption", "behavior"]
+        + (["reviewer_verification"] if role_check else []),
         checks=[
             {
                 "claims": ["saved_defaults", "native_consumption", "behavior"],
@@ -91,7 +209,8 @@ def activation_result(attempt, session, *, workflow_key=KEY):
                 },
                 "evidence_ref": "fixture/observed-check",
             }
-        ],
+        ]
+        + ([role_check] if role_check else []),
     )
     return result, native
 
@@ -103,6 +222,249 @@ def test_new_call_default_and_absent_stored_scope_have_distinct_meaning(attempt)
     legacy = opened.attempt.model_dump(mode="json")
     legacy.pop("requested_scope")
     assert SetupAttempt.model_validate(legacy).requested_scope == "infrastructure_only"
+
+
+def test_engineering_generic_native_success_cannot_prove_reviewer(attempt, session):
+    from stackos.repositories.tracker import TrackerRepository
+
+    TrackerRepository(session).configure_delivery(
+        project_id=attempt[0],
+        delivery={
+            "host_key": "claude-code",
+            "agents": {
+                "review_agent": {
+                    "name": "reviewer",
+                    "instructions": "Run a bounded check",
+                    "execution_requirements": {"filesystem_write": True},
+                }
+            },
+        },
+    )
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session, reviewer=False)
+    with pytest.raises(ValidationError, match="role claim"):
+        report_result(attempt, opened, result=result)
+
+
+@pytest.mark.parametrize("requirements", [None, {"filesystem_write": False}])
+def test_inspection_only_method_does_not_require_write_capability(attempt, session, requirements):
+    from stackos.repositories.tracker import TrackerRepository
+
+    choice = {"name": "inspection", "instructions": "Inspect only"}
+    if requirements is not None:
+        choice["execution_requirements"] = requirements
+    TrackerRepository(session).configure_delivery(
+        project_id=attempt[0],
+        delivery={
+            "host_key": "claude-code",
+            "agents": {"review_agent": choice},
+        },
+    )
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session, reviewer=False)
+    assert report_result(attempt, opened, result=result).status == "success"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "binding",
+        "role",
+        "settings",
+        "environment",
+        "generic",
+        "failed",
+        "cancelled",
+        "simulated",
+        "invocation",
+        "foreign",
+        "task",
+        "source",
+        "missing-snapshot",
+        "coordinator",
+    ],
+)
+def test_reviewer_claim_requires_actual_current_native_check(attempt, session, tmp_path, failure):
+    from stackos.db.models import TrackerTicket
+
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session)
+    check = result.verification.activation_proof.checks[1]
+    row = session.get(TrackerTicket, check.reference.ticket_id)
+    metadata = copy.deepcopy(row.completion_evidence_json)
+    phase = metadata["automatic_delivery"]["review"]
+    if failure == "binding":
+        check.execution = None
+    elif failure == "role":
+        check.execution.role = "delivery_agent"
+    elif failure == "settings":
+        phase["launch"]["model"] = "another-model"
+    elif failure == "environment":
+        check.basis.environment_ref = "different-environment"
+    elif failure == "generic":
+        phase["result"]["outputs"] = "{}"
+        check.reference.outcome_digest = _digest(phase["result"])
+    elif failure == "failed":
+        phase["exit_code"] = 1
+    elif failure == "cancelled":
+        phase["cancelled"] = True
+    elif failure == "simulated":
+        check.origin = "simulated"
+    elif failure == "invocation":
+        check.reference.invocation_id = "another-invocation"
+    elif failure == "foreign":
+        from stackos.repositories.workspaces import WorkspaceRepository
+
+        folder = tmp_path / "foreign-proof"
+        folder.mkdir()
+        row.project_id = WorkspaceRepository(session).bootstrap(cwd=str(folder)).project_id
+    elif failure == "task":
+        check.reference.task_id += 999
+    elif failure == "source":
+        check.execution.source_digest = "f" * 64
+    elif failure == "missing-snapshot":
+        metadata["automatic_delivery"]["sessions"]["review"].pop("agent_snapshot")
+    elif failure == "coordinator":
+        check.reference = result.verification.activation_proof.checks[0].reference
+    row.completion_evidence_json = metadata
+    session.add(row)
+    session.commit()
+    with pytest.raises((ConflictError, ValidationError, ModelValidationError), match="activation"):
+        report_result(attempt, opened, result=result)
+    assert attempt[2].get(attempt[0]).configured_count == 0
+
+
+def test_failed_reviewer_observation_stays_visible_without_readiness_credit(attempt, session):
+    from stackos.db.models import TrackerTicket
+
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session)
+    activation = result.verification.activation_proof
+    check = activation.checks[1]
+    row = session.get(TrackerTicket, check.reference.ticket_id)
+    evidence = copy.deepcopy(row.completion_evidence_json)
+    receipt = evidence["automatic_delivery"]["review"]
+    receipt["exit_code"] = 1
+    receipt["validated_outcome"] = "failed"
+    receipt["result"]["status"] = "failed"
+    outputs = json.loads(receipt["result"]["outputs"])
+    outputs["setup_activation_checks"][0]["status"] = "failed"
+    receipt["result"]["outputs"] = json.dumps(outputs)
+    check.reference.outcome_digest = _digest(receipt["result"])
+    check.status = "failed"
+    activation.status = "blocked"
+    activation.diagnostic = "Reviewer check exited 1; preserve evidence and repair its owned setup"
+    row.completion_evidence_json = evidence
+    session.add(row)
+    session.commit()
+    saved = report_result(attempt, opened, status="running", result=result)
+    assert saved.outcomes[KEY].missing_activation_claims == ["reviewer_verification"]
+    assert saved.outcomes[KEY].activation_status == "blocked"
+    assert activation.checks[0].status == "passed"  # unaffected generic coverage is retained
+
+
+def test_completed_reviewer_in_approved_secondary_tree_is_reusable(attempt, session, tmp_path):
+    from stackos.db.models import TrackerTicket
+    from stackos.repositories.workspaces import WorkspaceRepository
+
+    project, _, repo = attempt
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session)
+    check = result.verification.activation_proof.checks[1]
+    tree = tmp_path / "task-tree"
+    tree.mkdir()
+    binding = (
+        WorkspaceRepository(session)
+        .connect(
+            project_id=project, last_known_root=str(tree), repo_fingerprint="fixture:task-tree"
+        )
+        .data
+    )
+    row = session.get(TrackerTicket, check.reference.ticket_id)
+    evidence = copy.deepcopy(row.completion_evidence_json)
+    evidence["automatic_delivery"]["review"]["launch"]["project_dir"] = str(tree)
+    row.completion_evidence_json = evidence
+    session.add(row)
+    session.commit()
+    check.execution.binding_id = binding.id
+    assert (
+        report_result(attempt, opened, status="running", result=result)
+        .outcomes[KEY]
+        .activation_status
+        == "verified"
+    )
+    # Merely naming a different binding cannot relabel the actual launched tree.
+    check.execution.binding_id = check.basis.binding_id
+    with pytest.raises(ConflictError, match="source binding"):
+        repo._validate_activation(project, result.verification)
+
+
+@pytest.mark.parametrize("historical", [False, True])
+def test_reviewer_task_phase_reuses_completed_exact_source_snapshot(attempt, session, historical):
+    from pathlib import Path
+
+    from stackos.db.models import TrackerTicket
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.tracker import TrackerRepository
+    from tests.integration.test_repositories.test_task_delivery_sources import source
+
+    project, _, repo = attempt
+    root = Path(ProjectRepository(session).get(project).project_dir)
+    ref = source(session, project, root, "reviewer", settings='sandbox_mode="workspace-write"\n')
+    TrackerRepository(session).configure_delivery(
+        project_id=project,
+        delivery={
+            "host_key": "codex",
+            "agents": {
+                "review_agent": {
+                    "source_ref": ref,
+                    "execution_requirements": {"filesystem_write": True},
+                }
+            },
+        },
+    )
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session)
+    check = result.verification.activation_proof.checks[1]
+    row = session.get(TrackerTicket, check.reference.ticket_id)
+    if historical:
+        evidence = copy.deepcopy(row.completion_evidence_json)
+        automatic = evidence["automatic_delivery"]
+        automatic["attempts"] = [{"attempt": 1, "review": automatic.pop("review")}]
+        automatic["attempt"] = 2
+        row.completion_evidence_json = evidence
+        session.add(row)
+        session.commit()
+    assert (
+        report_result(attempt, opened, status="running", result=result)
+        .outcomes[KEY]
+        .activation_status
+        == "verified"
+    )
+    # Changing an unrelated default invalidates saved readback, not the executed
+    # reviewer identity. Refresh the basis and reuse that exact native check.
+    tracker = TrackerRepository(session)
+    tracker.configure_delivery(
+        project_id=project,
+        delivery={
+            **tracker.delivery_defaults(project_id=project),
+            "main_agent": {"host_key": "codex"},
+        },
+    )
+    for item in result.verification.activation_proof.checks:
+        item.basis = repo.activation_basis(
+            project, result.verification, environment_ref=item.basis.environment_ref
+        )
+    repo._validate_activation(project, result.verification)
+    path = root / ref["source_path"]
+    path.write_text(path.read_text() + "\n# newer guidance\n")
+    # Even rebasing the receipt cannot relabel a frozen old source as current.
+    for item in result.verification.activation_proof.checks:
+        item.basis = repo.activation_basis(
+            project, result.verification, environment_ref=item.basis.environment_ref
+        )
+    with pytest.raises(ConflictError, match="native execution"):
+        repo._validate_activation(project, result.verification)
 
 
 def test_ready_to_use_cannot_finish_with_preparation_only(attempt):
@@ -156,7 +518,7 @@ def test_current_reused_native_evidence_can_complete_without_new_workflow(attemp
         workflow.successful["verification"]["activation_proof"]["checks"][0]["origin"] == "reused"
     )
     assert not session.exec(select(RunPlan)).all()
-    assert not session.exec(select(TrackerTask)).all()
+    assert len(session.exec(select(TrackerTask)).all()) == 1  # existing completed proof owner
 
 
 @pytest.mark.parametrize(

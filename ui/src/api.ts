@@ -2601,6 +2601,17 @@ export interface components {
             /** Unsupported Fields */
             unsupported_fields?: string[];
         };
+        /**
+         * AgentExecutionRequirements
+         * @description Assignment needs, never native permission grants.
+         */
+        AgentExecutionRequirements: {
+            /**
+             * Filesystem Write
+             * @default false
+             */
+            filesystem_write: boolean;
+        };
         /** AgentFields */
         AgentFields: {
             /** Description */
@@ -8488,6 +8499,29 @@ export interface components {
             /** Workflow Keys */
             workflow_keys: string[];
         };
+        /**
+         * SetupExecutionBinding
+         * @description Identity of the role which actually performed a declared check.
+         */
+        SetupExecutionBinding: {
+            /** Agent */
+            agent: string;
+            /** Binding Id */
+            binding_id: number;
+            /** Host Key */
+            host_key: string;
+            /** Role */
+            role: string;
+            /** Settings Digest */
+            settings_digest: string;
+            /**
+             * Source Digest
+             * @default null
+             */
+            source_digest: string | null;
+            /** @default null */
+            source_ref: components["schemas"]["AgentSourceRef"] | null;
+        };
         /** SetupManagedExecution */
         SetupManagedExecution: {
             /** Admission Id */
@@ -8515,6 +8549,11 @@ export interface components {
              */
             cancel_requested: boolean;
             /**
+             * Coordinator Thread Id
+             * @default null
+             */
+            coordinator_thread_id: string | null;
+            /**
              * Diagnostic
              * @default null
              */
@@ -8537,6 +8576,10 @@ export interface components {
              * @default null
              */
             resume_thread_id: string | null;
+            /** @default null */
+            role_check: components["schemas"]["SetupNativeRoleCheck"] | null;
+            /** Role Verification Request Ids */
+            role_verification_request_ids?: number[];
             /** Settings */
             settings: {
                 [key: string]: unknown;
@@ -8551,6 +8594,17 @@ export interface components {
              * @default null
              */
             verification_request_id: number | null;
+        };
+        /** SetupNativeRoleCheck */
+        SetupNativeRoleCheck: {
+            /** Agent Snapshot */
+            agent_snapshot: {
+                [key: string]: unknown;
+            };
+            execution: components["schemas"]["SetupExecutionBinding"];
+            request: components["schemas"]["SetupRoleCheckRequest"];
+            /** Workflow Key */
+            workflow_key: string;
         };
         /** SetupProgress */
         SetupProgress: {
@@ -8606,10 +8660,28 @@ export interface components {
             status: string;
         };
         /**
+         * SetupRoleCheckRequest
+         * @description Project-selected bounded proof, executed by the existing setup owner.
+         */
+        SetupRoleCheckRequest: {
+            /** Claims */
+            claims: string[];
+            /** Environment Ref */
+            environment_ref: string;
+            /** Evidence Ref */
+            evidence_ref: string;
+            /** Instructions */
+            instructions: string;
+            /** Role */
+            role: string;
+        };
+        /**
          * SetupRoleProposal
          * @description A bounded selection for the existing defaults owner, never write authority.
          */
         SetupRoleProposal: {
+            /** @default null */
+            execution_requirements: components["schemas"]["AgentExecutionRequirements"] | null;
             /** Expected Digest */
             expected_digest: string;
             /** Host Key */
@@ -8872,6 +8944,8 @@ export interface components {
          * @description Task choices may omit fields supplied by project defaults.
          */
         TaskDeliveryAgentOverride: {
+            /** @default null */
+            execution_requirements: components["schemas"]["AgentExecutionRequirements"] | null;
             /**
              * Host Key
              * @default null
@@ -11605,6 +11679,7 @@ export type SchemaActiveTaskOut = components['schemas']['ActiveTaskOut'];
 export type SchemaActiveTaskProjectOut = components['schemas']['ActiveTaskProjectOut'];
 export type SchemaActiveTasksOut = components['schemas']['ActiveTasksOut'];
 export type SchemaAgentDefinition = components['schemas']['AgentDefinition'];
+export type SchemaAgentExecutionRequirements = components['schemas']['AgentExecutionRequirements'];
 export type SchemaAgentFields = components['schemas']['AgentFields'];
 export type SchemaAgentList = components['schemas']['AgentList'];
 export type SchemaAgentPatch = components['schemas']['AgentPatch'];
@@ -11796,10 +11871,13 @@ export type SchemaSetDeliveryCapacityInput = components['schemas']['SetDeliveryC
 export type SchemaSetupAdoptionProposal = components['schemas']['SetupAdoptionProposal'];
 export type SchemaSetupAnswer = components['schemas']['SetupAnswer'];
 export type SchemaSetupAttempt = components['schemas']['SetupAttempt'];
+export type SchemaSetupExecutionBinding = components['schemas']['SetupExecutionBinding'];
 export type SchemaSetupManagedExecution = components['schemas']['SetupManagedExecution'];
+export type SchemaSetupNativeRoleCheck = components['schemas']['SetupNativeRoleCheck'];
 export type SchemaSetupProgress = components['schemas']['SetupProgress'];
 export type SchemaSetupQuestion = components['schemas']['SetupQuestion'];
 export type SchemaSetupReportReceipt = components['schemas']['SetupReportReceipt'];
+export type SchemaSetupRoleCheckRequest = components['schemas']['SetupRoleCheckRequest'];
 export type SchemaSetupRoleProposal = components['schemas']['SetupRoleProposal'];
 export type SchemaSetupSource = components['schemas']['SetupSource'];
 export type SchemaSetupStartOut = components['schemas']['SetupStartOut'];
@@ -15665,6 +15743,7 @@ export enum SetupAttemptStatus {
 export enum SetupManagedExecutionPhase {
     preparation = "preparation",
     verification = "verification",
+    role_verification = "role_verification",
     completion = "completion"
 }
 export enum SetupQuestionAnswer_state {

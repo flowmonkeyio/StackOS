@@ -606,8 +606,7 @@ def run_agent(
     )
     if error:
         return AgentRunResult(None, error=error)
-    if host_key == "codex":
-        sandbox = codex.native_agent_sandbox(sandbox, native_settings or {})
+    sandbox = effective_agent_sandbox(host_key, sandbox, native_settings)
     definition = _definition_by_key(host_key)
     if definition is None or definition.run_agent is None:
         return AgentRunResult(None, error=f"Host {host_key!r} does not support agent execution.")
@@ -794,6 +793,15 @@ def _attach_session(
         # lock first: stop() owns its process lock before taking the launch lock.
         call.process_control.stop()
         raise
+
+
+def effective_agent_sandbox(
+    host_key: str, sandbox: AgentSandbox, native_settings: dict[str, Any] | None = None
+) -> AgentSandbox:
+    """Resolve the reduction used by native launch without granting permissions."""
+    if host_key == "codex":
+        return codex.native_agent_sandbox(sandbox, native_settings or {})
+    return sandbox
 
 
 def agent_review_sandbox(host_key: str) -> AgentSandbox:
