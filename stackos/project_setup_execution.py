@@ -88,6 +88,16 @@ outputs with claims, status, environment_ref and evidence_ref; retain command, e
 results at that reference. Bind the setup check to the actual role/source/settings and completed
 invocation. Missing required role capability remains unfinished; never invent a task or session
 replacement merely to produce proof.
+During managed verification, reuse matching role checks in partial workflow activation evidence.
+If applicable role proof is missing, return a partial report with one role_verification_request:
+role, exact missing claims, project-selected bounded instructions, environment_ref and evidence_ref.
+Do not substitute the coordinator's execution or invent a successful observation. The existing
+setup owner freezes the selected specialist and executes that check in a distinct native session
+through the same finite request continuation and normal permissions. It then resumes this exact
+coordinator session with completed_role_verifications carrying the retired native_request reference,
+actual execution binding, request and result. Use that reference in the existing setup receipt;
+combine it with completed_verification for covered generic claims. Failed or cancelled checks stop
+setup; explicit recovery retains the same specialist session and the original coordinator session.
 """
 
 
@@ -381,6 +391,23 @@ def continue_managed(
             and not current.answers
             and not native
         )
+        # A first specialist turn inherits earlier setup reports/possible edits.
+        # Those do not mean this fenced request launched. Only the owning
+        # callback/native evidence determines whether its first admission is safe.
+        never_started_role = bool(
+            not asking
+            and current.status in {"cancelled", "failed"}
+            and current.managed.phase == "role_verification"
+            and current.managed.role_check is not None
+            and current.managed.coordinator_thread_id
+            and current.managed.verification_request_id is not None
+            and recorded.get("managed", {}).get("callback_started") is False
+            and not current.managed.callback_started
+            and not native
+            and current.thread_id is None
+            and current.managed.resume_thread_id is None
+        )
+        never_started = never_started or never_started_role
         if (
             current.managed.slot_reserved
             or service.active_request_execution(project_id, request_id)
@@ -391,11 +418,25 @@ def continue_managed(
                 "prior native invocation has not retired; reconcile it before continuing",
                 data=repair,
             )
+        launched_role = native.get("snapshot", {}).get("context", {}).get("role_check")
+        announced_role = bool(
+            current.thread_id is None
+            and current.managed.role_check is not None
+            and launched_role == current.managed.role_check.model_dump(mode="json")
+            and identity.get("agent") == current.managed.role_check.agent_snapshot.get("name")
+        )
         if not never_started and (
             not isinstance(thread, str)
             or not thread.strip()
-            or thread != current.thread_id
-            or identity.get("host_key") != current.runtime
+            or (thread != current.thread_id and not announced_role)
+            or identity.get("host_key")
+            != (
+                native.get("snapshot", {})
+                .get("context", {})
+                .get("role_check", {})
+                .get("agent_snapshot", {})
+                .get("host_key", current.runtime)
+            )
             or (
                 current.managed.resume_thread_id is not None
                 and thread != current.managed.resume_thread_id
@@ -498,6 +539,13 @@ def continue_managed(
             )
         current.successor_request_id = successor.id
         current.revision += 1
+        next_thread = thread
+        if current.managed.role_check is not None and not launched_role:
+            next_thread = None  # First admission of the bounded specialist, not a replacement.
+        elif current.managed.role_check is None and launched_role:
+            next_thread = current.managed.coordinator_thread_id
+            if not next_thread:
+                raise ConflictError("Retained setup coordinator session identity is missing")
         next_attempt = current.model_copy(
             deep=True,
             update={
@@ -507,20 +555,24 @@ def continue_managed(
                 "status": "queued",
                 "question": None,
                 "session_id": None,
+                "thread_id": next_thread,
                 "remaining_workflow_keys": remaining,
                 "revalidate_workflow_keys": revalidate,
                 # Native failure/cancellation cannot establish unchanged files.
-                "partial_changes_possible": not never_started,
+                "partial_changes_possible": current.partial_changes_possible or not never_started,
                 "managed": SetupManagedExecution(
                     settings=settings,
                     binding_id=current.managed.binding_id,
                     admission_id=_admission_id(scheduler),
                     job_ref=f"project-setup:{project_id}:{secrets.token_hex(12)}",
-                    resume_thread_id=thread,
+                    resume_thread_id=next_thread,
                     adoption_authorized=current.managed.adoption_authorized,
                     phase=current.managed.phase,
                     adopted_delivery_digest=current.managed.adopted_delivery_digest,
                     verification_request_id=current.managed.verification_request_id,
+                    coordinator_thread_id=current.managed.coordinator_thread_id,
+                    role_check=current.managed.role_check,
+                    role_verification_request_ids=current.managed.role_verification_request_ids,
                 ),
             },
         )
@@ -533,7 +585,9 @@ def continue_managed(
         row.claim_token_hash = None
         row.status = (
             AgentRequestStatus.RESOLVED
-            if asking or current.managed.verification_request_id == request_id
+            if asking
+            or current.managed.verification_request_id == request_id
+            or request_id in current.managed.role_verification_request_ids
             else AgentRequestStatus.FAILED
         )
         row.completed_at = row.updated_at = now
@@ -702,6 +756,11 @@ def _adopt_managed(session, project_id, request_id, claim_token):
         project_dir=proposal.project_dir,
         sources=sources,
         inline_roles=inline,
+        _execution_requirements={
+            role: selection.execution_requirements.model_dump()
+            for role, selection in proposal.roles.items()
+            if selection.execution_requirements is not None
+        },
     )
     preview = tracker.adopt_delivery_sources(**arguments, preview=True)
     if any(
@@ -710,32 +769,75 @@ def _adopt_managed(session, project_id, request_id, claim_token):
     ):
         raise ConflictError("Adoption cannot change the intended native host")
     tracker.adopt_delivery_sources(**arguments, preview=False, _commit=False)
-    requirements = {
-        role: selection.execution_requirements.model_dump()
-        for role, selection in proposal.roles.items()
-        if selection.execution_requirements is not None
-    }
-    if requirements:
-        # The same authorized defaults owner saves declared needs atomically with
-        # source adoption. Omission preserves compatible existing requirements.
-        updated = tracker.delivery_defaults(project_id=project_id)
-        for role, needed in requirements.items():
-            updated["agents"][role]["execution_requirements"] = needed
-        tracker.configure_delivery(project_id=project_id, delivery=updated, _commit=False)
-        from stackos.task_delivery import resolve_delivery_settings
-
-        resolve_delivery_settings(
-            session,
-            project_id=project_id,
-            project_dir=proposal.project_dir,
-            role_keys=set(proposal.roles),
-        )
     current.managed.phase = "verification"
     current.managed.adopted_delivery_digest = _digest(
         tracker.delivery_defaults(project_id=project_id)
     )
     # Adoption and its receipt commit together. A retry cannot repeat the write.
     _save(session, row, current)
+
+
+def _missing_role_check(session, project_id, current, report):
+    from stackos.repositories.project_setup import (
+        ProjectSetupRepository,
+        SetupNativeRoleCheck,
+        VerifiedSetup,
+    )
+    from stackos.task_delivery import resolve_delivery_settings
+
+    repo = ProjectSetupRepository(session)
+    missing = {}
+    claim_workflows = {}
+    for key in current.workflow_keys:
+        required = repo.activation_role_claims(project_id, repo.inspect_sources(project_id, key))
+        receipt = repo._row(project_id, key)
+        raw = (receipt.latest_result_json or {}).get("verification") if receipt else None
+        if raw:
+            proof = VerifiedSetup.model_validate(raw)
+            if proof.activation_proof:
+                try:
+                    repo._validate_activation(project_id, proof)
+                    covered = {
+                        claim
+                        for check in proof.activation_proof.checks
+                        if check.status == "passed" and check.origin != "simulated"
+                        for claim in check.claims
+                    }
+                    required = {
+                        claim: role for claim, role in required.items() if claim not in covered
+                    }
+                except (ValidationError, ConflictError):
+                    pass  # Retain stale observations; they cannot cover the missing check.
+        for claim, role in required.items():
+            if claim in missing and missing[claim] != role:
+                raise ConflictError("Applicable workflow role claims conflict")
+            missing[claim] = role
+            claim_workflows[claim] = key
+    if not missing:
+        return None
+    request = report.role_verification_request
+    if (
+        request is None
+        or set(missing.values()) != {request.role}
+        or set(request.claims) != set(missing)
+    ):
+        raise ValidationError(
+            "Missing applicable role proof needs one project-selected bounded "
+            "role_verification_request",
+            data={"missing_role_claims": missing, "next_action": "complete_activation"},
+        )
+    agent = resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=current.managed.settings["project_dir"],
+        role_keys={request.role},
+    )["agents"][request.role]
+    return SetupNativeRoleCheck(
+        workflow_key=claim_workflows[request.claims[0]],
+        request=request,
+        agent_snapshot=agent,
+        execution=repo.execution_binding(project_id, request.role, agent),
+    )
 
 
 def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler):
@@ -778,7 +880,12 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
         previous_usage = None
         if attempt.predecessor_request_id is not None:
             previous, _ = _load(session, project_id, attempt.predecessor_request_id)
-            previous_usage = (previous.metadata_json or {}).get("native_execution", {}).get("usage")
+            previous_native = (previous.metadata_json or {}).get("native_execution", {})
+            if (
+                previous_native.get("execution", {}).get("thread_id")
+                == attempt.managed.resume_thread_id
+            ):
+                previous_usage = previous_native.get("usage")
     try:
         if not allowed():
             raise ValidationError(
@@ -851,15 +958,84 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                         },
                         "result": native["result"],
                     }
+                context["completed_role_verifications"] = []
+                for role_request_id in attempt.managed.role_verification_request_ids:
+                    verified, _ = _load(session, project_id, role_request_id)
+                    native = verified.metadata_json["native_execution"]
+                    role_check = native["snapshot"]["context"]["role_check"]
+                    context["completed_role_verifications"].append(
+                        {
+                            "reference": {
+                                "kind": "native_request",
+                                "request_id": verified.id,
+                                "invocation_id": native["execution"]["invocation_id"],
+                                "outcome_digest": _digest(native["result"]),
+                            },
+                            "execution": role_check["execution"],
+                            "request": role_check["request"],
+                            "result": native["result"],
+                        }
+                    )
+        role_check = attempt.managed.role_check
+        settings = dict(attempt.managed.settings)
+        instructions, schema, agent_name = INSTRUCTIONS, RESULT_SCHEMA, "project-setup"
+        if role_check is not None:
+            from stackos.task_delivery import (
+                RESULT_SCHEMA as ROLE_RESULT_SCHEMA,
+            )
+            from stackos.task_delivery import (
+                _validate_execution_requirements,
+            )
+
+            role = role_check.request.role
+            agent = role_check.agent_snapshot
+            if context["adoption_readback"]["agents"].get(role) != agent:
+                raise ConflictError(
+                    "Selected role changed before native verification; "
+                    "retained snapshot stays frozen"
+                )
+            context["role_check"] = role_check.model_dump(mode="json")
+            context["assignment"] = (
+                "Execute only this bounded capability check using your actual role, "
+                "normal permissions and owned scratch/isolated fixtures. Do not change "
+                "project sources, defaults, setup state or external resources. Report "
+                "command, exit and observed results at the evidence_ref and include "
+                "setup_activation_checks in JSON-encoded outputs with the supplied "
+                "claims, status, environment_ref and evidence_ref. Missing required "
+                "proof is blocked. Verify the supplied environment identity against actual "
+                "tools/session and block on mismatch. This check does not accept setup "
+                "or install guidance."
+            )
+            settings = {
+                "project_dir": attempt.managed.settings["project_dir"],
+                "host_key": agent["host_key"],
+                "sandbox": _validate_execution_requirements(role, agent, phase="review"),
+                **{
+                    key: agent[key]
+                    for key in (
+                        "model",
+                        "model_reasoning_effort",
+                        "provider",
+                        "profile",
+                        "native_settings",
+                    )
+                    if key in agent
+                },
+            }
+            instructions, schema, agent_name = (
+                agent["instructions"],
+                ROLE_RESULT_SCHEMA,
+                agent["name"],
+            )
         native_entered = True
         result = service.run_agent(
-            **attempt.managed.settings,
-            instructions=INSTRUCTIONS,
-            prompt=json.dumps({**context, "claim_token": claim_token}),
-            output_schema=RESULT_SCHEMA,
+            **settings,
+            instructions=instructions,
+            prompt=json.dumps(context if role_check else {**context, "claim_token": claim_token}),
+            output_schema=schema,
             launch_allowed=allowed,
             execution_scope=service.AgentExecutionScope(
-                project_id, request_id=request_id, agent="project-setup"
+                project_id, request_id=request_id, agent=agent_name
             ),
             request_execution=AgentRequestExecution(
                 project_id,
@@ -872,14 +1048,34 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
             resume_thread_id=attempt.managed.resume_thread_id,
             previous_usage=previous_usage,
         )
-        result = validate_agent_result(result, RESULT_SCHEMA, attempt.runtime)
+        result = validate_agent_result(result, schema, settings["host_key"])
         with managed_launch_lock, session_factory() as session:
             _, current = _load(session, project_id, request_id)
             if current.managed.cancel_requested:
                 return
             if not result.ok:
                 raise ValidationError(result.error or "Native setup failed")
-            report = SetupReport.model_validate_json(result.result["report_json"])
+            if role_check:
+                if result.result.get("status") != "success":
+                    raise ValidationError(
+                        "Selected reviewer bounded native check failed or was blocked"
+                    )
+                if (
+                    not result.thread_id
+                    or result.thread_id == current.managed.coordinator_thread_id
+                ):
+                    raise ValidationError(
+                        "Reviewer capability check requires an actual distinct native session"
+                    )
+                report = SetupReport(
+                    status="partial",
+                    progress={
+                        "message": result.result["summary"],
+                        "evidence_ref": role_check.request.evidence_ref,
+                    },
+                )
+            else:
+                report = SetupReport.model_validate_json(result.result["report_json"])
             if report.status == "success" and result.result.get("verification_status") in {
                 "failed",
                 "blocked",
@@ -918,7 +1114,50 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                 row, current = _load(session, project_id, request_id)
                 current.managed.phase = "completion"
                 current.managed.verification_request_id = request_id
+                current.managed.coordinator_thread_id = result.thread_id
+                current.managed.role_check = _missing_role_check(
+                    session, project_id, current, report
+                )
+                if current.managed.role_check:
+                    current.managed.phase = "role_verification"
                 _save(session, row, current)
+                continue_verification = True
+            elif current.status == "partial" and role_check is not None:
+                from stackos.repositories.project_setup import (
+                    SetupActivationCheck,
+                    VerifiedSetup,
+                    _digest,
+                )
+
+                row, current = _load(session, project_id, request_id)
+                current.managed.role_verification_request_ids.append(request_id)
+                current.managed.role_check = None
+                current.managed.phase = "completion"
+                row.status = AgentRequestStatus.RESOLVED
+                _save(session, row, current)
+                native = row.metadata_json["native_execution"]
+                repo = ProjectSetupRepository(session)
+                receipt = repo._row(project_id, role_check.workflow_key)
+                proof = VerifiedSetup.model_validate(receipt.latest_result_json["verification"])
+                # Reuse the same canonical validator before accepting the bounded
+                # outcome and resuming the coordinator. No caller success shortcut.
+                check = SetupActivationCheck(
+                    claims=role_check.request.claims,
+                    origin="executed",
+                    execution=role_check.execution,
+                    basis=repo.activation_basis(
+                        project_id, proof, environment_ref=role_check.request.environment_ref
+                    ),
+                    reference={
+                        "kind": "native_request",
+                        "request_id": request_id,
+                        "invocation_id": native["execution"]["invocation_id"],
+                        "outcome_digest": _digest(native["result"]),
+                    },
+                    evidence_ref=role_check.request.evidence_ref,
+                )
+                repo._validate_activation_reference(project_id, check)
+                repo._validate_role_check(project_id, check, {role_check.request.role})
                 continue_verification = True
     except Exception as exc:
         with managed_launch_lock, session_factory() as session:
@@ -948,6 +1187,7 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                         AgentRequestStatus.RESOLVED
                         if current.status == "success"
                         or current.managed.verification_request_id == request_id
+                        or request_id in current.managed.role_verification_request_ids
                         else AgentRequestStatus.FAILED
                     )
                     row.completed_at = datetime.now(UTC).replace(tzinfo=None)

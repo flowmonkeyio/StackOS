@@ -76,6 +76,7 @@ class TrackerSetupMixin:
         sources: dict[str, Any],
         preview: bool,
         inline_roles: dict[str, Any] | None = None,
+        _execution_requirements: dict[str, Any] | None = None,
         _commit: bool = True,
     ) -> dict[str, Any]:
         """Explicit local setup only: compare before replacing selected editable owners."""
@@ -139,6 +140,17 @@ class TrackerSetupMixin:
             }
             roles[role] = after
             proposed.pop(role, None)
+        from stackos.operations.tracker.schemas import AgentExecutionRequirements
+
+        selected_roles = sources.keys() | (inline_roles or {}).keys()
+        if (_execution_requirements or {}).keys() - selected_roles:
+            raise ValidationError("Execution requirements must belong to an adopted role")
+        for role, value in (_execution_requirements or {}).items():
+            needed = AgentExecutionRequirements.model_validate(value).model_dump()
+            before = roles[role].get("execution_requirements")
+            roles[role]["execution_requirements"] = needed
+            if before != needed:
+                differences[role]["execution_requirements"] = {"saved": before, "source": needed}
         proposed["agents"] = roles
         # Validate only migrated selections; unrelated hosts/settings are preserved verbatim.
         effective = resolve_delivery_settings(

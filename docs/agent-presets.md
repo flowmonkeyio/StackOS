@@ -141,7 +141,8 @@ native tool/scratch/fixture check under its actual role/settings and environment
 as declared by the effective method's `required_role_claims`. Generic native success
 cannot substitute for it. Reuse completed matching coverage and run only missing
 checks under normal approvals. Record `setup_activation_checks` in that native
-result and bind its canonical completed `task_phase` reference in the existing
+result and bind its canonical completed `task_phase` or actual specialist
+`native_request` reference in the existing
 setup receipt. Preserve frozen sessions and inline-host snapshots; editing sources
 does not activate them. A denial stops its write and dependent proof; authorized
 alternatives and unrelated work continue. Required unavailable proof stays

@@ -632,7 +632,23 @@ current and retained historical `automatic_delivery` receipts at their existing
 ticket owner. Completion, actual native session/snapshot, role/settings, current
 saved selection and project/environment must match. Existing `native_request` and
 `workflow_step` references still cover their original claims; a generic coordinator
-or workflow result does not acquire reviewer identity by assertion.
+or workflow result does not acquire reviewer identity by assertion. A role-bearing
+`native_request` is accepted only with the actual specialist's frozen source,
+settings, instructions, native session, invocation and retired logical outcome.
+
+Fresh managed setup needs no prior reviewer task. Its verification coordinator
+returns one `role_verification_request` containing `role`, exact missing `claims`,
+project-selected bounded `instructions`, `environment_ref` and `evidence_ref`.
+The existing setup owner resolves and freezes that selected specialist, then uses
+its finite request continuation for a `role_verification` turn in a distinct
+native session. The native request records the real role snapshot and observations.
+After retirement the original coordinator session resumes with
+`completed_role_verifications`, including the canonical reference and execution
+binding. Completion combines this evidence with covered generic verification in
+the existing workflow receipt. Matching completed evidence is reused instead.
+Failed/cancelled/stale/wrong-role checks cannot complete setup; explicit recovery
+resumes the same frozen specialist and returns to the retained coordinator.
+This adds no proof task, workflow, evidence store or replacement runner.
 
 The reviewer records an observation in its JSON-encoded `outputs`:
 

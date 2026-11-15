@@ -235,6 +235,23 @@ class SetupActivationCheck(SetupEvidenceModel):
     execution: SetupExecutionBinding | None = None
 
 
+class SetupRoleCheckRequest(SetupEvidenceModel):
+    """Project-selected bounded proof, executed by the existing setup owner."""
+
+    role: str = Field(min_length=1, max_length=160)
+    claims: list[str] = Field(min_length=1, max_length=100)
+    instructions: str = Field(min_length=1, max_length=10000)
+    environment_ref: str = Field(min_length=1, max_length=1000)
+    evidence_ref: str = Field(min_length=1, max_length=1000)
+
+
+class SetupNativeRoleCheck(SetupEvidenceModel):
+    workflow_key: str = Field(min_length=1, max_length=200)
+    request: SetupRoleCheckRequest
+    agent_snapshot: dict[str, Any]
+    execution: SetupExecutionBinding
+
+
 class SetupActivationEvidence(SetupEvidenceModel):
     method_ref: str = Field(min_length=1, max_length=1000)
     status: Literal["pending", "blocked", "verified"] = "pending"
@@ -405,6 +422,7 @@ class SetupWorkflowReport(SetupEvidenceModel):
 
 
 class SetupReport(SetupEvidenceModel):
+    role_verification_request: SetupRoleCheckRequest | None = None
     status: Literal[
         "running", "needs_input", "success", "partial", "failed", "interrupted", "cancelled"
     ]
@@ -472,9 +490,12 @@ class SetupManagedExecution(SetupEvidenceModel):
     resume_thread_id: str | None = None
     # Set only by authenticated managed admission, never by a worker report.
     adoption_authorized: bool = False
-    phase: Literal["preparation", "verification", "completion"] = "preparation"
+    phase: Literal["preparation", "verification", "role_verification", "completion"] = "preparation"
     adopted_delivery_digest: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
     verification_request_id: int | None = None
+    coordinator_thread_id: str | None = None
+    role_check: SetupNativeRoleCheck | None = None
+    role_verification_request_ids: list[int] = Field(default_factory=list, max_length=100)
     preflight_failed: bool = False
 
 
@@ -1485,7 +1506,28 @@ class ProjectSetupRepository:
                 "activation sources changed; revalidate current coverage",
                 data={"project_id": project_id, "next_action": "revalidate_activation"},
             )
-        template = next(source for source in current_sources if source.kind == "template")
+        role_claims = self.activation_role_claims(project_id, current_sources)
+        if not set(role_claims) <= set(activation.required_claims):
+            raise ValidationError(
+                "activation must declare the workflow's required role claims",
+                data={"required_role_claims": role_claims, "next_action": "complete_activation"},
+            )
+        for check in activation.checks:
+            basis = self.activation_basis(
+                project_id, proof, environment_ref=check.basis.environment_ref
+            )
+            if basis != check.basis:
+                raise ConflictError(
+                    "activation evidence has a foreign or stale basis",
+                    data={"project_id": project_id, "next_action": "revalidate_activation"},
+                )
+            self._validate_activation_reference(project_id, check)
+            required_roles = {role_claims[claim] for claim in check.claims if claim in role_claims}
+            if required_roles or check.execution is not None:
+                self._validate_role_check(project_id, check, required_roles)
+
+    def activation_role_claims(self, project_id: int, sources: list[SetupSource]) -> dict[str, str]:
+        template = next(source for source in sources if source.kind == "template")
         method: dict[str, Any] = next(
             (
                 p
@@ -1521,77 +1563,64 @@ class ProjectSetupRepository:
                 for key, expected in requirement.when_execution_requirements.items()
             ):
                 role_claims[claim] = requirement.role
-        if not set(role_claims) <= set(activation.required_claims):
-            raise ValidationError(
-                "activation must declare the workflow's required role claims",
-                data={"required_role_claims": role_claims, "next_action": "complete_activation"},
-            )
-        for check in activation.checks:
-            basis = self.activation_basis(
-                project_id, proof, environment_ref=check.basis.environment_ref
-            )
-            if basis != check.basis:
+        return role_claims
+
+    def _validate_activation_reference(self, project_id: int, check: SetupActivationCheck) -> None:
+        ref = check.reference
+        if ref.kind == "native_request":
+            row = self._s.get(AgentRequest, ref.request_id, populate_existing=True)
+            native = (row.metadata_json or {}).get("native_execution", {}) if row else {}
+            passed = row is not None and self._native_activation_passed(row, native)
+            if (
+                row is None
+                or row.project_id != project_id
+                or not native.get("finished_at")
+                or passed != (check.status == "passed")
+                or native.get("execution", {}).get("invocation_id") != ref.invocation_id
+                or _digest(native.get("result")) != ref.outcome_digest
+            ):
                 raise ConflictError(
-                    "activation evidence has a foreign or stale basis",
-                    data={"project_id": project_id, "next_action": "revalidate_activation"},
+                    "activation reference is not the completed native outcome",
+                    data={
+                        "project_id": project_id,
+                        "request_id": ref.request_id,
+                        "next_action": "revalidate_activation",
+                    },
                 )
-            ref = check.reference
-            if ref.kind == "native_request":
-                row = self._s.get(AgentRequest, ref.request_id, populate_existing=True)
-                native = (row.metadata_json or {}).get("native_execution", {}) if row else {}
-                passed = row is not None and self._native_activation_passed(row, native)
-                if (
-                    row is None
-                    or row.project_id != project_id
-                    or not native.get("finished_at")
-                    or passed != (check.status == "passed")
-                    or native.get("execution", {}).get("invocation_id") != ref.invocation_id
-                    or _digest(native.get("result")) != ref.outcome_digest
-                ):
-                    raise ConflictError(
-                        "activation reference is not the completed native outcome",
-                        data={
-                            "project_id": project_id,
-                            "request_id": ref.request_id,
-                            "next_action": "revalidate_activation",
-                        },
-                    )
-            elif ref.kind == "workflow_step":
-                plan = self._s.get(RunPlan, ref.run_plan_id, populate_existing=True)
-                step = self._s.exec(
-                    select(RunPlanStep)
-                    .where(
-                        RunPlanStep.run_plan_id == ref.run_plan_id,
-                        RunPlanStep.step_id == ref.step_id,
-                    )
-                    .execution_options(populate_existing=True)
-                ).first()
-                if (
-                    plan is None
-                    or plan.project_id != project_id
-                    or plan.status.value not in {"completed", "failed", "aborted"}
-                    or step is None
-                    or step.result_json is None
-                    or _digest(step.result_json) != ref.outcome_digest
-                    or (plan.status.value == "completed" and step.status.value == "success")
-                    != (check.status == "passed")
-                ):
-                    raise ConflictError(
-                        "activation reference is not the completed workflow outcome",
-                        data={
-                            "project_id": project_id,
-                            "run_plan_id": ref.run_plan_id,
-                            "step_id": ref.step_id,
-                            "next_action": "revalidate_activation",
-                        },
-                    )
-            else:
-                self._task_phase_outcome(project_id, check)
-            required_roles = {role_claims[claim] for claim in check.claims if claim in role_claims}
-            if required_roles or check.execution is not None:
-                self._validate_role_check(project_id, check, required_roles)
-        # Coverage selection is the workflow method's judgment. These checks
-        # validate identities/outcomes, not the semantics of a domain assertion.
+        elif ref.kind == "workflow_step":
+            plan = self._s.get(RunPlan, ref.run_plan_id, populate_existing=True)
+            step = self._s.exec(
+                select(RunPlanStep)
+                .where(
+                    RunPlanStep.run_plan_id == ref.run_plan_id,
+                    RunPlanStep.step_id == ref.step_id,
+                )
+                .execution_options(populate_existing=True)
+            ).first()
+            if (
+                plan is None
+                or plan.project_id != project_id
+                or plan.status.value not in {"completed", "failed", "aborted"}
+                or step is None
+                or step.result_json is None
+                or _digest(step.result_json) != ref.outcome_digest
+                or (plan.status.value == "completed" and step.status.value == "success")
+                != (check.status == "passed")
+            ):
+                raise ConflictError(
+                    "activation reference is not the completed workflow outcome",
+                    data={
+                        "project_id": project_id,
+                        "run_plan_id": ref.run_plan_id,
+                        "step_id": ref.step_id,
+                        "next_action": "revalidate_activation",
+                    },
+                )
+        else:
+            self._task_phase_outcome(project_id, check)
+
+    # Coverage selection is the workflow method's judgment. These checks
+    # validate identities/outcomes, not the semantics of a domain assertion.
 
     def execution_binding(
         self, project_id: int, role: str, agent: dict[str, Any], *, binding_id: int | None = None
@@ -1668,23 +1697,55 @@ class ProjectSetupRepository:
         from stackos.task_delivery import resolve_delivery_settings
 
         binding = check.execution
+        receipt: dict[str, Any]
         # A generic coordinator conversation or workflow assertion has no launched
         # specialist identity. Keep those refs for their original non-role claims.
         if binding is None or (required_roles and required_roles != {binding.role}):
             raise ValidationError("activation role claim needs its selected execution binding")
-        if check.reference.kind != "task_phase":
-            raise ValidationError("activation role claim needs a completed native task phase")
-        outcome = self._task_phase_outcome(project_id, check)
-        receipt = outcome["receipt"]
-        launch = receipt.get("launch") or {}
-        retained = outcome["sessions"].get(check.reference.phase, {})
-        actual = retained.get("agent_snapshot")
-        if (
-            receipt.get("selected_role") != binding.role
-            or not isinstance(actual, dict)
-            or retained.get("thread_id") != receipt["thread_id"]
-        ):
-            raise ConflictError("activation role claim lacks the actual native snapshot")
+        if check.reference.kind == "native_request":
+            row = self._s.get(AgentRequest, check.reference.request_id, populate_existing=True)
+            native = (row.metadata_json or {}).get("native_execution", {}) if row else {}
+            launch = native.get("snapshot") or {}
+            try:
+                role_check = SetupNativeRoleCheck.model_validate(
+                    launch.get("context", {}).get("role_check")
+                )
+            except ModelValidationError as error:
+                raise ValidationError(
+                    "activation role claim lacks an actual specialist native request"
+                ) from error
+            actual = role_check.agent_snapshot
+            if (
+                role_check.execution != binding
+                or role_check.request.role != binding.role
+                or not set(check.claims) <= set(role_check.request.claims)
+                or role_check.request.environment_ref != check.basis.environment_ref
+                or role_check.request.evidence_ref != check.evidence_ref
+                or launch.get("instructions") != actual.get("instructions")
+            ):
+                raise ConflictError(
+                    "activation role claim has a mismatched native request snapshot"
+                )
+            launch = {
+                **launch,
+                "agent": native.get("execution", {}).get("agent"),
+                **{key: actual[key] for key in ("source_ref", "source_digest") if key in actual},
+            }
+            receipt = {"result": native.get("result")}
+        elif check.reference.kind == "task_phase":
+            outcome = self._task_phase_outcome(project_id, check)
+            receipt = outcome["receipt"]
+            launch = receipt.get("launch") or {}
+            retained = outcome["sessions"].get(check.reference.phase, {})
+            actual = retained.get("agent_snapshot")
+            if (
+                receipt.get("selected_role") != binding.role
+                or not isinstance(actual, dict)
+                or retained.get("thread_id") != receipt["thread_id"]
+            ):
+                raise ConflictError("activation role claim lacks the actual native snapshot")
+        else:
+            raise ValidationError("activation role claim needs an actual native role execution")
         project = ProjectRepository(self._s).get(project_id)
         if project.project_dir is None:
             raise ValidationError("activation role claim requires an available project folder")
@@ -1791,6 +1852,32 @@ class ProjectSetupRepository:
         except SchemaError:
             return False
         if row.source_kind == SETUP_NAMESPACE:
+            context = (snapshot or {}).get("context", {})
+            if context.get("role_check") is not None:
+                try:
+                    attempt = SetupAttempt.model_validate(
+                        (row.metadata_json or {}).get(SETUP_NAMESPACE)
+                    )
+                    role_check = SetupNativeRoleCheck.model_validate(context["role_check"])
+                except ModelValidationError:
+                    return False
+                return bool(
+                    attempt.project_id == row.project_id
+                    and attempt.request_id == row.id
+                    and attempt.managed is not None
+                    and not attempt.managed.cancel_requested
+                    and attempt.status == "partial"
+                    and row.id in attempt.managed.role_verification_request_ids
+                    and context.get("project_id") == row.project_id
+                    and role_check.workflow_key in attempt.workflow_keys
+                    and isinstance(native.get("execution", {}).get("thread_id"), str)
+                    and bool(native["execution"]["thread_id"].strip())
+                    and native["execution"]["thread_id"] != attempt.managed.coordinator_thread_id
+                    and native["execution"].get("host_key") == (snapshot or {}).get("host_key")
+                    and native.get("execution", {}).get("agent")
+                    == role_check.agent_snapshot.get("name")
+                    and result.result.get("status") == "success"
+                )
             # Managed setup owns its wrapped logical report and persisted outcome.
             report_json = result.result.get("report_json")
             if not isinstance(report_json, str):
@@ -1823,7 +1910,7 @@ class ProjectSetupRepository:
                 and attempt.managed is not None
                 and attempt.managed.adoption_authorized
                 and not attempt.managed.cancel_requested
-                and attempt.managed.phase == "completion"
+                and attempt.managed.phase in {"role_verification", "completion"}
                 and attempt.managed.verification_request_id == row.id
                 and attempt.status == "partial"
                 and report.status == "partial"

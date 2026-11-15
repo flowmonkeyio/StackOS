@@ -15,7 +15,7 @@ vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async original => ({ ...await original<object>(), apiFetch: vi.fn() }))
 let state = setupFixture()
 let wrapper: VueWrapper | undefined
-const managed = { settings: { model: 'selected-model' }, slot_reserved: false, cancel_requested: false, callback_started: true, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', diagnostic: null, resume_thread_id: null, phase: SetupManagedExecutionPhase.preparation, adoption_authorized: false, adopted_delivery_digest: null, verification_request_id: null, preflight_failed: false }
+const managed = { settings: { model: 'selected-model' }, slot_reserved: false, cancel_requested: false, callback_started: true, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', diagnostic: null, resume_thread_id: null, coordinator_thread_id: null, role_check: null, phase: SetupManagedExecutionPhase.preparation, adoption_authorized: false, adopted_delivery_digest: null, verification_request_id: null, preflight_failed: false }
 const question = { question_id: 'market', revision: 3, prompt: 'Which market should the project use?', workflow_keys: ['fixture.second'], answer_state: SetupQuestionAnswer_state.pending, response_channel: SetupQuestionResponse_channel.managed_ui }
 function asking() { return attemptFixture({ status: SetupAttemptStatus.needs_input, revision: 7, thread_id: 'native-exact', managed, question: { ...question, workflow_keys: [...question.workflow_keys] } }) }
 function workflow(key: string, patch: Partial<SchemaSetupWorkflowOut> = {}): SchemaSetupWorkflowOut {

@@ -127,6 +127,8 @@ def install_runner(
     verification="passed",
     setup_host=None,
     seed_role=True,
+    fresh_role=False,
+    role_status="success",
 ):
     _execution, project, _, factory = managed
     definition = service._definition_by_key(
@@ -175,10 +177,11 @@ def install_runner(
     def runner(root, instructions, prompt, schema, *, on_session=None, resume_thread_id=None, **kw):
         context = json.loads(prompt)
         calls.append(context)
+        is_role = context["phase"] == "role_verification"
         if on_session:
-            on_session("bounded-setup-native")
+            on_session("bounded-review-native" if is_role else "bounded-setup-native")
         assert context["requested_scope"] == "ready_to_use"
-        if context["predecessor_request_id"]:
+        if context["predecessor_request_id"] and not is_role:
             assert resume_thread_id == "bounded-setup-native"
             with factory() as check:
                 predecessor = check.get(AgentRequest, context["predecessor_request_id"])
@@ -194,6 +197,39 @@ def install_runner(
                         == resume_thread_id
                     )
                 assert not predecessor.metadata_json["project_setup"]["managed"]["slot_reserved"]
+        if is_role:
+            assert resume_thread_id == (
+                "bounded-review-native"
+                if any(call["phase"] == "role_verification" for call in calls[:-1])
+                else None
+            )
+            selected = context["role_check"]
+            assert instructions == selected["agent_snapshot"]["instructions"]
+            assert kw.get("native_settings") == selected["agent_snapshot"].get("native_settings")
+            request = selected["request"]
+            if mutate:
+                mutate(context)
+            return AgentRunResult(
+                0,
+                thread_id="bounded-review-native",
+                result={
+                    "status": role_status(context) if callable(role_status) else role_status,
+                    "summary": "Synthetic bounded reviewer observation",
+                    "outputs": json.dumps(
+                        {
+                            "setup_activation_checks": [
+                                {
+                                    "claims": request["claims"],
+                                    "status": "passed",
+                                    "environment_ref": request["environment_ref"],
+                                    "evidence_ref": request["evidence_ref"],
+                                }
+                            ]
+                        }
+                    ),
+                    "followups": [],
+                },
+            )
         report = dict(
             status="partial",
             progress=dict(message="Bounded setup fixture", evidence_ref="fixture/checked"),
@@ -221,11 +257,56 @@ def install_runner(
                 )
                 assert context["adoption_readback"] == actual
                 extra["verification_status"] = verification
+                if fresh_role:
+                    report["role_verification_request"] = dict(
+                        role="review_agent",
+                        claims=["reviewer_verification"],
+                        instructions="Run the project-selected harmless scratch/tool/SQLite "
+                        "fixture check and record its real command and exit.",
+                        environment_ref="fixture/native",
+                        evidence_ref="fixture/fresh-reviewer-check",
+                    )
+                elif existing_role_check and actual["agents"]["review_agent"].get(
+                    "execution_requirements", {}
+                ).get("filesystem_write"):
+                    partial = verified_result(repo, project)
+                    partial.attempt_ref = context["attempt_ref"]
+                    partial.status = "unfinished"
+                    role_check = deepcopy(existing_role_check)
+                    role_check["basis"] = repo.activation_basis(
+                        project, partial.verification, environment_ref="fixture/native"
+                    )
+                    partial.verification.activation_proof = SetupActivationEvidence(
+                        method_ref="fixture/method",
+                        status="pending",
+                        required_claims=[
+                            "saved_defaults",
+                            "native_consumption",
+                            "reviewer_verification",
+                        ],
+                        checks=[role_check],
+                    )
+                    report["workflow_results"] = [
+                        dict(
+                            workflow_key=KEY,
+                            expected_revision=context["observed_receipt_revisions"][KEY],
+                            result=partial.model_dump(mode="json"),
+                        )
+                    ]
             else:
                 assert context["phase"] == "completion"
                 result = verified_result(repo, project)
                 result.attempt_ref = context["attempt_ref"]
                 role_check = deepcopy(existing_role_check)
+                if fresh_role:
+                    observed = context["completed_role_verifications"][0]
+                    role_check = dict(
+                        claims=["reviewer_verification"],
+                        origin="executed",
+                        reference=observed["reference"],
+                        execution=observed["execution"],
+                        evidence_ref=observed["request"]["evidence_ref"],
+                    )
                 assert role_check is not None
                 role_check["basis"] = repo.activation_basis(
                     project, result.verification, environment_ref="fixture/native"
@@ -315,6 +396,222 @@ def test_managed_incompatible_reviewer_requirement_rolls_back_adoption(
     assert state.status == "failed" and "filesystem_write" in state.managed.diagnostic
     assert TrackerRepository(session).delivery_defaults(project_id=project) == {}
     assert [call["phase"] for call in calls] == ["preparation"]
+
+
+@pytest.mark.parametrize("host", ["codex", "claude-code"])
+def test_managed_fresh_reviewer_native_proof_needs_no_preseeded_task(
+    managed, session, monkeypatch, host
+):
+    _, project, scheduler, _ = managed
+    proposal = proposal_for(managed, session, host=host)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+    calls = install_runner(managed, monkeypatch, proposal, seed_role=False, fresh_role=True)
+    launch(managed, host_key="codex")
+    for _ in range(4):
+        scheduler.run()
+    session.expire_all()
+    state = ProjectSetupRepository(session).get(project)
+    assert state.current_attempt.status == "success", state.current_attempt.managed.diagnostic
+    assert [call["phase"] for call in calls] == [
+        "preparation",
+        "verification",
+        "role_verification",
+        "completion",
+    ]
+    assert not session.exec(select(TrackerTask)).all()
+    assert not session.exec(select(RunPlan)).all()
+    assert state.workflows[0].activation_status == "verified"
+    assert calls[-1]["completed_role_verifications"][0]["reference"]["kind"] == "native_request"
+    assert calls[-1]["completed_role_verifications"][0]["execution"]["role"] == "review_agent"
+
+
+@pytest.mark.parametrize("thread_projection_gap", [False, True])
+def test_failed_native_role_check_explicitly_resumes_same_reviewer_and_coordinator(
+    managed, session, monkeypatch, thread_projection_gap
+):
+    from stackos.project_setup_execution import continue_managed
+
+    _, project, scheduler, factory = managed
+    proposal = proposal_for(managed, session)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+    verdict = {"value": "failed"}
+    calls = install_runner(
+        managed,
+        monkeypatch,
+        proposal,
+        seed_role=False,
+        fresh_role=True,
+        role_status=lambda _: verdict["value"],
+    )
+    launch(managed, host_key="codex")
+    for _ in range(3):
+        scheduler.run()
+    session.expire_all()
+    failed = ProjectSetupRepository(session).get(project).current_attempt
+    assert failed.status == "failed" and not scheduler.jobs
+    assert failed.thread_id == "bounded-review-native"
+    if thread_projection_gap:
+        row = session.get(AgentRequest, failed.request_id)
+        metadata = deepcopy(row.metadata_json)
+        metadata["project_setup"]["thread_id"] = None
+        row.metadata_json = metadata
+        session.add(row)
+        session.commit()
+    verdict["value"] = "success"
+    continue_managed(
+        project,
+        failed.request_id,
+        expected_revision=failed.revision,
+        session_factory=factory,
+        scheduler=scheduler,
+    )
+    scheduler.run()
+    scheduler.run()
+    session.expire_all()
+    current = ProjectSetupRepository(session).get(project).current_attempt
+    assert current.status == "success", current.managed.diagnostic
+    assert current.thread_id == "bounded-setup-native"
+    retired = session.get(AgentRequest, failed.request_id)
+    assert retired.metadata_json["native_execution"]["result"]["status"] == "failed"
+    assert [call["phase"] for call in calls] == [
+        "preparation",
+        "verification",
+        "role_verification",
+        "role_verification",
+        "completion",
+    ]
+
+
+def test_cancelled_never_started_role_check_recovers_only_its_first_admission(
+    managed, session, monkeypatch
+):
+    from stackos.project_setup_execution import cancel_managed, continue_managed
+
+    _, project, scheduler, factory = managed
+    proposal = proposal_for(managed, session)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+    calls = install_runner(managed, monkeypatch, proposal, seed_role=False, fresh_role=True)
+    launch(managed, host_key="codex")
+    scheduler.run()
+    scheduler.run()
+    session.expire_all()
+    pending = ProjectSetupRepository(session).get(project).current_attempt
+    assert pending.managed.phase == "role_verification" and not pending.managed.callback_started
+    stopped = cancel_managed(
+        project, pending.request_id, session_factory=factory, scheduler=scheduler
+    )
+    assert stopped.status == "cancelled" and not scheduler.jobs
+    continued = continue_managed(
+        project,
+        stopped.request_id,
+        expected_revision=stopped.revision,
+        session_factory=factory,
+        scheduler=scheduler,
+    )
+    assert continued.attempt.partial_changes_possible == stopped.partial_changes_possible
+    scheduler.run()
+    scheduler.run()
+    session.expire_all()
+    assert ProjectSetupRepository(session).get(project).current_attempt.status == "success"
+    assert [call["phase"] for call in calls].count("role_verification") == 1
+
+
+@pytest.mark.parametrize(
+    "failure", ["wrong-role", "stale-source", "failed", "cancelled", "missing-session"]
+)
+def test_fresh_native_role_proof_rejects_invalid_outcomes(managed, session, monkeypatch, failure):
+    from stackos.project_setup_execution import cancel_managed
+
+    _, project, scheduler, factory = managed
+    proposal = proposal_for(managed, session)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+
+    def mutate(context):
+        if failure == "cancelled" and context["phase"] == "role_verification":
+            cancel_managed(
+                project, context["request_id"], session_factory=factory, scheduler=scheduler
+            )
+
+    calls = install_runner(
+        managed,
+        monkeypatch,
+        proposal,
+        seed_role=False,
+        fresh_role=True,
+        role_status="failed" if failure == "failed" else "success",
+        mutate=mutate,
+    )
+    launch(managed, host_key="codex")
+    for _ in range(3):
+        scheduler.run()
+    session.expire_all()
+    role_attempt = ProjectSetupRepository(session).get(project).current_attempt
+    if failure in {"wrong-role", "stale-source", "missing-session"}:
+        if failure in {"wrong-role", "missing-session"}:
+            row = session.get(AgentRequest, role_attempt.predecessor_request_id)
+            metadata = deepcopy(row.metadata_json)
+            if failure == "wrong-role":
+                metadata["native_execution"]["snapshot"]["context"]["role_check"]["request"][
+                    "role"
+                ] = "delivery_agent"
+            else:
+                metadata["native_execution"]["execution"]["thread_id"] = None
+            row.metadata_json = metadata
+            session.add(row)
+            session.commit()
+        else:
+            path = (
+                Path(proposal["project_dir"])
+                / proposal["roles"]["review_agent"]["source_ref"]["source_path"]
+            )
+            path.write_text(path.read_text() + "\n# changed relevant source\n")
+        scheduler.run()
+    session.expire_all()
+    state = ProjectSetupRepository(session).get(project)
+    assert state.current_attempt.status == ("cancelled" if failure == "cancelled" else "failed")
+    assert state.workflows[0].activation_status != "verified"
+    assert not scheduler.jobs
+    assert not session.exec(select(TrackerTask)).all()
+    assert [call["phase"] for call in calls].count("role_verification") == 1
+
+
+def test_managed_explicit_inspection_requirement_precedes_source_preflight(
+    managed, session, monkeypatch
+):
+    _, project, scheduler, _ = managed
+    proposal = proposal_for(managed, session)
+    reviewer = proposal["roles"]["review_agent"]
+    tracker = TrackerRepository(session)
+    tracker.configure_delivery(
+        project_id=project,
+        delivery={
+            "host_key": "codex",
+            "agents": {
+                "review_agent": {
+                    "source_ref": reviewer["source_ref"],
+                    "execution_requirements": {"filesystem_write": True},
+                }
+            },
+            "main_agent": {"host_key": "codex"},
+        },
+    )
+    proposal["expected_delivery_digest"] = _digest(tracker.delivery_defaults(project_id=project))
+    path = Path(proposal["project_dir"]) / reviewer["source_ref"]["source_path"]
+    path.write_text(path.read_text() + 'sandbox_mode="read-only"\n')
+    reviewer["expected_digest"] = (
+        ProjectAgentService(Path(proposal["project_dir"])).get(reviewer["source_ref"]).digest
+    )
+    reviewer["execution_requirements"] = {"filesystem_write": False}
+    install_runner(managed, monkeypatch, proposal, seed_role=False)
+    launch(managed, host_key="codex")
+    scheduler.run()
+    session.expire_all()
+    state = ProjectSetupRepository(session).get(project).current_attempt
+    assert state.managed.phase == "verification", state.managed.diagnostic
+    assert tracker.delivery_defaults(project_id=project)["agents"]["review_agent"][
+        "execution_requirements"
+    ] == {"filesystem_write": False}
+    assert tracker.delivery_defaults(project_id=project)["main_agent"] == {"host_key": "codex"}
 
 
 @pytest.mark.parametrize("phase", ["preparation", "verification"])
