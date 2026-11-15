@@ -1393,6 +1393,16 @@ nonempty result does not manufacture a success summary; a skipped final step
 does not promote an earlier result to closeout evidence. Structured results
 remain intact even when they have no top-level summary.
 
+At that accepted completion write, the mirror also reconciles a valid current
+delivery handoff after its controller has retired: current status becomes
+`complete`, reason and ticket are cleared, and no slot remains reserved. Frozen
+settings, identities, sessions and prior stop/rejection evidence remain intact
+in their existing fields and tracker revisions. A reserved callback or active
+native invocation retains ownership; canonical completion does not release its
+capacity or replace its state. Missing or skipped final results, failure and
+abort do not manufacture delivery success. This is write-time reconciliation,
+not a read-side override or a sweep of historical records.
+
 Abort, reopen, recovery, and completion update only mirror-owned current outcome
 fields. Earlier summaries and abort reasons remain in append-only tracker
 revisions (`tracker.history` and task activity); unrelated context and nested

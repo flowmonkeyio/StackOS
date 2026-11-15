@@ -18,11 +18,12 @@ from stackos.db.models import (
     TrackerTask,
     TrackerTicket,
 )
+from stackos.host_mcp.service import active_execution
 from stackos.repositories.base import (
     Envelope,
     NotFoundError,
 )
-from stackos.repositories.tracker.schema import TrackerMutationOut
+from stackos.repositories.tracker.schema import TaskDeliveryStateOut, TrackerMutationOut
 from stackos.repositories.tracker.utils import (
     TERMINAL_TRACKER_STATUSES,
     _clean_text,
@@ -584,6 +585,31 @@ class TrackerMirrorMixin:
                         "result_json": result,
                     },
                 }
+                metadata = task.metadata_json or {}
+                delivery = metadata.get("delivery")
+                # A retired controller cannot run its final completion branch.
+                # Reconcile only a valid handoff with no remaining callback/native
+                # owner. A reserved callback keeps its slot until its own finally.
+                if (
+                    isinstance(delivery, dict)
+                    and TaskDeliveryStateOut.from_metadata(metadata) is not None
+                    and not delivery.get("slot_reserved")
+                    and delivery.get("run_plan_id", plan.id) == plan.id
+                    and delivery.get("controller_run_id", plan.run_id) == plan.run_id
+                    and active_execution(plan.project_id, task.key) is None
+                ):
+                    completed = {
+                        **delivery,
+                        "status": "complete",
+                        "reason": None,
+                        "ticket_key": None,
+                        "slot_reserved": False,
+                    }
+                    if completed != delivery:
+                        task.metadata_json = {
+                            **metadata,
+                            "delivery": {**completed, "updated_at": now.isoformat()},
+                        }
         after = self._task_snapshot(task)
         if before == after:
             return
