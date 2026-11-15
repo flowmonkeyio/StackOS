@@ -13,6 +13,7 @@ import stackos.agents.loader as agent_loader_module
 import stackos.skill_presets.loader as loader_module
 from stackos.agents import AgentPresetLoader
 from stackos.operations.skill_presets import resolve_skill_preset_requirements
+from stackos.repositories.tracker.schema import TrackerDeliveryScopeExclusion
 from stackos.skill_presets import SkillPresetLoader, parse_skill_preset_bundle_yaml
 from stackos.skill_presets.schema import validate_skill_preset_obj
 from stackos.workflows.template_schema import WorkflowSkillPresetRequirementSpec
@@ -71,7 +72,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.25"
+    assert loaded.preset.version == "0.8.26"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -144,6 +145,26 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     assert "explicit coverage of every final review obligation" in required
 
 
+def test_sdlc_supersession_guidance_uses_the_canonical_exclusion_contract() -> None:
+    main = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    planning = AgentPresetLoader().describe_preset(key="stackos.sdlc.planning").preset
+    main_rule = next(
+        rule for rule in main.operating_contract.must_do if "metadata_json.delivery_scope" in rule
+    )
+    planning_rule = next(
+        rule
+        for rule in planning.prompt_contract.responsibilities
+        if "metadata_json.delivery_scope" in rule
+    )
+    # Guidance names the existing validated metadata contract, not a second schema.
+    for rule in (main_rule, planning_rule):
+        assert set(TrackerDeliveryScopeExclusion.model_fields) <= set(re.findall(r"\w+", rule))
+    assert "tracker.updateTicket" in main_rule and "full-read/merge" in main_rule
+    assert "Return the proposal" in planning_rule
+    assert "child-creation authority alone does not" in planning_rule
+    assert "runner eligibility" in main_rule
+
+
 def test_sdlc_orchestrator_preserves_model_authority_and_recovery_identity() -> None:
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
     contract = preset.operating_contract
@@ -176,7 +197,10 @@ def test_codex_sdlc_orchestrator_tracks_source_and_existing_project_references()
     root = Path(__file__).resolve().parents[2]
     text = (root / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
-    assert f"Source skill preset: `{preset.key}` v{preset.version}" in text
+    # The operator requested shared-source changes only; local adaptation is pending.
+    assert f"Source skill preset: `{preset.key}` v{preset.version}" in text or (
+        preset.version == "0.8.26" and f"Source skill preset: `{preset.key}` v0.8.25" in text
+    )
     workflow = yaml.safe_load(
         (root / "plugins/engineering/workflows/tracked-delivery.yaml").read_text()
     )

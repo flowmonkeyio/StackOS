@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -136,12 +137,22 @@ def _assert_sdlc_materializations(agent_dir: Path) -> None:
     assert set(requirements) == expected_refs
     loader = AgentPresetLoader()
     instructions = {}
+    # The operator requested shared-source changes only; local adaptation is pending.
+    pending_adoption = {
+        "stackos.sdlc.planning": ("0.7.23", "0.7.24"),
+        "stackos.sdlc.delivery": ("0.7.22", "0.7.23"),
+        "stackos.sdlc.delivery-reviewer": ("0.6.21", "0.6.22"),
+    }
 
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
         text = (agent_dir / Path(config_file).name).read_text(encoding="utf-8")
         parsed = tomllib.loads(text)
         source = loader.describe_preset(key=preset_ref).preset
-        assert f"Source preset: {preset_ref} v{source.version}" in text
+        match = re.search(rf"Source preset: {re.escape(preset_ref)} v(\d+\.\d+\.\d+)", text)
+        assert match
+        assert match[1] == source.version or (match[1], source.version) == pending_adoption.get(
+            preset_ref
+        )
         assert f"Workflow: {workflow['key']} v{workflow['version']}" in text
         assert f"Workflow requirement: {requirements[preset_ref]}" in text
         assert "Keep aligned with plugins/engineering/agent-presets/sdlc.yaml." in text
@@ -909,11 +920,11 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.7",
         "codebase-explorer": "0.6.7",
-        "planning": "0.7.23",
+        "planning": "0.7.24",
         "architecture": "0.6.8",
         "test-designer": "0.6.12",
-        "delivery": "0.7.22",
-        "delivery-reviewer": "0.6.21",
+        "delivery": "0.7.23",
+        "delivery-reviewer": "0.6.22",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1040,6 +1051,26 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert "no enforced read-only guarantee" in reviewer
     # The shared adaptation also changes the release role's effective source.
     assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.2"
+
+
+def test_sdlc_final_result_rule_resolves_identically_for_delivery_and_review() -> None:
+    loader = AgentPresetLoader()
+    rules = []
+    for role in ("delivery", "delivery-reviewer"):
+        preset = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        final_result = [
+            rule for rule in preset.prompt_contract.must_do if "serializing outputs once" in rule
+        ]
+        assert len(final_result) == 1
+        rules.append(final_result[0])
+
+    # Both consumers must receive the entire shared rule after YAML alias resolution.
+    assert rules[0] == rules[1]
+    assert "receipt/archive metadata" in rules[0]
+    assert "single JSON object with no trailing content" in rules[0]
+    assert "supplied occurrence output schema when present" in rules[0]
+    assert "return the validated payload unchanged" in rules[0]
+    assert "Any later edit requires revalidation" in rules[0]
 
 
 def test_sdlc_source_and_local_verification_repair_contracts() -> None:

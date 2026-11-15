@@ -308,9 +308,9 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     )
     expected_versions = {
         "stackos.sdlc.requirements-flow-definer": "0.6.7",
-        "stackos.sdlc.planning": "0.7.23",
-        "stackos.sdlc.delivery": "0.7.22",
-        "stackos.sdlc.delivery-reviewer": "0.6.21",
+        "stackos.sdlc.planning": "0.7.24",
+        "stackos.sdlc.delivery": "0.7.23",
+        "stackos.sdlc.delivery-reviewer": "0.6.22",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -319,6 +319,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
             == expected[key]["preset"]["summary"]["version"]
             == expected_versions[key]
         )
+        if key != "stackos.sdlc.requirements-flow-definer":
+            described = mcp_client.call_tool_structured(
+                "agentPreset.describe",
+                {"key": key, "plugin_slug": "engineering", "response_mode": "raw"},
+            )
+            # Full resolution and targeted retrieval must carry the same current contract.
+            assert described["preset"] == expected[key]["preset"]
         adaptation = item["project_adaptation"]
         full_adaptation = expected[key]["project_adaptation"]
         assert adaptation["adaptation_required"] is True
@@ -414,7 +421,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.25"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.26"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
