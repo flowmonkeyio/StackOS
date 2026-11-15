@@ -89,6 +89,8 @@ class ActiveInvocation:
     # Explicit invocation cancellation is separate from native I/O cleanup stops.
     cancelled: Event = field(default_factory=Event)
     retired: Event = field(default_factory=Event)
+    # An early ownership rejection must also fence the terminal identity.
+    session_error: str | None = None
 
     def projection(self, *, include_usage: bool = True) -> dict[str, Any]:
         return {
@@ -673,7 +675,13 @@ def run_agent(
                 if value is not None
             },
         )
-        if call is not None and call.thread_id is not None and (result.thread_id != call.thread_id):
+        if call is not None and call.session_error is not None:
+            # Keep rejected native IDs out of terminal-only recovery fallback.
+            # Hosts with no early-ID event never set this rejection.
+            result = replace(result, thread_id=None, error=call.session_error, usage=None)
+        elif (
+            call is not None and call.thread_id is not None and (result.thread_id != call.thread_id)
+        ):
             result = replace(
                 result,
                 error="Native request session identity mismatch"
@@ -728,16 +736,19 @@ def _attach_session(
                     or call.finished
                     or call.cancelled.is_set()
                     or call.session_id is not None
+                    or call.session_error is not None
                     or not session_id.strip()
                 ):
                     return
                 if resume_thread_id is not None and session_id != resume_thread_id:
+                    call.session_error = "Native session resume identity mismatch"
                     return
                 if any(
                     other.session_id == session_id and not other.finished
                     for other in _active_invocations.values()
                     if other is not call
                 ):
+                    call.session_error = "Native session ownership conflict"
                     return
                 call.session_id = session_id
                 call.thread_id = session_id

@@ -1644,6 +1644,165 @@ def test_announced_session_is_durable_before_exit_and_controller_loss_resumes_it
     engine.dispose()
 
 
+@pytest.mark.parametrize("mismatched_phase", ["delivery", "review"])
+def test_terminal_session_mismatch_preserves_announced_identity_for_recovery(
+    session, project_id, tmp_path, monkeypatch, mismatched_phase
+):
+    from types import SimpleNamespace
+
+    from stackos.host_mcp import service
+
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 2}}},
+    )
+    definition = service._definition_by_key("codex")
+    calls, announced_sessions = [], {}
+    rejected = False
+
+    def native(_dir, _instructions, prompt, _schema, *, on_session, **kwargs):
+        nonlocal rejected
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        announced = f"{key}-{phase}-announced"
+        previous = (key, phase) in announced_sessions
+        assert kwargs.get("resume_thread_id") == (announced if previous else None)
+        calls.append((key, phase, kwargs.get("resume_thread_id")))
+        on_session(announced)
+        with Session(session.get_bind()) as reader:
+            early = (
+                TrackerRepository(reader)
+                .brief(project_id=project_id, ticket_key=key)
+                .ticket.completion_evidence_json["automatic_delivery"]["sessions"][phase]
+            )
+        assert early["thread_id"] == announced
+        if previous:
+            assert early == announced_sessions[key, phase]
+        announced_sessions[key, phase] = early
+        mismatch = key == "first" and phase == mismatched_phase and not rejected
+        rejected = rejected or mismatch
+        return AgentRunResult(
+            0, thread_id="foreign-terminal-id" if mismatch else announced, result=generic_result()
+        )
+
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
+    )
+    try:
+        scheduler.run()
+        session.expire_all()
+        failed = repo.brief(project_id=project_id, ticket_key="first").ticket
+        evidence = failed.completion_evidence_json["automatic_delivery"]
+        retained = announced_sessions["first", mismatched_phase]
+        assert failed.status == "failed"
+        assert evidence[mismatched_phase]["error"] == "Native session identity mismatch"
+        assert evidence[mismatched_phase]["thread_id"] == "foreign-terminal-id"
+        assert evidence["sessions"][mismatched_phase] == retained
+        assert evidence["repair_count"] == 2
+        assert (
+            repo.get(project_id=project_id, task_key="deliver")
+            .tasks[0]
+            .metadata_json["delivery"]["status"]
+            == "stopped"
+        )
+        for status in ("in-progress", "not-started"):
+            repo.update_ticket(
+                project_id=project_id, ticket_key="first", patch_json={"status": status}
+            )
+        submit(session, project_id, tmp_path, scheduler)
+        scheduler.run()
+        session.expire_all()
+        recovered = repo.brief(project_id=project_id, ticket_key="first").ticket
+        final = recovered.completion_evidence_json["automatic_delivery"]
+        assert recovered.status == "complete"
+        assert final["sessions"][mismatched_phase] == retained
+        assert ("first", mismatched_phase, retained["thread_id"]) in calls
+        assert final["attempt"] == 2 and final["repair_count"] == 2
+        assert final["attempts"][0][mismatched_phase]["thread_id"] == "foreign-terminal-id"
+        assert final["attempts"][0][mismatched_phase]["error"] == "Native session identity mismatch"
+    finally:
+        service.shutdown_usage()
+
+
+def test_competing_session_rejection_survives_terminal_handling_and_requeue(
+    session, project_id, tmp_path, monkeypatch
+):
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from stackos.host_mcp import service
+
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    definition = service._definition_by_key("codex")
+    owner = service.ActiveInvocation(
+        invocation_id="fixture-other-owner",
+        scope=service.AgentExecutionScope(project_id, "unrelated", "other", "other-worker"),
+        host_key="codex",
+        model=None,
+        started_at=datetime.now(UTC).isoformat(),
+        session_id="already-owned",
+        thread_id="already-owned",
+    )
+    service._active_invocations[owner.invocation_id] = owner
+    calls = []
+
+    def native(_dir, _instructions, _prompt, _schema, *, on_session, **kwargs):
+        calls.append(kwargs.get("resume_thread_id"))
+        on_session("already-owned")
+        with Session(session.get_bind()) as reader:
+            early = (
+                TrackerRepository(reader)
+                .brief(project_id=project_id, ticket_key="first")
+                .ticket.completion_evidence_json["automatic_delivery"]
+            )
+        assert "delivery" not in early["sessions"]
+        return AgentRunResult(0, thread_id="already-owned", result=generic_result("blocked"))
+
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
+    )
+    try:
+        scheduler.run()
+        session.expire_all()
+        repo = TrackerRepository(session)
+        failed = repo.brief(project_id=project_id, ticket_key="first").ticket
+        evidence = failed.completion_evidence_json["automatic_delivery"]
+        assert failed.status == "failed"
+        assert "delivery" not in evidence["sessions"]
+        assert evidence["delivery"]["error"] == "Native session ownership conflict"
+        assert evidence["delivery"]["validated_outcome"] is None
+        assert service._active_invocations[owner.invocation_id] is owner
+        assert owner.thread_id == "already-owned" and not owner.finished
+        # An unowned ID cannot authorize exact-session recovery, even after the
+        # other owner retires. The existing missing-session stop still applies.
+        service._unregister(owner)
+        for status in ("in-progress", "not-started"):
+            repo.update_ticket(
+                project_id=project_id, ticket_key="first", patch_json={"status": status}
+            )
+        submit(session, project_id, tmp_path, scheduler)
+        scheduler.run()
+        session.expire_all()
+        stopped = repo.brief(project_id=project_id, ticket_key="first").ticket
+        assert "missing native session ID" in stopped.outcome
+        assert "delivery" not in stopped.completion_evidence_json["automatic_delivery"]["sessions"]
+        assert calls == [None]
+    finally:
+        service._unregister(owner)
+        service.shutdown_usage()
+
+
 def test_task_mcp_route_frozen_through_rehandoff_and_role_resume(
     session, project_id, tmp_path, monkeypatch
 ):

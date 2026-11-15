@@ -2385,7 +2385,7 @@ def run_delivery(
                         evidence[phase]["validation_error"] = validation_error
                         valid = False
                 # Error receipts can still identify the exact native session for explicit requeue.
-                elif native_session is None and result.thread_id:
+                elif sessions.get(phase) is None and result.thread_id:
                     sessions[phase] = {
                         **identity,
                         "thread_id": result.thread_id,
