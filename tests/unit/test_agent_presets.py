@@ -917,7 +917,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "architecture": "0.6.9",
         "test-designer": "0.6.13",
         "delivery": "0.7.25",
-        "delivery-reviewer": "0.6.24",
+        "delivery-reviewer": "0.6.25",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1070,6 +1070,34 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.3"
     release = loader.describe_preset(key="stackos.sdlc.release-ops").preset
     assert any("assembled outcome/scope" in rule for rule in release.prompt_contract.must_do)
+
+
+def test_resolved_sdlc_reviewer_handoff_keeps_detailed_proof_out_of_summary() -> None:
+    preset = AgentPresetLoader().describe_preset(key="stackos.sdlc.delivery-reviewer").preset
+    review_rule = next(
+        rule
+        for rule in preset.prompt_contract.must_do
+        if rule.startswith("Review source changes and repairs at the exact scoped commit")
+    )
+    # Inspect both effective instruction owners; the shared adaptation alone missed R1.
+    resolved = " ".join(
+        [preset.project_adaptation.required_agent_action, *preset.prompt_contract.must_do]
+    )
+    assert "Summary contains executed commands/results" not in resolved
+    assert (
+        "Summary retains verdict, candidate, actual outcome/scope, decisive proof and "
+        "material limits." in review_rule
+    )
+    assert (
+        "Detailed commands/results and actionable scoped repairs belong once in outputs or "
+        "existing evidence" in review_rule
+    )
+    assert "explicit failed/unexecuted checks" in review_rule
+    assert (
+        "Failed required specs map to repair, unavailable required checks to blocked" in review_rule
+    )
+    assert "Put unrelated findings only in separate nonblocking followups" in resolved
+    assert "Do not change production files, acceptance tests or commits" in review_rule
 
 
 def test_sdlc_final_result_rule_resolves_identically_for_delivery_and_review() -> None:

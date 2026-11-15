@@ -7,7 +7,7 @@ PENDING_PRESET_ADOPTIONS = {
     "stackos.sdlc.architecture": ("0.6.8", "0.6.9"),
     "stackos.sdlc.test-designer": ("0.6.12", "0.6.13"),
     "stackos.sdlc.delivery": ("0.7.22", "0.7.25"),
-    "stackos.sdlc.delivery-reviewer": ("0.6.21", "0.6.24"),
+    "stackos.sdlc.delivery-reviewer": ("0.6.21", "0.6.25"),
     "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.28"),
 }
 
