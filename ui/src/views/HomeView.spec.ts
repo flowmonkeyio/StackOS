@@ -61,6 +61,7 @@ describe('HomeView', () => {
     }) as typeof fetch
     const wrapper = await mountHome()
     try {
+      expect(vi.mocked(globalThis.fetch).mock.calls.some(([url]) => String(url).includes('tracker.deliveryCapacity'))).toBe(false)
       const before = vi.mocked(globalThis.fetch).mock.calls.length
       await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
       expect(wrapper.findAll('tbody tr')).toHaveLength(2)

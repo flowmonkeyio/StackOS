@@ -166,6 +166,7 @@ describe('Work board navigation', () => {
       ? capacity(Number(args.project_id)) : name === 'tracker.setDeliveryCapacity' ? { data: capacity(7, 2) } : normal(name, args, options))
     const { wrapper, router } = await render('/projects/7/tasks', false, false, false, true)
     try {
+      expect(mocks.callOperation.mock.calls.some(([name]) => name === 'tracker.deliveryCapacity')).toBe(false)
       const before = mocks.callOperation.mock.calls.length
       await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
       expect(wrapper.findAll('tbody tr')).toHaveLength(1)
@@ -177,7 +178,6 @@ describe('Work board navigation', () => {
       expect(mocks.callOperation.mock.calls.slice(before)).toEqual([
         ['tracker.deliveryCapacity', { project_id: 7 }],
         ['tracker.setDeliveryCapacity', { updates: [{ project_id: 7, max_concurrent_tasks: 2 }] }],
-        ['tracker.deliveryCapacity', { project_id: 7 }],
       ])
       await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
       await wrapper.get('input[type="number"]').setValue(12)

@@ -14,11 +14,13 @@ const capacity = ref<SchemaDeliveryCapacityOut | null>(null)
 const open = ref(false)
 const drafts = ref<Record<number, string | number | null>>({})
 const saving = ref(false)
+const running = ref(false)
 const readError = ref<string | null>(null)
 const saveError = ref<string | null>(null)
 const edited = new Set<number>()
 let scope = props.projectId
 let revision = 0
+let readingRevision: number | null = null
 let disposed = false
 const rows = computed(() => capacity.value?.projects ?? [])
 const changed = computed(() => rows.value.filter(row => drafts.value[row.project_id] !== row.configured_limit))
@@ -45,17 +47,26 @@ function accept(result: SchemaDeliveryCapacityOut, resetDrafts = false): void {
   }
 }
 async function load(): Promise<void> {
-  if (saving.value) return
+  if (!open.value || saving.value || disposed || readingRevision === revision) return
   const current = revision
+  readingRevision = current
+  running.value = true
   try {
     const result = await callOperation<SchemaDeliveryCapacityOut>('tracker.deliveryCapacity',
       scope === undefined ? {} : { project_id: scope })
     if (!disposed && current === revision) accept(result)
   } catch (cause) {
     if (!disposed && current === revision) readError.value = formatApiError(cause, 'Task queues could not be loaded.')
+  } finally {
+    if (readingRevision === current) {
+      readingRevision = null
+      running.value = false
+    }
   }
 }
-const { refresh, running } = usePolling(load)
+// Keep scheduling in the shared helper, with single-flight reads owned by this
+// scope revision so an old request cannot delay a newly opened scope.
+usePolling(() => { void load() }, { immediate: false })
 // Callers key by project. Also fence direct prop changes and late reads/saves
 // before rendering another scope, without a watcher or a second capacity store.
 onBeforeUpdate(() => {
@@ -67,21 +78,23 @@ onBeforeUpdate(() => {
   edited.clear()
   open.value = false
   saving.value = false
+  running.value = false
   readError.value = null
   saveError.value = null
-  void load()
 })
 onBeforeUnmount(() => { disposed = true; revision++ })
-defineExpose({ refresh })
+defineExpose({ refresh: load })
 
 function setOpen(next: boolean): void {
-  if (saving.value) return
+  if (saving.value || open.value === next) return
   open.value = next
+  revision++
+  running.value = false
   if (next) {
     edited.clear()
     drafts.value = Object.fromEntries(rows.value.map(row => [row.project_id, row.configured_limit]))
     saveError.value = null
-    void refresh()
+    void load()
   }
 }
 function edit(id: number, next: string | number | null): void {
@@ -169,7 +182,7 @@ async function save(): Promise<void> {
         <UiButton
           size="sm"
           :loading="running"
-          @click="refresh"
+          @click="load"
         >
           Retry read
         </UiButton>

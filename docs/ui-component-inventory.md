@@ -134,8 +134,9 @@ drafts and explicit Save changes, committing changed rows atomically. Dismiss
 discards drafts; failed saves retain them; success uses durable operation readback.
 Lowering below running work preserves current tasks and shows the actual count
 above the new limit while future admissions wait. Other projects are unaffected.
-Visibility-aware polling and exposed refresh reload counts through the same
-scoped capacity read without loading the Board or Graph task data.
+Opening fetches fresh scoped capacity; visibility-aware polling and exposed
+refresh reload counts only while open, without loading Board or Graph task data.
+Closed controls make no capacity reads, including on scope or visibility changes.
 
 | Component | Notes |
 |---|---|
