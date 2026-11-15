@@ -67,6 +67,34 @@ describe('sparse interval averages', () => {
     expect(usageTrace([row, row], 'input')).toEqual(usageTrace([row], 'input'))
     expect(values([row, conflict, sample(240, 500), sample(300, 510)]).slice(-3)).toEqual([null, null, 10])
   })
+
+  it.each(['input', 'cache_read', 'output'] as const)('conserves known %s interval overlap after reset, missing-counter and conflict recovery', metric => {
+    const measured = (n: number) => ({ input: n * 2, remaining_input: n, cache_read: n, output: n, total: n * 3 })
+    const reading = (seconds: number, n: number, intervals: SchemaUsageIntervalOut[]): SchemaUsageSampleOut => ({
+      ...sample(seconds, n * 2, n, n), ...measured(n), intervals,
+    })
+    const baseline = (seconds: number, n: number) => reading(seconds, n, [{ ...interval(UsageIntervalOutKind.baseline, n), ...measured(n) }])
+    const reset = reading(30, 10, [{ ...interval(UsageIntervalOutKind.reset, 0), input: null, remaining_input: null }])
+    const missing = { ...reading(10, 10, []), remaining_input: null, cache_read: null }
+    const gaps = [[reset], [missing, baseline(30, 10)], [baseline(10, 10), baseline(10, 20), baseline(30, 10)]]
+    for (const gap of gaps) {
+      const before = [baseline(0, 100), ...gap]
+      expect(usageTrace(before, metric).maximum).toBe(0)
+      for (const [seconds, expected] of [[210, [50, 100, 100, 50]], [50, [300]]] as const) {
+        const batch = reading(seconds, 310, [{ ...interval(UsageIntervalOutKind.batched, 300, new Date(start + 30_000).toISOString()), ...measured(300) }])
+        const chart = usageTrace([...before, batch], metric)
+        expect(chart.buckets.slice(-expected.length).map(bucket => bucket.value)).toEqual(expected)
+        expect(chart.buckets.reduce((sum, bucket) => sum + (bucket.value ?? 0), 0)).toBe(300)
+        expect(chart.buckets.slice(0, -expected.length).every(bucket => bucket.value === null)).toBe(true)
+        const zero = usageTrace([...before, { ...batch, intervals: [{ ...batch.intervals![0]!, ...measured(0) }] }], metric)
+        expect(zero.buckets.slice(-expected.length).map(bucket => bucket.value)).toEqual(expected.map(() => 0))
+      }
+    }
+    // A later uncertain reading in the same minute cannot erase a prior known
+    // final-only interval from this or another invocation either.
+    const batch = reading(50, 310, [{ ...interval(UsageIntervalOutKind.batched, 300, new Date(start + 30_000).toISOString()), ...measured(300) }])
+    expect(usageTrace([baseline(0, 100), reset, batch, { ...reset, at: new Date(start + 55_000).toISOString() }], metric).buckets.at(-1)?.value).toBe(300)
+  })
 })
 
 describe('reported activity bars', () => {

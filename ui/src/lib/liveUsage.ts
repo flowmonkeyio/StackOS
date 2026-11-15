@@ -55,6 +55,9 @@ export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, 
   const windowEnd = Number.isFinite(anchor) ? (Math.floor(anchor / MINUTE) + 1) * MINUTE : null
   const windowStart = windowEnd == null ? null : windowEnd - count * MINUTE
   const buckets: UsageTraceGeometry['buckets'] = Array.from({ length: count }, (_, index) => ({ at: (windowStart ?? 0) + index * MINUTE, value: null, observations: [] }))
+  // An uncertain endpoint may invalidate its checkpoint minute, but not a
+  // separately measured interval's known overlap before or after that endpoint.
+  const intervalValues: (number | null)[] = Array(count).fill(null)
   const gaps = new Set<number>()
   let previous: { at: number; value: number } | null = null
   let baselineAt: number | null = null
@@ -63,7 +66,7 @@ export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, 
     if (startAt == null || !Number.isFinite(startAt) || startAt >= at || change == null || !Number.isFinite(change) || change < 0) return
     buckets.forEach((bucket, index) => {
       const overlap = Math.min(at, bucket.at + MINUTE) - Math.max(startAt, bucket.at)
-      if (overlap > 0 && !gaps.has(index)) bucket.value = (bucket.value ?? 0) + change * (overlap / (at - startAt))
+      if (overlap > 0) intervalValues[index] = (intervalValues[index] ?? 0) + change * (overlap / (at - startAt))
     })
   }
   for (let cursor = 0; cursor < ordered.length; cursor++) {
@@ -128,6 +131,10 @@ export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, 
     baselineAt = bucket ? at : null
   }
 
+  buckets.forEach((bucket, index) => {
+    const value = intervalValues[index]
+    if (value != null) bucket.value = (bucket.value ?? 0) + value
+  })
   const measured = buckets.some(bucket => bucket.value != null)
   return {
     state: measured ? 'bars' : buckets.some(bucket => bucket.observations.some(o => o.kind === 'batched')) ? 'batched' : buckets.some(bucket => bucket.observations.some(o => o.kind === 'baseline')) ? 'point' : 'empty',
