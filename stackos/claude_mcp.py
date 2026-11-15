@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from stackos.host_mcp.bridge import is_stackos_bridge_command
+from stackos.host_mcp.bridge import command_matches, is_stackos_bridge_command
 
 MCP_SERVER_NAME = "stackos"
 DEFAULT_SCOPE = "user"
@@ -221,7 +221,7 @@ def _classify_registration(
         stale_reasons.append(f"scope is {parsed.scope!r}, expected {DEFAULT_SCOPE!r}")
     if parsed.transport != "stdio":
         stale_reasons.append(f"transport is {parsed.transport!r}, expected 'stdio'")
-    if command != expected:
+    if not command_matches(expected, command):
         stale_reasons.append("command does not match the expected StackOS mcp-bridge command")
     if _looks_secretish(command):
         stale_reasons.append("command appears to contain a token or auth header")

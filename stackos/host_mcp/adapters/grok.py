@@ -23,6 +23,7 @@ from stackos.host_mcp.agent_execution import (
 )
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
+    command_matches,
     is_stackos_bridge_command,
     resolve_bridge_command,
     token_preflight,
@@ -305,7 +306,7 @@ def _inspect_config(home: Path, *, server_name: str) -> HostMcpResult:
     stored = _stored_command(entry)
     expected = resolve_bridge_command(runtime=HOST_KEY)
     managed = is_stackos_bridge_command(stored)
-    if stored == expected and entry.get("enabled", True) is True:
+    if command_matches(expected, stored) and entry.get("enabled", True) is True:
         return replace(
             base,
             status="registered_current",
@@ -344,7 +345,7 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
     if grok_bin is None:
         return _absent()
     command = resolve_bridge_command(runtime=HOST_KEY)
-    if current.command != command:
+    if not command_matches(command, current.command):
         added = _run_grok(
             grok_bin,
             ["mcp", "add", "--scope", "user", server_name, "--", *command],
