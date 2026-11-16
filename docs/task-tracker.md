@@ -1356,11 +1356,25 @@ and leaves unfinished Git changes records an `owned_work` receipt in the ticket'
 session identity, affected paths and hashes of staged, unstaged and untracked work.
 Explicit requeue can resume that same ticket/session with those exact unchanged
 files; it retains the original base and archives the earlier attempt and receipt.
+New snapshots use `version: 1`, fixed integrity fields, sorted path SHA-256
+digests, and an ordered list of untracked records (`path_digest`, `sha256`,
+`mode`). Filenames in `paths` are diagnostic labels subject to normal redaction;
+they never authenticate ownership. Resume compares the versioned integrity
+fields, original ticket/base and exact retained role session before launch.
+Sensitive or assignment-like filenames therefore survive tracker writes,
+revision history and process reopening without storing file contents or exempting
+any fields from the shared redactor.
 Pre-existing dirt never becomes implicitly ticket-owned, even after native failure
 or an invalid candidate return. A supplied owned-work receipt with a changed
 snapshot, base, ticket or role session fails before launch. Legacy source failures
 without a receipt need explicit operator review/adoption using the same snapshot
-helper, with actor and reason recorded. Owned source work requires clean Git before
+helper, with actor and reason recorded. Intact unversioned snapshots normalize
+in memory for comparison without rewriting old receipts. Redacted or malformed
+legacy data, explicit null receipts and unknown versions fail closed. Recovery
+must review the current files, original base and retained session explicitly;
+never reconstruct missing hashes from current files as implicit ownership. The
+reviewed adoption captures a new versioned snapshot while retaining revisions,
+attempt history and consumed repair allowance. Owned source work requires clean Git before
 review or advancement when an explicit source candidate was supplied; prior native
 returns retain that requirement even if execution failed. Ownership alone does not
 require a commit: interrupted noncoding work can resume in its original session,

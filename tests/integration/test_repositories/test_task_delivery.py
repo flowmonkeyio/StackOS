@@ -3180,6 +3180,10 @@ def test_parallel_task_jobs_stop_and_resume_independently(
         "session-change",
         "ticket-change",
         "base-change",
+        "head-change",
+        "mode-change",
+        "path-change",
+        "source-change",
         "empty-receipt",
         "cleaned-work",
         "dirty-success",
@@ -3195,6 +3199,7 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
     repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
     base = git(tmp_path, "rev-parse", "HEAD")
     calls = []
+    sensitive_names = ["credentials.ts", "token.ts", "secret=assigned.ts"]
 
     def run_agent(*args, **kwargs):
         packet = json.loads(args[3])
@@ -3205,6 +3210,8 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
             git(tmp_path, "add", "baseline")
             (tmp_path / "baseline").write_text("unstaged edit")
             (tmp_path / "new-file").write_text("new work")
+            for name in sensitive_names:
+                (tmp_path / name).write_text("synthetic private source")
             if failure in {"native", "native-candidate"}:
                 return scenario_result(
                     1,
@@ -3229,7 +3236,7 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
             if requeue == "dirty-success":
                 # Recovery ownership alone does not declare a source candidate.
                 return scenario_result(0, thread_id="first-delivery", result=generic_result())
-            git(tmp_path, "add", "baseline", "new-file")
+            git(tmp_path, "add", "baseline", "new-file", *sensitive_names)
             git(tmp_path, "commit", "-m", "Finish original work")
         return scenario_result(
             0,
@@ -3253,17 +3260,26 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
     assert receipt["base_commit_sha"] == base
     assert receipt["session"] == evidence["sessions"]["delivery"]
     assert receipt["source"] == "delivery_return"
-    assert receipt["snapshot"]["paths"] == ["baseline", "new-file"]
+    assert len(receipt["snapshot"]["paths"]) == 5
     assert "unstaged edit" not in json.dumps(receipt)
+    assert "synthetic private source" not in json.dumps(receipt)
     if requeue == "tracked-change":
         (tmp_path / "baseline").write_text("someone else's edit")
     elif requeue == "untracked-change":
         (tmp_path / "other-file").write_text("someone else's work")
     elif requeue == "index-change":
         git(tmp_path, "add", "baseline")  # Same final bytes, different staged content.
+    elif requeue == "head-change":
+        git(tmp_path, "commit", "--allow-empty", "-m", "Unowned HEAD change")
+    elif requeue == "mode-change":
+        (tmp_path / "credentials.ts").chmod(0o755)
+    elif requeue == "path-change":
+        (tmp_path / "credentials.ts").rename(tmp_path / "credentials-renamed.ts")
     elif requeue == "cleaned-work":
         git(tmp_path, "reset", "--hard", base)
         (tmp_path / "new-file").unlink()
+        for name in sensitive_names:
+            (tmp_path / name).unlink()
     elif requeue == "empty-receipt":
         evidence["owned_work"] = {}
         repo.update_ticket(
@@ -3271,11 +3287,13 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
             ticket_key="first",
             patch_json={"completion_evidence_json": {"automatic_delivery": evidence}},
         )
-    elif requeue in {"session-change", "ticket-change", "base-change"}:
+    elif requeue in {"session-change", "ticket-change", "base-change", "source-change"}:
         if requeue == "session-change":
             evidence["sessions"]["delivery"]["thread_id"] = "different-session"
         elif requeue == "ticket-change":
             evidence["owned_work"]["ticket_key"] = "other-ticket"
+        elif requeue == "source-change":
+            evidence["owned_work"]["session"]["source_digest"] = "0" * 64
         else:
             evidence["candidate"]["base_commit_sha"] = "0" * 40
         repo.update_ticket(
@@ -3307,7 +3325,9 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
         if requeue == "same":
             assert not git(tmp_path, "status", "--porcelain")
         else:
-            assert task_delivery._worktree_snapshot(str(tmp_path)) == receipt["snapshot"]
+            assert task_delivery._snapshot_integrity(
+                task_delivery._worktree_snapshot(str(tmp_path))
+            ) == task_delivery._snapshot_integrity(receipt["snapshot"])
         assert "owned_work" not in final
     else:
         assert ticket.status == "failed"
@@ -3583,6 +3603,237 @@ def test_feedback_cannot_drop_an_explicit_candidate_contract(
         assert len(calls) == 6
 
 
+def test_owned_work_survives_tracker_history_and_fresh_process(
+    native_task_session, project_id, tmp_path
+):
+    from stackos import task_delivery
+
+    session = native_task_session
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    base = git(tmp_path, "rev-parse", "HEAD")
+    identity = {"agent": "builder", "host_key": "codex", "thread_id": "original-session"}
+    evidence = {
+        "candidate": {"base_commit_sha": base},
+        "sessions": {"delivery": identity},
+        "delivery": {"result": generic_result("blocked")},
+        "repair_count": 2,
+    }
+    for name in ["credentials.ts", "token.ts", "secret.ts", "api_key=value.ts", "api_key=other.ts"]:
+        (tmp_path / name).write_text("synthetic private source")
+    (tmp_path / "baseline").write_text("staged private source")
+    git(tmp_path, "add", "baseline")
+    (tmp_path / "baseline").write_text("unstaged private source")
+    evidence["owned_work"] = task_delivery._owned_work_receipt(
+        str(tmp_path), "first", evidence, baseline_clean=True
+    )
+    task_delivery._save_evidence(repo, project_id, "first", evidence)
+    session.commit()
+    session.expire_all()
+    stored = repo.brief(project_id=project_id, ticket_key="first").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    task_delivery._archive_attempt(stored)
+    task_delivery._save_evidence(repo, project_id, "first", stored)
+    session.commit()
+    session.expire_all()
+    # A fresh interpreter/connection consumes actual redacted DB rows and revisions.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import json, sys
+from pathlib import Path
+from sqlmodel import Session, select
+from stackos.db.connection import make_engine
+from stackos.db.models import TrackerRevision
+from stackos.repositories.tracker import TrackerRepository
+from stackos.operations.tracker import write_handlers
+from stackos.task_delivery import _launch_baseline
+engine = make_engine(Path(sys.argv[1]))
+with Session(engine) as session:
+    project_id = int(sys.argv[2])
+    evidence = TrackerRepository(session).brief(
+        project_id=project_id, ticket_key="first"
+    ).ticket.completion_evidence_json["automatic_delivery"]
+    assert evidence["repair_count"] == 2
+    assert evidence["attempts"][0]["owned_work"] == evidence["owned_work"]
+    revisions = session.exec(select(TrackerRevision).where(
+        TrackerRevision.project_id == project_id, TrackerRevision.entity_key == "first"
+    )).all()
+    for revision in revisions[-2:]:
+        assert revision.after_json["completion_evidence_json"]["automatic_delivery"][
+            "owned_work"
+        ] == evidence["owned_work"]
+    assert "private source" not in json.dumps([r.after_json for r in revisions])
+    print(json.dumps(_launch_baseline(
+        sys.argv[3], "first", evidence, "delivery", evidence["sessions"]["delivery"]
+    )))
+engine.dispose()
+""",
+            str(session.get_bind().url.database),
+            str(project_id),
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"base_commit_sha": base}
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "none",
+        "labels",
+        "digest",
+        "unknown",
+        "redacted",
+        "malformed",
+        "null",
+        "missing-base",
+        "unknown-receipt",
+        "malformed-source",
+        "unreviewed-adoption",
+        "malformed-time",
+    ],
+)
+def test_versioned_owned_work_validates_integrity_without_trusting_labels(tmp_path, damage):
+    from stackos import task_delivery
+
+    identity = {"agent": "builder", "host_key": "codex", "thread_id": "original-session"}
+    evidence = {
+        "candidate": {"base_commit_sha": git(tmp_path, "rev-parse", "HEAD")},
+        "sessions": {"delivery": identity},
+    }
+    (tmp_path / "credentials.ts").write_text("private source")
+    receipt = task_delivery._owned_work_receipt(
+        str(tmp_path), "first", evidence, baseline_clean=True
+    )
+    assert receipt["snapshot"]["version"] == 1
+    evidence["owned_work"] = receipt
+    if damage == "labels":
+        receipt["snapshot"]["paths"] = ["arbitrary diagnostic label"]
+    elif damage == "digest":
+        receipt["snapshot"]["untracked"][0]["sha256"] = "0" * 64
+    elif damage == "unknown":
+        receipt["snapshot"]["version"] = 999
+    elif damage == "redacted":
+        receipt["snapshot"]["untracked"][0]["sha256"] = "[redacted]"
+    elif damage == "malformed":
+        receipt["snapshot"]["untracked"] = {"credentials.ts": {}}
+    elif damage == "null":
+        evidence["owned_work"] = None
+    elif damage == "missing-base":
+        receipt["base_commit_sha"] = None
+        evidence["candidate"]["base_commit_sha"] = None
+    elif damage == "unknown-receipt":
+        receipt["version"] = 999
+    elif damage == "malformed-source":
+        receipt["source"] = []
+    elif damage == "unreviewed-adoption":
+        receipt["source"] = "operator_recovery"
+        receipt["operator_recovery"] = {}
+    elif damage == "malformed-time":
+        receipt["captured_at"] = None
+    if damage in {"none", "labels"}:
+        assert (
+            task_delivery._launch_baseline(str(tmp_path), "first", evidence, "delivery", identity)
+            == evidence["candidate"]
+        )
+    else:
+        with pytest.raises(ValidationError, match="dirty"):
+            task_delivery._launch_baseline(str(tmp_path), "first", evidence, "delivery", identity)
+
+
+@pytest.mark.parametrize("damage", ["none", "redacted", "paths", "mode", "unknown"])
+def test_legacy_owned_work_normalizes_only_intact_persisted_receipts(
+    session, project_id, tmp_path, damage
+):
+    from hashlib import sha256
+
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    identity = {"agent": "builder", "host_key": "codex", "thread_id": "original-session"}
+    evidence = {
+        "candidate": {"base_commit_sha": git(tmp_path, "rev-parse", "HEAD")},
+        "sessions": {"delivery": identity},
+        "repair_count": 3,
+        "attempts": [{"attempt": 1, "review": {"validated_outcome": "repair"}}],
+    }
+    name = "credentials.ts" if damage == "redacted" else "new-file"
+    path = tmp_path / name
+    path.write_text("unfinished original source")
+    receipt = task_delivery._owned_work_receipt(
+        str(tmp_path), "first", evidence, baseline_clean=True
+    )
+    snapshot = receipt["snapshot"]
+    # Historical schema, independent of the new writer's untracked representation.
+    receipt["snapshot"] = {
+        key: snapshot[key] for key in ("head_commit_sha", "staged", "unstaged", "paths")
+    }
+    receipt["snapshot"]["untracked"] = {
+        name: {"sha256": sha256(path.read_bytes()).hexdigest(), "mode": path.lstat().st_mode}
+    }
+    if damage == "paths":
+        receipt["snapshot"]["paths"] = ["[redacted]"]
+    elif damage == "mode":
+        receipt["snapshot"]["untracked"][name]["mode"] = True
+    elif damage == "unknown":
+        receipt["snapshot"]["version"] = 999
+    evidence["owned_work"] = receipt
+    task_delivery._save_evidence(repo, project_id, "first", evidence)
+    session.commit()
+    session.expire_all()
+    stored = repo.brief(project_id=project_id, ticket_key="first").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    before = deepcopy(stored)
+    if damage == "none":
+        assert (
+            task_delivery._launch_baseline(str(tmp_path), "first", stored, "delivery", identity)
+            == evidence["candidate"]
+        )
+    else:
+        with pytest.raises(ValidationError, match="dirty"):
+            task_delivery._launch_baseline(str(tmp_path), "first", stored, "delivery", identity)
+        stored["owned_work"] = task_delivery._owned_work_receipt(
+            str(tmp_path),
+            "first",
+            stored,
+            operator_recovery={"actor": "operator", "reason": "Reviewed exact source and session"},
+        )
+        task_delivery._save_evidence(repo, project_id, "first", stored)
+        session.commit()
+        session.expire_all()
+        stored = repo.brief(
+            project_id=project_id, ticket_key="first"
+        ).ticket.completion_evidence_json["automatic_delivery"]
+        assert (
+            task_delivery._launch_baseline(str(tmp_path), "first", stored, "delivery", identity)
+            == evidence["candidate"]
+        )
+    assert stored["repair_count"] == before["repair_count"]
+    assert stored["attempts"] == before["attempts"]
+    if damage == "none":
+        assert stored == before  # Normalization is read-only; legacy history stays intact.
+    else:
+        revisions = session.exec(
+            select(TrackerRevision).where(TrackerRevision.entity_key == "first")
+        ).all()
+        assert any(
+            r.after_json["completion_evidence_json"] == {"automatic_delivery": before}
+            for r in revisions
+        )
+
+
 def test_operator_adopts_legacy_dirty_work_without_replacing_original_baseline(tmp_path):
     from stackos import task_delivery
 
@@ -3601,6 +3852,11 @@ def test_operator_adopts_legacy_dirty_work_without_replacing_original_baseline(t
     (tmp_path / "baseline").write_text("original unfinished work")
     with pytest.raises(ValidationError, match="dirty"):
         task_delivery._launch_baseline(str(tmp_path), "first", evidence, "delivery", identity)
+    for review in [{}, {"actor": "operator", "reason": ""}]:
+        with pytest.raises(ValidationError, match="actor and reason"):
+            task_delivery._owned_work_receipt(
+                str(tmp_path), "first", evidence, operator_recovery=review
+            )
     receipt = task_delivery._owned_work_receipt(
         str(tmp_path),
         "first",

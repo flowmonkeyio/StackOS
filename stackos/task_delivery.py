@@ -304,6 +304,7 @@ def _worktree_snapshot(project_dir: str) -> dict[str, Any]:
     root = Path(_git(project_dir, "rev-parse", "--show-toplevel"))
     paths: set[str] = set()
     snapshot: dict[str, Any] = {
+        "version": 1,
         "head_commit_sha": _git(project_dir, "rev-parse", "HEAD"),
     }
     for label, args in (("staged", ("--cached",)), ("unstaged", ())):
@@ -316,7 +317,7 @@ def _worktree_snapshot(project_dir: str) -> dict[str, Any]:
                 None, _git(str(root), "diff", "--name-only", "-z", *args, strip=False).split("\0")
             )
         )
-    snapshot["untracked"] = {}
+    snapshot["untracked"] = []
     for name in filter(
         None,
         _git(str(root), "ls-files", "--others", "--exclude-standard", "-z", strip=False).split(
@@ -325,13 +326,102 @@ def _worktree_snapshot(project_dir: str) -> dict[str, Any]:
     ):
         path = root / name
         contents = str(path.readlink()).encode() if path.is_symlink() else path.read_bytes()
-        snapshot["untracked"][name] = {
-            "sha256": sha256(contents).hexdigest(),
-            "mode": path.lstat().st_mode,
-        }
+        snapshot["untracked"].append(
+            {
+                "path_digest": sha256(name.encode()).hexdigest(),
+                "sha256": sha256(contents).hexdigest(),
+                "mode": path.lstat().st_mode,
+            }
+        )
         paths.add(name)
+    snapshot["untracked"].sort(key=lambda item: item["path_digest"])
+    snapshot["path_digests"] = sorted(sha256(name.encode()).hexdigest() for name in paths)
+    # Human-readable diagnostics undergo normal text redaction, never identity comparison.
     snapshot["paths"] = sorted(paths)
     return snapshot
+
+
+def _snapshot_integrity(snapshot: Any) -> dict[str, Any]:
+    """Read v1 or intact legacy integrity fields without rewriting stored history."""
+    error = "Invalid owned dirty work fingerprint; explicit reviewed adoption required"
+    fields = {"head_commit_sha", "staged", "unstaged", "untracked", "paths"}
+    if not isinstance(snapshot, dict):
+        raise ValidationError(error)
+    legacy = "version" not in snapshot
+    if set(snapshot) != (fields if legacy else fields | {"version", "path_digests"}):
+        raise ValidationError(error)
+    if not legacy and (type(snapshot["version"]) is not int or snapshot["version"] != 1):
+        raise ValidationError(error)
+    paths = snapshot["paths"]
+    if not isinstance(paths, list) or any(not isinstance(name, str) for name in paths):
+        raise ValidationError(error)
+    normalized = {key: value for key, value in snapshot.items() if key != "paths"}
+    if legacy:
+        untracked = snapshot["untracked"]
+        if (
+            not isinstance(untracked, dict)
+            or paths != sorted(set(paths))
+            or any(
+                not isinstance(name, str)
+                or "[redacted" in name.lower()
+                or name.startswith("/")
+                or any(part in {"", ".", ".."} for part in name.split("/"))
+                for name in [*paths, *untracked]
+            )
+            or not set(untracked).issubset(paths)
+            or any(
+                not isinstance(item, dict) or set(item) != {"sha256", "mode"}
+                for item in untracked.values()
+            )
+        ):
+            raise ValidationError(error)
+        normalized.update(
+            version=1,
+            path_digests=sorted(sha256(name.encode()).hexdigest() for name in paths),
+            untracked=sorted(
+                (
+                    {"path_digest": sha256(name.encode()).hexdigest(), **item}
+                    for name, item in untracked.items()
+                ),
+                key=lambda item: item["path_digest"],
+            ),
+        )
+
+    def digest(value, length=64):
+        return isinstance(value, str) and re.fullmatch(rf"[0-9a-f]{{{length}}}", value)
+
+    if (
+        not (digest(normalized["head_commit_sha"], 40) or digest(normalized["head_commit_sha"]))
+        or not all(digest(normalized[key]) for key in ("staged", "unstaged"))
+        or not isinstance(normalized["path_digests"], list)
+        or not all(digest(value) for value in normalized["path_digests"])
+        or normalized["path_digests"] != sorted(set(normalized["path_digests"]))
+        or not isinstance(normalized["untracked"], list)
+    ):
+        raise ValidationError(error)
+    names = []
+    for item in normalized["untracked"]:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"path_digest", "sha256", "mode"}
+            or not digest(item["path_digest"])
+            or not digest(item["sha256"])
+            or type(item["mode"]) is not int
+            or item["mode"] <= 0
+            or item["path_digest"] not in normalized["path_digests"]
+        ):
+            raise ValidationError(error)
+        names.append(item["path_digest"])
+    if names != sorted(set(names)):
+        raise ValidationError(error)
+    return normalized
+
+
+def _recovery_review_present(review: Any) -> bool:
+    return isinstance(review, dict) and all(
+        isinstance(review.get(key), str) and bool(review[key].strip())
+        for key in ("actor", "reason")
+    )
 
 
 def _owned_work_receipt(
@@ -343,6 +433,8 @@ def _owned_work_receipt(
     operator_recovery: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Capture a returned delivery, or an explicitly reviewed legacy recovery."""
+    if operator_recovery is not None and not _recovery_review_present(operator_recovery):
+        raise ValidationError("Owned dirty work adoption requires a review actor and reason")
     if not (baseline_clean or evidence.get("owned_work") or operator_recovery):
         return None  # Pre-existing dirt is never implicitly ticket-owned.
     base = evidence.get("candidate", {}).get("base_commit_sha")
@@ -365,15 +457,32 @@ def _owned_work_receipt(
 
 def _launch_baseline(project_dir, ticket_key, evidence, phase, native_session):
     receipt = evidence.get("owned_work")
-    if receipt is not None:
+    if "owned_work" in evidence:
+        fields = {"ticket_key", "base_commit_sha", "session", "snapshot", "source", "captured_at"}
+        base = receipt.get("base_commit_sha") if isinstance(receipt, dict) else None
         if not (
-            phase == "delivery"
-            and native_session
+            isinstance(receipt, dict)
+            and set(receipt)
+            == fields
+            | ({"operator_recovery"} if receipt.get("source") == "operator_recovery" else set())
+            and phase == "delivery"
+            and isinstance(native_session, dict)
+            and native_session.get("thread_id")
             and receipt.get("ticket_key") == ticket_key
             and receipt.get("session") == native_session
-            and receipt.get("base_commit_sha")
-            == evidence.get("candidate", {}).get("base_commit_sha")
-            and receipt.get("snapshot") == _worktree_snapshot(project_dir)
+            and isinstance(receipt.get("source"), str)
+            and isinstance(receipt.get("captured_at"), str)
+            and bool(receipt["captured_at"].strip())
+            and (
+                receipt.get("source") != "operator_recovery"
+                or _recovery_review_present(receipt.get("operator_recovery"))
+            )
+            and isinstance(base, str)
+            and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", base)
+            and base == evidence.get("candidate", {}).get("base_commit_sha")
+            and receipt.get("source") in {"delivery_return", "operator_recovery"}
+            and _snapshot_integrity(receipt.get("snapshot"))
+            == _snapshot_integrity(_worktree_snapshot(project_dir))
         ):
             raise ValidationError("Owned dirty work identity or snapshot mismatch; cannot resume")
         return {"base_commit_sha": receipt["base_commit_sha"]}
