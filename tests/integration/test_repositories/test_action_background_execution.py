@@ -24,6 +24,7 @@ from stackos.db.models import (
     Plugin,
     PluginSource,
 )
+from stackos.repositories.base import ConflictError
 from stackos.repositories.projects import ProjectRepository
 
 
@@ -217,6 +218,59 @@ async def test_background_same_idempotency_key_has_one_winner_across_sessions(
         await connector.finishing.wait()
 
     assert connector.calls == 1
+    engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_background_replay_rejects_another_generated_inventory_scope(tmp_path: Path) -> None:
+    engine, project_id = _database(tmp_path)
+    connector = _GatedConnector()
+    registry = _registry(connector)
+    with Session(engine) as session:
+        _seed_action(session, background=True)
+        action = session.exec(select(Action)).one()
+        public_key = "api.file_transfer"
+        action.key = "api.inv_first.file_transfer"
+        action.config_json = {
+            **action.config_json,
+            "public_action_key": public_key,
+            "inventory_source": "fixture.catalog",
+            "inventory_state": "active",
+            "inventory_project_id": project_id,
+            "inventory_scope_key": "inv_first",
+        }
+        session.add(action)
+        session.commit()
+        repo = ActionRepository(session, connectors=registry)
+        arguments = dict(
+            project_id=project_id,
+            action_ref=f"background-test.{public_key}",
+            input_json={"path": "/remote/file.bin"},
+            idempotency_key="one-transfer",
+        )
+        try:
+            first = (await repo.execute(**arguments)).data
+            await connector.started.wait()
+            same_scope = (await repo.execute(**arguments)).data
+            assert same_scope.replayed and same_scope.action_call.id == first.action_call.id
+            session.refresh(action)
+            replacement = Action(
+                **action.model_dump(exclude={"id", "key", "config_json"}),
+                key="api.inv_second.file_transfer",
+                config_json={**action.config_json, "inventory_scope_key": "inv_second"},
+            )
+            action.config_json = {**action.config_json, "inventory_state": "retired"}
+            session.add(action)
+            session.add(replacement)
+            session.commit()
+            with pytest.raises(ConflictError, match="different generated action scope"):
+                await repo.execute(**arguments)
+            assert len(session.exec(select(ActionCall)).all()) == 1
+            assert len(session.exec(select(IdempotencyKey)).all()) == 1
+            assert connector.calls == 1
+        finally:
+            connector.release.set()
+            await connector.finishing.wait()
     engine.dispose()
 
 

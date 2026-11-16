@@ -25,6 +25,7 @@ from tests.integration.test_repositories.cfobooth_test_support import (
     ORG,
     catalog,
     descriptor,
+    identity,
     native_cfo,
     sync,
     verified_account,
@@ -367,6 +368,81 @@ async def test_server_authority_and_unknown_mutation_are_not_replayed(
         assert call.metadata_json["outcome_unknown"] is True
     assert len(httpx_mock.get_requests()) == 3
     assert CANARY not in json.dumps(call.model_dump(mode="json"))
+
+
+@pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
+async def test_generated_mutation_replay_conflicts_after_organization_change(
+    session, project_id, httpx_mock, granted
+):
+    ref = await verified_account(session, project_id, httpx_mock)
+    op = descriptor("fixture.write", method="POST", effect="mutation", body={"type": "object"})
+    imported = await sync(session, project_id, ref, httpx_mock, catalog(op))
+    action_ref = imported["action_refs"][0]
+    repo = ActionRepository(session)
+    original_manifest = repo.describe(project_id=project_id, action_ref=action_ref).manifest
+    httpx_mock.add_response(
+        method="POST",
+        url=BASE + f"/api/organizations/{ORG}/fixture/write",
+        json={"requestId": "original-write", "data": {"organization": ORG}},
+    )
+    first = await caller(
+        session, project_id, ref, action_ref, {"body": {}}, granted=granted, idem="one-write"
+    )
+    original_call_id = first.data.model_dump()["action_call"]["id"]
+    original_call = session.get(ActionCall, original_call_id)
+    original_audit = original_call.model_dump(mode="json")
+
+    # A projection refresh within the same scope preserves the selected observation.
+    op["title"] = "Updated catalog label"
+    await sync(session, project_id, ref, httpx_mock, catalog(op))
+    refreshed = repo.describe(project_id=project_id, action_ref=action_ref).manifest
+    assert refreshed.action_id == original_manifest.action_id
+    assert (
+        refreshed.config_json["inventory_manifest_hash"]
+        != original_manifest.config_json["inventory_manifest_hash"]
+    )
+    same_scope = await caller(
+        session, project_id, ref, action_ref, {"body": {}}, granted=granted, idem="one-write"
+    )
+    assert same_scope.data.model_dump()["action_call"]["id"] == original_call_id
+    assert same_scope.data.output_json == first.data.output_json
+
+    new_org = "ea283c40-3cb2-4e71-9b49-5fc48fca1ec9"
+    auth = AuthRepository(session)
+    auth.update_credential(
+        credential_ref=ref,
+        fields={"api_key": "replacement-fixture-key", "organization_id": new_org},
+        display_name=None,
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=BASE + f"/api/organizations/{new_org}/api-keys/current",
+        json=identity(organizationId=new_org, keyId="64cc04ad-d93c-4b98-810c-8ee1b2073282"),
+    )
+    assert (await auth.test(project_id=project_id, credential_ref=ref)).data.ok
+    httpx_mock.add_response(
+        method="GET",
+        url=BASE + f"/api/organizations/{new_org}/operation-catalog",
+        json=catalog(op),
+    )
+    await repo.execute(
+        project_id=project_id, action_ref="cfobooth.catalog.sync", input_json={}, credential_ref=ref
+    )
+    replacement = repo.describe(project_id=project_id, action_ref=action_ref).manifest
+    assert (
+        replacement.config_json["inventory_scope_key"]
+        != original_manifest.config_json["inventory_scope_key"]
+    )
+    call_count = len(session.exec(select(ActionCall)).all())
+    request_count = len(httpx_mock.get_requests())
+    with pytest.raises(ConflictError, match="different generated action scope"):
+        await caller(
+            session, project_id, ref, action_ref, {"body": {}}, granted=granted, idem="one-write"
+        )
+    assert len(session.exec(select(ActionCall)).all()) == call_count
+    assert len(httpx_mock.get_requests()) == request_count
+    session.refresh(original_call)
+    assert original_call.model_dump(mode="json") == original_audit
 
 
 async def test_real_loopback_probe_sync_and_stored_action(session, project_id):

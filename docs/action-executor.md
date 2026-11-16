@@ -116,6 +116,11 @@ direct or workflow execution. Automatically derived workflow keys do not replay
 reads. An explicit read `idempotency_key` still replays the selected observation;
 omit it when independently verifying a later provider write. Write-action retry
 keys and deduplication are unchanged.
+Generated-action replay must also match the original scoped inventory entry.
+Changing the selected organization, server or other inventory scope conflicts
+instead of returning the previous scope's result or repeating a mutation.
+Same-scope catalog refreshes preserve replay, including projection updates;
+historical action-call records remain available through the audit APIs.
 
 Refresh/acquisition is serialized per credential in the daemon and committed
 with an `updated_at` compare-and-swap. Concurrent actions therefore reuse the
