@@ -7,8 +7,25 @@ The companion package owns URL, schema, probe and HTTP behavior.
 from sqlmodel import select
 
 from stackos.actions.connectors import ActionConnectorRequest
-from stackos.db.models import CredentialAccount
+from stackos.db.models import CredentialAccount, ProjectCredential
 from stackos.repositories.base import ValidationError
+
+
+def project_attachment_revision(request: ActionConnectorRequest) -> tuple | None:
+    """Read the persisted Connection lifetime, including a recreated attachment.
+
+    Select scalar columns so an identity-map entry cannot conceal detach/reattach
+    in another session. SQLite may reuse the row ID; attached_at distinguishes
+    the new Connection without changing the global Account or inventory identity.
+    """
+    assert request.credential is not None and request.session is not None
+    row = request.session.exec(
+        select(ProjectCredential.id, ProjectCredential.attached_at).where(
+            ProjectCredential.project_id == request.project_id,
+            ProjectCredential.credential_id == request.credential.credential_id,
+        )
+    ).first()
+    return tuple(row) if row is not None else None
 
 
 def inventory_scope(request: ActionConnectorRequest) -> dict:

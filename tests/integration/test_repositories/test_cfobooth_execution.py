@@ -1,10 +1,11 @@
 """P07 caller, grant, schema and server-denial boundaries through native CFO."""
 
+import asyncio
 import json
 
 import httpx
 import pytest
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
@@ -67,6 +68,129 @@ async def caller(session, project_id, ref, action_ref, payload, *, granted=False
     return await action_run(
         inputs, build_context(inputs.model_dump(), session), ProgressEmitter(None, None)
     )
+
+
+@pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
+@pytest.mark.parametrize("reattach_while_held", [False, True], ids=["detach", "reattach"])
+@pytest.mark.parametrize("catalog_sync", [True, False], ids=["catalog", "operation"])
+async def test_held_result_cannot_restore_detached_project_scope(
+    session, project_id, httpx_mock, granted, reattach_while_held, catalog_sync
+):
+    from stackos.db.models import Action, ProjectCredential
+
+    ref = await verified_account(session, project_id, httpx_mock)
+    initial = await sync(session, project_id, ref, httpx_mock, catalog(descriptor()))
+    action_ref = initial["action_refs"][0]
+    # Retain the old ORM object while a different repository session removes it.
+    # The new attachment may reuse its SQLite ID; the lifetime read must be fresh.
+    original_attachment = session.exec(select(ProjectCredential)).one()
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def held(_request):
+        entered.set()
+        await release.wait()
+        return httpx.Response(
+            200,
+            json=(
+                catalog(descriptor("fixture.late"))
+                if catalog_sync
+                else {"requestId": "held-operation", "data": {"late": True}}
+            ),
+        )
+
+    path = "/operation-catalog" if catalog_sync else "/fixture/read"
+    httpx_mock.add_callback(held, method="GET", url=BASE + f"/api/organizations/{ORG}" + path)
+    pending = asyncio.create_task(
+        caller(
+            session,
+            project_id,
+            ref,
+            "cfobooth.catalog.sync" if catalog_sync else action_ref,
+            {},
+            granted=granted,
+        )
+    )
+    await asyncio.wait_for(entered.wait(), 5)
+    auth = AuthRepository(session)
+    assert original_attachment.project_id == project_id
+    with Session(session.get_bind()) as changes:
+        other_auth = AuthRepository(changes)
+        other_auth.detach_account(project_id=project_id, credential_ref=ref)
+        if reattach_while_held:
+            other_auth.attach_account(project_id=project_id, credential_ref=ref)
+    release.set()
+    with pytest.raises(ConflictError) as rejected:
+        await pending
+    failed = session.get(ActionCall, rejected.value.data["action_call_id"])
+    assert failed.metadata_json["result_discarded"] is True
+    assert failed.metadata_json["provider_executed"] is True
+    assert failed.metadata_json["retry_safe"] is False
+    session.expire_all()
+    rows = [
+        row
+        for row in session.exec(select(Action)).all()
+        if (row.config_json or {}).get("inventory_source") == "cfobooth.live-catalog"
+    ]
+    assert len(rows) == 1 and rows[0].config_json["inventory_state"] == "retired"
+    if not reattach_while_held:
+        auth.attach_account(project_id=project_id, credential_ref=ref)
+    before = len(httpx_mock.get_requests())
+    with pytest.raises(RepositoryError):
+        await caller(session, project_id, ref, action_ref, {}, granted=granted)
+    assert len(httpx_mock.get_requests()) == before == 3
+    # Recovery requires an explicit new sync; the discarded response cannot do it.
+    recovered = await sync(session, project_id, ref, httpx_mock, catalog(descriptor()))
+    assert recovered["action_refs"] == initial["action_refs"]
+    httpx_mock.add_response(
+        method="GET",
+        url=BASE + f"/api/organizations/{ORG}/fixture/read",
+        json={"requestId": "fresh-operation", "data": {"fresh": True}},
+    )
+    result = await caller(session, project_id, ref, action_ref, {}, granted=granted)
+    assert result.data.output_json["data"] == {"fresh": True}
+    assert len(httpx_mock.get_requests()) == 5
+
+
+@pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
+async def test_detaching_other_project_does_not_discard_current_catalog(
+    session, project_id, httpx_mock, granted
+):
+    from stackos.db.models import Action
+
+    ref = await verified_account(session, project_id, httpx_mock)
+    other = (
+        ProjectRepository(session)
+        .create(slug="other-cfo", name="Other CFO", domain="example.test")
+        .data.id
+    )
+    auth = AuthRepository(session)
+    auth.attach_account(project_id=other, credential_ref=ref)
+    await sync(session, other, ref, httpx_mock, catalog(descriptor()))
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def held(_request):
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, json=catalog(descriptor()))
+
+    httpx_mock.add_callback(
+        held, method="GET", url=BASE + f"/api/organizations/{ORG}/operation-catalog"
+    )
+    pending = asyncio.create_task(
+        caller(session, project_id, ref, "cfobooth.catalog.sync", {}, granted=granted)
+    )
+    await asyncio.wait_for(entered.wait(), 5)
+    auth.detach_account(project_id=other, credential_ref=ref)
+    release.set()
+    assert (await pending).data.output_json["synced"] == 1
+    rows = [
+        row
+        for row in session.exec(select(Action)).all()
+        if (row.config_json or {}).get("inventory_source") == "cfobooth.live-catalog"
+    ]
+    assert {
+        row.config_json["inventory_project_id"]: row.config_json["inventory_state"] for row in rows
+    } == {project_id: "active", other: "retired"}
 
 
 @pytest.mark.parametrize("granted", [False, True])

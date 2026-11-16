@@ -93,6 +93,26 @@ def test_cfobooth_capability_controls_setup_and_dispatch(session, project_id, ht
     assert httpx_mock.get_requests() == []
 
 
+@pytest.mark.parametrize("reference", ["", " ", None, False, 0, [], "other"])
+def test_explicit_invalid_catalog_reference_rejects(reference):
+    from pydantic import ValidationError as ModelValidationError
+
+    from stackos.plugins.manifest import ProviderManifest
+
+    with pytest.raises(ModelValidationError, match="auth_catalog_ref"):
+        ProviderManifest.model_validate(
+            {"key": "cfobooth", "name": "Invalid", "auth_catalog_ref": reference}
+        )
+
+
+def test_omitted_catalog_reference_preserves_provider_metadata():
+    from stackos.plugins.manifest import ProviderManifest
+
+    manifest = ProviderManifest.model_validate({"key": "manual", "name": "Manual"})
+    assert manifest.auth_type == "none" and manifest.auth_methods == []
+    assert manifest.config is None
+
+
 def test_missing_optional_metadata_is_distinct_from_malformed_metadata(monkeypatch):
     from types import SimpleNamespace
 

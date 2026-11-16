@@ -23,7 +23,7 @@ from stackos.actions.connectors import (
 from stackos.actions.generated_inventory import GeneratedInventoryIdentity, upsert_generated_actions
 from stackos.actions.package_bridge import PackageActionConnector
 from stackos.generated_inventory import generated_inventory_scope_key
-from stackos.integrations.cfobooth import inventory_scope
+from stackos.integrations.cfobooth import inventory_scope, project_attachment_revision
 from stackos.repositories.base import ValidationError
 
 IDENTITY = GeneratedInventoryIdentity(
@@ -92,6 +92,9 @@ class CFOBoothActionConnector:
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         scope = inventory_scope(request)
         assert request.credential is not None and request.session is not None
+        attachment_revision = project_attachment_revision(request)
+        if attachment_revision is None:
+            raise ValidationError("CFOBooth Account is no longer attached to this project")
         if request.operation != "catalog.sync":
             config = request.config_json
             if (
@@ -104,13 +107,18 @@ class CFOBoothActionConnector:
         revision = request.credential.credential.updated_at
         bridge, prepared = self._bridge(request)
         native = await bridge.execute_native(prepared)
-        # Do not publish a held catalog under replaced/revoked Account custody.
+        # Do not return results or publish inventory after Account replacement,
+        # revocation, or removal of this project's original Connection.
         request.session.refresh(request.credential.credential)
         try:
             current_scope = inventory_scope(request)
         except ValidationError:
             current_scope = None
-        if request.credential.credential.updated_at != revision or current_scope != scope:
+        if (
+            request.credential.credential.updated_at != revision
+            or current_scope != scope
+            or project_attachment_revision(request) != attachment_revision
+        ):
             raise ActionConnectorError(
                 "CFOBooth Account changed during execution; verify and sync again",
                 metadata_json={

@@ -158,7 +158,7 @@ class ProviderManifest(BaseModel):
     @classmethod
     def _canonical_auth_catalog(cls, value: Any) -> Any:
         """Expand package facts once; the host contributes only additive policy/context."""
-        if not isinstance(value, dict) or not value.get("auth_catalog_ref"):
+        if not isinstance(value, dict) or "auth_catalog_ref" not in value:
             return value
         result = dict(value)
         ref = result["auth_catalog_ref"]
