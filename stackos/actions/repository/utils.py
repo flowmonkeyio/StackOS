@@ -156,6 +156,19 @@ def _schema_issues(
                             code="required",
                         )
                     )
+        dependent_required = schema.get("dependentRequired")
+        if isinstance(dependent_required, Mapping):
+            for trigger, dependencies in dependent_required.items():
+                if trigger in value and isinstance(dependencies, list):
+                    for key in dependencies:
+                        if isinstance(key, str) and key not in value:
+                            issues.append(
+                                ActionValidationIssue(
+                                    path=f"{path}.{key}",
+                                    message=f"field is required when {trigger!r} is present",
+                                    code="dependent_required",
+                                )
+                            )
         properties = schema.get("properties")
         if isinstance(properties, dict):
             for key, child_schema in properties.items():
