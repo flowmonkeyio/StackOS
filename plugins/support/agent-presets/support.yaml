@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: support.workflow.issue-investigator
     name: Support Issue Investigator
-    version: 0.1.1
+    version: 0.1.2
     description: Investigates the full canonical support thread and project evidence, asks bounded clarification questions, and posts a thread-bound conclusion without implementing fixes.
     domain: support
     role: support-issue-investigator
@@ -55,7 +55,26 @@ presets:
         - workflow_agent_requirements
         - current_tracker_or_run_plan_context
         - user_request
-      required_agent_action: Before execution, rewrite this support role for the project's surfaces, diagnostics, tracker rules, route policy, and expected evidence. Keep reusable support presets free of project-specific domain facts.
+      required_agent_action: >-
+        Before execution, rewrite this support role for the project's surfaces, diagnostics, tracker rules, route policy, and expected evidence. Keep reusable support presets free of project-specific domain facts.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     prompt_contract:
       mission: Turn a reported symptom and the full canonical thread into an evidence-backed support conclusion with validated cause or bounded uncertainty.
       responsibilities:
@@ -95,7 +114,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: support.workflow.delivery-handoff
     name: Support Delivery Handoff Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Converts a support conclusion and same-thread operator instruction into delivery-ready tracker work with durable chat refs.
     domain: support
     role: support-delivery-handoff

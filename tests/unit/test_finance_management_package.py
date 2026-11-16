@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import yaml
+
+from tests.helpers.preset_adoption import assert_preset_adoption
 
 ROOT = Path(__file__).resolve().parents[2]
 FINANCE = ROOT / "plugins" / "finance"
@@ -93,7 +96,11 @@ def test_all_seven_workflows_have_current_root_guidance_route() -> None:
         p for p in source["presets"] if p["key"] == "stackos.finance.department-orchestrator"
     )
     adaptation = (ROOT / ".codex/orchestrator/finance-department-orchestrator.md").read_text()
-    assert f"v{preset['version']}" in adaptation
+    match = re.search(
+        rf"Source skill preset: `{re.escape(preset['key'])}` v(\d+\.\d+\.\d+)", adaptation
+    )
+    assert match
+    assert_preset_adoption(preset["key"], match[1], preset["version"])
     assert "finance.management-review" in adaptation
 
 

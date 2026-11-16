@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: branding.evidence-curator
     name: Branding Evidence Curator
-    version: 0.2.2
+    version: 0.2.3
     description: Conditionally interviews, researches, and captures operational receipts when dedicated evidence lineage is warranted.
     domain: branding
     generic_preset: true
@@ -59,6 +59,24 @@ presets:
         inspect local docs and StackOS resources first, then ask the operator
         for the missing context instead of guessing.
         Use main-agent assignment or host inheritance for model and reasoning effort; do not pin model versions or fixed effort in branding adaptations. Report effective host restrictions truthfully.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     prompt_contract:
       mission: Capture operational evidence, research findings, and operator interview context with traceability and no embellishment.
       responsibilities:
@@ -97,7 +115,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: branding.narrative-writer
     name: Branding Narrative Writer
-    version: 0.1.6
+    version: 0.1.7
     description: Drafts canonical pieces and channel renditions from cleared evidence in the project-adapted voice.
     domain: branding
     generic_preset: true
@@ -168,7 +186,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: branding.channel-strategist
     name: Branding Channel Strategist
-    version: 0.1.6
+    version: 0.1.7
     description: Owns angle, structure, and channel publication job decisions without executing publication.
     domain: branding
     generic_preset: true
@@ -235,7 +253,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: branding.claim-auditor
     name: Branding Claim Auditor
-    version: 0.1.1
+    version: 0.1.2
     description: Read-only adversarial reviewer that enforces evidence-over-assertion.
     domain: branding
     generic_preset: true
@@ -278,7 +296,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: branding.voice-reviewer
     name: Branding Voice Reviewer
-    version: 0.2.6
+    version: 0.2.7
     description: Read-only reviewer for base voice, channel register delta, form contract, and kill tests.
     domain: branding
     generic_preset: true
@@ -334,7 +352,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: branding.sanitization-reviewer
     name: Branding Sanitization Reviewer
-    version: 0.1.1
+    version: 0.1.2
     description: Read-only disclosure reviewer that fails closed with cleared or blocked verdicts.
     domain: branding
     generic_preset: true
@@ -370,7 +388,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: branding.profile-architect
     name: Brand Profile Architect
-    version: 0.1.1
+    version: 0.1.2
     description: Builds and maintains evidence-led brand profiles and durable voice guides from operator judgment, representative samples, and independent review.
     domain: branding
     generic_preset: true

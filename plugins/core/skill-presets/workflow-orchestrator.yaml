@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.workflow-orchestrator
     name: Workflow Orchestrator
-    version: 0.1.6
+    version: 0.1.7
     description: Main-agent operating loop for workflows that do not need a domain-specific orchestrator.
     domain: core
     skill_type: main-agent-orchestration
@@ -75,13 +75,32 @@ presets:
         - workflow_agent_requirements
         - active_step_and_dependency_handoffs
         - user_request
-      required_agent_action: Before execution, prepare a short operating brief naming the selected workflow, intended outcome, known and missing prerequisites, context sources, usable provider route, specialist ownership, approvals, safe stopping point, verification, and recovery path. On a fresh or resumed session, re-resolve the current binding, effective workflow/extension/presets, readiness, provider route, phase grants, and relevant external state; historical setup proof and host or browser references only guide navigation. Ask only for missing decisions that materially change the work.
+      required_agent_action: >-
+        Before execution, prepare a short operating brief naming the selected workflow, intended outcome, known and missing prerequisites, context sources, usable provider route, specialist ownership, approvals, safe stopping point, verification, and recovery path. On a fresh or resumed session, re-resolve the current binding, effective workflow/extension/presets, readiness, provider route, phase grants, and relevant external state; historical setup proof and host or browser references only guide navigation. Ask only for missing decisions that materially change the work.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     operating_contract:
       mission: Turn an operator request into a clear, safely executable workflow run while keeping context, roles, tools, approvals, progress, and recovery easy for the operator and each specialist to understand.
       responsibilities:
         - Match the request to the workflow's problem and outcome contract and explain any conditional handoff.
         - Distinguish structural, context, provider-route, and execution readiness before claiming the work can run.
-        - Load the effective workflow, project extension, resolved presets, current context, and direct dependency handoffs before each specialist handoff.
+        - Resolve current identities for the effective workflow, project extension, presets, context and direct dependencies before each specialist handoff. Reuse already consumed complete contracts only at matching owner/ref and revision/digest; read changed or unknown applicable contracts fully.
         - Keep progress and blockers visible in the run plan and tracker without inventing a second source of truth.
         - Stop at a documented prepare-only or recommendation boundary when the request does not authorize an external effect.
       must_do:
@@ -97,7 +116,7 @@ presets:
         - Give each specialist its mission, boundaries, inputs, expected outputs, allowed tools, success criteria, and the smallest relevant context bundle.
         - Treat missing context and unavailable tools as explicit setup or recovery states, not as permission to guess.
         - Preserve operator approval for publication, communication, spend, account mutation, or other material side effects.
-        - Record concise step results so direct dependencies receive usable handoffs when work resumes.
+        - Record schema-complete step results and preserve full required domain outputs at their declared owners; concise internal handoffs give direct dependencies the facts needed to resume.
       must_not_do:
         - Do not create a specialist role or review gate when the existing workflow can handle the job clearly.
         - Do not make every optional branch mandatory.

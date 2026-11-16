@@ -706,10 +706,28 @@ def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
     session, project_id, tmp_path, monkeypatch
 ):
     from copy import deepcopy
+    from hashlib import sha256
 
     from stackos import task_delivery
 
-    domain = {"report": {"followups": [{"text": "Domain next action"}]}}
+    # The complete source is the expectation, independently of prompt projection.
+    # Its size and Unicode make accidental summary/truncation or byte changes visible.
+    source_body = "\n\n".join(
+        f"## Finding {index}: source coverage\n"
+        "Observed: the reader needs the original evidence, its scope and uncertainty. "
+        "Keep the complete explanation and design rationale, including naïve joins, "
+        "dates, excluded populations and the next validation. A summary alone does "
+        "not preserve this substantive report."
+        for index in range(48)
+    )
+    source_hash = sha256(source_body.encode("utf-8")).hexdigest()
+    domain = {
+        "report": {
+            "body": source_body,
+            "body_sha256": source_hash,
+            "followups": [{"text": "Domain next action", "evidence_refs": ["source:48"]}],
+        }
+    }
     summary = 'Required report.followups must retain {"followups": []} in its schema.'
     expected = {
         "report": {
@@ -717,8 +735,12 @@ def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
             "type": "object",
             "schema_json": {
                 "type": "object",
-                "required": ["followups"],
-                "properties": {"followups": {"type": "array", "items": {"type": "object"}}},
+                "required": ["body", "body_sha256", "followups"],
+                "properties": {
+                    "body": {"type": "string"},
+                    "body_sha256": {"type": "string"},
+                    "followups": {"type": "array", "items": {"type": "object"}},
+                },
             },
         }
     }
@@ -823,6 +845,26 @@ def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
     assert plans.get(plan.id).status == "completed"
     assert plans.get_step(plan.id, "report").result_json == domain
     assert plans.get_step(plan.id, "report").expected_outputs_json == deepcopy(expected)
+    # The mirror brief is navigation; workflow output recovery uses the step owner.
+    assert recovered.ticket.run_plan_id == plan.id
+    assert "result_json" not in recovered.ticket.model_dump()
+    full_step = plans.get_step(plan.id, "collect", project_id=project_id, full_context=True)
+    assert full_step.result_json == domain
+    for result in (
+        json.loads(receipt["outputs"]),
+        json.loads(
+            recovered.ticket.completion_evidence_json["automatic_delivery"]["delivery"]["result"][
+                "outputs"
+            ]
+        ),
+        full_step.result_json,
+        plans.get_step(plan.id, "report", project_id=project_id, full_context=True).result_json,
+    ):
+        assert result["report"]["body"] == source_body
+        assert sha256(result["report"]["body"].encode("utf-8")).hexdigest() == source_hash
+        assert result["report"]["followups"] == domain["report"]["followups"]
+    with pytest.raises(NotFoundError):
+        plans.get_step(plan.id, "missing-step", project_id=project_id)
 
 
 def test_unfinished_nonready_work_stops_without_launch(session, project_id, tmp_path, monkeypatch):
@@ -4086,6 +4128,7 @@ def test_two_tickets_run_in_order_after_submission_returns(
     prepared_task(session, project_id)
     scheduler = QueuedScheduler()
     calls = []
+    results = {}
 
     def run_agent(host, project_dir, instructions, prompt, schema, *, sandbox, **selection):
         packet = json.loads(prompt)
@@ -4106,6 +4149,30 @@ def test_two_tickets_run_in_order_after_submission_returns(
                     repo.brief(project_id=project_id, ticket_key="first").ticket.status
                     == "complete"
                 )
+                accepted = packet["accepted_receipts"][0]
+                assert accepted["key"] == "first"
+                # Summary-only readers retain the decision facts, with detail at its owner.
+                assert accepted["outcome"] == results[("first", "review")]["summary"]
+                assert (
+                    accepted["completion_evidence_json"]["automatic_delivery"]["candidate"][
+                        "commit_sha"
+                    ]
+                    == json.loads(results[("first", "review")]["outputs"])["commit_sha"]
+                )
+                ref = accepted["evidence_ref"]
+                assert ref["tool_name"] == "tracker.brief"
+                recovered = repo.brief(
+                    project_id=ref["arguments"]["project_id"],
+                    ticket_key=ref["arguments"]["ticket_key"],
+                ).ticket
+                assert recovered.project_id == project_id
+                assert (
+                    recovered.completion_evidence_json["automatic_delivery"]["review"]["result"]
+                    == results[("first", "review")]
+                )
+                assert "DETAILED_PROOF" not in json.dumps(accepted)
+                with pytest.raises(NotFoundError):
+                    repo.brief(project_id=project_id, ticket_key="missing-prerequisite")
         calls.append((ticket_key, instructions, phase))
         sha = (
             commit(tmp_path, ticket_key)
@@ -4114,13 +4181,37 @@ def test_two_tickets_run_in_order_after_submission_returns(
         )
         if phase == "review":
             assert packet["candidate"]["commit_sha"] == sha
-        result = (
-            {"status": "complete", "summary": "Implemented"}
-            if phase == "delivery"
-            else {"decision": "approve", "summary": "Verified", "followups": []}
+            assert (
+                "Keep commands, results and scoped repairs in summary" not in packet["assignment"]
+            )
+            assert "verdict, candidate" in packet["assignment"]
+            assert "once in outputs or referenced existing evidence" in packet["assignment"]
+            assert packet["delivery_result"]["result"] == {
+                key: value
+                for key, value in results[(ticket_key, "delivery")].items()
+                if key != "followups"
+            }
+        assert "summary-only prerequisite readers" in packet["result_contract"]
+        assert schema == task_delivery.RESULT_SCHEMA
+        result = generic_result(
+            summary=(
+                f"{'Verified' if phase == 'review' else 'Implemented'} {ticket_key} "
+                f"at {sha}; dependency flow checks passed; source-only, no activation proof."
+            ),
+            outputs={
+                "commit_sha": sha,
+                "checks": [
+                    {
+                        "command": "DETAILED_PROOF",
+                        "exit_status": 0,
+                        "observed": "Dependency flow passed",
+                    }
+                ],
+                "limitations": ["Installed activation unexecuted and outside this fixture"],
+            },
         )
-        result["commit_sha"] = sha
-        return scenario_result(0, thread_id=f"thread-{len(calls)}", result=result)
+        results[(ticket_key, phase)] = deepcopy(result)
+        return AgentRunResult(0, thread_id=f"thread-{len(calls)}", result=result)
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     first = submit(session, project_id, tmp_path, scheduler)

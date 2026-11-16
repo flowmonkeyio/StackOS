@@ -268,6 +268,40 @@ adaptations teach this method. Editing those sources changes future admissions;
 ongoing/frozen/resumed sessions keep their admitted instructions. Report source
 refs/revisions separately from fresh-session consumption and installed activation.
 
+## Internal Handoffs And Complete Deliverables
+
+Internal handoffs carry the decision facts needed for the next action. Keep
+disposition, actual outcome/scope, candidate or revision, decisive proof and
+material limits inline. A reference-only summary is insufficient: automatic
+delivery projects the final summary into `accepted_receipts.outcome` without
+the detailed outputs. Put detailed commands/results, criterion coverage and
+actionable scoped findings once in existing outputs or evidence.
+
+| Transition | Inline decision facts | Detail owner and targeted retrieval |
+| --- | --- | --- |
+| Setup -> adaptation/continuation | Scope/status, source-to-target roles, preserved/missing obligations, activation limits, next action | Existing setup receipt via `projectSetup.get(raw)` and selected source owners |
+| Main/current context -> specialist | Objective, current amendments, criteria, ownership/authority, attempt/candidate, prerequisite outcomes and gaps | Current ticket via `tracker.brief(raw)`; applicable workflow output via `runPlan.getStep(raw)` |
+| Delivery -> review/dependent | Disposition, changed behavior/scope, candidate, decisive proof, limitations | Ordinary receipt via `tracker.brief(raw)`; workflow outputs via `runPlan.getStep(raw)` |
+| Review -> repair/main | Verdict/candidate, actionable scoped findings, failed/unavailable proof, next action | Review outputs and evidence in the existing ticket receipt |
+| Repair/resume -> retained agent | Current feedback/delta, unresolved obligations, attempt/candidate, remaining repair allowance | Relevant prior receipts through their existing owners; retain sessions and frozen history |
+| Integration -> closeout/operator | Assembled result/candidate, combined proof, residual gaps, release authority | Existing integration/release outputs and declared artifact/resource owners |
+
+References identify owner, project, record/step and applicable candidate/revision.
+Read necessary missing, changed or contradictory detail; do not replay unchanged
+history. Workflow mirror tickets provide navigation, not the complete step
+result. Missing, stale or inaccessible refs require safe authorized inline
+facts where the contract permits, or an explicit gap. Reuse still requires actual
+consumption and a current covered basis as described below.
+
+Preserve required result fields and complete substantive deliverables, including
+articles, designs, reports, nested domain followups and adapted operating
+guidance. References can replace transport only where the schema permits and
+the receiver can retrieve the full content. Human updates explain outcomes,
+decisions and limits without replaying detailed proof. These rules add no
+protocol, store, phase, length limit or authority. Shared source changes require
+separate explicit project adaptation/adoption; they do not refresh frozen native
+sessions or prove installed activation.
+
 ## Canonical Project Guidance Consumption
 
 Every role consumes the same approved project sources through references; it

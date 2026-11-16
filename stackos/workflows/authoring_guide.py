@@ -28,7 +28,7 @@ class ProjectSetupMethod(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    version: str = "1"
+    version: str = "2"
     shared_prompt: str
     mode_prompts: dict[str, str]
     inputs: dict[str, str]
@@ -63,6 +63,24 @@ def project_setup_method() -> ProjectSetupMethod:
             "impose engineering policy on unrelated workflows. Explain compatible adaptations "
             "and only omit obligations where the source permits it, citing the policy and reason. "
             "Material unresolved loss prevents that workflow's completion.\n\n"
+            "Keep internal setup handoffs concise and sufficient: disposition, actual scope "
+            "and outcome, project/attempt/revision, source-to-target role identities, decisive "
+            "proof, preserved or unresolved obligations, activation limits and next action. "
+            "Put detailed checks and obligation mappings once in the existing setup receipt; "
+            "a reference-only outcome is insufficient. Preserve every required report field "
+            "and the complete adapted operating guidance and requested deliverables. Do not "
+            "compact substantive content, nested domain followups or safety conditions into "
+            "a summary. Human updates explain outcomes and decisions without replaying proof. "
+            "References identify owner, project, record and applicable candidate/revision. "
+            "Recover workflow outputs through runPlan.getStep(raw), ordinary ticket receipts "
+            "through tracker.brief(raw), setup receipts through projectSetup.get(raw), and "
+            "artifacts/resources through their declared owners. Read necessary missing or "
+            "changed detail, not unchanged history. Missing, stale or inaccessible references "
+            "require safe authorized inline facts where permitted or an explicit gap. On "
+            "continuation pass current amendments, remaining obligations and evidence changes "
+            "with retained attempt/session identities; preserve partial and reused proof and "
+            "frozen native instructions. These are reporting rules, not new authority, phases "
+            "or length limits.\n\n"
             "Use agent judgment, not a keyword router or semantic policy engine. Ordinary goals "
             "later activate the matching configured method; a newly relevant goal can select and "
             "set up a catalog workflow within current setup authority. A harmless question "
@@ -930,6 +948,10 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "chat.",
         ],
         setup_completion_contract=[
+            "Keep the meaningful disposition/outcome, identities, decisive proof, limits and "
+            "next action inline; retain all completion content below once in the existing "
+            "setup report/receipt with exact owner refs for necessary detail. Complete adapted "
+            "guidance and substantive deliverables remain required.",
             "Selected intent mode and why it applies.",
             "Operator-requested completion boundary: ordinary ready_to_use or explicit "
             "infrastructure_only, selected workflow method, intended execution mode and authorized "

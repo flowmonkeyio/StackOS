@@ -413,6 +413,17 @@ and stop conditions. Read the full targeted `tracker.brief` with
 the specialist a bounded packet. Keep durable facts in existing run/ticket
 context and evidence, and reference them from schema-valid phase outputs.
 
+Apply [internal handoffs and complete deliverables](agent-operating-model.md#internal-handoffs-and-complete-deliverables)
+when authoring or adapting presets. Keep the decisive outcome/scope, candidate,
+proof and limitations in the summary for summary-only prerequisite readers.
+Detailed proof and scoped findings live once in outputs or existing evidence;
+required fields and substantive deliverables remain complete. Use exact owner,
+project, record/step and candidate refs for necessary detail, with explicit gaps
+for stale or unavailable evidence. Repair/resume carries current feedback,
+unresolved obligations and remaining repair allowance, preserving native history.
+Shipped source versions describe future adaptation inputs; local files, saved
+defaults and frozen sessions require their own explicit adoption and evidence.
+
 For a required cross-task input, planning names the producer task/ticket,
 independent acceptance evidence (or pending producer work), applicability, target
 integration owner, receiving source/artifact identity and affected checks. Main

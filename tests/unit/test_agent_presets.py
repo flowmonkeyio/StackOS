@@ -255,7 +255,9 @@ def test_codex_local_branding_agents_track_branding_presets() -> None:
         assert config["agents"][agent_name]["config_file"] == config_file
         local_text = (REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8")
         preset_version = AgentPresetLoader().describe_preset(key=preset_ref).preset.version
-        assert f"Source preset: {preset_ref} v{preset_version}" in local_text
+        match = re.search(rf"Source preset: {re.escape(preset_ref)} v(\d+\.\d+\.\d+)", local_text)
+        assert match
+        assert_preset_adoption(preset_ref, match[1], preset_version)
         local = tomllib.loads(local_text)
         assert "model" not in local
         assert "model_reasoning_effort" not in local
@@ -315,7 +317,9 @@ def test_codex_local_seo_agents_track_seo_workflows() -> None:
         assert config["agents"][agent_name]["config_file"] == config_file
         local_text = (REPO_ROOT / ".codex" / config_file).read_text(encoding="utf-8")
         preset_version = AgentPresetLoader().describe_preset(key=preset_ref).preset.version
-        assert f"Source preset: {preset_ref} v{preset_version}" in local_text
+        match = re.search(rf"Source preset: {re.escape(preset_ref)} v(\d+\.\d+\.\d+)", local_text)
+        assert match
+        assert_preset_adoption(preset_ref, match[1], preset_version)
         assert "Keep aligned with plugins/seo/agent-presets/seo.yaml." in local_text
         local = tomllib.loads(local_text)
         assert "model" not in local
@@ -410,12 +414,12 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         "finance_control_reviewer": "xhigh",
     }
     expected_versions = {
-        "finance_receipt_operator": "0.4.5",
-        "finance_bookkeeping_preparer": "0.5.6",
-        "finance_billing_collections_operator": "0.6.7",
-        "finance_cashflow_preparer": "0.4.5",
-        "finance_tax_preparer": "0.4.5",
-        "finance_control_reviewer": "0.6.7",
+        "finance_receipt_operator": "0.4.7",
+        "finance_bookkeeping_preparer": "0.5.8",
+        "finance_billing_collections_operator": "0.6.9",
+        "finance_cashflow_preparer": "0.4.7",
+        "finance_tax_preparer": "0.4.7",
+        "finance_control_reviewer": "0.6.9",
     }
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_FINANCE_AGENT_PRESETS.items():
         assert config["agents"][agent_name]["config_file"] == config_file
@@ -432,7 +436,9 @@ def test_codex_local_finance_agents_track_finance_presets_without_model_override
         assert "material gaps or conflicts" in local_text
         assert "extra approval rounds" in source.project_adaptation.instruction
         assert "no cross-project" in local_text
-        assert f"Source preset: {preset_ref} v{expected_versions[agent_name]}" in local_text
+        match = re.search(rf"Source preset: {re.escape(preset_ref)} v(\d+\.\d+\.\d+)", local_text)
+        assert match
+        assert_preset_adoption(preset_ref, match[1], source.version)
         assert "Keep aligned with plugins/finance/agent-presets/finance.yaml." in local_text
         assert "model" not in local
         assert local["model_reasoning_effort"] == expected_efforts[agent_name]
@@ -623,7 +629,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     assert by_key["stackos.workflow.workflow-author"].plugin_slug == "core"
     assert by_key["branding.claim-auditor"].plugin_slug == "branding"
     assert by_key["seo.workflow.website-analysis"].plugin_slug == "seo"
-    assert by_key["seo.workflow.website-analysis"].version == "0.5.1"
+    assert by_key["seo.workflow.website-analysis"].version == "0.5.2"
     assert by_key["stackos.finance.receipt-operator"].plugin_slug == "finance"
     assert by_key["stackos.finance.receipt-operator"].agent_type == "mcp-tool-consumer"
     assert by_key["stackos.finance.control-reviewer"].role_class == "review"
@@ -842,7 +848,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.6.8"
+    assert architecture.version == "0.6.9"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -911,13 +917,13 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
     expected_versions = {
-        "requirements-flow-definer": "0.6.7",
-        "codebase-explorer": "0.6.7",
-        "planning": "0.7.25",
-        "architecture": "0.6.8",
-        "test-designer": "0.6.12",
-        "delivery": "0.7.24",
-        "delivery-reviewer": "0.6.23",
+        "requirements-flow-definer": "0.6.8",
+        "codebase-explorer": "0.6.8",
+        "planning": "0.7.27",
+        "architecture": "0.6.9",
+        "test-designer": "0.6.13",
+        "delivery": "0.7.25",
+        "delivery-reviewer": "0.6.26",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -948,6 +954,18 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert len(conditional_protocols.pop()) == 2
 
     shared = presets["delivery"].project_adaptation.required_agent_action.lower()
+    for decision_fact in (
+        "summary-only prerequisite readers",
+        "actual outcome/scope",
+        "candidate or revision",
+        "material limits",
+        "nested domain followups",
+        "runplan.getstep(raw)",
+        "tracker.brief(raw)",
+        "explicit gap",
+        "remaining repair allowance",
+    ):
+        assert decision_fact in shared
     assert "sole writer of durable run/tracker state" in shared
     assert "delegation and model choice" in shared
     assert "do not pin a model or reasoning effort" in shared
@@ -1055,7 +1073,37 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert "gemini and hermes" in reviewer and "normal native sessions" in reviewer
     assert "no enforced read-only guarantee" in reviewer
     # The shared adaptation also changes the release role's effective source.
-    assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.2"
+    assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.3"
+    release = loader.describe_preset(key="stackos.sdlc.release-ops").preset
+    assert any("assembled outcome/scope" in rule for rule in release.prompt_contract.must_do)
+
+
+def test_resolved_sdlc_reviewer_handoff_keeps_detailed_proof_out_of_summary() -> None:
+    preset = AgentPresetLoader().describe_preset(key="stackos.sdlc.delivery-reviewer").preset
+    review_rule = next(
+        rule
+        for rule in preset.prompt_contract.must_do
+        if rule.startswith("Review source changes and repairs at the exact scoped commit")
+    )
+    # Inspect both effective instruction owners; the shared adaptation alone missed R1.
+    resolved = " ".join(
+        [preset.project_adaptation.required_agent_action, *preset.prompt_contract.must_do]
+    )
+    assert "Summary contains executed commands/results" not in resolved
+    assert (
+        "Summary retains verdict, candidate, actual outcome/scope, decisive proof and "
+        "material limits." in review_rule
+    )
+    assert (
+        "Detailed commands/results and actionable scoped repairs belong once in outputs or "
+        "existing evidence" in review_rule
+    )
+    assert "explicit failed/unexecuted checks" in review_rule
+    assert (
+        "Failed required specs map to repair, unavailable required checks to blocked" in review_rule
+    )
+    assert "Put unrelated findings only in separate nonblocking followups" in resolved
+    assert "Do not change production files, acceptance tests or commits" in review_rule
 
 
 def test_sdlc_final_result_rule_resolves_identically_for_delivery_and_review() -> None:

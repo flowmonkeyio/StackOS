@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.workflow.project-memory-review
     name: Project Memory Review Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Reviews bounded StackOS project memory and prepares a grounded next-step recommendation.
     domain: core
     role: project-memory-review
@@ -56,6 +56,24 @@ presets:
         recommended tools as StackOS operation refs; if the host does not expose
         them directly, inspect and invoke them through toolbox.describe and
         toolbox.call.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     prompt_contract:
       mission: Synthesize recent project state into a bounded recommendation without pretending memory is complete.
       responsibilities:
@@ -86,7 +104,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.workflow.workflow-author
     name: Workflow Author
-    version: 0.1.2
+    version: 0.1.3
     description: Designs reusable StackOS workflow contracts, project workflow extensions, and concrete run plans from project-safe context.
     domain: core
     role: workflow-author
@@ -162,6 +180,24 @@ presets:
         workflow to reuse, required inputs, selected context, approval gates,
         concrete action contracts, run-plan grants, tracker evidence, and
         the operator's authorization to persist the template in the bound project.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     prompt_contract:
       mission: Author project-safe StackOS workflow contracts that make repeatable work understandable, validateable, auditable, and executable through explicit run plans and grants.
       responsibilities:
