@@ -23,6 +23,7 @@ from stackos.actions.trackbooth import (
     retire_removed_trackbooth_actions,
     retire_superseded_trackbooth_inventory_scopes,
 )
+from stackos.auth_providers import AuthRepository
 from stackos.db.models import (
     Action,
     ActionCall,
@@ -217,6 +218,49 @@ def test_trackbooth_generated_read_action_calls_endpoint_without_catalog_preflig
         for request in requests
         if request.url.path == "/api/agent-api/catalog/export"
     ] == ["/api/agent-api/catalog/export"]
+
+
+def test_trackbooth_generated_read_replay_conflicts_after_endpoint_change(
+    session: Session, project_id: int, httpx_mock: HTTPXMock
+) -> None:
+    ref = _trackbooth_credential_ref(session, project_id)
+    detail = _trackbooth_offers_findbyid_detail()
+    _add_trackbooth_sync_responses(httpx_mock, detail)
+    imported = _sync_trackbooth_catalog(session, project_id, ref)
+    action_ref = _trackbooth_generated_action_ref(imported, "OffersController.findById")
+    repo = ActionRepository(session)
+    arguments = dict(
+        project_id=project_id,
+        action_ref=action_ref,
+        credential_ref=ref,
+        input_json={"path_params": {"id": "one"}},
+        idempotency_key="selected-observation",
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://trackbooth.local.test/api/offers/one",
+        json={"data": {"id": "one", "source": "original"}},
+    )
+    original = asyncio.run(repo.execute(**arguments)).data
+    replay = asyncio.run(repo.execute(**arguments)).data
+    assert replay.replayed and replay.action_call.id == original.action_call.id
+    assert replay.output_json == original.output_json
+
+    new_base = "https://changed.trackbooth.test"
+    AuthRepository(session).update_credential(
+        credential_ref=ref, fields={"api_base_url": new_base}, display_name=None
+    )
+    _add_trackbooth_sync_responses(httpx_mock, detail, base_url=new_base)
+    replacement = _sync_trackbooth_catalog(session, project_id, ref)
+    assert replacement["action_refs"] == imported["action_refs"]
+    assert replacement["inventory_scope_key"] != imported["inventory_scope_key"]
+    call_count = len(session.exec(select(ActionCall)).all())
+    request_count = len(httpx_mock.get_requests())
+    with pytest.raises(ConflictError, match="different generated action scope"):
+        asyncio.run(repo.execute(**arguments))
+    assert len(session.exec(select(ActionCall)).all()) == call_count
+    assert len(httpx_mock.get_requests()) == request_count
+    assert session.get(ActionCall, original.action_call.id).response_json == original.output_json
 
 
 def test_trackbooth_generated_write_action_sends_body_without_catalog_preflight(

@@ -450,6 +450,7 @@ class ActionAuditMixin:
                 "background action reservation is missing its action call",
                 data={"project_id": project_id, "action_ref": manifest.action_ref},
             )
+        _require_generated_replay_scope(row, manifest)
         return row
 
     def _finalize_running_call(
@@ -613,6 +614,7 @@ class ActionAuditMixin:
         ).first()
         if row is None:
             return None
+        _require_generated_replay_scope(row, manifest)
         if (
             row.request_json != _redact_for_audit(request_json)
             or row.provider_context_json != _redact_for_audit(provider_context_json)
@@ -636,6 +638,23 @@ class ActionAuditMixin:
             dry_run=row.dry_run,
             replayed=True,
             credential_ref=row.credential_ref,
+        )
+
+
+def _require_generated_replay_scope(row: ActionCall, manifest: ExecutableActionManifest) -> None:
+    # Generated rows are keyed by inventory scope; same-scope catalog updates
+    # preserve their id, while public refs deliberately survive scope changes.
+    if (
+        manifest.config_json.get("inventory_source") is not None
+        and row.action_id != manifest.action_id
+    ):
+        raise ConflictError(
+            "idempotency key replayed with different generated action scope",
+            data={
+                "project_id": row.project_id,
+                "action_ref": manifest.action_ref,
+                "action_call_id": row.id,
+            },
         )
 
 
