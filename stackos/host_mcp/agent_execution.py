@@ -48,6 +48,32 @@ class ManagedProcessControl:
             )
             return self._process
 
+    @staticmethod
+    def _group_exit_observation(process: subprocess.Popen[str]) -> tuple[bool, str | None]:
+        process.poll()
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return process.returncode is not None, None
+        except PermissionError as error:
+            return False, f"{type(error).__name__} (errno {error.errno})"
+        return False, None
+
+    def retirement_status(self) -> str:
+        """Observe only our exact handle/group; a returned result is not exit proof."""
+        with self._stop_lock:
+            with managed_launch_lock:
+                process = self._process
+            if process is None:
+                return "prevented"
+            if os.name != "posix":
+                return "unconfirmed"
+            try:
+                exited, _ = self._group_exit_observation(process)
+            except OSError:
+                return "unconfirmed"
+            return "stopped" if exited else "unconfirmed"
+
     def stop(self, timeout: float = 1.5) -> str:
         """TERM then KILL only our launch group, with bounded confirmation."""
         self.cancelled.set()
@@ -65,16 +91,12 @@ class ManagedProcessControl:
 
             def exited() -> bool:
                 nonlocal last_probe_error
-                process.poll()
-                try:
-                    os.killpg(process.pid, 0)
-                except ProcessLookupError:
-                    return process.returncode is not None
-                except PermissionError as error:
-                    # A group retiring after TERM/KILL can briefly deny a probe.
-                    # Keep the existing deadline; only ESRCH confirms group exit.
-                    last_probe_error = f"{type(error).__name__} (errno {error.errno})"
-                return False
+                confirmed, probe_error = self._group_exit_observation(process)
+                if probe_error:
+                    # Keep the deadline through transient permission failures;
+                    # only ESRCH plus root exit confirms group retirement.
+                    last_probe_error = probe_error
+                return confirmed
 
             try:
                 for sig in (signal.SIGTERM, signal.SIGKILL):

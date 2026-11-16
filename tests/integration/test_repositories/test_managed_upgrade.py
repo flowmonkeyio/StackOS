@@ -483,3 +483,94 @@ def test_terminal_race_is_settled_not_resumable(session, project_id, tmp_path, m
         TrackerRepository(session).get(project_id=project_id, task_key="deliver").tasks[0].status
         == status
     )
+
+
+@pytest.mark.parametrize("owner_kind", ["request", "task"])
+def test_shared_adapter_error_result_retains_unconfirmed_process(
+    session, project_id, tmp_path, monkeypatch, owner_kind
+):
+    from types import SimpleNamespace
+
+    from stackos.host_mcp import service
+    from stackos.host_mcp.agent_execution import execute_json_agent
+    from stackos.host_mcp.result import AgentRunResult
+    from tests.integration.test_repositories.test_request_execution import launch, owner
+
+    service.shutdown_usage()
+    monkeypatch.setattr(service, "_collector", SimpleNamespace())
+    controls, children = [], []
+
+    def runner(directory, _instructions, _prompt, schema, *, process_control, **_kwargs):
+        controls.append((process_control, process_control.stop))
+        spawn = process_control.spawn
+
+        def io_failure(*_args, **_kwargs):
+            raise OSError("fixture pipe I/O failure after native spawn")
+
+        def spawn_with_failed_io(*args, **kwargs):
+            child = spawn(*args, **kwargs)
+            children.append(child)
+            monkeypatch.setattr(child, "communicate", io_failure)
+            return child
+
+        def unconfirmed(*_args, **_kwargs):
+            process_control.cancelled.set()
+            process_control.stop_error = "fixture group retirement unconfirmed"
+            return "unconfirmed"
+
+        monkeypatch.setattr(process_control, "spawn", spawn_with_failed_io)
+        monkeypatch.setattr(process_control, "stop", unconfirmed)
+        return execute_json_agent(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            directory,
+            "{}",
+            schema,
+            "shared-adapter-fixture",
+            lambda _: AgentRunResult(0),
+            process_control=process_control,
+        )
+
+    try:
+        if owner_kind == "request":
+            _repo, request, _claim, execution = owner(session, project_id)
+            result = launch(monkeypatch, tmp_path, execution, runner)
+            assert result.exit_code is None and result.error
+        else:
+            prepared_task(session, project_id)
+            scheduler = QueuedScheduler()
+            use_codex_native(monkeypatch, runner)
+            submit(session, project_id, tmp_path, scheduler)
+            scheduler.run()
+        assert children[0].poll() is None
+        retained = service.uncheckpointed_invocations(set())
+        with pytest.raises(ConflictError):
+            prepare(session, QueuedScheduler())
+        assert len(retained) == 1
+        calls = (
+            service.cancel_request_invocations(project_id, request.id)
+            if owner_kind == "request"
+            else service.cancel_task_invocations(project_id, "deliver")
+        )
+        assert len(calls) == 1 and not calls[0].retired.is_set()
+        assert calls[0].process_retirement["outcome"] == "unconfirmed"
+    finally:
+        for control, stop in controls:
+            monkeypatch.setattr(control, "stop", stop)
+        calls = (
+            service.cancel_request_invocations(project_id, request.id)
+            if owner_kind == "request"
+            else service.cancel_task_invocations(project_id, "deliver")
+        )
+        for call in calls:
+            assert service.retire_invocation(call) == "stopped"
+            assert call.retired.is_set()
+        # Before the repair there is no retained invocation; clean up only the
+        # saved exact controls so the red case cannot leak its owned child.
+        for _control, stop in controls:
+            assert stop() == "stopped"
+        service.shutdown_usage()
+        for child in children:
+            child.wait(timeout=3)
+            for pipe in (child.stdin, child.stdout, child.stderr):
+                if pipe:
+                    pipe.close()

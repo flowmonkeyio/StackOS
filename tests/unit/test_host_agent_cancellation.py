@@ -88,6 +88,8 @@ def test_stop_persistent_probe_denial_never_confirms_from_root_exit(
             raise ProcessLookupError(3, "whole group gone")
 
     monkeypatch.setattr(os, "killpg", killpg)
+    assert control.retirement_status() == "unconfirmed"
+    assert not control.cancelled.is_set()  # Observation cannot manufacture cancellation.
     assert control.stop(timeout=0.1) == "unconfirmed"
     assert signals == [signal.SIGTERM, signal.SIGKILL]
     assert 0.2 <= clock.now <= 0.24
@@ -97,6 +99,7 @@ def test_stop_persistent_probe_denial_never_confirms_from_root_exit(
     denied = False
     assert control.stop(timeout=0.1) == "stopped"
     assert control.stop_error is None
+    assert control.retirement_status() == "stopped"
 
 
 @pytest.mark.parametrize("survives_kill", [False, True])
@@ -213,11 +216,13 @@ def test_real_owned_group_stops_parent_child_and_leaves_other_tasks_and_external
             calls = service.cancel_task_invocations(42, "owned-A")
             assert len(calls) == 1 and calls[0].scope.attempt == 3
             control = calls[0].process_control
+            assert control.retirement_status() == "unconfirmed"
             assert not service.cancel_task_invocations(41, "owned-A")
             assert control.stop() == "stopped", control.stop_error
             result = future.result(timeout=3)
             assert result.exit_code == (-9 if force else 0)
             assert calls[0].retired.is_set()
+            assert control.retirement_status() == "stopped"
             child_pid = int((tmp_path / "ready").read_text())
             with pytest.raises(ProcessLookupError):
                 os.kill(child_pid, 0)

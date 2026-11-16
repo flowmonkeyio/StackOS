@@ -7415,8 +7415,19 @@ def test_native_collector_failure_persists_session_and_available_usage(
         def __init__(self, command, **kwargs):
             self.command = command
             self.returncode = None
+            # Keep the simulated Grok response, but back ownership/retirement
+            # with a real harmless child instead of an incomplete Popen double.
+            self._owned = real_popen(
+                [sys.executable, "-c", f"raise SystemExit({int(native_failure)})"]
+            )
+            self.pid = self._owned.pid
+
+        def poll(self):
+            self.returncode = self._owned.poll()
+            return self.returncode
 
         def communicate(self, prompt):
+            self._owned.wait(timeout=3)
             completed = execute(self.command, input=prompt)
             self.returncode = completed.returncode
             return completed.stdout, completed.stderr

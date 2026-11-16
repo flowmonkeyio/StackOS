@@ -367,18 +367,19 @@ def _unregister(call: ActiveInvocation) -> None:
 
 def retire_invocation(call: ActiveInvocation) -> str:
     """Stop the registered handle and release an exceptional retirement hold only on proof."""
+    with _active_invocations_lock:
+        call.process_retirement = {"outcome": "pending"}
     try:
         outcome = call.process_control.stop()
     except Exception as error:
         outcome = "unconfirmed"
         call.process_control.stop_error = f"Native retirement failed: {type(error).__name__}"
     with _active_invocations_lock:
-        if call.process_retirement is not None:
-            call.process_retirement = {"outcome": outcome}
-            if call.process_control.stop_error:
-                call.process_retirement["error"] = call.process_control.stop_error
-            if call.cleanup_complete:
-                _unregister(call)
+        call.process_retirement = {"outcome": outcome}
+        if call.process_control.stop_error:
+            call.process_retirement["error"] = call.process_control.stop_error
+        if call.cleanup_complete:
+            _unregister(call)
     return outcome
 
 
@@ -429,12 +430,14 @@ def _finish(
 
 
 def shutdown_usage() -> None:
-    # Stop only request processes here; task controllers retain their own stop lifecycle.
+    # Live task controllers retain their stop lifecycle. Once their cleanup
+    # returns, this registry still owns any unconfirmed exact handle left behind.
     with managed_launch_lock, _active_invocations_lock:
         requests = [
             call
             for call in _active_invocations.values()
-            if call.scope.request_id is not None and not call.retired.is_set()
+            if (call.scope.request_id is not None or call.cleanup_complete)
+            and not call.retired.is_set()
         ]
         for call in requests:
             call.cancelled.set()
@@ -767,11 +770,24 @@ def run_agent(
             )
     finally:
         if call is not None and registered:
-            if result is None:
-                # A raised adapter/notification error does not prove its child
-                # exited. Stop the exact group before dropping native ownership.
-                call.process_retirement = {"outcome": "pending"}
-                retire_invocation(call)
+            retirement = call.process_control.retirement_status()
+            if (
+                result is None
+                or result.exit_code is None
+                or retirement == "unconfirmed"
+                or call.process_control.stop_error is not None
+            ):
+                # Returned adapter errors can hide failed post-spawn I/O too.
+                # Reconcile the actual group before releasing either owner.
+                outcome = retire_invocation(call)
+                if result is not None and outcome == "unconfirmed":
+                    result = replace(
+                        result, error=result.error or "Native process retirement is unconfirmed"
+                    )
+            elif call.process_retirement is not None:
+                # A concurrent cancellation's stop may finish before its registry
+                # update. Persist this current observation, never a stale pending.
+                call.process_retirement = {"outcome": retirement}
             finished_at = datetime.now(UTC).isoformat()
             try:
                 _sample_invocations()
@@ -793,7 +809,6 @@ def run_agent(
                 _notify_execution(on_execution_change, call, False)
             except BaseException:
                 if call.process_retirement is None:
-                    call.process_retirement = {"outcome": "pending"}
                     retire_invocation(call)
                 raise
             finally:

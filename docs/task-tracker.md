@@ -116,7 +116,9 @@ Preparation also checks persisted native request ownership, including failed
 terminal persistence and unobserved exits after registry cleanup. A missing
 registry entry or terminal request status never proves retirement. Such requests
 refuse preparation before interruption with request/invocation refs and repair
-context. Exceptional native cleanup stops only its owned process group; an
+context. Native cleanup checks its exact owned process group on every managed
+return, including returned adapter errors as well as raised exceptions. It stops
+only its owned process group when exit is unknown or unconfirmed; an
 unconfirmed group retains its exact handle in the existing registry after readers
 retire. Existing cancellation/shutdown owners can retry that handle, but observed
 process termination never fabricates a missing native outcome. Pre-existing
