@@ -120,6 +120,23 @@ Required setup fields:
 
 ## Add An Action
 
+CFOBooth is a native catalog composition: `cfobooth.catalog.sync` performs one
+complete export, validates all descriptors in the companion package, and projects
+its declarations into the shared generated-action inventory. Public
+`cfobooth.api.*` refs are stable operation-ID hashes; discover their names and
+schemas through the standard action catalog. Execution uses the stored native
+descriptor through `PackageActionConnector`, with no catalog fetch per call.
+Full synchronization retires missing entries while `operation_ids` or `limit`
+preserves unseen entries. Catalog hashes and local manifest hashes are separate,
+so an unchanged export can repair a changed local projection.
+
+Inventory scope includes project, credential ref, normalized configured URL,
+verified user, organization and key ID. Replacement or disconnect retires the
+old scope, and late catalogs cannot restore it. Provider context cannot supply
+URL/header/scope overrides; current server authority still applies on every
+request. Local protocol fixtures qualify host composition; final integration
+must separately verify the actual CFOBooth emitted catalog and issued keys.
+
 Actions are static tool definitions:
 
 ```yaml

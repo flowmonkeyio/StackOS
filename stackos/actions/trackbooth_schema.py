@@ -6,14 +6,13 @@ from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import Any
 
-from stackos_connectors.connectors.trackbooth.assets import _schema_descriptor
 from stackos_connectors.connectors.trackbooth.schema import (
     _schema_property,
     _schema_required_fields,
     operation_input_schema,
 )
 
-from stackos.actions.connectors import ActionConnectorRequest, ActionValidationIssue
+from stackos.actions.connectors import ActionValidationIssue
 from stackos.actions.provider_utils import issue
 from stackos.actions.trackbooth_contract import (
     ACTION_SLUG_RE as _ACTION_SLUG_RE,
@@ -33,6 +32,7 @@ from stackos.actions.trackbooth_contract import (
 from stackos.actions.trackbooth_contract import (
     JsonObject,
 )
+from stackos.repositories.base import ValidationError
 
 
 def _runtime_endpoint_checksum(detail: Mapping[str, Any]) -> str | None:
@@ -58,6 +58,27 @@ def _runtime_action_manifest(
     request_body = detail.get("request_body")
     query_params = detail.get("query_params")
     path_params = detail.get("path_params")
+    input_schema: JsonObject = operation_input_schema(detail)
+    output_schema = _runtime_output_schema(detail)
+    for canonical, projected in (
+        (request_body, input_schema["properties"].get("body")),
+        (query_params, input_schema["properties"].get("query")),
+        (detail.get("response"), output_schema["properties"]["data"]),
+    ):
+        if (
+            isinstance(canonical, Mapping)
+            and "type" in canonical
+            and (not isinstance(projected, Mapping) or projected.get("type") != canonical["type"])
+        ):
+            raise ValidationError(
+                "Installed connector package cannot preserve Trackbooth schema type"
+            )
+    if isinstance(detail.get("body_required"), bool) and detail["body_required"] != (
+        "body" in input_schema.get("required", [])
+    ):
+        raise ValidationError(
+            "Installed connector package cannot preserve Trackbooth body presence"
+        )
     return {
         "key": action_key,
         "name": _runtime_action_name(title),
@@ -65,8 +86,8 @@ def _runtime_action_manifest(
         "provider": _TRACKBOOTH_PROVIDER_KEY,
         "capability": "agent-api",
         "risk_level": _runtime_risk_level(detail=detail, method=method, path=path),
-        "input_schema": operation_input_schema(detail),
-        "output_schema": _runtime_output_schema(detail),
+        "input_schema": input_schema,
+        "output_schema": output_schema,
         "config": {
             "schema_version": "stackos.action.v1",
             "public_action_key": public_action_key,
@@ -84,8 +105,9 @@ def _runtime_action_manifest(
             if isinstance(path_params, list)
             else [],
             "body_required_fields": _schema_required_fields(request_body),
-            "has_query": isinstance(query_params, Mapping),
-            "has_body": isinstance(request_body, Mapping),
+            "has_query": query_params is not None,
+            "has_body": request_body is not None,
+            "body_required": "body" in input_schema.get("required", []),
             "category": detail.get("category"),
             "tags": detail.get("tags") or [],
             "permissions": detail.get("permissions") or [],
@@ -266,7 +288,9 @@ def _runtime_output_schema(detail: Mapping[str, Any]) -> JsonObject:
         "properties": {
             "operation_id": {"type": "string"},
             "status_code": {"type": "integer"},
-            "data": response or {"type": "object", "additionalProperties": True},
+            "data": response
+            if response is not None
+            else {"type": "object", "additionalProperties": True},
         },
     }
 
@@ -293,6 +317,7 @@ def _normalize_action_slug(value: str) -> str:
 
 
 def _configured_endpoint(config: Mapping[str, Any], operation_id: str) -> JsonObject | None:
+    """Rebuild fixed transport metadata; generated validation uses the stored schema."""
     configured_operation_id = config.get("trackbooth_operation_id")
     if not isinstance(configured_operation_id, str) or configured_operation_id != operation_id:
         return None
@@ -309,98 +334,36 @@ def _configured_endpoint(config: Mapping[str, Any], operation_id: str) -> JsonOb
     body_properties: dict[str, JsonObject] = {
         str(item): {} for item in body_required_fields if isinstance(item, str)
     }
+    body_schema = (
+        {
+            "json_schema": {
+                "type": "object",
+                "required": list(body_properties),
+                "properties": body_properties,
+            },
+            **({"required": config["body_required"]} if "body_required" in config else {}),
+        }
+        if config.get("has_body") is True
+        else None
+    )
+    query_schema = (
+        {"json_schema": {"type": "object", "properties": {}}}
+        if config.get("has_query") is True
+        else None
+    )
     return {
         "operation_id": operation_id,
         "method": method.upper(),
         "path": path,
         "path_params": [{"name": str(item)} for item in path_param_names if isinstance(item, str)],
-        "body_schema": {
-            "json_schema": {
-                "type": "object",
-                "required": list(body_properties),
-                "properties": body_properties,
-            }
-        }
-        if config.get("has_body") is True
-        else None,
-        "query_schema": {"json_schema": {"type": "object", "properties": {}}}
-        if config.get("has_query") is True
-        else None,
+        "body_schema": body_schema,
+        "query_schema": query_schema,
         "category": config.get("category"),
         "tags": config.get("tags") or [],
         "permissions": config.get("permissions") or [],
         "feature_requirements": config.get("feature_requirements") or [],
         "field_groups": config.get("field_groups") or [],
     }
-
-
-def _operation_accepts_body(
-    request: ActionConnectorRequest,
-    endpoint: Mapping[str, Any],
-    *,
-    body_schema: Mapping[str, Any] | None,
-) -> bool:
-    if request.config_json.get("has_body") is True:
-        return True
-    if body_schema is not None:
-        return True
-    return _schema_descriptor(endpoint, "body_schema") is not None
-
-
-def _schema_value_issues(
-    schema: Mapping[str, Any] | None,
-    value: Mapping[str, Any],
-    path: str,
-) -> list[ActionValidationIssue]:
-    if not schema:
-        return []
-    issues: list[ActionValidationIssue] = []
-    required = schema.get("required")
-    if isinstance(required, list):
-        for key in required:
-            if isinstance(key, str) and key not in value:
-                issues.append(issue(f"{path}.{key}", "required field is missing", "required"))
-    properties = schema.get("properties")
-    if isinstance(properties, Mapping):
-        for key, prop in properties.items():
-            if key not in value or not isinstance(prop, Mapping):
-                continue
-            prop_type = prop.get("type")
-            if prop_type == "array":
-                raw_items = prop.get("items")
-                item_schema = raw_items if isinstance(raw_items, Mapping) else {}
-                if not isinstance(value[key], list):
-                    issues.append(
-                        issue(
-                            f"{path}.{key}",
-                            "value must be an array",
-                            "type_mismatch",
-                        )
-                    )
-                    continue
-                item_enum_values = item_schema.get("enum")
-                if isinstance(item_enum_values, list):
-                    for index, item in enumerate(value[key]):
-                        if item not in item_enum_values:
-                            issues.append(
-                                issue(
-                                    f"{path}.{key}[{index}]",
-                                    "value must be one of: "
-                                    f"{', '.join(map(str, item_enum_values))}",
-                                    "enum_mismatch",
-                                )
-                            )
-                continue
-            enum_values = prop.get("enum")
-            if isinstance(enum_values, list) and value[key] not in enum_values:
-                issues.append(
-                    issue(
-                        f"{path}.{key}",
-                        f"value must be one of: {', '.join(map(str, enum_values))}",
-                        "enum_mismatch",
-                    )
-                )
-    return issues
 
 
 def _missing_required_body_issues(schema: Mapping[str, Any]) -> list[ActionValidationIssue]:

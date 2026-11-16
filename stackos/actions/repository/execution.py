@@ -1024,6 +1024,7 @@ class ActionExecutionMixin:
             operation=manifest.operation,
             input_json=input_json,
             config_json=manifest.config_json,
+            input_schema_json=manifest.input_schema_json,
             provider_context_json=provider_context_json,
             credential_ref=credential.credential_ref if credential is not None else credential_ref,
             credential=credential,

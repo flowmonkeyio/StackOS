@@ -111,6 +111,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "trackbooth",
         "shopify",
         "linear",
+        "cfobooth",
         "publishing",
         "seo",
         "core",

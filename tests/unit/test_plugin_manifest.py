@@ -347,6 +347,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "trackbooth",
         "shopify",
         "linear",
+        "cfobooth",
         "publishing",
         "seo",
         "core",
@@ -354,9 +355,9 @@ def test_builtin_plugin_manifests_validate() -> None:
     ]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
-        # Finance is transport/workflow-only by design: its authoritative
-        # records live in the selected external finance backend, not StackOS.
-        if manifest.slug != "finance":
+        # Finance and CFOBooth compose external transport/workflows; they do
+        # not duplicate financial records as host resource schemas.
+        if manifest.slug not in {"finance", "cfobooth"}:
             assert manifest.resources
         assert manifest.model_dump(mode="json")["slug"] == manifest.slug
 
@@ -1142,7 +1143,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 60
+    assert len(providers) == 61
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -1155,6 +1156,17 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         assert setup.get("setup_note") or config.get("setup_note"), (
             f"{plugin_slug}:{provider.key} missing setup note"
         )
+        if provider.key == "cfobooth":
+            # No remote deployment or public setup URL exists. Native setup
+            # supplies an editable explicit URL; the public pin has no methods.
+            if config.get("enabled") is False:
+                assert provider.auth_methods == []
+            else:
+                assert [m.key for m in provider.auth_methods] == ["api_key"]
+                fields = {f.key: f for f in provider.auth_methods[0].fields}
+                assert fields["api_base_url"].placeholder == "https://cfobooth.com"
+                assert fields["api_base_url"].required and fields["api_key"].secret
+            continue
         expected_verified_at = (
             None
             if provider.key in {"quickbooks-online", "google-indexing"}

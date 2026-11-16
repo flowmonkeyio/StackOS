@@ -126,6 +126,7 @@ class CredentialResolutionMixin:
         operation: str,
         required_scopes: list[str] | tuple[str, ...] | None = None,
         local_admin: bool = False,
+        allow_unverified: bool = False,
     ) -> ResolvedCredential:
 
         credential, row = self._resolve_credential(
@@ -142,7 +143,11 @@ class CredentialResolutionMixin:
                     "action_provider": provider_key,
                 },
             )
-        if credential.status not in {"connected", "expired"}:
+        if credential.status not in {"connected", "expired"} and not (
+            allow_unverified
+            and credential.provider_key == "cfobooth"
+            and credential.status in {"pending", "repair-required"}
+        ):
             raise ConflictError(
                 "credential is not connected",
                 data={

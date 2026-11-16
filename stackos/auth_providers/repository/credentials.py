@@ -23,6 +23,7 @@ from stackos_connectors.shared.google.service_account import (
 from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     Credential,
+    CredentialAccount,
     CredentialScope,
     ExecutionContext,
     IntegrationCredential,
@@ -140,7 +141,7 @@ class CredentialStorageMixin:
         secret_payload = self._serialize_secret_payload(method=method, values=secret_values)
         if not method.interactive and self._method_requires_local_scope_gate(method):
             safe_config["scope_status"] = "unknown"
-        resolved_status = "pending" if provider.key == "telegram" else "connected"
+        resolved_status = "pending" if provider.key in {"telegram", "cfobooth"} else "connected"
         if method.interactive:
             application_values = json.loads(secret_payload.decode("utf-8"))
             if not isinstance(application_values, dict):
@@ -401,6 +402,13 @@ class CredentialStorageMixin:
             (changed_secret_fields or subject_changed or scope_config_changed)
             and self._method_requires_local_scope_gate(method)
         )
+        cfobooth_identity_changed = provider.key == "cfobooth" and bool(
+            changed_secret_fields
+            or any(
+                safe_config.get(key) != (credential.config_json or {}).get(key)
+                for key in ("api_base_url", "organization_id")
+            )
+        )
         resolved_status = credential.status
         secret_payload = declared_secret_payload
         telegram_connection_fields_changed = False
@@ -494,6 +502,10 @@ class CredentialStorageMixin:
         )
         credential.config_json = self._safe_config(safe_config)
         credential.status = resolved_status
+        if cfobooth_identity_changed:
+            self._invalidate_cfobooth_identity(credential)
+            credential.status = "pending"
+            credential.last_tested_at = None
         credential.revoked_at = None
         credential.updated_at = utcnow()
         self._s.add(credential)
@@ -648,6 +660,16 @@ class CredentialStorageMixin:
                 },
             )
         self._s.delete(attachment)
+        if credential.provider_key == "cfobooth":
+            from stackos.actions.generated_inventory import retire_generated_credential_inventory
+
+            retire_generated_credential_inventory(
+                self._s,
+                provider_key=credential.provider_key,
+                credential_ref=credential_ref,
+                project_id=project_id,
+                now=utcnow(),
+            )
         self._s.commit()
         return Envelope(data=self._account_out(credential), project_id=project_id)
 
@@ -679,6 +701,8 @@ class CredentialStorageMixin:
             metadata_json={"credential_ref": account_ref},
         )
         credential.status = "revoked"
+        if provider_key == "cfobooth":
+            self._invalidate_cfobooth_identity(credential)
         credential.revoked_at = now
         credential.expires_at = None
         credential.integration_credential_id = None
@@ -739,6 +763,20 @@ class CredentialStorageMixin:
                 provider_key=provider_key,
                 revoked_at=now,
             ),
+        )
+
+    def _invalidate_cfobooth_identity(self, credential: Credential) -> None:
+        """Discard identity and generated inventory when this key scope is lost."""
+        from stackos.actions.generated_inventory import retire_generated_credential_inventory
+
+        self._s.exec(
+            delete(CredentialAccount).where(col(CredentialAccount.credential_id) == credential.id)
+        )
+        retire_generated_credential_inventory(
+            self._s,
+            provider_key=credential.provider_key,
+            credential_ref=credential.credential_ref,
+            now=utcnow(),
         )
 
     def _global_credential(
