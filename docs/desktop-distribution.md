@@ -52,13 +52,28 @@ Build machines need:
 | Developer ID Application certificate | Sign the app and DMG | signed/release builds |
 | Apple notarization credentials | Apple malware/trust ticket for non-App-Store distribution | public release |
 
-The payload builder builds the StackOS wheel and exports locked dependencies,
-including the pinned `stackos-connectors` release from PyPI. It installs those
-dependencies, installs the host wheel without resolving dependencies again, and
-runs `pip check`. No connector checkout is needed. Provider schemas, documents
-and icons ship inside the connector wheel. The payload contains neither
+The payload builder builds the StackOS wheel and exports locked dependencies.
+For 2.1.45, `tool.uv.sources` and `uv.lock` pin `stackos-connectors` 0.2.9 to
+accepted Git commit `b026a1259cab07ff34e519d145460cc202c5ad9d` from
+`https://github.com/flowmonkeyio/StackOSConnectors.git` while that version awaits
+separate PyPI publication. The frozen export retains that immutable source;
+uv fetches and builds it without a sibling checkout or local dependency path.
+The builder installs the exported dependencies, installs the host wheel without
+resolving dependencies again, and runs `pip check`. Provider schemas, documents
+and icons ship inside the connector wheel. Host wheel metadata still declares
+`stackos-connectors==0.2.9`; installing that wheel alone from a package index
+requires separate connector publication. This source pin does not publish either
+package. The payload contains neither
 editable installs nor build-machine paths; the existing packaged CLI
 verification runs outside the repository with hostile ambient Python settings.
+
+Retain the accepted source commit, uv and build-backend identities, exported
+requirements and artifact hashes in the release receipt. Compare rebuilt
+connector wheel contents with the accepted artifact, including metadata and
+bundled schemas/icons; equal source contents do not imply byte-identical wheel
+archives. The integration owner freezes the final accepted host source after
+ticket review, retaining excluded work and rollback references as described in
+[release signoff](release-signoff.md#accepted-sources-and-release-identity).
 
 Run the preflight before public release packaging:
 

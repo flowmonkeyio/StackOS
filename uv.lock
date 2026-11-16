@@ -2140,7 +2140,7 @@ wheels = [
 
 [[package]]
 name = "stackos"
-version = "2.1.44"
+version = "2.1.45"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -2196,7 +2196,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "s3transfer", specifier = ">=0.19.1,<0.20" },
     { name = "sqlmodel", specifier = ">=0.0.22,<0.0.45" },
-    { name = "stackos-connectors", specifier = "==0.2.8" },
+    { name = "stackos-connectors", git = "https://github.com/flowmonkeyio/StackOSConnectors.git?rev=b026a1259cab07ff34e519d145460cc202c5ad9d" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "tomlkit", specifier = ">=0.15.2,<1" },
     { name = "typer", specifier = ">=0.13" },
@@ -2219,8 +2219,8 @@ dev = [
 
 [[package]]
 name = "stackos-connectors"
-version = "0.2.8"
-source = { registry = "https://pypi.org/simple" }
+version = "0.2.9"
+source = { git = "https://github.com/flowmonkeyio/StackOSConnectors.git?rev=b026a1259cab07ff34e519d145460cc202c5ad9d#b026a1259cab07ff34e519d145460cc202c5ad9d" }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
@@ -2229,10 +2229,6 @@ dependencies = [
     { name = "jsonschema" },
     { name = "pydantic" },
     { name = "s3transfer" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/32/70/466f5071c1d8e63362b5b43227320a87c62ed9194681bfb20a753757603d/stackos_connectors-0.2.8.tar.gz", hash = "sha256:de2396cd6a965455bf7f680004c83d6a10df212f76ddc7ba4594f5284fdb2526", size = 2368996, upload-time = "2026-10-14T05:48:19.236Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/d0/c3cfb67dade0a634805717978c5d145e22c1e57e570bfca5e4f946b898d8/stackos_connectors-0.2.8-py3-none-any.whl", hash = "sha256:95a585569034d04cf6195b6cbf7c1643e43a04f3ca73f854a54a48ee57b5e022", size = 2388781, upload-time = "2026-10-14T05:48:17.306Z" },
 ]
 
 [[package]]

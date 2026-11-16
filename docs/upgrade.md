@@ -27,14 +27,20 @@ runtime cache copy, repairs MCP registrations, and runs `doctor`. Use
 `stackos start` for first start and `stackos restart` after an upgrade when the
 daemon is already running.
 
-The installer resolves the pinned `stackos-connectors` release from PyPI.
+Standalone host wheel metadata pins `stackos-connectors==0.2.9`. Until that
+connector version is published separately, a package-index-only installation
+cannot resolve it. The 2.1.45 desktop payload instead bundles the accepted
+immutable connector source through the frozen uv export; see
+[packaging dependencies](desktop-distribution.md#packaging-dependencies).
 For a local StackOS wheel installation, see
 [package setup](setup.md#package-or-operator-setup).
 
 ## Clone mode
 
-Update the StackOS checkout and its lockfile together. `make install` resolves
-the pinned connector release from PyPI; no sibling checkout needs updating.
+Update the StackOS checkout and its lockfile together. For 2.1.45, uv resolves
+the accepted connector 0.2.9 Git revision pinned in `tool.uv.sources` and
+`uv.lock`; no sibling checkout needs updating. Keep the source override and
+lockfile together until a separately reviewed publication transition.
 For a wheel installation, follow [package setup](setup.md#package-or-operator-setup).
 
 ```bash

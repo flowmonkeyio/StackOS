@@ -161,8 +161,10 @@ webhook/polling rather than fetching prior chat history.
 
 For repository development:
 
-`uv` installs the pinned `stackos-connectors` release from PyPI along with the
-other Python dependencies. A separate connectors checkout is not required.
+`uv` installs the accepted `stackos-connectors` 0.2.9 Git revision pinned in
+`pyproject.toml` and `uv.lock` along with the other Python dependencies. A separate
+connectors checkout is not required. See [setup](docs/setup.md#dev-clone-setup)
+for the source pin and separate package-publication boundary.
 
 ```bash
 make install

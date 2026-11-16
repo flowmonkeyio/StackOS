@@ -49,9 +49,12 @@ provided separately by the host agent runtime.
 
 Use this path when working from this repository:
 
-The pinned dependency `stackos-connectors==0.2.8` is installed from PyPI by
-`uv`. Its resolved distribution and hashes are recorded in `uv.lock`; a
-separate connectors checkout is not required.
+The pinned dependency `stackos-connectors==0.2.9` is installed by uv from accepted
+Git commit `b026a1259cab07ff34e519d145460cc202c5ad9d` using `tool.uv.sources` and
+`uv.lock` while that version awaits separate PyPI publication. Keep both files
+together; a separate connectors checkout is not required. See
+[packaging dependencies](desktop-distribution.md#packaging-dependencies) for
+the frozen export and artifact identity requirements.
 
 ```bash
 make install
@@ -87,8 +90,8 @@ The Vite app proxies `/api` and `/mcp` to the daemon on port `5180`.
 
 ## Package Or Operator Setup
 
-Build the StackOS wheel and let the installer resolve its pinned connector
-dependency from PyPI:
+After the pinned connector version is published separately, build the StackOS
+wheel and let the installer resolve its dependency from PyPI:
 
 ```bash
 uv build --wheel --out-dir dist
@@ -99,6 +102,12 @@ Replace `VERSION` with the built StackOS version. The installed application does
 not require a source checkout. `stackos install` configures application state
 and assets after Python dependencies are installed; it does not install missing
 Python packages.
+
+The 2.1.45 host wheel declares `stackos-connectors==0.2.9` without embedding the
+uv source override. Until connector 0.2.9 is published, package-index-only
+installation of that wheel is unavailable. The desktop payload bundles the
+accepted connector through its frozen dependency export and does not have this
+runtime prerequisite. No publication is implied by building either artifact.
 
 Use this path when StackOS is installed as a Python package or pipx app:
 
