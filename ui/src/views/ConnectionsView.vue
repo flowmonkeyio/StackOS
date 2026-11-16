@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
@@ -139,13 +139,12 @@ const {
   surfaces: communicationSurfaces,
   routes: communicationRoutes,
   loading: communicationTopologyLoading,
-  message: communicationTopologyMessage,
+  states: topologyReads,
   load: loadCommunicationTopology,
 } = useCommunicationTopology(projectId)
 const {
   status: ingressStatus,
   loading: ingressLoading,
-  loadMessage: ingressLoadMessage,
   panelOpen: ingressSetupOpen,
   message: ingressMessage,
   form: ingressForm,
@@ -160,9 +159,6 @@ const {
 })
 const communicationSetupLoading = computed(
   () => communicationTopologyLoading.value || ingressLoading.value,
-)
-const communicationSetupMessage = computed(
-  () => communicationTopologyMessage.value ?? ingressLoadMessage.value,
 )
 const {
   panelOpen: slackProfilePanelOpen,
@@ -187,30 +183,30 @@ const subNavGroups = computed(() => [
   {
     label: 'Service setup',
     items: [
-      { key: 'services', label: 'Services', icon: 'plug', count: activeConnections.value.length },
+      { key: 'services', label: 'Services', icon: 'plug', count: authStatus.value ? activeConnections.value.length : undefined },
     ],
   },
   {
     label: 'Messaging setup',
     items: [
-      { key: 'bots', label: 'Bots', icon: 'chat', count: communicationProfiles.value.length },
+      { key: 'bots', label: 'Bots', icon: 'chat', count: topologyReads.value.profiles.loaded ? communicationProfiles.value.length : undefined },
       {
         key: 'channels',
         label: 'Channels',
         icon: 'megaphone',
-        count: communicationSurfaces.value.length,
+        count: topologyReads.value.surfaces.loaded ? communicationSurfaces.value.length : undefined,
       },
       {
         key: 'destinations',
         label: 'Destinations',
         icon: 'arrow-right',
-        count: communicationTargets.value.length,
+        count: topologyReads.value.targets.loaded ? communicationTargets.value.length : undefined,
       },
       {
         key: 'handoff-rules',
         label: 'Handoff rules',
         icon: 'git-branch',
-        count: communicationRoutes.value.length,
+        count: topologyReads.value.routes.loaded ? communicationRoutes.value.length : undefined,
       },
     ],
   },
@@ -221,7 +217,7 @@ const subNavGroups = computed(() => [
         key: 'connectivity',
         label: 'Connectivity',
         icon: 'globe',
-        count: ingressStatus.value?.routes?.length ?? 0,
+        count: ingressStatus.value?.routes?.length,
       },
     ],
   },
@@ -245,13 +241,15 @@ function applySectionFromQuery(value: unknown): void {
   if (isConnectionSection(value)) activeSection.value = value
 }
 
+let retired = false
+onBeforeUnmount(() => { retired = true })
 async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  initialLoadComplete.value = false
+  if (retired || !projectId.value || Number.isNaN(projectId.value)) return
+  const requestedProjectId = projectId.value
   try {
     applySectionFromQuery(route.query.section)
-    await loadCredentials()
-    await loadCommunicationSetup()
+    await Promise.all([loadCredentials(), loadCommunicationSetup()])
+    if (retired || requestedProjectId !== projectId.value) return
     if (!handleOAuthReturnQuery(route.query.oauth_status, route.query.provider_key)) {
       const providerKey =
         typeof route.query.provider_key === 'string' ? route.query.provider_key : undefined
@@ -380,6 +378,15 @@ onBeforeRouteUpdate((to) => {
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading || communicationSetupLoading"
+          @click="load"
+        >
+          Refresh
+        </UiButton>
         <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddConnection()">
           Add connection
         </UiButton>
@@ -395,7 +402,7 @@ onBeforeRouteUpdate((to) => {
     </UiCallout>
 
     <section
-      v-if="initialLoadComplete && !error"
+      v-if="initialLoadComplete && authStatus"
       class="overflow-hidden rounded-lg border border-strong bg-bg-surface"
       aria-labelledby="connection-state-title"
     >
@@ -449,7 +456,7 @@ onBeforeRouteUpdate((to) => {
             >Messaging identities</span
           >
           <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ communicationProfiles.length }} configured</span
+            >{{ topologyReads.profiles.loaded ? `${communicationProfiles.length} configured` : 'Unavailable' }}</span
           >
         </button>
         <button
@@ -461,7 +468,7 @@ onBeforeRouteUpdate((to) => {
             >Places</span
           >
           <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ communicationSurfaces.length }} visible</span
+            >{{ topologyReads.surfaces.loaded ? `${communicationSurfaces.length} visible` : 'Unavailable' }}</span
           >
         </button>
         <button
@@ -474,9 +481,9 @@ onBeforeRouteUpdate((to) => {
           >
           <span
             class="mt-1 block text-sm font-semibold"
-            :class="ingressStatus?.ready ? 'text-success-fg' : 'text-warning-fg'"
+            :class="!ingressStatus ? 'text-fg-muted' : ingressStatus.ready ? 'text-success-fg' : 'text-warning-fg'"
           >
-            {{ ingressStatus?.ready ? 'Reachable' : 'Needs setup' }}
+            {{ !ingressStatus ? 'Unavailable' : ingressStatus.ready ? 'Reachable' : 'Needs setup' }}
           </span>
         </button>
       </div>
@@ -509,6 +516,7 @@ onBeforeRouteUpdate((to) => {
         >
           <ConnectedServicesPanel
             :loading="loading"
+            :loaded="authStatus !== null"
             :error="error"
             :service-groups="serviceGroups"
             :connections-count="activeConnections.length"
@@ -525,8 +533,10 @@ onBeforeRouteUpdate((to) => {
           <BotsPanel
             :bots="communicationProfiles"
             :slack-connections="slackConnections"
-            :loading="communicationSetupLoading"
-            :message="slackProfileMessage"
+            :loading="topologyReads.profiles.loading"
+            :loaded="topologyReads.profiles.loaded"
+            :credentials-loaded="authStatus !== null"
+            :message="slackProfileMessage ?? topologyReads.profiles.message"
             @add-connection="openAddConnection"
             @add-bot="openAddBot"
             @edit-bot="editBot"
@@ -540,9 +550,10 @@ onBeforeRouteUpdate((to) => {
         >
           <ChannelsPanel
             :channels="communicationSurfaces"
-            :loading="communicationSetupLoading"
-            :message="communicationSetupMessage"
-            @refresh="loadCommunicationSetup"
+            :loading="topologyReads.surfaces.loading"
+            :loaded="topologyReads.surfaces.loaded"
+            :message="topologyReads.surfaces.message"
+            @refresh="loadCommunicationTopology('surfaces')"
           />
         </div>
 
@@ -553,9 +564,10 @@ onBeforeRouteUpdate((to) => {
         >
           <DestinationsPanel
             :destinations="communicationTargets"
-            :loading="communicationSetupLoading"
-            :message="communicationSetupMessage"
-            @refresh="loadCommunicationSetup"
+            :loading="topologyReads.targets.loading"
+            :loaded="topologyReads.targets.loaded"
+            :message="topologyReads.targets.message"
+            @refresh="loadCommunicationTopology('targets')"
           />
         </div>
 
@@ -566,9 +578,10 @@ onBeforeRouteUpdate((to) => {
         >
           <HandoffRulesPanel
             :routes="communicationRoutes"
-            :loading="communicationSetupLoading"
-            :message="communicationSetupMessage"
-            @refresh="loadCommunicationSetup"
+            :loading="topologyReads.routes.loading"
+            :loaded="topologyReads.routes.loaded"
+            :message="topologyReads.routes.message"
+            @refresh="loadCommunicationTopology('routes')"
           />
         </div>
 
@@ -579,10 +592,10 @@ onBeforeRouteUpdate((to) => {
         >
           <ConnectivityPanel
             :ingress-status="ingressStatus ?? null"
-            :loading="communicationSetupLoading"
+            :loading="ingressLoading"
             :syncing="busyAction === 'ingress:sync'"
-            :message="ingressMessage ?? communicationSetupMessage"
-            @refresh="loadCommunicationSetup"
+            :message="ingressMessage"
+            @refresh="loadIngressStatus"
             @configure="openIngressSetup"
             @sync="syncIngress"
             @confirm-manual="syncIngress"

@@ -3318,7 +3318,9 @@ async def _download_bulk_export_artifact(
         if request.session is not None:
             artifact = (
                 ArtifactRepository(request.session)
-                .create(
+                .create_generated_file(
+                    asset_root=root,
+                    path=final_path,
                     project_id=request.project_id,
                     plugin_slug="gtm",
                     kind="hubspot-export",

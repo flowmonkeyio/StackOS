@@ -26,6 +26,7 @@ import FinanceRecordPanel from '@/components/finance/FinanceRecordPanel.vue'
 import FinanceOverview from './finance/FinanceOverview.vue'
 import { financeRecordLabel } from './finance/reportingReadiness'
 import FinanceOverviewInsights from './finance/FinanceOverviewInsights.vue'
+import FinanceRequestDialog from './finance/FinanceRequestDialog.vue'
 import { aiCategory, insightsModel } from './finance/insightsViewModel'
 import {
   UiButton,
@@ -40,6 +41,7 @@ import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { callOperation } from '@/lib/operations'
 import { ApiError } from '@/lib/client'
+import { useStackOsCatalogStore } from '@/stores/plugins'
 import {
   contentBlob,
   contentText,
@@ -58,11 +60,15 @@ import {
 const route = useRoute(),
   router = useRouter()
 const { projectId } = useProjectRouteScope(route)
+const catalog = useStackOsCatalogStore()
+const pluginDisabled = ref(false), enabling = ref(false)
 const section = ref('overview'),
   loading = ref(false),
   error = ref(''),
   message = ref('')
 const access = ref<SchemaFinanceAccessOut | null>(null)
+// Retained access identifies the presentation only. New calls need current validation.
+const authorityReady = ref(false)
 const projection = ref<SchemaFinanceProjectionOut | null>(null)
 const query = ref<FinanceQuery>(initialQuery())
 const panelOpen = ref(false),
@@ -75,6 +81,7 @@ const report = ref<SchemaFinanceContentOut | null>(null),
   reportLoading = ref(false)
 const requests = ref<Record<string, unknown>[]>([]),
   selectedRequest = ref<Record<string, unknown> | null>(null)
+const requestOpen = ref(false)
 const analysis = ref<SchemaFinanceContentOut | null>(null),
   analysisLoading = ref(false),
   analysisKind = ref('opportunities')
@@ -138,7 +145,8 @@ const columns: DataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'ai_category', label: 'Proposed AI category' },
   { key: 'ai_confidence', label: 'AI confidence' },
 ]
-const reportAllowed = computed(() => access.value?.modes.includes('export') === true)
+const currentAuthority = computed(() => authorityReady.value && !loading.value)
+const reportAllowed = computed(() => currentAuthority.value && access.value?.modes.includes('export') === true)
 const pendingAnalysis = computed(() => analysisSubmissions.get(projectId.value))
 const pendingArguments = computed<Record<string, unknown> | null>(() =>
   pendingAnalysis.value ? JSON.parse(pendingAnalysis.value.payloadJson) : null,
@@ -192,23 +200,31 @@ function releaseReport() {
   reportText.value = ''
   reportLoading.value = false
 }
+function clearContent() {
+  releaseReport()
+  projection.value = null
+  requests.value = []
+  selectedRequest.value = null
+  requestOpen.value = false
+  analysis.value = null
+  analysisLoading.value = false
+  panelOpen.value = false
+  recordRef.value = null
+  selectedRow.value = {}
+  includedRefs.value = []
+}
 function clearScope() {
   scopeSequence++
   querySequence++
   analysisSequence++
-  releaseReport()
+  clearContent()
   access.value = null
-  projection.value = null
-  requests.value = []
-  selectedRequest.value = null
-  analysis.value = null
-  analysisLoading.value = false
-  panelOpen.value = false
-  selectedRow.value = {}
-  includedRefs.value = []
+  authorityReady.value = false
   error.value = ''
   message.value = ''
   loading.value = false
+  pluginDisabled.value = false
+  enabling.value = false
 }
 function financeStatusMessage(code: string): string {
   if (code === 'storage_owner_mismatch')
@@ -269,7 +285,7 @@ function financeStatusMessage(code: string): string {
     invalid_root:
       'Project Finance storage could not be safely read. Check local permissions and preserve the existing files, then refresh.',
     plugin_not_enabled:
-      'Finance is not enabled for this project. Enable Finance in Plugins, then refresh.',
+      'Finance is not enabled for this project. Enable Finance to open this project’s console.',
     writer_busy:
       'Project Finance data is busy. Wait for the current write or backup to finish, then refresh.',
   }
@@ -282,13 +298,13 @@ async function loadStatus() {
     id = projectId.value
   querySequence++
   analysisSequence++
-  analysis.value = null
+  reportSequence++
+  reportLoading.value = false
+  analysisLoading.value = false
   loading.value = true
   error.value = ''
-  access.value = null
-  projection.value = null
-  panelOpen.value = false
-  releaseReport()
+  authorityReady.value = false
+  pluginDisabled.value = false
   try {
     const response = await callOperation<{ data: SchemaFinanceStatusOut }>('finance.status', {
       project_id: id,
@@ -300,40 +316,66 @@ async function loadStatus() {
       response.data.access.length > 1 ||
       response.data.access.some((row) => row.project_id !== id)
     ) {
+      clearScope()
       error.value = 'Project Finance data could not be verified for this project. Refresh to retry.'
       return
     }
     const chosen = response.data.access[0]
-    access.value = chosen?.readiness === 'ready' ? (chosen as SchemaFinanceAccessOut) : null
-    if (!access.value) {
+    if (chosen?.readiness !== 'ready' || !chosen.modes.includes('read')) {
       const readiness = text(chosen?.readiness || response.data.readiness)
+      clearScope()
+      pluginDisabled.value = readiness === 'plugin_not_enabled'
       error.value = financeStatusMessage(readiness)
       return
     }
+    if (access.value && canonicalJson([access.value.project_id, access.value.workspace_ref, access.value.generation, access.value.backend_key]) !== canonicalJson([chosen.project_id, chosen.workspace_ref, chosen.generation, chosen.backend_key])) clearContent()
+    access.value = chosen as SchemaFinanceAccessOut
+    authorityReady.value = true
     await loadQuery(query.value, !basisInitialized)
     if (active && sequence === scopeSequence) await loadRequests()
   } catch (cause) {
     if (active && sequence === scopeSequence) {
-      access.value = null
-      projection.value = null
       const code = cause instanceof ApiError ? text(object(cause.data).finance_code) : ''
+      if (code || (cause instanceof ApiError && [401, 403, 404].includes(cause.status))) clearScope()
+      authorityReady.value = false
+      pluginDisabled.value = code === 'plugin_not_enabled'
       error.value = financeStatusMessage(code)
     }
   } finally {
     if (active && sequence === scopeSequence) loading.value = false
   }
 }
+async function enableFinance() {
+  if (!pluginDisabled.value || enabling.value || loading.value) return
+  const id = projectId.value,
+    sequence = scopeSequence
+  enabling.value = true
+  try {
+    await callOperation('plugin.enable', { project_id: id, plugin_slug: 'finance' })
+    if (!active || sequence !== scopeSequence || id !== projectId.value) return
+    void catalog.refreshPlugins(id, { silent: true, force: true })
+    await loadStatus()
+  } catch {
+    if (active && sequence === scopeSequence && id === projectId.value)
+      error.value = 'Finance could not be enabled for this project. Check local permissions, then refresh to retry.'
+  } finally {
+    if (active) enabling.value = false
+  }
+}
 async function loadQuery(value: FinanceQuery, applyApprovedDefault = false) {
-  if (!access.value) return
+  if (!access.value || !authorityReady.value) return
   const sequence = ++querySequence,
     identity = JSON.stringify(base())
+  const compatible = canonicalJson(query.value) === canonicalJson(value)
+  if (!compatible) {
+    clearContent()
+    analysisSequence++
+  }
   query.value = { ...value }
   loading.value = true
   error.value = ''
-  projection.value = null
-  panelOpen.value = false
-  includedRefs.value = []
-  releaseReport()
+  reportSequence++
+  reportLoading.value = false
   const argumentsJson: Record<string, unknown> = { ...value, ...base(), response_mode: 'compact' }
   for (const key of [
     'currency',
@@ -369,11 +411,18 @@ async function loadQuery(value: FinanceQuery, applyApprovedDefault = false) {
         return
       }
     }
+    if (projection.value && projection.value.snapshot.sha256 !== response.data.snapshot.sha256) {
+      releaseReport()
+      analysis.value = null
+    }
     projection.value = response.data
-  } catch {
-    if (active && sequence === querySequence)
+  } catch (cause) {
+    if (active && sequence === querySequence && identity === JSON.stringify(base())) {
+      if (cause instanceof ApiError && ([401, 403, 404].includes(cause.status) || text(object(cause.data).finance_code))) clearScope()
+      authorityReady.value = false
       error.value =
         'Selected finance data is unavailable. Check dates, basis, sources and project Finance storage.'
+    }
   } finally {
     if (active && sequence === querySequence) loading.value = false
   }
@@ -387,11 +436,13 @@ const { refresh } = useProjectScopedLoader({
   },
 })
 function inspect(refValue: string, row: Record<string, unknown> = {}) {
+  if (!currentAuthority.value) return
   recordRef.value = refValue
   selectedRow.value = row
   panelOpen.value = true
 }
 function createEntry() {
+  if (!currentAuthority.value || !access.value?.modes.includes('correct')) return
   recordRef.value = null
   selectedRow.value = {}
   panelOpen.value = true
@@ -401,6 +452,7 @@ function recordSaved() {
   void refresh()
 }
 function drill(dimension: string, group: Record<string, unknown>) {
+  if (!currentAuthority.value) return
   includedRefs.value = refs(group.included_record_refs)
   if (text(group.label) === 'Unknown/unassigned') return
   const patch: Partial<FinanceQuery> =
@@ -438,15 +490,23 @@ async function loadReport(format: 'markdown' | 'csv' | 'json') {
     const blob = contentBlob(value.content_base64, value.content_type || 'text/plain')
     reportURL.value = URL.createObjectURL(blob)
     reportText.value = contentText(value.content_base64)
-  } catch {
-    if (active && sequence === reportSequence)
+  } catch (cause) {
+    if (active && sequence === reportSequence && identity === JSON.stringify(base())) {
+      if (rejectAuthority(cause)) return
       error.value = 'Report unavailable or source changed. Refresh before exporting.'
+    }
   } finally {
     if (active && sequence === reportSequence) reportLoading.value = false
   }
 }
+function rejectAuthority(cause: unknown): boolean {
+  if (!(cause instanceof ApiError) || (![401, 403, 404].includes(cause.status) && !text(object(cause.data).finance_code))) return false
+  clearScope()
+  error.value = 'Project Finance data access or source could not be verified. Refresh to retry.'
+  return true
+}
 async function loadRequests() {
-  if (!access.value) return
+  if (!access.value || !currentAuthority.value) return
   const sequence = analysisSequence,
     identity = JSON.stringify(base())
   try {
@@ -469,7 +529,7 @@ async function loadRequests() {
       : undefined
     if (verified) {
       analysisSubmissions.delete(projectId.value)
-      message.value = `Original analysis request ${verified.id} verified in Agent requests. It retains its original project, window and source.`
+      message.value = `Original analysis request ${verified.id} verified in Finance. It retains its original project, window and source.`
     }
     requests.value = page.items.filter(
       (row) =>
@@ -477,6 +537,16 @@ async function loadRequests() {
         access.value?.workspace_ref,
     )
     const requestedId = text(route.query.analysis)
+    // Contextual deep links may be older than this bounded queue page.
+    // Read the actual request; never infer a tracker task from its identity.
+    if (/^[1-9]\d*$/.test(requestedId) && !requests.value.some(row => String(row.id) === requestedId)) {
+      const requested = await callOperation<Record<string, unknown>>('agentRequest.get', {
+        project_id: projectId.value, request_id: Number(requestedId), response_mode: 'raw',
+      })
+      if (!active || sequence !== analysisSequence || identity !== JSON.stringify(base())) return
+      if (String(requested.id) === requestedId && object(object(requested.metadata_json).metadata_json).workspace_ref === access.value?.workspace_ref)
+        requests.value.push(requested)
+    }
     const requested =
       (verified && requests.value.find((row) => row.id === verified.id)) ||
       requests.value.find((row) => String(row.id) === requestedId)
@@ -484,10 +554,12 @@ async function loadRequests() {
       selectedRequest.value = requested
       void refreshAnalysis()
     }
-  } catch {
-    if (active && sequence === analysisSequence)
+  } catch (cause) {
+    if (active && sequence === analysisSequence && identity === JSON.stringify(base())) {
+      if (rejectAuthority(cause)) return
       message.value =
-        'Agent queue unavailable. Existing request links remain inspectable in Agent requests.'
+        'Agent queue unavailable. Retry Refresh in Finance to inspect the original request.'
+    }
   }
 }
 function canonicalJson(value: unknown): string {
@@ -504,7 +576,7 @@ async function requestAnalysis() {
   if (submission) {
     if (!retryAllowed.value) {
       error.value =
-        'The original submission is still unverified and its project data identity has changed. Refresh to reconcile it in Agent requests before retrying.'
+        'The original submission is still unverified and its project data identity has changed. Refresh Finance to reconcile it before retrying.'
       return
     }
   } else {
@@ -566,7 +638,7 @@ async function requestAnalysis() {
     analysisSubmissions.delete(id)
     if (!active || id !== projectId.value) return
     if (identity !== JSON.stringify(base())) {
-      message.value = `Original analysis request ${request.id} saved. Inspect Agent requests for its original project, window and source.`
+      message.value = `Original analysis request ${request.id} saved. Inspect Finance requests for its original project, window and source.`
       return
     }
     selectedRequest.value = request as unknown as Record<string, unknown>
@@ -587,7 +659,7 @@ async function requestAnalysis() {
   } catch {
     if (active && id === projectId.value && analysisSubmissions.get(id) === submission)
       error.value =
-        'Analysis request could not be verified. Retry the retained original request or inspect Agent requests; a new request is paused until this submission is verified.'
+        'Analysis request could not be verified. Retry the retained original request or inspect Finance requests; a new request is paused until this submission is verified.'
   } finally {
     submission.inFlight = false
   }
@@ -597,7 +669,6 @@ async function refreshAnalysis() {
   const sequence = ++analysisSequence,
     identity = JSON.stringify(base())
   analysisLoading.value = true
-  analysis.value = null
   error.value = ''
   const id = selectedRequest.value.id
   try {
@@ -622,10 +693,12 @@ async function refreshAnalysis() {
     })
     if (active && sequence === analysisSequence && identity === JSON.stringify(base()))
       analysis.value = value
-  } catch {
-    if (active && sequence === analysisSequence)
+  } catch (cause) {
+    if (active && sequence === analysisSequence && identity === JSON.stringify(base())) {
+      if (rejectAuthority(cause)) return
       error.value =
         'Analysis result unavailable, mismatched or unsupported. Inspect its original request and current project Finance data.'
+    }
   } finally {
     if (active && sequence === analysisSequence) analysisLoading.value = false
   }
@@ -644,14 +717,62 @@ onBeforeUnmount(() => {
       description="Expenses, income and documents stored with this project."
     >
       <template #actions>
-        <UiButton data-test="refresh-finance" @click="refresh">Refresh</UiButton>
+        <UiButton
+          data-test="refresh-finance"
+          :disabled="enabling"
+          @click="refresh"
+        >
+          Refresh
+        </UiButton>
       </template>
     </ProjectPageHeader>
-    <UiCallout v-if="error" variant="danger" role="alert">{{ error }}</UiCallout>
-    <p v-if="loading && !access" role="status" class="text-sm text-fg-muted">
-      Loading project Finance data…
-    </p>
+    <UiCallout
+      v-if="error && !projection"
+      :tone="pluginDisabled ? 'warning' : 'danger'"
+      role="alert"
+    >
+      {{ error }}
+      <template
+        v-if="pluginDisabled"
+        #actions
+      >
+        <UiButton
+          data-test="enable-finance"
+          :disabled="enabling || loading"
+          @click="enableFinance"
+        >
+          {{ enabling ? 'Enabling Finance…' : 'Enable Finance' }}
+        </UiButton>
+        <UiButton
+          :href="`/projects/${projectId}/plugins`"
+          variant="link"
+        >
+          View plugins
+        </UiButton>
+      </template>
+    </UiCallout>
+    <div class="min-h-10 text-sm text-fg-muted" role="status" aria-live="polite">
+      <template v-if="projection && (!currentAuthority || error)">
+        <p>Last-known Finance data · {{ loading ? 'validating current source…' : 'refresh required' }}</p>
+        <details v-if="error">
+          <summary class="focus-ring cursor-pointer">Refresh details</summary>
+          <p>{{ error }}</p>
+        </details>
+      </template>
+      <template v-else-if="loading">Loading project Finance data…</template>
+    </div>
     <p v-if="message" role="status" class="text-sm text-fg-muted">{{ message }}</p>
+    <UiButton v-if="selectedRequest" data-test="inspect-finance-request" :data-request-id="selectedRequest.id" @click="requestOpen = true">Inspect analysis request</UiButton>
+    <FinanceRequestDialog
+      v-if="access && currentAuthority && requestOpen"
+      :key="`${projectId}:${selectedRequest?.id ?? 'queue'}`"
+      :project-id="projectId"
+      :workspace-ref="access.workspace_ref"
+      :request-id="selectedRequest ? Number(selectedRequest.id) : null"
+      :requests="requests"
+      @close="requestOpen = false"
+      @refresh="loadRequests"
+    />
     <UiCallout v-if="pendingAnalysis" variant="warning" role="status">
       <p>
         {{ pendingAnalysis.inFlight ? 'Submitting' : 'Unverified submission for' }}
@@ -665,16 +786,14 @@ onBeforeUnmount(() => {
       <UiButton :disabled="pendingAnalysis.inFlight || !retryAllowed" @click="requestAnalysis"
         >Retry original analysis request</UiButton
       >
-      <RouterLink :to="`/projects/${projectId}/agent-requests`" class="focus-ring text-fg-link"
-        >Inspect Agent requests</RouterLink
-      >
+      <UiButton @click="requestOpen = true">Inspect Finance requests</UiButton>
       <p v-if="!retryAllowed" class="text-sm">
         The original project data identity has changed. Refresh to reconcile its persisted request
-        in Agent requests before retrying.
+        in Finance before retrying.
       </p>
     </UiCallout>
     <template v-if="access">
-      <FinanceFilters :query="query" :disabled="loading" @apply="loadQuery" />
+      <FinanceFilters :query="query" :disabled="!currentAuthority" @apply="loadQuery" />
       <div class="mt-4 grid min-w-0 grid-cols-[180px_minmax(0,1fr)] gap-5">
         <SubNav
           :groups="[
@@ -691,7 +810,6 @@ onBeforeUnmount(() => {
           @change="section = $event"
         />
         <main class="min-w-0 space-y-5" aria-label="Finance selected view">
-          <p v-if="loading" role="status">Loading selected source…</p>
           <template v-if="projection">
             <p class="text-sm text-fg-muted">
               {{ query.start }} through {{ query.end }} · {{ query.recognition_basis }} recognition
@@ -776,7 +894,7 @@ onBeforeUnmount(() => {
                 title="Expenses & income"
                 :description="`${projection.page.total} records in this selection; bills and receipts may await classification.`"
                 ><template #actions
-                  ><UiButton :disabled="!access.modes.includes('correct')" @click="createEntry"
+                  ><UiButton :disabled="!currentAuthority || !access.modes.includes('correct')" @click="createEntry"
                     >New expense or income</UiButton
                   ></template
                 ></UiSectionHeader
@@ -807,7 +925,7 @@ onBeforeUnmount(() => {
               />
               <div class="flex gap-2">
                 <UiButton
-                  :disabled="!query.offset"
+                  :disabled="!currentAuthority || !query.offset"
                   @click="
                     loadQuery({
                       ...query,
@@ -816,7 +934,7 @@ onBeforeUnmount(() => {
                   "
                   >Previous page</UiButton
                 ><UiButton
-                  :disabled="!projection.page.has_more"
+                  :disabled="!currentAuthority || !projection.page.has_more"
                   @click="
                     loadQuery({ ...query, offset: (query.offset || 0) + (query.limit || 50) })
                   "
@@ -843,7 +961,8 @@ onBeforeUnmount(() => {
               <p v-if="reportLoading" role="status">Preparing private report…</p>
               <a
                 v-if="reportURL"
-                :href="reportURL"
+                :href="reportAllowed ? reportURL : undefined"
+                :aria-disabled="!reportAllowed"
                 :download="report?.filename || 'finance-report'"
                 class="focus-ring text-fg-link"
                 >Download {{ report?.filename || 'private report' }}</a
@@ -920,10 +1039,7 @@ onBeforeUnmount(() => {
                     )
                   }}
                 </p>
-                <RouterLink
-                  :to="`/projects/${projectId}/agent-requests?request=${selectedRequest.id}`"
-                  class="focus-ring text-fg-link"
-                  >Inspect agent request and linked run</RouterLink
+                <UiButton @click="requestOpen = true">Inspect analysis request</UiButton
                 ><UiButton
                   :loading="analysisLoading"
                   :disabled="!reportAllowed"
@@ -999,6 +1115,7 @@ onBeforeUnmount(() => {
         v-model="panelOpen"
         :project-id="projectId"
         :access="access"
+        :authority-current="currentAuthority"
         :snapshot="projection.snapshot"
         :record-ref="recordRef"
         :reporting="object(selectedRow.reporting)"
@@ -1009,6 +1126,7 @@ onBeforeUnmount(() => {
         "
         @refresh="refresh"
         @saved="recordSaved"
+        @access-denied="rejectAuthority"
       />
     </template>
   </UiPageShell>

@@ -76,6 +76,10 @@ _SAFE_CONTEXT_FIELDS: dict[str, frozenset[str]] = {
 
 _SYSTEM_TOOLS: frozenset[str] = frozenset(
     {
+        "pattern.list",
+        "pattern.get",
+        "pattern.upsert",
+        "pattern.delete",
         "action.describe",
         "action.list",
         "action.run",
@@ -89,7 +93,14 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "actionCall.cancel",
         "tracker.ticketCounts",
         "tracker.ticketCountsAll",
+        "tracker.agentStats",
+        "tracker.agentStatsAll",
+        "tracker.activeTasks",
+        "tracker.activeTasksAll",
         "project.portfolio",
+        "projectSetup.get",
+        "projectSetup.start",
+        "projectSetup.report",
         "integration.list",
         "agentPreset.describe",
         "agentPreset.list",
@@ -157,11 +168,17 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "tracker.execute",
         "tracker.verify",
         "tracker.history",
+        "tracker.taskActivity",
+        "tracker.taskResults",
         "tracker.changed",
         "tracker.search",
         "tracker.createTask",
         "tracker.createTicket",
+        "tracker.startDelivery",
         "tracker.updateTask",
+        "tracker.updateTaskPriority",
+        "tracker.reorderTask",
+        "tracker.placeTask",
         "tracker.updateTicket",
         "tracker.patch",
         "tracker.pick",
@@ -203,6 +220,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "project.delete",
         "project.get",
         "project.list",
+        "project.move",
         "project.update",
         "run.abort",
         "run.children",
@@ -237,6 +255,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "resource.get",
         "resource.query",
         "schedule.list",
+        "schedule.runs",
         "schedule.remove",
         "schedule.set",
         "schedule.toggle",
@@ -281,6 +300,7 @@ _RUN_PLAN_CONTROL: frozenset[str] = frozenset(
         "secret.set",
         "tracker.status",
         "tracker.ticketCounts",
+        "tracker.agentStats",
         "tracker.get",
         "tracker.next",
         "tracker.blockers",
@@ -289,10 +309,13 @@ _RUN_PLAN_CONTROL: frozenset[str] = frozenset(
         "tracker.execute",
         "tracker.verify",
         "tracker.history",
+        "tracker.taskActivity",
+        "tracker.taskResults",
         "tracker.changed",
         "tracker.search",
         "tracker.createTask",
         "tracker.createTicket",
+        "tracker.startDelivery",
         "tracker.updateTask",
         "tracker.updateTicket",
         "tracker.patch",
@@ -308,6 +331,7 @@ _RUN_PLAN_STEP_BOUND_CONTROL_TOOLS: frozenset[str] = frozenset(
     {
         "tracker.createTask",
         "tracker.createTicket",
+        "tracker.startDelivery",
         "tracker.updateTask",
         "tracker.updateTicket",
         "tracker.patch",
@@ -319,6 +343,7 @@ _RUN_PLAN_STEP_BOUND_CONTROL_TOOLS: frozenset[str] = frozenset(
     }
 )
 _RUN_PLAN_CONTROLLER_TOOLS: frozenset[str] = _RUN_PLAN_CONTROL | _RUN_PLAN_DYNAMIC_TOOLS
+_RUN_PLAN_CONTROLLER_TOOLS |= frozenset({"pattern.list", "pattern.get"})
 
 
 # The matrix proper. ``__system__`` is explicit bootstrap/setup authority, not

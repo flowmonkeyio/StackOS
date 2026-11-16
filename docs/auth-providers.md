@@ -349,6 +349,46 @@ together:
 
 ### Rotation, Repair, And Revocation
 
+The CFOBooth provider expands its native `auth_catalog_ref`. With the public
+`stackos-connectors==0.2.8` dependency it is disabled, exposes no setup methods,
+and rejects Account setup/storage and dispatch. The separately qualified
+companion package supplies the native declaration, probe and catalog transport.
+Malformed existing native metadata remains an error; it never becomes an
+anonymous or copied-schema fallback.
+
+CFOBooth uses an explicit API-key Account with `api_base_url` and
+`organization_id`. Enter the key in the local masked field. The editable
+`https://cfobooth.com` placeholder is an example, not a verified deployment or
+a default destination. The native connector validates the configured endpoint
+(HTTPS or HTTP exact loopback), probes the current key identity, and checks its
+organization. No CFO password, browser session, refresh token or automatic key
+renewal is used.
+
+A new CFO Account remains pending until that probe succeeds. Typed safe
+account identity is saved independently of permission-grant evidence; no grants
+are invented when a native method has no host permission posture. Current
+financial access remains CFOBooth's responsibility. A rejected or malformed
+probe leaves the Account requiring repair and discards its old identity and
+generated inventory. Other providers retain their existing diagnostic behavior.
+
+To rotate a key, create its replacement in CFOBooth, edit this same-method
+Account locally, and verify it before synchronizing again. Changing the key,
+organization or endpoint clears old identity and retires scoped actions;
+late tests from the previous Account revision cannot restore them. The Account
+form rechecks explicit replacements. A failed replacement never silently
+restores the previous usable key. Revoke the old key in CFOBooth after validating
+the replacement.
+
+Disconnect is local removal. Detach the Account from its projects, then choose
+**Disconnect** on Accounts to remove local encrypted custody and retire its
+generated actions. Use API key management in your CFOBooth organization for
+remote revocation; StackOS does not claim that local removal revokes that key.
+
+An in-flight project probe must retain its original Connection through result
+persistence. Detach, including detach followed by reattachment, discards that
+probe without changing a shared Account. Explicit global-admin tests and probes
+from other still-attached projects retain their authority.
+
 - Editing an Account may rotate secret material only within its saved method.
   Leaving an existing secret field blank preserves it. Supplying replacement
   material clears stale grant evidence when the method requires local grants,
@@ -705,8 +745,9 @@ The dedicated `/accounts` page owns Account lifecycle:
   `repair-required`, or `error`, and the UI clears callback query parameters
   immediately after reading them
 - diagnostics: `account.test` returns a sanitized result and records the same
-  redacted outcome in the credential usage audit; a failed test does not disable
-  the stored Account
+  redacted outcome in the credential usage audit; a failed test is diagnostic
+  for existing providers. CFOBooth's identity-bound key scope requires a
+  successful test before connection, as described above
 - communication usage: the page joins the communications-owned
   `communicationProfile.accountUsage` read model so a Slack manual-update
   warning appears only under the exact Account/profile that owns that route;

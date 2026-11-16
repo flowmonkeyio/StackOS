@@ -31,6 +31,58 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
 
 
 @pytest.mark.parametrize(
+    "slug",
+    [
+        "agency",
+        "branding",
+        "communications",
+        "engineering",
+        "gtm",
+        "marketing",
+        "media-buying",
+        "seo",
+        "support",
+    ],
+)
+def test_domain_page_sections_match_packaged_capabilities(slug: str) -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / slug
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert manifest.ui is not None
+    sections = manifest.ui["page"]["sections"]
+    assert len(sections) == len(set(sections))
+    assert set(sections) <= {"workflows", "saved", "files"}
+    assert ("workflows" in sections) == bool(list((root / "workflows").glob("*.yaml")))
+    assert "saved" in sections
+    assert "files" in sections
+    for item in manifest.ui["nav"].get("items", []):
+        assert "route" not in item
+        assert item["to"]
+
+
+def test_finance_keeps_its_existing_console_owner() -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / "finance"
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert manifest.ui is not None
+    assert "page" not in manifest.ui
+    assert manifest.ui["nav"]["items"][0]["to"] == "finance"
+
+
+@pytest.mark.parametrize("slug", ["trackbooth", "shopify", "linear", "publishing"])
+def test_integration_packages_keep_capabilities_without_redundant_pages(slug: str) -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / slug
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert not manifest.ui
+    assert manifest.providers
+    assert manifest.actions
+    assert all(provider.auth_methods for provider in manifest.providers)
+    if slug == "publishing":
+        assert {resource.key for resource in manifest.resources} == {
+            "published-post",
+            "publish-target",
+        }
+
+
+@pytest.mark.parametrize(
     ("evidence_source", "enforcement"),
     [
         ("oauth_response", "local_required"),
@@ -295,6 +347,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "trackbooth",
         "shopify",
         "linear",
+        "cfobooth",
         "publishing",
         "seo",
         "core",
@@ -302,9 +355,9 @@ def test_builtin_plugin_manifests_validate() -> None:
     ]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
-        # Finance is transport/workflow-only by design: its authoritative
-        # records live in the selected external finance backend, not StackOS.
-        if manifest.slug != "finance":
+        # Finance and CFOBooth compose external transport/workflows; they do
+        # not duplicate financial records as host resource schemas.
+        if manifest.slug not in {"finance", "cfobooth"}:
             assert manifest.resources
         assert manifest.model_dump(mode="json")["slug"] == manifest.slug
 
@@ -1090,7 +1143,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 60
+    assert len(providers) == 61
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -1103,6 +1156,17 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         assert setup.get("setup_note") or config.get("setup_note"), (
             f"{plugin_slug}:{provider.key} missing setup note"
         )
+        if provider.key == "cfobooth":
+            # No remote deployment or public setup URL exists. Native setup
+            # supplies an editable explicit URL; the public pin has no methods.
+            if config.get("enabled") is False:
+                assert provider.auth_methods == []
+            else:
+                assert [m.key for m in provider.auth_methods] == ["api_key"]
+                fields = {f.key: f for f in provider.auth_methods[0].fields}
+                assert fields["api_base_url"].placeholder == "https://cfobooth.com"
+                assert fields["api_base_url"].required and fields["api_key"].secret
+            continue
         expected_verified_at = (
             None
             if provider.key in {"quickbooks-online", "google-indexing"}
@@ -2372,8 +2436,7 @@ def test_publishing_plugin_yaml_facade_validates() -> None:
     manifest = load_plugin_manifest_file(Path("plugins/publishing/plugin.yaml"))
 
     assert manifest.slug == "publishing"
-    assert manifest.ui is not None
-    assert manifest.ui["nav"]["section"] == "Publishing"
+    assert manifest.ui is None
     assert {provider.key for provider in manifest.providers} == {"wordpress", "ghost"}
     providers = {provider.key: provider for provider in manifest.providers}
     assert _auth_field_keys(providers["wordpress"]) == [

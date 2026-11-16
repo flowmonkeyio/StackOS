@@ -1,5 +1,9 @@
 # UI Usability Audit
 
+Historical audit of the previous UI. Removed page names/URLs below describe
+that inspected candidate. Current destinations and ownership are in [the page
+layout map](./ui-page-layout-map.md); this audit is not current route guidance.
+
 Date: 2026-05-24
 
 Historical findings below describe the UI on this date. The project Setup

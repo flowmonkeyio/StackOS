@@ -4,9 +4,6 @@ version: 0.1.0
 description: Manage Trackbooth accounts, partners, offers, campaigns, tracking, reporting, payouts, and permissions from a StackOS workflow.
 display_order: 45
 source: builtin
-ui:
-  nav:
-    section: Trackbooth
 capabilities:
   - key: agent-api
     name: Agent API

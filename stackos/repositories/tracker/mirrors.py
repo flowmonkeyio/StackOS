@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
+from sqlmodel import col, select
+
 from stackos.artifacts import redact_secret_text
 from stackos.db.models import (
     AgentRequest,
     RunPlan,
+    RunPlanStatus,
     RunPlanStep,
     RunPlanStepStatus,
     TrackerItemStatus,
@@ -15,11 +18,12 @@ from stackos.db.models import (
     TrackerTask,
     TrackerTicket,
 )
+from stackos.host_mcp.service import active_execution
 from stackos.repositories.base import (
     Envelope,
     NotFoundError,
 )
-from stackos.repositories.tracker.schema import TrackerMutationOut
+from stackos.repositories.tracker.schema import TaskDeliveryStateOut, TrackerMutationOut
 from stackos.repositories.tracker.utils import (
     TERMINAL_TRACKER_STATUSES,
     _clean_text,
@@ -285,6 +289,7 @@ class TrackerMirrorMixin:
         task.lane_key = "done"
         task.completed_at = now
         task.updated_at = now
+        self._clear_run_plan_outcome(task, plan=plan)
         current_evidence = dict(task.completion_evidence_json or {})
         task.completion_evidence_json = {
             **current_evidence,
@@ -361,7 +366,7 @@ class TrackerMirrorMixin:
         task.lane_key = "planning"
         task.started_at = task.started_at or now
         task.completed_at = None
-        task.completion_evidence_json = None
+        self._clear_run_plan_outcome(task, plan=plan)
         task.updated_at = now
         self._s.add(task)
 
@@ -463,6 +468,7 @@ class TrackerMirrorMixin:
         task.lane_key = "implementation"
         task.started_at = task.started_at or now
         task.completed_at = None
+        self._clear_run_plan_outcome(task, plan=plan)
         metadata = dict(task.metadata_json or {})
         metadata.update(
             {
@@ -543,9 +549,72 @@ class TrackerMirrorMixin:
         now = _utcnow()
         before = self._task_snapshot(task)
         self._sync_task_status(task, now=now)
+        if plan.status == RunPlanStatus.COMPLETED:
+            self._clear_run_plan_outcome(task, plan=plan)
+            final_step = self._s.exec(
+                select(RunPlanStep)
+                .where(RunPlanStep.run_plan_id == plan.id)
+                .order_by(col(RunPlanStep.position).desc(), col(RunPlanStep.id).desc())
+            ).first()
+            # A terminal status by itself is not accepted outcome evidence.
+            if (
+                final_step is not None
+                and final_step.status == RunPlanStepStatus.SUCCESS
+                and final_step.completed_at is not None
+                and not final_step.error
+                and final_step.result_json
+            ):
+                result = final_step.result_json
+                summary = next(
+                    (
+                        redact_secret_text(str(result[key]))
+                        for key in ("summary", "message", "status")
+                        if result.get(key)
+                    ),
+                    f"Run plan completed; accepted {final_step.title} result.",
+                )
+                task.completion_evidence_json = {
+                    **(task.completion_evidence_json or {}),
+                    "summary": summary,
+                    "run_plan_id": plan.id,
+                    "run_plan_outcome": {
+                        "run_id": plan.run_id,
+                        "step_id": final_step.step_id,
+                        "run_plan_step_id": final_step.id,
+                        "completed_at": final_step.completed_at.isoformat(),
+                        "result_json": result,
+                    },
+                }
+                metadata = task.metadata_json or {}
+                delivery = metadata.get("delivery")
+                # A retired controller cannot run its final completion branch.
+                # Reconcile only a valid handoff with no remaining callback/native
+                # owner. A reserved callback keeps its slot until its own finally.
+                if (
+                    isinstance(delivery, dict)
+                    and TaskDeliveryStateOut.from_metadata(metadata) is not None
+                    and not delivery.get("slot_reserved")
+                    and delivery.get("run_plan_id", plan.id) == plan.id
+                    and delivery.get("controller_run_id", plan.run_id) == plan.run_id
+                    and active_execution(plan.project_id, task.key) is None
+                ):
+                    completed = {
+                        **delivery,
+                        "status": "complete",
+                        "reason": None,
+                        "ticket_key": None,
+                        "slot_reserved": False,
+                    }
+                    if completed != delivery:
+                        task.metadata_json = {
+                            **metadata,
+                            "delivery": {**completed, "updated_at": now.isoformat()},
+                        }
         after = self._task_snapshot(task)
-        if before.get("status") == after.get("status"):
+        if before == after:
             return
+        task.updated_at = now
+        self._s.add(task)
         self._record_revision(
             tracker,
             actor="system",
@@ -555,9 +624,23 @@ class TrackerMirrorMixin:
             entity_key=task.key,
             summary=f"Run plan {plan.id} tracker task synced to {task.status.value}.",
             before_json=before,
-            after_json=after,
+            after_json=self._task_snapshot(task),
             commit=False,
         )
+
+    @staticmethod
+    def _clear_run_plan_outcome(task: TrackerTask, *, plan: RunPlan) -> None:
+        """Retire only mirror-owned current fields; revisions retain the old evidence."""
+        evidence = dict(task.completion_evidence_json or {})
+        if evidence.get("run_plan_id") != plan.id:
+            return
+        if (
+            "run_plan_outcome" in evidence
+            or evidence.get("summary") == "Run plan aborted before completion."
+        ):
+            for key in ("summary", "reason", "run_plan_outcome"):
+                evidence.pop(key, None)
+            task.completion_evidence_json = evidence
 
     def mirror_run_plan_step_claimed(self, *, plan: RunPlan, step: RunPlanStep) -> None:
         if plan.id is None:
@@ -575,6 +658,7 @@ class TrackerMirrorMixin:
         ticket.started_at = ticket.started_at or now
         ticket.run_id = plan.run_id
         ticket.lane_key = "implementation"
+        ticket.blocker_reason = self._step_blocker_reason(step)
         ticket.updated_at = now
         self._s.add(ticket)
         task = self._s.get(TrackerTask, ticket.task_id)
@@ -733,6 +817,9 @@ class TrackerMirrorMixin:
     def _consume_auto_abort_marker(ticket: TrackerTicket) -> None:
         metadata = dict(ticket.metadata_json or {})
         metadata.pop("workflow_auto_abort", None)
+        # Recovery reintroduces this obligation; a later status-only update
+        # must not revive the decision from before reactivation.
+        metadata.pop("delivery_scope", None)
         ticket.metadata_json = metadata or None
 
 

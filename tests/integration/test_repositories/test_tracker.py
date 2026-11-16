@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
+from pydantic import BaseModel
 from sqlalchemy import event
 from sqlmodel import Session, select
 
@@ -9,14 +12,19 @@ from stackos.db.models import (
     RunPlanStep,
     RunPlanStepStatus,
     TaskTracker,
+    TaskTrackerLane,
+    TaskTrackerPriority,
     TrackerItemStatus,
+    TrackerRevision,
     TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
     TrackerTicketKind,
+    TrackerTicketLink,
+    TrackerTicketReference,
 )
-from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import (
@@ -24,6 +32,658 @@ from stackos.repositories.tracker.events import (
     TRACKER_TICKET_STATUS_CHANGED,
 )
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
+
+
+def _ticket_create_state(engine, project_id: int) -> dict:
+    """Read every create-owned row from a fresh session, including revision/rollup fields."""
+    with Session(engine) as reader:
+        return {
+            model.__name__: [
+                row.model_dump(mode="json")
+                for row in reader.exec(
+                    select(model).where(model.project_id == project_id).order_by(model.id)
+                ).all()
+            ]
+            for model in (
+                TaskTracker,
+                TrackerTask,
+                TrackerTicket,
+                TrackerTicketDependency,
+                TrackerTicketReference,
+                TrackerTicketLink,
+                TrackerRevision,
+            )
+        }
+
+
+def _seed_ticket_create_state(session: Session, project_id: int) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="atomic", title="Client research")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="atomic",
+        key="existing",
+        title="Existing research",
+        references_json=[{"ref": "existing-source", "title": "Keep this"}],
+    )
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("title", None),
+        ("title", []),
+        ("effort", {}),
+        ("goal", None),
+        ("title", "x" * 301),
+        ("effort", "x" * 41),
+        ("source_json", []),
+        ("definition_of_done_json", None),
+        ("constraints_json", None),
+        ("expected_changes_json", None),
+        ("allowed_paths_json", None),
+        ("completion_evidence_json", []),
+        ("context_json", []),
+        ("metadata_json", []),
+        ("constraints_json", ["Valid", {}]),
+        ("metadata_json", {"unsupported": {1, 2}}),
+    ],
+)
+def test_ticket_patch_value_constraints_reject_before_mutation(
+    session, project_id, as_list, field, value
+):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    events_before = ContextRepository(session).timeline(project_id=project_id).model_dump()
+    patch = {"status": "in-progress", field: value}
+    errors = []
+    for dry_run in (True, False):
+        if as_list:
+            result = repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+                dry_run=dry_run,
+            ).data
+            assert result.valid is False
+            errors.append(result.results[0].error_data)
+        else:
+            with pytest.raises(ValidationError) as exc:
+                repo.update_ticket(
+                    project_id=project_id, ticket_key="existing", patch_json=patch, dry_run=dry_run
+                )
+            errors.append(exc.value.data)
+        session.commit()
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+        assert (
+            ContextRepository(session).timeline(project_id=project_id).model_dump() == events_before
+        )
+    assert errors[0] == errors[1]
+    assert errors[0]["field"] == field
+    # The multi-entity caller shares the same pre-mutation value checks.
+    with pytest.raises(ValidationError) as exc:
+        repo.patch(project_id=project_id, patch_json={"tickets": {"existing": patch}})
+    assert exc.value.data == errors[0]
+    assert not session.new and not session.dirty and not session.deleted
+    session.commit()
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_ticket_patch_value_constraints_preserve_nullable_and_cleaned_values(
+    session, project_id, as_list
+):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="existing",
+        patch_json={
+            "assignee": "agent",
+            "blocker_reason": "Waiting",
+            "outcome": "Pending",
+            "effort": "M",
+        },
+    )
+    patch = {
+        "title": " " + "x" * 300 + " ",
+        "goal": "",
+        "priority_key": "p2",
+        "lane_key": "review",
+        "assignee": None,
+        "blocker_reason": None,
+        "outcome": None,
+        "effort": None,
+        "source_json": None,
+        "definition_of_done_json": [],
+        "constraints_json": [],
+        "expected_changes_json": [],
+        "allowed_paths_json": [],
+        "completion_evidence_json": None,
+        "context_json": None,
+        "metadata_json": None,
+    }
+    before = _ticket_create_state(session.get_bind(), project_id)
+    for dry_run in (True, False):
+        if as_list:
+            result = repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+                dry_run=dry_run,
+            ).data
+        else:
+            result = repo.update_ticket(
+                project_id=project_id, ticket_key="existing", patch_json=patch, dry_run=dry_run
+            ).data
+        assert result.valid
+        if dry_run:
+            assert _ticket_create_state(session.get_bind(), project_id) == before
+    ticket = repo.brief(project_id=project_id, ticket_key="existing").ticket
+    for field, value in patch.items():
+        assert getattr(ticket, field) == (value.strip() if isinstance(value, str) else value)
+
+
+@pytest.mark.parametrize("caller", ["single", "list", "patch"])
+@pytest.mark.parametrize(
+    ("field", "value"), [("metadata_json", []), ("definition_of_done_json", None)]
+)
+def test_ticket_json_rejection_survives_caller_commit(session, project_id, caller, field, value):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    patch = {"status": "in-progress", field: value}
+    error = None
+    result = None
+    try:
+        if caller == "single":
+            repo.update_ticket(project_id=project_id, ticket_key="existing", patch_json=patch)
+        elif caller == "list":
+            result = repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+            ).data
+        else:
+            repo.patch(project_id=project_id, patch_json={"tickets": {"existing": patch}})
+    except Exception as exc:
+        error = exc  # A real caller may catch a failure and later commit its other work.
+    session.commit()
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+    if caller == "list":
+        assert result is not None and result.valid is False
+        assert result.results[0].error_data["field"] == field
+    else:
+        assert isinstance(error, ValidationError)
+        assert error.data["field"] == field
+
+
+@pytest.mark.parametrize("caller", ["single", "list", "patch"])
+def test_ticket_json_patch_validates_normalized_values(session, project_id, caller):
+    class Metadata(BaseModel):
+        observed_at: datetime
+
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    observed_at = datetime(2026, 11, 12, tzinfo=UTC)
+    patch = {
+        "source_json": {1: ("source", observed_at)},
+        "definition_of_done_json": ("Required",),
+        "constraints_json": ("Preserve",),
+        "expected_changes_json": ("Updated",),
+        "allowed_paths_json": ("docs/task-tracker.md",),
+        "completion_evidence_json": {},
+        "context_json": {},
+        "metadata_json": Metadata(observed_at=observed_at),
+    }
+    before = _ticket_create_state(session.get_bind(), project_id)
+    preview = repo.update_ticket(
+        project_id=project_id, ticket_key="existing", patch_json=patch, dry_run=True
+    ).data
+    assert preview.valid
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+    if caller == "single":
+        repo.update_ticket(project_id=project_id, ticket_key="existing", patch_json=patch)
+    elif caller == "list":
+        result = repo.update_ticket_list(
+            project_id=project_id,
+            updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+        ).data
+        assert result.valid
+    else:
+        repo.patch(project_id=project_id, patch_json={"tickets": {"existing": patch}})
+    ticket = repo.brief(project_id=project_id, ticket_key="existing").ticket
+    assert ticket.source_json == {"1": ["source", observed_at.isoformat()]}
+    assert ticket.definition_of_done_json == ["Required"]
+    assert ticket.constraints_json == ["Preserve"]
+    assert ticket.expected_changes_json == ["Updated"]
+    assert ticket.allowed_paths_json == ["docs/task-tracker.md"]
+    assert ticket.completion_evidence_json == ticket.context_json == {}
+    assert ticket.metadata_json == {"observed_at": "2026-11-12T00:00:00Z"}
+    revision = session.exec(select(TrackerRevision).order_by(TrackerRevision.rev.desc())).first()
+    assert revision.patch_json["source_json"] == ticket.source_json
+    assert revision.patch_json["metadata_json"] == ticket.metadata_json
+
+
+@pytest.mark.parametrize("case", ["correction", "serialization"])
+def test_ticket_json_patch_rejects_normalization_errors(session, project_id, case):
+    class Context(BaseModel):
+        correction: dict[str, str | int]
+
+    class Metadata(BaseModel):
+        value: object
+
+    _seed_ticket_create_state(session, project_id)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    patch = {"status": "in-progress"}
+    if case == "correction":
+        patch["context_json"] = Context(
+            correction={
+                "work_intent": "invalid",
+                "candidate_commit_sha": "a" * 40,
+                "target_attempt": 1,
+            }
+        )
+        message = "Invalid context_json.correction"
+    else:
+        patch["metadata_json"] = Metadata(value=object())
+        message = "invalid tracker ticket patch value"
+    for dry_run in (True, False):
+        with pytest.raises(ValidationError, match=message):
+            TrackerRepository(session).update_ticket(
+                project_id=project_id, ticket_key="existing", patch_json=patch, dry_run=dry_run
+            )
+        session.commit()
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_missing_tracker_ticket_lookup_never_initializes(session, project_id, dry_run):
+    repo = TrackerRepository(session)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    config_before = {
+        model: [row.model_dump() for row in session.exec(select(model)).all()]
+        for model in (TaskTrackerLane, TaskTrackerPriority)
+    }
+    assert before["TaskTracker"] == []
+    with pytest.raises(NotFoundError, match="tracker ticket not found") as exc:
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="missing",
+            patch_json={"status": "in-progress"},
+            dry_run=dry_run,
+        )
+    assert exc.value.data == {"ticket_key": "missing"}
+    assert not session.new and not session.dirty and not session.deleted
+    session.commit()
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+    with Session(session.get_bind()) as reader:
+        assert {
+            model: [row.model_dump() for row in reader.exec(select(model)).all()]
+            for model in (TaskTrackerLane, TaskTrackerPriority)
+        } == config_before
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize(
+    ("current", "requested", "legal"),
+    [
+        ("skipped", "aborted", False),
+        ("skipped", "in-progress", True),
+        ("complete", "aborted", False),
+        ("failed", "aborted", True),
+        ("deferred", "skipped", True),
+        ("skipped", "skipped", True),
+    ],
+)
+def test_ticket_preview_apply_transition_parity(
+    session: Session, project_id: int, as_list: bool, current: str, requested: str, legal: bool
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="parity", title="Parity")
+    repo.create_ticket(project_id=project_id, task_key="parity", key="dep", title="Dependency")
+    repo.create_ticket(
+        project_id=project_id, task_key="parity", key="target", title="Target", status=current
+    )
+    tracker = session.exec(select(TaskTracker).where(TaskTracker.project_id == project_id)).one()
+    before = _ticket_create_state(session.get_bind(), project_id)
+    events_before = ContextRepository(session).timeline(project_id=project_id).model_dump()
+    patch = {"status": requested, "title": "Changed", "add_dependency_keys": ["dep"]}
+
+    def update(dry_run):
+        if as_list:
+            return repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "target", "patch_json": patch}],
+                dry_run=dry_run,
+            ).data
+        return repo.update_ticket(
+            project_id=project_id, ticket_key="target", patch_json=patch, dry_run=dry_run
+        ).data
+
+    if not legal and not as_list:
+        with pytest.raises(ConflictError) as preview_error:
+            update(True)
+        with pytest.raises(ConflictError) as apply_error:
+            update(False)
+        assert preview_error.value.data == apply_error.value.data
+        assert preview_error.value.data["current"] == current
+        assert preview_error.value.data["attempted"] == requested
+    else:
+        preview = update(True)
+        assert preview.valid is legal
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+        assert (
+            ContextRepository(session).timeline(project_id=project_id).model_dump() == events_before
+        )
+        assert tracker.rev == before["TaskTracker"][0]["rev"]
+        applied = update(False)
+        assert applied.valid is legal
+        if not legal:
+            assert preview.errors == applied.errors
+            assert preview.results[0].error_data == applied.results[0].error_data
+            assert preview.results[0].error_data["current"] == current
+        else:
+            ticket = repo.brief(project_id=project_id, ticket_key="target").ticket
+            assert ticket.status.value == requested
+            assert ticket.dependency_keys == ["dep"]
+            events = (
+                ContextRepository(session)
+                .timeline(project_id=project_id, event_type=TRACKER_TICKET_STATUS_CHANGED)
+                .items
+            )
+            assert len(events) == (current != requested)
+            assert tracker.rev == before["TaskTracker"][0]["rev"] + 1
+    if not legal:
+        session.commit()  # A caller's later commit must not persist rejected work.
+        assert tracker.rev == before["TaskTracker"][0]["rev"]
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+        assert (
+            ContextRepository(session).timeline(project_id=project_id).model_dump() == events_before
+        )
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize("patch", [{"title": "Hijacked"}, {"status": "complete"}])
+def test_ticket_preview_apply_mirror_guard_parity(session, project_id, as_list, patch):
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "parity-plan",
+                "title": "Parity plan",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+        )
+        .data
+    )
+    key = workflow_step_ticket_key(plan.id, "prepare")
+    repo = TrackerRepository(session)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    errors = []
+    for dry_run in (True, False):
+        if as_list:
+            result = repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": key, "patch_json": patch}],
+                dry_run=dry_run,
+            ).data
+            assert result.valid is False
+            errors.append(result.results[0].error_data)
+        else:
+            with pytest.raises(ValidationError) as exc:
+                repo.update_ticket(
+                    project_id=project_id, ticket_key=key, patch_json=patch, dry_run=dry_run
+                )
+            errors.append(exc.value.data)
+    assert errors[0] == errors[1]
+    assert errors[0]["run_plan_id"] == plan.id
+    session.commit()
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+
+
+def test_ticket_list_preview_tracks_prior_status_and_dependency_updates(session, project_id):
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="sequential", title="Sequential")
+    for key in ("a", "b"):
+        repo.create_ticket(project_id=project_id, task_key="sequential", key=key, title=key)
+    updates = [
+        {"ticket_key": "a", "patch_json": {"status": "skipped", "dependency_keys": ["b"]}},
+        {"ticket_key": "a", "patch_json": {"status": "aborted"}},
+        {"ticket_key": "b", "patch_json": {"dependency_keys": ["a"]}},
+        {"ticket_key": "a", "patch_json": {"status": "in-progress"}},
+    ]
+    before = _ticket_create_state(session.get_bind(), project_id)
+    preview = repo.update_ticket_list(
+        project_id=project_id, updates_json=updates, dry_run=True
+    ).data
+    assert [item.action for item in preview.results] == ["validated", "error", "error", "validated"]
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+    applied = repo.update_ticket_list(project_id=project_id, updates_json=updates).data
+    assert [item.action for item in applied.results] == ["updated", "error", "error", "updated"]
+    assert preview.errors == applied.errors
+    assert (
+        repo.brief(project_id=project_id, ticket_key="a").ticket.status
+        == TrackerItemStatus.IN_PROGRESS
+    )
+    assert repo.brief(project_id=project_id, ticket_key="b").ticket.dependency_keys == []
+    # Two accepted ticket edits plus the parent's real lifecycle transition;
+    # rejected entries and the dry-run contribute no revisions.
+    revision = before["TaskTracker"][0]["rev"]
+    assert applied.rev == revision + 3
+    changes = repo.changed(project_id=project_id, since_rev=revision).changes
+    assert [row.entity_kind for row in changes].count("task") == 1
+    assert [row.entity_kind for row in changes].count("ticket") == 2
+    events = (
+        ContextRepository(session)
+        .timeline(project_id=project_id, event_type=TRACKER_TICKET_STATUS_CHANGED)
+        .items
+    )
+    assert [
+        (item.metadata_json["ticket_key"], item.metadata_json["new_status"]) for item in events
+    ] == [("a", "skipped"), ("a", "in-progress")]
+
+
+def test_invalid_ticket_list_preserves_all_rows_events_and_revision(session, project_id):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    repo.create_ticket(
+        project_id=project_id, task_key="atomic", key="skipped", title="Skipped", status="skipped"
+    )
+    tracker = session.exec(select(TaskTracker).where(TaskTracker.project_id == project_id)).one()
+    before = _ticket_create_state(session.get_bind(), project_id)
+    events_before = ContextRepository(session).timeline(project_id=project_id).model_dump()
+    updates = [
+        {
+            "ticket_key": "existing",
+            "patch_json": {
+                "status": "complete",
+                "add_dependency_keys": ["skipped"],
+                "references_json": [{"ref": "valid"}, {"path": "invalid"}],
+            },
+        },
+        {"ticket_key": "skipped", "patch_json": {"status": "aborted", "title": "Invalid"}},
+    ]
+    results = []
+    for dry_run in (True, False):
+        results.append(
+            repo.update_ticket_list(
+                project_id=project_id, updates_json=updates, dry_run=dry_run
+            ).data
+        )
+        assert tracker.rev == before["TaskTracker"][0]["rev"]
+        session.commit()
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+        assert (
+            ContextRepository(session).timeline(project_id=project_id).model_dump() == events_before
+        )
+    assert results[0].errors == results[1].errors
+    assert [item.action for item in results[1].results] == ["error", "error"]
+
+
+@pytest.mark.parametrize(
+    ("patch", "legal", "dependencies"),
+    [
+        ({"dependency_keys": ["target"]}, False, []),
+        ({"add_dependency_keys": ["target"], "remove_dependency_keys": ["target"]}, False, []),
+        ({"remove_dependency_keys": ["dep"]}, False, []),
+        ({"add_dependency_keys": ["dep"], "remove_dependency_keys": ["dep"]}, True, []),
+        ({"dependency_keys": ["dep"], "add_dependency_keys": []}, False, []),
+        ({"references_json": [{"ref": "valid"}, {"path": "invalid"}]}, False, []),
+        ({"kind": "invalid"}, False, []),
+        ({"status": "invalid"}, False, []),
+        ({"parent_ticket_key": "missing"}, False, []),
+    ],
+)
+def test_ticket_preview_apply_invariant_parity(session, project_id, patch, legal, dependencies):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    repo.create_ticket(project_id=project_id, task_key="atomic", key="dep", title="Dep")
+    repo.create_ticket(project_id=project_id, task_key="atomic", key="target", title="Target")
+    # Both modes must validate before changing status, metadata, references or edges.
+    patch = {"status": "in-progress", "title": "Changed", **patch}
+    before = _ticket_create_state(session.get_bind(), project_id)
+    errors = []
+    for dry_run in (True, False):
+        try:
+            repo.update_ticket(
+                project_id=project_id, ticket_key="target", patch_json=patch, dry_run=dry_run
+            )
+        except (ConflictError, NotFoundError, ValidationError, ValueError) as exc:
+            assert not legal
+            errors.append((str(exc), getattr(exc, "data", None)))
+        else:
+            assert legal
+        if dry_run or not legal:
+            session.commit()
+            assert _ticket_create_state(session.get_bind(), project_id) == before
+    if legal:
+        assert (
+            repo.brief(project_id=project_id, ticket_key="target").ticket.dependency_keys
+            == dependencies
+        )
+    else:
+        assert len(errors) == 2
+        assert errors[0] == errors[1]
+
+
+@pytest.mark.parametrize("single", [False, True])
+def test_ticket_create_failure_preserves_outer_work_after_caller_commit(
+    session: Session, project_id: int, single: bool
+) -> None:
+    _seed_ticket_create_state(session, project_id)
+    baseline = _ticket_create_state(session.get_bind(), project_id)
+    # Unflushed caller-owned work must survive the nested rollback.
+    unrelated = session.exec(select(TrackerTask).where(TrackerTask.key == "atomic")).one()
+    unrelated.title = "Caller-owned work"
+    session.add(unrelated)
+    repo = TrackerRepository(session)
+    with pytest.raises(ValidationError if single else ConflictError):
+        if single:
+            repo.create_ticket(
+                project_id=project_id,
+                task_key="atomic",
+                key="new-single",
+                title="Single",
+                parent_ticket_key="existing",
+                dependency_keys=["existing"],
+                references_json=[{"ref": "valid-first"}, {"path": "missing-ref"}],
+                commit=False,
+            )
+        else:
+            repo.create_ticket_list(
+                project_id=project_id,
+                ticket_list_json={
+                    "task_key": "atomic",
+                    "tickets": [
+                        {
+                            "key": "cycle-a",
+                            "dependency_keys": ["cycle-b"],
+                            "references_json": [{"ref": "valid"}],
+                        },
+                        {"key": "cycle-b", "dependency_keys": ["cycle-a"]},
+                    ],
+                },
+            )
+    session.commit()
+    actual = _ticket_create_state(session.get_bind(), project_id)
+    baseline["TrackerTask"][0]["title"] = "Caller-owned work"
+    assert actual == baseline
+
+
+@pytest.mark.parametrize("outer_write", [False, True])
+def test_ticket_create_commit_false_leaves_success_under_caller_control(
+    session: Session, project_id: int, outer_write: bool
+) -> None:
+    _seed_ticket_create_state(session, project_id)
+    baseline = _ticket_create_state(session.get_bind(), project_id)
+    if outer_write:
+        task = session.exec(select(TrackerTask).where(TrackerTask.key == "atomic")).one()
+        task.title = "Pending caller change"
+        session.add(task)
+    result = TrackerRepository(session).create_ticket(
+        project_id=project_id,
+        task_key="atomic",
+        key="pending",
+        title="Pending",
+        references_json=[{"ref": 123, "type": "source", "metadata_json": {"keep": True}}],
+        commit=False,
+    )
+    assert result.data.ticket.key == "pending"
+    session.rollback()
+    assert _ticket_create_state(session.get_bind(), project_id) == baseline
+
+
+def test_ticket_create_rollback_restores_retained_revision_before_caller_commit(
+    session: Session, project_id: int
+) -> None:
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    tracker = session.exec(select(TaskTracker).where(TaskTracker.project_id == project_id)).one()
+    baseline = _ticket_create_state(session.get_bind(), project_id)
+    baseline_rev, baseline_updated_at = tracker.rev, tracker.updated_at
+    # Retain the identity-map objects and pending caller-owned edits across rejection.
+    tracker.description = "Caller-owned tracker description"
+    task = session.exec(select(TrackerTask).where(TrackerTask.key == "atomic")).one()
+    task.title = "Caller-owned task title"
+    session.add_all([tracker, task])
+    with pytest.raises(ConflictError, match="cycle"):
+        repo.create_ticket_list(
+            project_id=project_id,
+            ticket_list_json={
+                "task_key": "atomic",
+                "tickets": [
+                    {"key": "cycle-a", "dependency_keys": ["cycle-b"]},
+                    {"key": "cycle-b", "dependency_keys": ["cycle-a"]},
+                ],
+            },
+        )
+    # Inspect the same session before commit/rollback can hide stale cached values.
+    preview = repo.validate_ticket_list(
+        project_id=project_id,
+        ticket_list_json={
+            "task_key": "atomic",
+            "tickets": [{"key": "invalid", "references_json": [{"path": "missing-ref"}]}],
+        },
+    )
+    database_rev, database_updated_at = session.exec(
+        select(TaskTracker.rev, TaskTracker.updated_at).where(TaskTracker.id == tracker.id)
+    ).one()
+    assert preview.valid is False
+    assert tracker.rev == preview.rev == preview.tracker.rev == database_rev == baseline_rev
+    assert (
+        tracker.updated_at
+        == preview.tracker.updated_at
+        == database_updated_at
+        == baseline_updated_at
+    )
+    assert tracker.description == "Caller-owned tracker description"
+    assert task.title == "Caller-owned task title"
+    session.commit()
+    baseline["TaskTracker"][0]["description"] = "Caller-owned tracker description"
+    baseline["TrackerTask"][0]["title"] = "Caller-owned task title"
+    assert _ticket_create_state(session.get_bind(), project_id) == baseline
 
 
 def test_tracker_reads_do_not_create_default_tracker(session: Session, project_id: int) -> None:
@@ -146,6 +806,63 @@ def test_tracker_task_index_is_complete_and_snapshot_queries_are_bounded(
     assert snapshot_query_count <= 16
     with pytest.raises(ValidationError, match="task_index_only requires include_graph=false"):
         repo.get(project_id=project_id, task_index_only=True)
+
+
+def test_task_index_exposes_actual_prerequisite_titles_only_when_work_is_waiting(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    for key in ("waiting-task", "upstream-task"):
+        repo.create_task(project_id=project_id, key=key, title=key, created_by="codex")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="upstream-task",
+        key="upstream",
+        title="Actual prerequisite title",
+        created_by="codex",
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="waiting-task",
+        key="waiting",
+        title="Waiting work",
+        dependency_keys=["upstream"],
+        created_by="codex",
+    )
+
+    def titles() -> list[str]:
+        index = repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+        summary = next(task for task in index.tasks if task.key == "waiting-task").ticket_summary
+        assert summary is not None
+        return summary.blocked_by_titles
+
+    assert titles() == ["Actual prerequisite title"]
+    focused = repo.get(project_id=project_id, task_key="waiting-task", include_graph=False)
+    assert [ticket.key for ticket in focused.tickets] == ["waiting"]
+    assert focused.tickets[0].blocked_by_titles == ["Actual prerequisite title"]
+    assert repo.brief(project_id=project_id, ticket_key="waiting").ticket.blocked_by_titles == [
+        "Actual prerequisite title"
+    ]
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="waiting-task",
+        key="ready",
+        title="Independent ready work",
+        created_by="codex",
+    )
+    assert titles() == []
+    repo.update_ticket(
+        project_id=project_id, ticket_key="ready", patch_json={"status": "complete"}, actor="codex"
+    )
+    assert titles() == ["Actual prerequisite title"]
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="upstream",
+        patch_json={"status": "complete"},
+        actor="codex",
+    )
+    assert titles() == []
 
 
 def test_task_status_update_records_timeline_event(
@@ -722,6 +1439,372 @@ def test_tracker_graph_allows_post_delivery_review_dependencies(
     assert snapshot.graph.warnings == []
 
 
+def _workflow_graph_fixture(session: Session, project_id: int):
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.structural-warnings.run",
+            "title": "Structural warnings",
+            "steps": [
+                {"id": "deliver", "title": "Deliver"},
+                {"id": "handoff", "title": "Handoff", "depends_on": ["deliver"]},
+            ],
+        },
+        created_by="codex",
+    ).data
+    started = run_plans.start(plan.id, project_id=project_id).data
+    run_plans.claim_step(
+        run_plan_id=plan.id, run_id=started.run_id, step_id="deliver", claimed_by="codex"
+    )
+    step = session.exec(
+        select(RunPlanStep).where(
+            RunPlanStep.run_plan_id == plan.id, RunPlanStep.step_id == "deliver"
+        )
+    ).one()
+    tracker = TrackerRepository(session)
+    parent = workflow_step_ticket_key(plan.id, "deliver")
+    handoff = workflow_step_ticket_key(plan.id, "handoff")
+    for key in ("impl-a", "impl-b"):
+        tracker.create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            parent_ticket_key=parent,
+            run_plan_id=plan.id,
+            run_plan_step_id=step.id,
+            key=key,
+            title=key,
+            lane_key="implementation",
+            dependency_keys=[parent],
+        )
+    return tracker, plan, step, parent, handoff
+
+
+@pytest.mark.parametrize("key", ["guidance", "review-guidance", "verification-guidance"])
+def test_workflow_gate_diagnostics_ignore_ordinary_ticket_prose(session, project_id, key):
+    tracker, plan, step, parent, handoff = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key=key,
+        title="Update agent guidance",
+        lane_key="implementation",
+        dependency_keys=[parent],
+    )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=handoff,
+        patch_json={"dependency_keys": [parent, "impl-a", "impl-b", key]},
+    )
+
+    for title, goal in (
+        ("Update agent guidance", "Clarify the delivery contract."),
+        ("Update review guidance before implementation", "Verify tests and release signoff."),
+    ):
+        tracker.update_ticket(
+            project_id=project_id, ticket_key=key, patch_json={"title": title, "goal": goal}
+        )
+        child_checks = {
+            check["key"]: check
+            for check in tracker.verify(project_id=project_id, ticket_key=key).checks
+        }
+        assert "workflow-child-gate-contained" not in child_checks
+        parent_checks = {
+            check["key"]: check
+            for check in tracker.verify(project_id=project_id, ticket_key=parent).checks
+        }
+        assert parent_checks["workflow-step-gate-children-contained"]["passed"] is True
+        snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+        assert snapshot.graph is not None
+        assert snapshot.graph.warnings == []
+        assert key in {
+            ticket.key
+            for ticket in tracker.next(
+                project_id=project_id, task_key=f"workflow-{plan.id}"
+            ).tickets
+        }
+
+
+@pytest.mark.parametrize("lane", ["verification", "review", "release", "docs", "qa"])
+def test_workflow_declared_gate_bypass_and_handoff_remain_structural(session, project_id, lane):
+    tracker, plan, step, parent, handoff = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="checkpoint",
+        title="Checkpoint",
+        lane_key=lane,
+        dependency_keys=["impl-a"],
+    )
+    checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key="checkpoint").checks
+    }
+    assert checks["workflow-child-gate-contained"]["passed"] is False
+    parent_checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key=parent).checks
+    }
+    assert parent_checks["workflow-step-gate-children-contained"]["passed"] is False
+    handoff_checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key=handoff).checks
+    }
+    assert handoff_checks["workflow-next-step-terminal-children"]["passed"] is False
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert snapshot.graph is not None
+    assert any("can bypass delivery work" in warning for warning in snapshot.graph.warnings)
+    assert any("terminal child tickets" in warning for warning in snapshot.graph.warnings)
+
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key="checkpoint",
+        patch_json={"dependency_keys": ["impl-a", "impl-b"]},
+    )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=handoff,
+        patch_json={"dependency_keys": [parent, "checkpoint"]},
+    )
+    repaired = tracker.verify(project_id=project_id, ticket_key="checkpoint")
+    assert next(c for c in repaired.checks if c["key"] == "workflow-child-gate-contained")["passed"]
+    for ticket_key, check_key in (
+        (parent, "workflow-step-gate-children-contained"),
+        (handoff, "workflow-next-step-terminal-children"),
+    ):
+        checks = tracker.verify(project_id=project_id, ticket_key=ticket_key).checks
+        assert next(c for c in checks if c["key"] == check_key)["passed"] is True
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
+    # Diagnostics do not complete prerequisites or make the gate runtime-eligible.
+    assert "checkpoint" not in {
+        ticket.key
+        for ticket in tracker.next(project_id=project_id, task_key=f"workflow-{plan.id}").tickets
+    }
+
+
+@pytest.mark.parametrize("requeue", [False, True])
+def test_workflow_gate_declaration_survives_completion_and_requeue(session, project_id, requeue):
+    tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="checkpoint",
+        title="Checkpoint",
+        lane_key="verification",
+        dependency_keys=["impl-a"],
+    )
+    tracker.update_ticket(
+        project_id=project_id, ticket_key="impl-a", patch_json={"status": "complete"}
+    )
+    tracker.update_ticket(
+        project_id=project_id, ticket_key="checkpoint", patch_json={"status": "complete"}
+    )
+    if requeue:
+        for status in ("in-progress", "not-started"):
+            tracker.update_ticket(
+                project_id=project_id, ticket_key="checkpoint", patch_json={"status": status}
+            )
+    assert tracker.brief(project_id=project_id, ticket_key="checkpoint").ticket.lane_key == "done"
+    for key, check_key in (
+        ("checkpoint", "workflow-child-gate-contained"),
+        (parent, "workflow-step-gate-children-contained"),
+    ):
+        checks = tracker.verify(project_id=project_id, ticket_key=key).checks
+        assert next(c for c in checks if c["key"] == check_key)["passed"] is False
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+    # A later explicit role change supersedes the recovered declaration, even
+    # while the terminal display lane remains done.
+    tracker.update_ticket(
+        project_id=project_id, ticket_key="checkpoint", patch_json={"lane_key": "implementation"}
+    )
+    checks = tracker.verify(project_id=project_id, ticket_key="checkpoint").checks
+    assert not any(c["key"] == "workflow-child-gate-contained" for c in checks)
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert not any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+
+def test_workflow_parallel_gate_completion_does_not_invent_gate_order(session, project_id):
+    tracker, plan, step, parent, handoff = _workflow_graph_fixture(session, project_id)
+    for key in ("checkpoint-one", "checkpoint-two"):
+        tracker.create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            parent_ticket_key=parent,
+            run_plan_id=plan.id,
+            run_plan_step_id=step.id,
+            key=key,
+            title=key,
+            lane_key="review",
+            dependency_keys=["impl-a", "impl-b"],
+        )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=handoff,
+        patch_json={"dependency_keys": [parent, "checkpoint-one", "checkpoint-two"]},
+    )
+    for key in ("impl-a", "impl-b", "checkpoint-one"):
+        tracker.update_ticket(
+            project_id=project_id, ticket_key=key, patch_json={"status": "complete"}
+        )
+    for key, check_key in (
+        ("checkpoint-two", "workflow-child-gate-contained"),
+        (parent, "workflow-step-gate-children-contained"),
+    ):
+        checks = tracker.verify(project_id=project_id, ticket_key=key).checks
+        assert next(c for c in checks if c["key"] == check_key)["passed"] is True
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert snapshot.graph.warnings == []
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_workflow_terminal_gate_creation_retains_declared_lane(session, project_id, as_list):
+    tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
+    spec = {
+        "key": "checkpoint",
+        "title": "Checkpoint",
+        "status": "complete",
+        "lane_key": "review",
+        "parent_ticket_key": parent,
+        "run_plan_id": plan.id,
+        "run_plan_step_id": step.id,
+        "dependency_keys": ["impl-a"],
+    }
+    if as_list:
+        result = tracker.create_ticket_list(
+            project_id=project_id,
+            ticket_list_json={"task_key": f"workflow-{plan.id}", "tickets": [spec]},
+        ).data
+        assert result.valid
+    else:
+        tracker.create_ticket(project_id=project_id, task_key=f"workflow-{plan.id}", **spec)
+    checks = tracker.verify(project_id=project_id, ticket_key="checkpoint").checks
+    assert next(c for c in checks if c["key"] == "workflow-child-gate-contained")["passed"] is False
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+
+def test_workflow_legacy_terminal_role_gap_is_advisory(session, project_id):
+    tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="review-guidance",
+        title="Review guidance",
+        status=TrackerItemStatus.COMPLETE,
+        lane_key="review",
+        dependency_keys=["impl-a"],
+    )
+    # Pre-repair terminal creation retained only the normalized done lane.
+    revision = session.exec(
+        select(TrackerRevision).where(TrackerRevision.entity_key == "review-guidance")
+    ).one()
+    revision.patch_json = None
+    session.add(revision)
+    session.commit()
+    checks = tracker.verify(project_id=project_id, ticket_key="review-guidance").checks
+    assert not any(c["key"] == "workflow-child-gate-contained" for c in checks)
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert any("no retained lane declaration" in w for w in snapshot.graph.warnings)
+    assert not any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="checkpoint",
+        title="Checkpoint",
+        lane_key="review",
+        dependency_keys=["review-guidance"],
+    )
+    # Unknown role does not erase a known dependency path through that child.
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key="review-guidance",
+        patch_json={"dependency_keys": ["impl-a", "impl-b"]},
+    )
+    checks = tracker.verify(project_id=project_id, ticket_key="checkpoint").checks
+    assert next(c for c in checks if c["key"] == "workflow-child-gate-contained")["passed"] is True
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert not any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+
+def test_workflow_detached_child_warns_without_any_gate_words(session, project_id):
+    tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="detached",
+        title="Detached",
+        lane_key="planning",
+    )
+    for key in ("impl-a", "impl-b"):
+        tracker.update_ticket(
+            project_id=project_id, ticket_key=key, patch_json={"dependency_keys": []}
+        )
+    checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key="detached").checks
+    }
+    assert checks["workflow-step-child-bridge"]["passed"] is False
+    assert checks["workflow-child-reachable-from-step"]["passed"] is False
+    assert "workflow-child-gate-contained" not in checks
+    parent_checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key=parent).checks
+    }
+    assert parent_checks["workflow-step-child-bridge"]["passed"] is False
+    assert parent_checks["workflow-step-children-reachable"]["passed"] is False
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert snapshot.graph is not None
+    assert any(
+        "detached" in warning and "not reachable" in warning for warning in snapshot.graph.warnings
+    )
+    assert any("no activation bridge" in warning for warning in snapshot.graph.warnings)
+    assert parent in checks["workflow-child-reachable-from-step"]["detail"]
+
+
+def test_graph_direction_advisory_does_not_infer_gate_from_ordinary_prose(session, project_id):
+    tracker = TrackerRepository(session)
+    tracker.create_task(
+        project_id=project_id, key="ordinary", title="Review guidance before delivery"
+    )
+    for key in ("first", "second"):
+        tracker.create_ticket(project_id=project_id, task_key="ordinary", key=key, title=key)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key="ordinary",
+        key="review-guidance",
+        title="Update review guidance before implementation",
+        lane_key="implementation",
+        dependency_keys=["first", "second"],
+    )
+    snapshot = tracker.get(project_id=project_id, task_key="ordinary")
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
+
+
 def test_workflow_parent_dependency_activates_child_while_step_is_running(
     session: Session,
     project_id: int,
@@ -980,6 +2063,75 @@ def test_tracker_atomic_updates_reject_unknown_patch_fields(
     assert invalid.results[0].action == "error"
     assert invalid.results[0].error == "unsupported tracker ticket patch fields: stauts"
     assert snapshot.tickets[0].status == TrackerItemStatus.NOT_STARTED
+
+
+def test_delivery_scope_creation_and_list_preview_share_validation(session, project_id):
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="scope", title="Scope")
+    scope = {
+        "disposition": "excluded",
+        "parent_ticket_key": "parent",
+        "reason": "Operator withdrew optional scope",
+        "source_ref": "operator:scope-2",
+    }
+    payload = {
+        "task_key": "scope",
+        "tickets": [
+            {"key": "parent", "title": "Parent", "kind": "group"},
+            {
+                "key": "optional",
+                "title": "Optional",
+                "status": "skipped",
+                "parent_ticket_key": "parent",
+                "metadata_json": {"delivery_scope": scope},
+            },
+        ],
+    }
+    assert repo.validate_ticket_list(project_id=project_id, ticket_list_json=payload).valid
+    assert repo.create_ticket_list(project_id=project_id, ticket_list_json=payload).data.valid
+    scope["source_ref"] = " "
+    payload["tickets"] = [{**payload["tickets"][1], "key": "invalid"}]
+    for result in (
+        repo.validate_ticket_list(project_id=project_id, ticket_list_json=payload),
+        repo.create_ticket_list(project_id=project_id, ticket_list_json=payload).data,
+    ):
+        assert result.valid is False
+        assert result.errors[0].field == "metadata_json.delivery_scope"
+    with pytest.raises(ValidationError, match="delivery_scope"):
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="scope",
+            key="invalid",
+            title="Invalid",
+            status="skipped",
+            parent_ticket_key="parent",
+            metadata_json={"delivery_scope": scope},
+        )
+    session.commit()
+    assert {t.key for t in repo.get(project_id=project_id, task_key="scope").tickets} == {
+        "parent",
+        "optional",
+    }
+    # A retained skipped marker cannot silently become a deferred exclusion
+    # without the newly required future-owner context, including sequential lists.
+    changes = [
+        {"ticket_key": "optional", "patch_json": {"status": "not-started"}},
+        {"ticket_key": "optional", "patch_json": {"status": "deferred"}},
+    ]
+    preview = repo.update_ticket_list(
+        project_id=project_id, updates_json=changes, dry_run=True
+    ).data
+    applied = repo.update_ticket_list(project_id=project_id, updates_json=changes).data
+    assert preview.valid and applied.valid
+    assert repo.brief(project_id=project_id, ticket_key="optional").ticket.metadata_json == {}
+    # Explicitly reinstating the marker on deferred work still requires resume context.
+    scope["source_ref"] = "operator:scope-2"
+    patch = {"metadata_json": {"delivery_scope": scope}}
+    for dry_run in (True, False):
+        with pytest.raises(ValidationError, match="delivery_scope"):
+            repo.update_ticket(
+                project_id=project_id, ticket_key="optional", patch_json=patch, dry_run=dry_run
+            )
 
 
 def test_tracker_ticket_list_import_review_update_and_evidence(
@@ -1340,8 +2492,9 @@ def test_tracker_ticket_list_update_dry_run_reports_dependency_diffs_and_errors(
 
     assert preview.dry_run is True
     assert preview.rev == before
-    assert preview.valid is True
-    assert [result.action for result in preview.results] == ["validated", "validated"]
+    assert preview.valid is False
+    assert [result.action for result in preview.results] == ["validated", "error"]
+    assert preview.results[1].error == "ticket dependency edge does not exist"
     assert preview.results[0].dependency_preview is not None
     assert preview.results[0].dependency_preview.removed_dependency_keys == [
         "bulk-preview-a",
@@ -1351,7 +2504,7 @@ def test_tracker_ticket_list_update_dry_run_reports_dependency_diffs_and_errors(
     ]
     assert preview.results[0].dependency_preview.final_dependency_keys == []
     assert preview.warnings == [
-        "dependency preview removes 5 edges and adds 0; review direction before applying"
+        "dependency preview removes 4 edges and adds 0; review direction before applying"
     ]
 
     after = repo.get(

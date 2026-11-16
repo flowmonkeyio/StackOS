@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: marketing.campaign-production-orchestrator
     name: Campaign Production Orchestrator
-    version: 0.1.1
+    version: 0.1.2
     description: Generic main-agent orchestration preset for end-to-end marketing campaign production from intake brief through plan approval, media production, landing pages, visual signoff, and gallery closeout.
     domain: marketing
     skill_type: main-agent-orchestration
@@ -72,6 +72,24 @@ presets:
         provider calls. Delegate step work to the campaign specialist roles for
         depth, but do not delegate away accountability for integration and
         final claims.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     operating_contract:
       mission: Give the main agent a project-adapted operating loop for end-to-end campaign production from intake brief through gallery closeout.
       responsibilities:

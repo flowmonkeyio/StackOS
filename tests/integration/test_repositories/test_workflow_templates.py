@@ -490,7 +490,6 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "design-tests",
         "plan-tickets",
         "review-design",
-        "deliver-tickets",
         "verify-delivery",
         "review-delivery",
         "audit-tracker",
@@ -525,6 +524,12 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "pass run_plan_id and step_id at creation time" in plan_text
     assert "one root" in plan_text
     assert "tracker.updateTicket" in plan_text
+    assert (
+        "Main writes terminal-managed child status/evidence with tracker.updateTicket" in plan_text
+    )
+    assert "tracker.startDelivery delegates all remaining task work by dependencies" in plan_text
+    assert "ordinary results need independent review" in plan_text
+    assert "mirror lifecycle remains with RunPlanRepository" in plan_text
     assert "activates edge" in plan_text
     assert "detached branches" in plan_text
     test_design_step = next(
@@ -551,7 +556,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     review_text = review_step.model_dump_json()
     assert "one-brain ownership" in review_text
     assert "pre-change behavior or code path" in review_text
-    assert "feedback as advisory" in review_text
+    assert "Independently assess completeness" in review_text
+    assert "necessary omitted checks" in review_text
+    assert "main admits materially different outcomes" in review_text
     assert "over-engineer beyond the scoped deliverable" in review_text
     assert "only validated required fixes block closeout" in review_text
     audit_step = next(
@@ -659,13 +666,12 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         "design-tests",
         "plan-tickets",
         "review-design",
-        "deliver-tickets",
         "verify-delivery",
         "review-delivery",
         "audit-tracker",
         "release-closeout",
     ]
-    assert spec.version == "0.4.0"
+    assert spec.version == "0.8.7"
     assert [step.id for step in spec.steps] == expected_order
     assert spec.metadata_json["step_ids"] == expected_order
     assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
@@ -685,12 +691,12 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         steps["review-design"].policy_refs
     )
     assert {"delegated_ticket_acceptance", "recovery_reconciliation"} <= set(
-        steps["deliver-tickets"].policy_refs
+        steps["verify-delivery"].policy_refs
     )
     policy_text = {item.key: item.description for item in spec.policies}
     assert "every independent first executable child" in policy_text["workflow_dependency_spine"]
     assert "all terminal children" in policy_text["workflow_dependency_spine"]
-    assert "unaccepted sibling candidate" in policy_text["ticket_and_integration_proof"]
+    assert "unaccepted sibling changes" in policy_text["ticket_and_integration_proof"]
     assert "does not reopen its completed children" in policy_text["recovery_reconciliation"]
 
     expected_outputs = {
@@ -702,7 +708,6 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         "test_plan",
         "tracker_plan",
         "design_review",
-        "delivery_summary",
         "verification_summary",
         "review_summary",
         "tracker_audit",
@@ -717,9 +722,20 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     validation = validate_run_plan_obj(plan.model_dump(mode="json"))
     assert validation.valid, validation.errors
     assert validation.warnings == []
-    assert plan.template_version == "0.4.0"
+    assert plan.template_version == "0.8.7"
     assert [step.id for step in plan.steps] == expected_order
     assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
+    derived_verify = next(step for step in plan.steps if step.id == "verify-delivery")
+    assert derived_verify.instructions == steps["verify-delivery"].instructions
+    assert derived_verify.depends_on == ["review-design"]
+    derived_planning = next(step for step in plan.steps if step.id == "plan-tickets")
+    planning_text = " ".join(derived_planning.instructions)
+    assert "attach implementation children to verify-delivery" in planning_text
+    assert "terminal children block review-delivery" in planning_text
+    assert "Do not make children block their own verify-delivery mirror" in planning_text
+    assert "tracker.startDelivery" in planning_text
+    assert "Plans, listed paths, design and proof" in policy_text["scope_drift_control"]
+    assert "without routine main-agent relay" in policy_text["scope_drift_control"]
 
 
 def test_builtin_workflow_preset_requirements_are_step_mapped(session: Session) -> None:

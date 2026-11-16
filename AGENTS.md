@@ -66,6 +66,16 @@ branded copy requires its applicable current foundation and independent voice
 review; missing brand does not block factual, technical or unrelated finance
 work. Existing project/source owners and action authority remain unchanged.
 
+For ordinary goals, inspect repository intent and current setup and select the
+applicable configured workflow by its outcome and boundaries; do not require the
+user to name a workflow. Harmless questions need no business run. A newly needed
+catalog workflow uses the shared `workflowTemplate.authoringGuide.project_setup_method`
+within current setup authority before execution. Both session and managed setup
+consume that canonical prompt and completion contract. Adopt valid legacy setup,
+compare previous/local/new sources on update, and preserve compatible local
+choices and the full applicable source obligations. Material unresolved loss
+prevents completion for the affected workflow; independent workflows can finish.
+
 Project-local main-agent mappings:
 
 - `engineering.tracked-delivery` ->

@@ -6,12 +6,15 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
-const SCOPES = ['components', 'lib', 'stores', 'views']
+const SCOPES = ['components', 'composables', 'lib', 'stores', 'views']
 const WRITE_PATTERNS = [/\bapiWrite\b/, /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/]
 const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
+const TASK_BOARD_CLIENT = join(ROOT, 'lib', 'stackos', 'taskBoard.ts')
+const CAPACITY_CONTROL = join(ROOT, 'views', 'home', 'DeliveryCapacityControl.vue')
+const PROJECT_SETUP_CONTROLLER = join(ROOT, 'views', 'project-setup', 'useProjectSetup.ts')
 const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
 function filesUnder(dir: string): string[] {
@@ -26,6 +29,21 @@ function filesUnder(dir: string): string[] {
 }
 
 describe('restricted UI write contract', () => {
+  it('keeps Home setup operations at their bounded shared controller', () => {
+    const callers: string[] = []
+    for (const scope of SCOPES) {
+      for (const file of filesUnder(join(ROOT, scope))) {
+        const source = readFileSync(file, 'utf8')
+        const operations = [...source.matchAll(/callOperation(?:<[^\n]+>)?\(\s*['"](projectSetup\.[^'"]+)['"]/g)].map(match => match[1])
+        if (operations.length) {
+          expect(file).toBe(PROJECT_SETUP_CONTROLLER)
+          expect(operations).toEqual(['projectSetup.get', 'projectSetup.setReminders', 'projectSetup.start', 'projectSetup.answer', 'projectSetup.continue', 'projectSetup.cancel'])
+          callers.push(file)
+        }
+      }
+    }
+    expect(callers).toEqual([PROJECT_SETUP_CONTROLLER])
+  })
   it('keeps product views and stores free of non-auth write calls', () => {
     const offenders: string[] = []
     for (const scope of SCOPES) {
@@ -79,12 +97,31 @@ describe('restricted UI write contract', () => {
     ])
   })
 
-  it('limits project store writes to first-project creation', () => {
+  it('keeps plugin enablement confined to explicit Finance setup in the selected project', () => {
+    const finance = join(ROOT, 'views', 'FinanceView.vue')
+    for (const scope of SCOPES) {
+      for (const file of filesUnder(join(ROOT, scope))) {
+        const source = readFileSync(file, 'utf8')
+        if (source.includes("'plugin.enable'")) {
+          expect(file).toBe(finance)
+          expect(source).toContain("callOperation('plugin.enable', { project_id: id, plugin_slug: 'finance' })")
+          expect(source).toContain('if (!pluginDisabled.value || enabling.value || loading.value) return')
+        }
+      }
+    }
+  })
+
+  it('limits project store direct writes to creation and management operations to the bounded contracts', () => {
     const text = readFileSync(PROJECTS_STORE, 'utf8')
 
     expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
     expect(text).toContain("apiFetch<SchemaWriteResponseProjectOut>('/api/v1/projects'")
     expect(text).toContain("method: 'POST'")
+    expect([...text.matchAll(/callOperation<[^\n]+>\('([^']+)'/g)].map((match) => match[1])).toEqual(['project.update', 'project.delete', 'project.move'])
+    expect(text).toContain("project_id: id, patch: { name }, scope: 'catalog'")
+    expect(text).toContain("placement: move.placement, scope: 'catalog'")
+    expect(text).toContain("project_id: target.id, scope: 'catalog'")
+    expect(text).toContain('confirmation: { permanent: true, project_id: target.id, project_slug: target.slug }')
   })
 
   it('limits operation transport writes to the generic operation-call helper', () => {
@@ -95,20 +132,50 @@ describe('restricted UI write contract', () => {
     expect(text).toContain("method: 'POST'")
   })
 
-  it('keeps tracker writes limited to the bounded task content controller', () => {
+  it('keeps tracker calls limited to the bounded task content, Board and capacity owners', () => {
+    const allowedOperations = new Map([
+      [TASK_CONTENT_CONTROLLER, ['tracker.updateTaskContent']],
+      [TASK_BOARD_CLIENT, ['tracker.updateTaskPriority', 'tracker.reorderTask', 'tracker.placeTask']],
+      [CAPACITY_CONTROL, ['tracker.deliveryCapacity', 'tracker.setDeliveryCapacity']],
+    ])
     const callers: string[] = []
     for (const scope of SCOPES) {
       for (const file of filesUnder(join(ROOT, scope))) {
         const source = readFileSync(file, 'utf8')
         const operations = [...source.matchAll(/callOperation(?:<[^\n]+>)?\(\s*['"](tracker\.[^'"]+)['"]/g)]
           .map(match => match[1])
-          .filter(name => !['tracker.get', 'tracker.status'].includes(name))
+          .filter(name => !['tracker.get', 'tracker.status', 'tracker.agentStats', 'tracker.agentStatsAll'].includes(name))
         if (operations.length) {
-          expect(operations).toEqual(['tracker.updateTaskContent'])
+          expect(operations).toEqual(allowedOperations.get(file) ?? [])
           callers.push(file)
         }
       }
     }
-    expect(callers).toEqual([TASK_CONTENT_CONTROLLER])
+    expect(callers.sort()).toEqual([...allowedOperations.keys()].sort())
+  })
+
+  it('keeps capacity writes at the shared owner with only changed project limits', () => {
+    const source = readFileSync(CAPACITY_CONTROL, 'utf8')
+    expect(source).toContain("'tracker.setDeliveryCapacity', { updates }")
+    expect(source).toContain('changed.value.map(row => ({ project_id: row.project_id, max_concurrent_tasks: Number(drafts.value[row.project_id]) }))')
+    expect(source).not.toMatch(/run_token|tracker\.(?:configureDelivery|stop|abort|startDelivery)/)
+  })
+
+  it('keeps global pattern maintenance at its shared operation owner', () => {
+    const owner = join(ROOT, 'composables', 'usePatterns.ts')
+    const callers: string[] = []
+    for (const scope of SCOPES) {
+      for (const file of filesUnder(join(ROOT, scope))) {
+        const source = readFileSync(file, 'utf8')
+        const operations = [...source.matchAll(/callOperation(?:<[^\n]+>)?\(\s*['"](pattern\.[^'"]+)['"]/g)].map(match => match[1])
+        if (operations.length) {
+          expect(file).toBe(owner)
+          expect(operations).toEqual(['pattern.list', 'pattern.get', 'pattern.upsert', 'pattern.delete'])
+          expect(source).not.toMatch(/project_id|run_token|bundled_id|source_selector/)
+          callers.push(file)
+        }
+      }
+    }
+    expect(callers).toEqual([owner])
   })
 })

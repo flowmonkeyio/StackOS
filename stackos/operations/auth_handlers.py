@@ -42,6 +42,10 @@ class AccountListInput(MCPInput):
     )
 
     provider_key: str | None = None
+    summary_only: bool = Field(
+        default=False,
+        description="Omit provider setup inventories; retain every safe Account readiness field.",
+    )
 
 
 class TelegramApplicationStatusInput(MCPInput):
@@ -60,6 +64,10 @@ class ConnectionListInput(MCPInput):
 
     project_id: int
     provider_key: str | None = None
+    summary_only: bool = Field(
+        default=False,
+        description="Omit provider setup inventories; retain every safe Account readiness field.",
+    )
 
 
 class AccountStartInput(MCPInput):
@@ -424,6 +432,7 @@ async def account_list(
     return AuthRepository(ctx.session).status(
         project_id=None,
         provider_key=inp.provider_key,
+        summary_only=inp.summary_only,
     )
 
 
@@ -445,6 +454,7 @@ async def connection_list(
     return AuthRepository(ctx.session).status(
         project_id=inp.project_id,
         provider_key=inp.provider_key,
+        summary_only=inp.summary_only,
     )
 
 

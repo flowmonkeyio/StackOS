@@ -124,6 +124,29 @@ outputs:
     assert authoring_guide["source_of_truth_operation"] == "workflowTemplate.authoringGuide"
     assert "workflow_setup_protocol" in compact_authoring_guide
     assert "agent_materialization_policy" in compact_authoring_guide
+    from stackos.workflows.authoring_guide import project_setup_method
+
+    assert authoring_guide["project_setup_method"] == project_setup_method().model_dump()
+    method = authoring_guide["project_setup_method"]
+    assert method["version"] == "2"
+    for obligation in (
+        "source-to-target role identities",
+        "complete adapted operating guidance",
+        "nested domain followups",
+        "runPlan.getStep(raw)",
+        "tracker.brief(raw)",
+        "projectSetup.get(raw)",
+        "explicit gap",
+        "frozen native instructions",
+        "required_role_claims",
+        "setup_activation_checks",
+        "Missing required proof leaves ready_to_use unfinished",
+    ):
+        assert obligation in method["shared_prompt"]
+    method_ref = compact_authoring_guide["project_setup_method"]
+    assert set(method_ref["modes"]) == {"setup", "update"}
+    assert method_ref["guidance_ref"]["arguments"] == {"response_mode": "raw"}
+    assert "shared_prompt" not in method_ref  # No silently truncated executable prompt.
     assert "package_authoring_path" not in compact_authoring_guide
     assert any("response_mode=raw" in item for item in compact_authoring_guide["response_guidance"])
     assert {item["key"] for item in authoring_guide["intent_modes"]} == {
@@ -376,6 +399,27 @@ def test_workflow_template_validate_rejects_secrets(mcp_client: MCPClient) -> No
 
     assert validation["valid"] is False
     assert "must not contain secrets" in validation["errors"][0]["message"]
+
+
+def test_workflow_template_validate_operator_metadata_keeps_secret_guard(mcp_client: MCPClient):
+    template = _template_json()
+    for value, valid in [
+        ("Proceed with reviewed delivery.", True),
+        ({"password": "synthetic-material"}, False),
+        ("Bearer synthetic-material", False),
+    ]:
+        template["metadata"] = {"operator_authorization": value}
+        validation = _operation_data(
+            mcp_client.call_tool_structured(
+                "workflowTemplate.validate", {"template_json": template, "response_mode": "raw"}
+            )
+        )
+        assert validation["valid"] is valid
+        if valid:
+            assert validation["template"]["metadata_json"] == template["metadata"]
+        else:
+            assert validation["errors"][0]["code"] == "value_error"
+            assert "synthetic-material" not in str(validation)
 
 
 def test_workflow_template_validate_rejects_ambiguous_key_aliases(

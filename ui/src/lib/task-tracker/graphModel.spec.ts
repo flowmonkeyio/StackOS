@@ -1,13 +1,16 @@
 // @vitest-environment node
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import dagre from '@dagrejs/dagre'
 
 import {
   buildTrackerFlowModel,
+  createTrackerFlowProjector,
   TRACKER_TICKET_NODE_HEIGHT,
   TRACKER_TICKET_NODE_WIDTH,
 } from './graphModel'
 import type { TrackerSnapshot } from './types'
+import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 
 const snapshot: TrackerSnapshot = {
   tracker: {
@@ -217,6 +220,97 @@ const snapshot: TrackerSnapshot = {
 }
 
 describe('buildTrackerFlowModel', () => {
+  it('does zero layout work for repeated 300-node metric/selection updates', () => {
+    const fixture = structuredClone(snapshot)
+    const ticket = fixture.tickets[0]!, node = fixture.graph!.nodes.find(node => node.id === 'ticket:prepare')!
+    fixture.tickets = Array.from({ length: 300 }, (_, i) => ({ ...ticket, id: i + 100, key: `large-${i}`, title: `Large ${i}` }))
+    fixture.graph!.nodes = [fixture.graph!.nodes[0]!, ...fixture.tickets.map((ticket, i) => ({ ...node, id: `ticket:${ticket.key}`, label: ticket.title, data: { order_index: i } }))]
+    fixture.graph!.edges = fixture.tickets.slice(1).map((ticket, i) => ({ id: `edge-${i}`, type: 'dependency', source: `ticket:large-${Math.floor(i / 2)}`, target: `ticket:${ticket.key}`, label: null, data: {} }))
+    const layout = vi.spyOn(dagre, 'layout'), project = createTrackerFlowProjector()
+    const first = project(fixture)
+    expect(first.nodes).toHaveLength(300)
+    expect(layout).toHaveBeenCalledTimes(1)
+    layout.mockClear()
+    for (let i = 0; i < 20; i++) {
+      fixture.tickets[i]!.agent_stats = agentStatsFixture().totals
+      const current = project(fixture, { selectedNodeId: `ticket:large-${i}`, recentNodeIds: new Set([`ticket:large-${i}`]) })
+      expect(current.nodes.map(node => node.position)).toEqual(first.nodes.map(node => node.position))
+    }
+    project(fixture, { recentNodeIds: new Set() })
+    expect(layout).not.toHaveBeenCalled()
+    fixture.graph!.edges.pop()
+    expect(project(fixture).edges).toHaveLength(298)
+    expect(layout).toHaveBeenCalledTimes(1)
+    layout.mockRestore()
+  })
+  it('retains layout under selection, telemetry and highlight expiry, invalidating real shape changes', () => {
+    const layout = vi.spyOn(dagre, 'layout')
+    const project = createTrackerFlowProjector()
+    const fixture = structuredClone(snapshot)
+    const first = project(fixture)
+    expect(layout).toHaveBeenCalled()
+    layout.mockClear()
+    fixture.tickets[0]!.agent_stats = agentStatsFixture().totals
+    const selected = project(fixture, { selected: { kind: 'ticket', key: 'prepare' }, recentNodeIds: new Set(['ticket:prepare']) })
+    expect(selected.nodes.map(n => n.position)).toEqual(first.nodes.map(n => n.position))
+    expect(selected.nodes.find(n => n.id === 'ticket:prepare')!.data!.agentStats).toBe(fixture.tickets[0]!.agent_stats)
+    project(structuredClone(fixture), { recentNodeIds: new Set() })
+    expect(layout).not.toHaveBeenCalled()
+    fixture.graph!.edges = fixture.graph!.edges.filter(edge => edge.type !== 'dependency')
+    project(fixture)
+    expect(layout).toHaveBeenCalled()
+    layout.mockClear()
+    fixture.graph!.nodes.pop()
+    project(fixture)
+    expect(layout).toHaveBeenCalled()
+    layout.mockRestore()
+  })
+  it('preserves each item work projection independently of parent lifecycle and agent call', () => {
+    const source = structuredClone(snapshot)
+    source.tasks[0]!.started_at = '2026-11-08T00:00:00Z'
+    source.tickets[0]!.started_at = '2026-11-08T01:00:00Z'
+    source.tickets[0]!.completed_at = '2026-11-08T03:22:00Z'
+    source.tickets[0]!.status = 'complete'
+    source.tickets[0]!.work_duration = { coverage: 'partial', total_seconds: 1200, observed_at: null, endpoint_at: null, recorded_intervals: 2, unavailable_intervals: 1, live: [] } as NonNullable<typeof source.tickets[number]['work_duration']>
+    for (const showContainment of [false, true]) {
+      const model = buildTrackerFlowModel(source, { showContainment })
+      const node = model.nodes.find(node => node.data?.itemKey === source.tickets[0]!.key)!
+      expect(node.data?.lifecycle).toMatchObject({ status: 'complete', started_at: '2026-11-08T01:00:00Z', completed_at: '2026-11-08T03:22:00Z' })
+      expect(node.data?.lifecycle?.work_duration).toEqual(source.tickets[0]!.work_duration)
+    }
+  })
+  it('resolves prerequisite keys to actual titles at the dependency projection owner', () => {
+    const fixture = structuredClone(snapshot)
+    fixture.tickets[1]!.blocked_by = [fixture.tickets[0]!.key]
+    const data = buildTrackerFlowModel(fixture).nodes.find(node => node.id === 'ticket:deliver')!.data!
+    expect(data.blockedBy).toEqual([fixture.tickets[0]!.title])
+    fixture.tickets[1]!.blocked_by_titles = ['Actual prerequisite in another task']
+    fixture.tickets = [fixture.tickets[1]!]
+    expect(buildTrackerFlowModel(fixture).nodes.find(node => node.id === 'ticket:deliver')!.data!.blockedBy).toEqual(['Actual prerequisite in another task'])
+  })
+  it('propagates the persisted parent task method rather than inferring automation from receipts or workflow', () => {
+    const fixture = structuredClone(snapshot)
+    fixture.tickets[0]!.agent_stats = agentStatsFixture().totals
+    const data = () => buildTrackerFlowModel(fixture).nodes.find(node => node.id === 'ticket:prepare')!.data!
+    expect(data().taskAutomated).toBe(false)
+    const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+    fixture.tasks[0]!.metadata_json = { delivery: { status: 'complete', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
+    expect(data().taskAutomated).toBe(true)
+    fixture.tasks = []
+    expect(data().taskAutomated).toBe(false)
+  })
+  it('projects each ticket own metrics rather than a parent task total or graph data subtotal', () => {
+    const fixture = structuredClone(snapshot)
+    fixture.tasks[0]!.agent_stats = agentStatsFixture().totals
+    const own = agentStatsFixture().totals
+    own.reported_usage.total = 7
+    fixture.tickets[0]!.agent_stats = own
+    fixture.tickets[1]!.agent_stats = null
+    const model = buildTrackerFlowModel(fixture)
+    expect(model.nodes.find(node => node.id === 'ticket:prepare')!.data!.agentStats).toEqual(own)
+    expect(model.nodes.find(node => node.id === 'ticket:deliver')!.data!.agentStats).toBeNull()
+  })
+
   it('fits a six-ticket dependency tree in a compact width without overlapping nodes and preserves large graph spacing', () => {
     function modelFor(count: number, pairs: number[][]) {
       const nodes = Array.from({ length: count }, (_, index) => ({
@@ -236,7 +330,8 @@ describe('buildTrackerFlowModel', () => {
     const small = modelFor(6, [[0, 1], [1, 2], [1, 3], [2, 4], [3, 5]])
     const positions = small.nodes.map(node => node.position)
     const width = Math.max(...positions.map(point => point.x)) - Math.min(...positions.map(point => point.x)) + TRACKER_TICKET_NODE_WIDTH
-    expect(width).toBeLessThan(1400)
+    // Four ranks keep the prior 216px total spacing budget as the usage row grows.
+    expect(width).toBeLessThan(4 * TRACKER_TICKET_NODE_WIDTH + 216)
     for (let first = 0; first < positions.length; first++) {
       for (let second = first + 1; second < positions.length; second++) {
         const a = positions[first]!
@@ -261,11 +356,11 @@ describe('buildTrackerFlowModel', () => {
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.targetPosition).toBe('left')
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.data).toMatchObject({
       owner: 'codex',
-      agent: 'codex',
+      activeExecution: null,
       sourceKind: 'workflow',
     })
-    expect(TRACKER_TICKET_NODE_WIDTH).toBe(296)
-    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(176)
+    expect(TRACKER_TICKET_NODE_WIDTH).toBe(328)
+    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(224)
     expect(model.edges).toEqual([
       expect.objectContaining({
         id: 'dependency:prepare:deliver',
@@ -357,9 +452,28 @@ describe('buildTrackerFlowModel', () => {
     const activeNode = model.nodes.find((node) => node.id === 'ticket:deliver')
     const recentNode = model.nodes.find((node) => node.id === 'ticket:prepare')
     expect(activeNode?.class).toContain('tracker-node-active')
-    expect(activeNode?.data?.active).toBe(true)
+    expect(activeNode?.data?.active).toBe(false)
     expect(activeNode?.zIndex).toBe(30)
     expect(recentNode?.class).toContain('tracker-node-recent')
     expect(recentNode?.data?.recentlyUpdated).toBe(true)
+  })
+
+  it('preserves graph focus while stopped delivery cannot claim an active agent', () => {
+    const stopped = structuredClone(snapshot)
+    const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+    stopped.tasks[0]!.metadata_json = { delivery: {
+      status: 'stopped', ticket_key: 'deliver', reason: 'Browser access denied.',
+      job_ref: 'task-delivery:1:10', delivery_agent: agent, review_agent: agent,
+    } }
+    const model = buildTrackerFlowModel(stopped, {
+      selectedNodeId: 'ticket:prepare', activeNodeIds: new Set(['ticket:prepare', 'ticket:deliver']),
+    })
+    const selected = model.nodes.find(node => node.id === 'ticket:prepare')!
+    const current = model.nodes.find(node => node.id === 'ticket:deliver')!
+    expect(selected.class).toContain('tracker-node-selected')
+    expect(selected.data).toMatchObject({ active: false, deliveryStopped: false })
+    expect(current.data).toMatchObject({ active: false, deliveryStopped: true, deliveryStopReason: 'Browser access denied.' })
+    expect(stopped.tasks[0]!.status).toBe('in-progress')
+    expect(current.data?.status).toBe('not-started')
   })
 })

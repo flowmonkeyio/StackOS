@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -9,8 +10,8 @@ const { createLatestDmgAliases } = releaseArtifacts;
 
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packagePath = path.join(desktopDir, "package.json");
-const generatedConfigPath = path.join(desktopDir, ".electron-builder.generated.json");
-const generatedUpdateConfigPath = path.join(desktopDir, ".update-config.generated.json");
+let generatedConfigPath = "";
+let generatedUpdateConfigPath = "";
 const updateUrl = process.env.STACKOS_UPDATE_URL;
 const dryRun = process.env.STACKOS_DESKTOP_BUILD_DRY_RUN === "1";
 const dryRunWriteConfig = process.env.STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG === "1";
@@ -309,13 +310,6 @@ if (releaseIntent && !allowUnsignedRelease) {
 failConfig(configIssues);
 
 if (updateUrl) {
-  config.extraResources = [
-    ...(config.extraResources || []),
-    {
-      from: ".update-config.generated.json",
-      to: "update-config.json"
-    }
-  ];
   config.publish = [
     {
       provider: "generic",
@@ -359,15 +353,31 @@ const dynamicConfigNeeded =
   Boolean(updateUrl) || releaseIntent || unsignedDev || skipNotarization || notarization.configured;
 
 function writeGeneratedConfigFiles() {
+  if (!dynamicConfigNeeded) {
+    return;
+  }
+  const configRoot = path.resolve(process.env.STACKOS_DESKTOP_CONFIG_ROOT || os.tmpdir());
+  const configDir = fs.mkdtempSync(path.join(configRoot, "stackos-desktop-build-"));
+  // runStep exits synchronously on child failure. Keep ownership until exit,
+  // including that path; successful write-enabled dry runs hand files to callers.
+  process.once("exit", (code) => {
+    if (!dryRun || code !== 0) {
+      fs.rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+  generatedConfigPath = path.join(configDir, "electron-builder.json");
   if (updateUrl) {
+    generatedUpdateConfigPath = path.join(configDir, "update-config.json");
+    config.extraResources = [
+      ...(config.extraResources || []),
+      { from: generatedUpdateConfigPath, to: "update-config.json" }
+    ];
     fs.writeFileSync(
       generatedUpdateConfigPath,
       `${JSON.stringify({ updateUrl }, null, 2)}\n`
     );
   }
-  if (dynamicConfigNeeded) {
-    fs.writeFileSync(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`);
-  }
+  fs.writeFileSync(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 if (dryRun) {

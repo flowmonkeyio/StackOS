@@ -319,7 +319,10 @@ class ScheduledJob(SQLModel, table=True):
     """Per-project schedules (PLAN.md L379)."""
 
     __tablename__ = "scheduled_jobs"
-    __table_args__ = (Index("ix_scheduled_jobs_project", "project_id"),)
+    __table_args__ = (
+        Index("ix_scheduled_jobs_project", "project_id"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(
@@ -330,10 +333,20 @@ class ScheduledJob(SQLModel, table=True):
     )
     kind: str = Field(max_length=120)
     cron_expr: str = Field(max_length=120)
+    name: str | None = Field(default=None, max_length=200)
+    timezone: str | None = Field(default=None, max_length=100)
+    template_key: str | None = Field(default=None, max_length=200)
+    goal: str | None = Field(default=None)
+    inputs_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    execution_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    last_request_id: int | None = Field(
+        default=None,
+        sa_column=Column(ForeignKey("agent_requests.id", ondelete="SET NULL"), nullable=True),
+    )
     next_run_at: datetime | None = Field(default=None)
     last_run_at: datetime | None = Field(default=None)
     last_run_status: str | None = Field(default=None, max_length=32)
-    enabled: bool = Field(default=True)
+    enabled: bool = Field(default=False)
 
 
 __all__ = [

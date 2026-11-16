@@ -4,9 +4,6 @@ version: 0.1.0
 description: Shopify Admin GraphQL provider with a curated, static action catalog for commerce agents.
 display_order: 46
 source: builtin
-ui:
-  nav:
-    section: Shopify
 capabilities:
   - key: analytics
     name: Analytics

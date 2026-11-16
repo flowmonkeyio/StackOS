@@ -28,6 +28,624 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+## Shared Patterns
+
+`pattern.list`, `pattern.get`, `pattern.upsert` and `pattern.delete` use one
+installation-wide catalog, independent of projects. Discover and read it before
+choosing a project. MCP writes require an established bound session or a declared
+`workspace.startSession(global_session=true)` session; a global session needs no
+selected project for catalog CRUD. HTTP/CLI use the existing authenticated owner
+boundary, and the generic REST routes are browser-safe. Inputs have no
+`project_id`. A project run token or step grant is not global mutation authority;
+use a direct owner call without `run_token` for catalog writes.
+
+The static workspace/session pointer and searchable operation descriptions make
+recommendations discoverable from bound and global entry. Describe exact names
+through `toolbox.describe`, then call `pattern.list` for a relevant bounded
+search and `pattern.get` for selected entries only. Do not scan/dump the catalog
+at startup. Follow [shared pattern recommendations](./agent-operating-model.md#shared-pattern-recommendations):
+preserve intentional project choices, keep entry ID/key and revision in an existing
+plan/decision when useful, and treat server-derived provenance as information,
+never higher authority. Empty/no-match results are normal and grant no reason
+to block unrelated work or authority to install, scaffold, edit or change setup.
+
+`pattern.list` accepts `query`, `tags`, `source`, `limit` (1–100, default 25),
+and an optional positive ID `cursor`. Text searches title, summary, individual
+tags and article body. Any selected tag matches; text, tags and source are ANDed.
+`source` is `all`, `stackos` (all bundled), `customized` (modified bundled), or
+`custom` (user-authored). Server-derived labels are `Custom`, `StackOS`, and
+`StackOS · Customized`. A customized record still matches `stackos`.
+Rows are ordered by ID ascending, with `next_cursor`, `total_estimate` for the
+filtered query and `catalog_total` to distinguish no matches from an empty
+catalog. Reset the cursor when filters change. Lists never include bodies,
+including in raw mode. `pattern.get` takes exactly one of `pattern_id` or `key`
+and defaults to raw, returning one full Markdown entry. Compact get omits body.
+
+Create through `stackos ops call pattern.upsert --input pattern.json` or
+`POST /api/v1/operations/pattern.upsert/call` with this `arguments` object:
+
+```json
+{"key":"my-guidance","title":"My guidance","summary":"When it applies","body":"Markdown recommendation, examples and references with usage instructions.","tags":["freeform topic"]}
+```
+
+This example is an input contract, not shipped content. A stable-key retry with
+identical content returns the existing record. A differing save must include the
+current `expected_etag` from get/list. Copy this opaque token unchanged: it binds
+the record identity and revision, so deleting and recreating the same key cannot
+make an old draft current again. Do not derive it from `revision`. Delete takes
+`pattern_id` and `expected_etag`. Missing records return 404; absent/stale edit
+tokens return 409 with `current_etag`, identity and repair guidance. Re-read and reconcile the draft
+before retrying. Write receipts contain summaries, refs, revision and etag, never
+the body. Compact/raw are supported; ack is intentionally unavailable.
+
+`source` and `source_label` are server-derived output, never editable tags or
+write fields. Ordinary APIs reject bundled identity, shipped version/hash and
+provenance fields. Core validates structure (title/key, Markdown, freeform tags,
+size limits), not applicability or semantic quality. Author guidance should cover
+applicability, recommendations, examples and references plus concrete usage for
+any required technology. Reading an entry neither applies it to a project nor
+authorizes installation or any other side effect.
+
+On startup, after migrations, the catalog refreshes once from package-owned
+`_assets/patterns/bundle.json` (the clone source is
+`stackos/db/bundled_patterns.json`). Wheel packaging includes that asset;
+desktop payloads install the same wheel. There is no runtime source selector or
+refresh operation available to normal API callers. The shipped bundle contains
+portable engineering recommendations. A later package can insert trusted IDs
+and update entries whose exact normalized editable content still matches the
+last-applied shipped hash.
+Local customizations, user entries and prior baselines on skipped updates are
+preserved. Explicit bundled deletion retains only a trusted-ID marker, so repair
+or update cannot resurrect it; package removal leaves local entries intact.
+Refresh reports bounded counts for collisions, customization and concurrent edits.
+Malformed/missing assets log a bounded startup diagnostic and preserve the catalog.
+
+## Local console plugin enablement
+
+`plugin.enable` accepts explicit project setup from the authenticated local
+console through its browser-safe REST operation. The existing plugin repository
+owns validation and enablement; the console does not receive agent grants.
+`plugin.disable` and legacy plugin write routes remain daemon-admin only.
+
+## Project display names and catalog order
+
+`project.update` changes display names through the existing project repository.
+Names are trimmed, nonblank strings of at most 200 characters; duplicate names
+are allowed. A same-name update is a no-op. IDs, slugs, workspace bindings and
+repository folders retain their identity. Agent and browser callers can patch
+only `name`; daemon-admin REST/CLI callers retain safe metadata administration.
+
+`project.list` and the legacy project list route use stored `(order_index, id)`
+order and matching ID cursors. Migration `0038_project_order` preserves the
+previous ID-ascending order; newly created projects append. Start pagination
+again after a concurrent catalog change. Explicit portfolio `recent`/`name`
+sorts retain their own documented projection ordering.
+
+`project.move` accepts one `project_id`, `placement` (`top`, `before`, `after`),
+and an `anchor_id` for before/after. It moves that project within the complete
+stored catalog, including records outside the caller's loaded page. It never
+accepts a replacement list. Active projects are permitted visible targets and
+anchors; missing/inactive anchors reject before mutation. Self and adjacent
+no-op moves preserve all data. A canceled interaction makes no call.
+
+Console callers explicitly supply `scope: "catalog"` to `project.update` and
+`project.move` through their browser-safe generic REST operation routes.
+Catalog scope requires authenticated local-admin/console REST authority and
+cannot be asserted through MCP. Ordinary `scope: "project"` calls keep normal
+bridge injection: a bound agent can rename/move only its own project, relative
+to an active project visible in `project.list`. No bridge scope exception exists.
+CLI uses the same registered operations via `stackos ops call project.move`.
+
+For example, move the selected catalog project before an anchor:
+
+```json
+{"project_id": 2, "scope": "catalog", "placement": "before", "anchor_id": 1}
+```
+
+## Permanent project deletion
+
+`project.delete` is the single permanent cleanup operation for MCP, REST, CLI
+and the browser console. It delegates to `ProjectCleanupService`; it does not
+archive the project. Supply the selected immutable ID and its current slug:
+
+```json
+{"project_id": 2, "confirmation": {"permanent": true, "project_id": 2, "project_slug": "acme"}}
+```
+
+Missing, false or mismatched confirmation rejects before cleanup. Display names
+never select the target. Bound agents can delete only their injected project;
+global agents must explicitly supply an existing project ID on every call.
+Console calls additionally require `scope: "catalog"` through the browser-safe
+generic REST operation route. Catalog scope remains REST-admin/console only.
+CLI uses `stackos ops call project.delete --input <json-file>`.
+The old `DELETE /api/v1/projects/{id}` route, including `hard=true`, is removed;
+old unconfirmed callers cannot become destructive.
+
+The bounded result is identical in `compact` and `raw` modes; `ack` is refused.
+Its `status` is `blocked`, `incomplete`, `deleted` or `missing`. `blockers` names
+active owners that must be stopped through their existing controls. Cleanup
+never aborts work or kills an agent. `incomplete` retains the project, the same
+`operation_id`, `retryable`, a safe `error_code`, and any
+`ownership_required_artifact_ids`. Some files may already be removed; retry the
+same confirmed operation rather than assuming rollback. Only `deleted` means
+cleanup completed. It removes live owned StackOS data and managed files while
+preserving repository folders, other projects, shared accounts/files, external
+exports and existing backup archives.
+
+Deletion handles retries by observing current state instead of storing a replay
+receipt in the deleted project. A same-key retry revalidates confirmation and
+returns `missing` after deletion. Global bridges retain existing-project
+admission and instead reject a missing saved ID with `project_unavailable`;
+they never substitute a same-named replacement. No deleted project payload,
+audit history or idempotency row is recreated.
+
+Unaudited legacy generated files can require an explicit ownership decision.
+Only an administrator using REST or CLI can call
+`project.reconcileFileOwnership`; it is unavailable to MCP and the console.
+It delegates to `ArtifactRepository.reconcile_generated_file` and accepts only
+a stopped cleanup's reported artifact gap. Review the exact identity, URI and
+current content hash, then supply:
+
+```json
+{"project_id": 2, "project_slug": "acme", "artifact_id": 42, "expected_uri": "/generated-assets/openai-images/legacy.png", "expected_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "confirm_ownership": true}
+```
+
+The managed root is daemon-derived; callers cannot supply a filesystem path.
+Wrong identity, changed content, unsafe files or absent cleanup gaps reject.
+Ordinary deletion confirmation and editable artifact metadata cannot grant
+custody. After reconciliation, retry `project.delete` with the original ID/slug;
+its operation ID is preserved, including across restart.
+
+## Project setup receipts and reminders
+
+`projectSetup.get({"project_id": 1})` reads shared setup status without launching
+an agent or changing completion. Optional `workflow_key` selects detail while
+project counts remain aggregate. The bound MCP bridge injects and fences project
+scope. Directoryless projects return `ineligible` with no update count; a selected
+unavailable folder returns `folder_unavailable`, retained evidence/preferences and
+an actionable folder diagnostic. Existing adaptations without receipts are unknown.
+
+Compact/raw modes are supported; ack is refused. Compact keeps project eligibility,
+counts, permanent reminder timestamps, workflow receipt IDs/revisions, latest outcome,
+partial-change flags, attempt/result refs and `detail_ref` for full evidence. Raw
+includes receipt-owned source snapshots, role/obligation mappings, checked readiness,
+activation status and the latest partial result. Source identity never proves
+installed activation. Missing source evidence remains diagnostic uncertainty.
+
+`projectSetup.setReminders` is a browser-safe local-admin REST/CLI operation,
+unavailable over agent MCP. For example:
+
+```json
+{"project_id": 1, "dismiss_setup": true, "dismiss_updates": false}
+```
+
+Each true field permanently stamps only its own preference; omitted/false fields
+preserve existing dismissals. Rename, later versions and opening setup do not reset
+them. This operation changes neither setup success nor quiet update counts.
+See [applied evidence](workflow-templates.md#applied-setup-evidence) for the checked
+result contract.
+
+`workspace.startSession` also returns `project_setup`: a compact projection of the
+selected project's eligibility, setup/update counts, current attempt reference,
+repair diagnostics and shared `workflowTemplate.authoringGuide` reference. Profile
+readiness remains separate. Startup creates no setup request, native invocation,
+workflow run or tracker task, and does not edit local guidance. An unselected global
+session has no project summary; selected global calls still require explicit project
+IDs. A summary neither changes workspace binding nor grants filesystem access.
+
+`projectSetup.start` supports existing-session agent-MCP entry and authenticated
+console REST entry with `entry_kind: "managed_ui"`. `projectSetup.report` remains
+agent-MCP only; CLI cannot start setup. Existing-session entry uses
+the session ID returned by startup (`id` in raw; `agent_session_id` in compact).
+The bridge injects and fences `client_session_id`; it must match that session and
+project. For example, through `toolbox.call`:
+
+```json
+{"tool_name":"projectSetup.start","arguments":{"session_id":123,"mode":"setup","workflow_keys":["engineering.tracked-delivery"],"idempotency_key":"setup-this-session"}}
+```
+
+New Setup and Update calls default `requested_scope` to `ready_to_use`. Select
+`infrastructure_only` explicitly to finish at preparation. Stored attempts and
+receipts without the field retain historical infrastructure semantics; reads do
+not upgrade them. Attachment preserves the existing owner's scope, and replay
+binds scope as part of the original intent. Neither scope grants additional
+operation, local-admin or business-action authority.
+
+`VerifiedSetup.activation_proof` records the selected `method_ref`, required
+claims, missing claims, status and bounded checks labelled `reused`, `executed`
+or `simulated`. Each check identifies project/binding, effective source-set,
+saved delivery-default and local-adaptation digests plus its environment ref.
+Digests use SHA256 of canonical JSON, as for source snapshots. `saved_defaults`
+and `native_consumption` are minimum coverage; workflow method may require more.
+Simulation cannot cover required claims. Deferred per-run inputs remain in the
+separate readiness tuple.
+
+Checks reference an exact existing native request/invocation or completed
+workflow/step and the canonical JSON digest of its result. The receipt owner
+rechecks project, observed outcome, source/default basis and completion; failed,
+cancelled, live, foreign or changed evidence cannot receive positive coverage.
+Native coverage requires canonical request resolution, a result validated against
+its frozen output schema and a successful logical outcome, including the wrapped
+managed setup report. Process exit alone is insufficient. Failed, blocked or
+missing outcomes can be retained as failed checks without covering activation.
+This validates reference integrity. The workflow's agent and independent review
+still judge what the underlying evidence actually covers, including loaded source
+and environment.
+A new workflow is not required. A ready-to-use attempt cannot report final
+success until every selected workflow has current verified activation coverage
+and observed loading. Missing coverage returns `complete_activation` with the
+workflow and missing claims. Preparation results and other completed workflows
+remain inspectable while required activation is pending or blocked.
+
+`report.adoption_proposal` contains only the observed project/root/binding,
+expected saved-delivery digest and bounded role selections with provenance.
+Codex selections use exact source refs/digests; supported other hosts retain
+their native inline contracts. The repository validates and retains the proposal
+without writing defaults. It cannot supply trusted-local-admin context or an
+arbitrary operation payload. Authorized adoption and readback remain with the
+existing managed/defaults owners. Compact workflow reads include requested scope,
+activation status and missing claims; raw receipts retain detailed proof.
+
+Authenticated managed `ready_to_use` admission retains narrow adoption authority
+on its setup request. After preparation retires, the managed owner rechecks its
+current claim, folder/binding, proposal sources and saved-default digest, then
+uses canonical adoption preview/write/readback. The defaults write and adopted
+digest receipt commit together. Compatible role preferences, explicit nulls and
+unrelated settings remain intact; queued/running task snapshots are untouched.
+This does not expose `tracker.configureDelivery` over MCP or CLI.
+Configured delivery hosts are checked against saved role/project inheritance
+before proposal overrides, independently of the setup agent's host. Matching
+inline updates retain omitted role hosts so future project-host changes still
+inherit; a conflicting proposal cannot silently replace that preference.
+
+When bounded verification is still missing, the existing managed continuation
+links a successor with a new claim after predecessor retirement and capacity
+release. Its prompt includes the canonical resolved role readback and current
+scope. A verification turn can return `verification_status: "passed"` alongside
+a partial setup report, recording successful bounded checks without asserting
+overall readiness. Only that authorized verification phase can produce this
+logical check outcome. One completion continuation receives the exact retired
+request/invocation/result digest and validates the final workflow receipts;
+it reuses the completed checks. Missing, failed or blocked checks never advance
+automatically to completion. Current matching evidence may complete directly.
+There is no separate verification workflow/task or linked-run waiting lifecycle.
+Cancellation fences only current setup ownership; recovery retains evidence and
+revalidates changed sources/defaults before consumption or final success.
+Confirmed failures before entering the native executor retain an explicit
+preflight marker, allowing exact-session recovery after the basis is restored;
+unknown native retirement still blocks recovery. Native final reports reconcile
+earlier progress, retaining failures. Exact report digests allow identical final
+replay without duplicate receipt writes while rechecking final success.
+
+The agent chooses workflows under the shared guide and inspects unknown legacy
+adaptations before deciding what to change. `start` serializes admission with the
+project owner and returns one typed `AgentRequest.metadata_json.project_setup`
+namespace (schema version 1). It records mode, entry kind, stable attempt/root
+request refs, current request/predecessor refs, session/runtime/thread lineage,
+selected workflows, observed receipt revisions, progress, outcomes and question.
+No alternate queue, workflow run or native launch is created. Generic request
+create/claim/release/prepare/link/complete/ignore operations cannot own this namespace.
+Unknown legacy setup requests require inspection, rather than being presumed absent.
+
+The first start returns a claim token for its executing session. Keep it private
+in that session; do not put it in artifacts or guidance. Use a stable idempotency
+key to recover the original response after an uncertain retry. A concurrent start
+attaches as an observer to the existing attempt and receives no writer token.
+Attach does not replace the owner, change its workflow selection or grant report
+authority. There is no expired-lease takeover of setup work.
+
+Setup replay rechecks the bound session and original normalized request before
+returning any cached response. The key binds the session, attempt, token, expected
+revision and complete report; changing only `response_mode` preserves an exact
+retry, including compact-to-raw recovery. Foreign or changed-intent reuse returns
+structured repair context and never exposes the owner's token. A cached start is
+usable only while its original attempt/claim remains active. Exact terminal-report
+retries return that historical request without restoring its claim or changing a
+successor; cached running progress cannot represent a finished attempt. Older cache
+entries lacking original-intent evidence reject for inspection.
+
+`projectSetup.report` requires that session, token, `request_id` and the expected
+attempt revision. Its typed `report` includes a status, bounded progress message
+and evidence ref, optional checked workflow results, and a concrete question only
+for `needs_input`. Each workflow result carries `workflow_key`, its expected receipt
+revision and the existing `SetupResult` proof contract, with the exact attempt ref.
+Successful workflow writes advance only after source, role, obligation and readiness
+validation. Failed/unfinished outcomes retain prior success and possible partial
+edits. A report is atomic; a stale/foreign/invalid item changes neither attempt nor
+receipts. Attempt success additionally requires current verified success for every
+selected workflow, including a source/receipt freshness recheck at completion.
+
+Existing-session questions carry `question_id`, `revision`, `prompt`, affected
+`workflow_keys`, `answer_state: "pending"` and `response_channel: "existing_agent"`.
+The agent asks and receives answers in that session, then reports subsequent work.
+Home can display the question and status without promising an external conversation
+link or accepting a browser answer for this entry kind. Report history retains
+question/progress/result refs; sibling native execution metadata stays untouched.
+
+Managed console entry needs only the selected project and setup/update mode;
+`workflow_keys` can be omitted so the coordinator chooses from the operator goal.
+Optional typed `preferences` contain only `host_key`, `model`,
+`model_reasoning_effort`, `provider`, `profile`. Omitted fields inherit saved
+main-agent choices on the same host; explicit null clears that field for this
+launch. Changing host discards inherited host-specific choices. Changing model
+discards inherited reasoning unless reasoning is also explicitly supplied.
+Save these choices through local-admin `tracker.configureDelivery({"project_id":1,
+"main_agent":{"host_key":"codex","model":"gpt-6.1-sol"}})`. That form merges
+only `delivery.main_agent`, preserving specialist roles, unrelated settings and
+already admitted snapshots. `projectSetup.get.launch_preferences` reads saved choices;
+`hostMcp.status.agent_execution` supplies supported and recommended models from the
+existing host catalog. Neither catalog nor recommendation proves account model access.
+When the console needs an inherited host for the launch dialog, it requests
+`projectSetup.get` with `resolve_launch_preferences: true`. This local-console-only
+read returns effective choices in `launch_preferences` through the same resolver
+as launch, retaining explicit saved fields and invalid choices for editing.
+Ordinary reads still return saved preferences without inspecting native hosts.
+With no saved or explicit model/effort, native defaults are retained without
+guessing their effective values; recommendation metadata is advisory. Launch
+overrides do not save project defaults. The `main_agent` configure form replaces
+only that preference object, so omitted/null fields there really clear saved
+choices. Native provider/profile names select host configuration, never credentials.
+
+`agent_execution.reasoning_efforts` maps explicit model IDs to verified native
+effort choices. Missing model entries (including native-default and custom
+models) permit only native reasoning. The launch dialog consumes that same
+catalog, shows model and reasoning in its summary, and puts optional native
+provider/profile selectors in Advanced options; required provider/model remain
+visible. Unsupported pairs reject before native execution. Codex uses its
+validated `model_reasoning_effort` config override; Claude uses `--effort`; Grok
+uses `--reasoning-effort`. Gemini and Hermes currently retain native reasoning
+because this runner has no verified per-invocation override for them. Claude
+rejects a conflicting inherited `CLAUDE_CODE_EFFORT_LEVEL`, whose native priority
+would otherwise override the selection. Normal permissions and auth stay native.
+
+One managed attempt creates one request-native coordinator, consuming the same
+authoring-guide reference and project setup method as existing-session entry.
+Start/return attaches to active work without exposing its writer token, replacing
+its selection or cancelling it on navigation. The frozen request contains the exact
+folder/binding and host choices. Invalid/missing hosts or unavailable/mismatched
+folders fail before native spawn; no host/model fallback is performed. Managed work
+queues through the existing shared task capacity drain and executor. Native identity,
+usage, immutable execution evidence and checked workflow reports remain on AgentRequest;
+infrastructure setup creates no business run or tracker task.
+
+The coordinator receives a private request claim token. Managed progress reports
+also require its project bridge session, active native invocation and expected
+attempt revision. The first authorized report binds that session; observers and
+foreign/stale/cancelled reports cannot change receipts. Final native output supplies
+a JSON-encoded `SetupReport` through `report_json`; all receipt validation stays with
+the existing setup repository. A finished invocation asking a question releases its
+slot and retains its exact native identity for the continuation owner.
+
+Console-only `projectSetup.cancel({"project_id":1,"request_id":123})` fences a
+managed request through the existing native cancellation owner. Queued work can be
+cancelled before spawn. Running cancellation remains pending until actual native
+retirement; callback lifetime retains the reservation, completed workflow receipts
+and partial-change reports. A timeout, missing in-memory handle or daemon restart
+does not establish exit. Unconfirmed prior-daemon invocations retain their reservation
+and actionable reconciliation diagnostic instead of silently launching replacements.
+The canonical project cleanup guard also retains these managed reservations after
+request lease expiry; confirmed deletion cannot race an unconfirmed native writer.
+Terminal reports revoke writer authority and preserve attempt history.
+
+For an `existing_agent` attempt, the same console operation requires the exact
+`expected_revision` and strict boolean `external_work_stopped: true`. Stop the
+previous setup work in the agent app before acknowledging it. StackOS atomically
+cancels that record and revokes its claim under the project writer reservation;
+the acknowledgement does not establish observed native retirement, stop a process,
+or rebind a session. It preserves original identity, receipts, reports, questions,
+answers and possible file changes. A changed revision requires a fresh decision.
+Cancellation retries bind the project/request/revision/acknowledgement intent;
+exact replay returns only the historical target, even after another attempt starts.
+Old start/progress replays and late reports cannot restore the revoked claim.
+Home keeps the cancelled record inspectable even when retained receipts are current.
+**Set up again** opens a separate launch decision; cancellation never starts it.
+MCP, CLI and run-step authority cannot cancel setup.
+
+Console-only `projectSetup.answer` takes `project_id`, the current `request_id`,
+`expected_revision`, `question_id`, `question_revision` and a bounded `answer`.
+It consumes that pending question once and admits one linked successor request
+only after the prior invocation and its callback have retired. Existing-agent
+questions must be answered in their original session. Stale, foreign, duplicate,
+missing-session and unconfirmed-exit inputs return repair context without consuming
+an answer or launching work. A stable idempotency key supports exact response replay;
+changed answers under the same key reject. Both compact and raw retain lineage;
+neither exposes the coordinator's claim token. These writes are unavailable via
+agent MCP and CLI.
+
+Console-only `projectSetup.continue` takes the same project/request/revision fields
+without question/answer fields. It continues partial, failed, interrupted or explicitly
+cancelled work in the exact recorded native session with frozen host/model/provider/
+profile, reasoning and folder. A pending question requires `answer` instead. Each invocation
+has its own immutable request execution and usage receipt under the stable attempt;
+the predecessor retains its answered question and successor ref. Missing native
+identity, unsupported selection or resume failure is actionable failure, never a
+fresh-session fallback. Reconnect preserves pending answers and unconfirmed live work.
+
+Continuation retains successful workflow outcomes and compares their current receipt
+revisions and source evidence. Its prompt names remaining workflows and changed
+successes requiring revalidation; receipt advancement still requires checked reports.
+It warns of possible partial file edits and implies no rollback. A changed source
+cannot pass final completion using an older success receipt. Browser rendering and
+integrated setup journeys consume this shared state through `projectSetup.get`.
+
+Both operations support compact/raw and refuse ack. Compact retains claim/attempt
+refs, revision, outcomes, question and repair context; raw also retains report history.
+Source verification does not establish native loading or installed activation, and
+structural setup readiness does not imply that deferred per-run inputs are supplied.
+This operation family grants no business execution, provider or repository-file authority.
+
+## Project workflow schedules
+
+Project folder setup has one owner: `Project.primary_workspace_binding_id`.
+Folder-backed bootstrap records its chosen binding; connecting task worktrees or
+starting sessions does not change it. Existing projects deliberately remain
+unselected after migration. Setup selects an existing same-project directory
+binding from `workspace.listBindings` through the local-admin `project.update`
+patch `{"primary_workspace_binding_id": <binding_id>}`. This does not rebind a
+workspace or grant filesystem access. `project.get` returns that exact
+`project_dir`, `project_folder_status` (`ready`, `directoryless`, `missing`,
+`unavailable`, or `conflict`) and an actionable `project_folder_issue` when local
+files cannot be used. No selected primary with no directory bindings means a
+supported directoryless project; an unselected existing directory or a stale
+primary reference needs explicit setup. Unavailable roots and cross-project
+conflicts fail closed without selecting a newer worktree. Reads and retries do
+not repair data or change a session binding.
+
+`schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and
+`schedule.runs` share `ScheduledJobRepository` through MCP, registered REST
+operations, the project schedule REST URLs and `stackos ops call`.
+ID-based mutations require the matching project; a foreign job is missing
+before any effect. Writes retain their existing local-admin setup boundary.
+Compact responses retain identity/state and repair context; use raw to read back
+the concrete goal, supplied inputs and native execution configuration.
+
+`schedule.set` replaces configuration under a stable project `kind` key.
+It accepts `name`, `goal` (instructions), five-field `cron_expr`, IANA
+`timezone`, `enabled` and an optional existing workflow `template_key`.
+`inputs_json` retains supplied context, including migrated workflow inputs.
+The main agent resolves concrete workflow inputs, method and roles; schedule
+setup does not validate business input completion or require role mappings.
+
+The actual launch folder always comes from project setup. Optional
+`execution_json.host_key` constrains the shared main-agent preference resolver
+used by setup. New occurrences inherit saved `delivery.main_agent` model,
+reasoning, provider and profile choices supported by the selected host. Host
+selection falls through the saved main-agent host, project delivery host, then
+Codex. An explicit different schedule host clears incompatible inherited launch
+choices. Delivery/reviewer instructions, source refs and model pins are never
+inherited. Admitted occurrences retain their native selection after preference
+changes; a later occurrence resolves current preferences. An explicit Codex
+`mcp_config_ref` uses the shared
+validated task-local route contract. The retained optional
+`execution_json.project_dir` only fences a saved legacy folder: if it differs
+from project setup, enabling fails until the operator confirms the configured
+folder and saves without the old fence. It cannot select a different target.
+
+Schedules default to disabled and incomplete inert drafts are permitted.
+Supplied shape, cron/timezone, workflow reference and no-secret rules still
+validate. Enabling checks name, goal, timezone, the canonical project folder,
+workflow existence when selected and native host capability/readiness.
+It creates no request, plan or task. Raw secrets are rejected even in drafts;
+opaque credential refs and exact secret markers retain their normal rules.
+Cron uses APScheduler: numeric weekdays run Monday (`0`) through Sunday (`6`);
+named weekdays such as `mon` avoid ambiguity. Next-fire times are UTC.
+
+Migration `0042_schedule_main_thread` moves existing active setup once:
+goal/instructions are recovered from saved inputs, all input context and
+schedule identity/history remain, and role/step dispatch settings are removed.
+Missing goal/folder or an explicitly different saved folder disables the
+schedule with an actionable setup issue. It never rewrites admitted or
+historical request/plan/native snapshots. New occurrences use only the main
+thread path; historical plans remain readable and can still prevent overlap.
+
+Electron main holds the authenticated REST-only `desktop.availability` stream
+at `/api/v1/desktop/availability`. Browser tokens, MCP and CLI cannot advertise
+presence. Quit, suspend or disconnect removes future timers while admitted work
+continues. Reconnection arms future instants only. The existing memory scheduler
+uses exact next cron instants, one-second jitter tolerance, and generation/config
+guards; edits/removal are checked again at native process spawn. No missed ticks
+are replayed.
+The one-second jitter window gates request admission. Once admitted, native
+preparation may take longer; generation, configuration, presence and project-folder
+checks still fence registration and spawn.
+
+Each eligible instant creates and claims one existing AgentRequest under
+`schedule:<id>:<due-UTC-ISO8601>`, then calls shared
+`host_mcp.service.run_agent` once with request ownership. Its domain-neutral
+bootstrap carries project/request identity, goal, context and optional workflow
+reference. It tells the main agent to read current repository/project and
+effective workflow guidance and use ordinary tools and approvals. The scheduler
+never creates, starts, claims or advances a workflow plan, and never calls
+`startDelivery`. Explicit task delivery remains available for deliberately
+selected tracked work.
+
+The native service retains actual session, process lifetime, terminal result
+and measured counters in the request, renewing only the exact owner's lease.
+The controller interprets `status`, `summary` and optional `run_plan_id`.
+A real returned plan is same-project validated before linking; prompt-only
+results have null plan/task/run refs. Success resolves only with canonical
+successful native evidence. Failed launches/crashes remain failed with
+diagnostics; blocked or unobserved exits remain unresolved for explicit
+inspection. Existing occurrence keys never retry. Unresolved requests prevent
+overlap even with no plan, an expired lease or an interrupted last-request
+pointer write; linked unfinished real plans/tasks also prevent overlap.
+No fallback runner or automatic resume/replay exists.
+
+`schedule.remove` deletes configuration and reconciles its timer, returning
+`{project_id, job_id, removed}`. It does not cancel admitted work or delete
+history. Schedule IDs are never reused (`0037_schedule_id_nonreuse`).
+Every mutation reaches the daemon's `schedule_reconcile(project_id, job_id)`
+seam after commit.
+
+`schedule.runs` pages scheduled requests first (limit 1–200, descending
+request-ID cursor `after_id`, optional `schedule_id`). Safe output retains
+schedule name/ID snapshots after rename/removal, request status, actual native
+identity/session, outcome/summary/error, timestamps/duration and measured usage,
+plus optional real workflow/run/task links. Historical workflow-only records
+retain their canonical task status, usage and recorded `work_duration` projection
+(also exposed as nullable `duration_seconds`). Native rows retain their own
+process duration, separately from linked task work time. Main-thread usage does not add
+linked child-task totals. Missing usage remains unknown. Claim/run tokens,
+prompts, launch snapshots and arbitrary request metadata are never projected.
+Skipped ticks create no row; there is no second occurrence or usage ledger.
+
+For example, save an inert prompt draft with
+`stackos ops call schedule.set --input automation.json`:
+
+```json
+{
+  "project_id": 1,
+  "kind": "weekly-review",
+  "name": "Weekly review",
+  "goal": "Review project context and report useful updates.",
+  "cron_expr": "0 9 * * mon",
+  "timezone": "America/Los_Angeles",
+  "enabled": false
+}
+```
+
+Add `template_key` for a workflow hint. Normal grants and approvals apply to
+any work the main agent chooses; enabled configuration alone is not evidence
+of desktop availability.
+
+## Task Board writes
+
+Task Board writes use `tracker.placeTask`, `tracker.updateTaskPriority` and
+`tracker.reorderTask` through the registered MCP/REST/CLI surfaces. Placement
+accepts only Backlog/Todo for eligible nonstarted work; reorder uses the shared
+projected Board column. Neither grants delivery execution authority. All retain
+strict snapshots, intent-bound idempotency and raw save receipts. See
+[Board membership and order writes](task-tracker.md#board-priority-and-order-writes).
+
+## Local task admission capacity
+
+`tracker.deliveryCapacity` and `tracker.setDeliveryCapacity` use the same
+registry-owned local-admin console boundary as other explicit settings controls.
+They are REST/CLI-only, browser-safe operations with compact/raw readback and no
+ack mode. Neither accepts workflow run-token authority. Read with `{}` for all
+projects or `{"project_id": 7}` for one project. Both return `scope: "project"`,
+`projects`, `supported_min: 1` and `supported_max: 32`. Each project row preserves
+`project_id`, `project_name`, `project_slug`, `configured_limit`, `running_count`
+and `queued_count`. Running includes admitted task callbacks and managed setup
+reservations through retirement, even above a lowered limit. Waiting counts
+current-daemon queued work without a reservation, including managed setup.
+
+Save with `{"updates": [{"project_id": 7, "max_concurrent_tasks": 6}]}`. The array
+accepts 1..100 distinct positive project IDs and strict integer limits 1..32.
+Unknown projects or invalid input reject the entire request. Only changed rows
+are written, in one transaction; drain runs only after a successful changed-row
+commit. Failed commit leaves every prior limit effective and triggers no drain.
+Lowering affects future admission without stopping or cancelling admitted work.
+
+The existing capacity table owns each project's preference. Migration copies the
+saved legacy limit (or default 3) to every existing project, including inactive
+ones; new projects default to 3 without read-side writes. Permanent project
+deletion removes only its capacity row. Ordinary restart/install/upgrade and
+encrypted database backup retain the settings. No separate settings file,
+global quota, ordinary MCP mutation surface or workflow authority is added.
+Downgrade to the singleton schema is allowed only when all effective project
+limits agree; divergent limits reject before schema or preference changes.
+
 ## Local backup administration
 
 `backup.status`, `backup.configure` and `backup.create` share the generic
@@ -107,6 +725,18 @@ instead of the full inventory. After that, call `toolbox.describe` with exact
 `tool_names` before invoking the selected operation. In workspace-bound bridge
 sessions, omit injected fields such as `project_id`; the bridge supplies the
 current workspace scope and refuses cross-project calls.
+
+Directory resolution uses the actual root or the most specific containing
+directory binding. A supplied repository fingerprint cannot override that
+directory, and a shared Git remote supplies project candidates only; it never
+selects another worktree's binding. When an unbound directory shares a remote
+with an existing project, startup waits for explicit selection even with
+`auto_bootstrap=true`. Start with `workspace.startSession(auto_bootstrap=false)`,
+then call `workspace.connect` with the approved existing `project_id` and
+`rebind_existing=false` through that directory's bridge. Let the bridge inject
+the actual root and path fingerprint. Resolve and start again to confirm its
+distinct binding; the original project folder and other worktrees stay bound.
+No Git repository is required for directory binding.
 
 In a global session, first call
 `workspace.startSession({"global_session":true,"project_id":42})` for the
@@ -199,9 +829,24 @@ returned payload.
 - `raw`/`standard`/`verbose`: full redacted daemon payload.
 - `ack`: minimal success envelope for safe internal writes only.
 
+Compact `agentPreset.describe` and `skillPreset.describe` responses use the
+same adaptation projection as workflow preset resolution. The top-level
+`project_adaptation` packet retains bounded adaptation instructions and source
+references (`ref`, `purpose`, `required`, and conditional `when`), alongside the
+preset's source/version identity. Read the same operation with
+`response_mode="raw"` for the complete contract when compact text or lists are
+truncated. References provide guidance; they grant no execution authority.
+
 Errors are never compacted. Validation failures, grant denials, auth/setup
 diagnostics, and provider partial failures keep structured repair context so an
 agent can decide whether to retry, claim a step, reconnect a provider, or stop.
+Structured validation results with `valid=false` retain their full repair context
+even when compact or ack is requested. Successful safe internal writes still
+use the minimal ack envelope. For example, `tracker.createTicket` shares complete
+reference validation between list dry-run and apply, and protects single/list
+creation with a repository savepoint: late relation failures cannot leave partial
+tickets, relations, revisions, or task rollup changes for error cleanup to commit.
+List updates keep their existing per-item outcomes.
 
 External provider actions through `action.run` and `action.execute` are
 compact file-backed by default for MCP/REST and raw-by-default for CLI, with
@@ -238,9 +883,69 @@ callable contract per StackOS primitive. The agent bridge advertises
 prerequisites, return notes, examples, and schemas. Use `toolbox.describe` for
 exact hidden setup and step-granted tools before calling them.
 
-The UI reads the same docs at `/projects/{project_id}/operations`. That page is
-not a second registry; it renders `GET /api/v1/operations` and
-`GET /api/v1/operations/{operation_name}`.
+The operation registry remains agent accessible through MCP, REST and CLI.
+`GET /api/v1/operations` and `GET /api/v1/operations/{operation_name}` retain
+their shared contracts. The standalone human operation-catalog page is removed;
+relevant object Details may expose safe contextual metadata.
+
+## Agent activity reads
+
+For Home connected tools, existing `account.list` and `connection.list` accept
+`summary_only=true` (also on their existing GET routes). This skips provider
+setup inventory construction and returns the exact same safe Account records:
+status/setup-required, auth method, expiry/revocation, last-test diagnostics,
+scopes, safe identity and project attachments remain complete in compact/raw
+mode. `providers` is empty and `summary_only` is explicit. Default setup APIs
+retain the full provider inventory. Home display names come from the current
+project store or `project.get`, not `project.portfolio` supervision.
+
+Work summary and exact metric demand use the existing `tracker.get` and timeline
+stream owners. See [UI summary/demand](./task-tracker.md#graph-projection) for
+complete lightweight scope, null unrequested metrics and legacy compatibility.
+
+Home uses `tracker.activeTasks` (`project_id`, direct-read) and
+`tracker.activeTasksAll` (local-admin-read). Both are read-only registry
+operations exposed through REST/CLI/MCP, with the global operation denied to
+project-bound MCP callers. `ActiveTasksOut` preserves bounded task-index facts
+and project/task identity in compact/raw mode, without prompts or receipt
+payloads; ack is unavailable. Pass `limit` and then the returned `next_cursor`
+as `after_id` for another page. See [Home active-task reads](./task-tracker.md#home-active-task-reads)
+for lifecycle, scope and refresh semantics.
+
+```json
+{"arguments":{"project_id":1,"limit":100,"response_mode":"raw"}}
+```
+
+Use this payload at `/api/v1/operations/tracker.activeTasks/call`. Local admin
+may call `/api/v1/operations/tracker.activeTasksAll/call` with
+`{"arguments":{"limit":100}}`.
+
+`tracker.agentStats` (`project_id`) and `tracker.agentStatsAll` (`is_active`:
+true/false/null for Active/Archived/All, default true) expose one tracker-owned
+projection of recorded invocation receipts. The project operation uses
+`direct-read` with project scope; the global operation uses `local-admin-read`,
+so project-scoped MCP callers cannot read it. Registry-generated MCP, REST and
+CLI surfaces share `TrackerAgentStatsOut` and support compact/raw, without ack.
+
+Both return scope, `as_of`, `totals` and grouped `rows`, preserving all numeric
+usage and missing/classification coverage in compact responses. No private
+receipt payloads are returned, and reads change no state. See
+[metric semantics](./task-tracker.md#recorded-agent-statistics).
+
+`delivery_trends` adds one shared set of period totals and daily buckets for
+completed tasks/tickets, first-review acceptance, changes requested, stop
+occurrences and summed task work time. Both scopes reuse this read; six widgets
+must not query or aggregate receipt history individually. Existing token and
+recorded agent/model grouping fields keep their meanings. Compact/raw retain
+the same trend facts and coverage; ack remains unavailable.
+
+```json
+{"arguments": {"project_id": 1, "response_mode": "compact"}}
+```
+
+Use that payload at `/api/v1/operations/tracker.agentStats/call`. Local admin
+may call `/api/v1/operations/tracker.agentStatsAll/call` with
+`{"arguments":{"is_active":null}}` for all projects.
 
 ## Browser Operations
 
@@ -394,6 +1099,154 @@ safe refs/query/snapshot only, no actor/outbound spoofing, provider work or mode
 execution. Clear private search text and apply filters before analysis; read
 [the actual host and result protocol](../plugins/finance/references/workflow-handoffs.md#management-review-request-and-result).
 
+## Automated delivery results and manual instruction adoption
+
+`tracker.startDelivery` accepts operator-authorized `replace_review` through the
+shared typed MCP, REST and CLI contract. See
+[review-only replacement](task-tracker.md#explicit-review-only-replacement) for
+eligibility, pinned identities, source selection, retained evidence and recovery.
+Raw execution overrides reject; browser-console permissions remain unchanged.
+Compact and raw receipts preserve `review_replacement` identity, candidate/snapshot
+digest and inspection refs; errors retain structured repair context.
+
+The generic `stackos.task_delivery` module owns task execution.
+Its host calls register actual agent/model/start lifetime at
+`stackos.host_mcp.service.run_agent`. Tracker task-index, ticket and detail reads
+expose the same nullable `active_execution` projection; persisted status never
+substitutes for an active call. Registration/cleanup publish
+`tracker.execution.changed` through the existing tracker SSE feed without changing
+ticket status. The same host-service registry owns live usage observation for
+active Codex calls: one five-second collector reads appended native counters
+from the exact rollout source, with a fixed prior-call baseline on resume.
+No active calls means no collector timer or native reads. Other hosts retain
+their existing final collection; unproven live counters remain unavailable.
+
+The existing context timeline SSE transport also sends replaceable
+`tracker-usage` frames, without durable event IDs or per-sample database writes.
+Project streams retain project scope; `/api/v1/context/timeline/stream` supplies
+the same local-admin transport for Overview's global scope. Reconnect sends the
+current transient state; durable tracker events retain their existing cursor.
+UI subscribers share the transport and refresh owner; usage-only Work updates
+patch metrics and execution in place without rebuilding the page or graph.
+Native exit immediately closes readers and removes live identity. Bounded measured
+samples and counters remain readable through the synchronous usage-to-receipt
+handoff, which persists them with the actual execution identity in the existing
+invocation receipt. Subsequent registry cleanup releases that in-memory snapshot,
+including when notification fails; durable receipt history remains available for
+task/ticket projections. Native result and candidate acceptance are still validated
+afterwards. Receipt-statistics changes publish `tracker.usage.changed` atomically
+with that write, including evidence-only
+updates. The stream includes affected task/ticket projections after persistence;
+the UI does not treat that usage event as another page-reload request. There is
+no per-sample event write, separate history collector or new retry policy.
+Statistics readers copy provisional counters before loading fresh receipt
+evidence, so a request overlapping the handoff cannot lose both contributions.
+Recorded usage wins over an older request copy; the existing SSE refresh shares
+that copy across its task/ticket metrics. No database read holds the registry
+lock or extends an invocation's reader/sample lifetime.
+`tracker.configureDelivery` is the narrow local-admin REST-only setup write for
+`TaskTracker.config_json.delivery`; it replaces that object while preserving
+unrelated tracker configuration. Send `arguments` with `project_id` and
+`delivery` to `POST /api/v1/operations/tracker.configureDelivery/call`. The raw
+response includes saved configuration and tracker revision; MCP, CLI, workflow
+grants, compact and ack are unsupported for this setup write. Read current
+defaults through `tracker.get` with `response_mode=raw`. Changes affect explicit future handoffs. Queued/running executions keep their
+snapshot; an explicit rehandoff after complete/stopped execution resolves current
+defaults and overrides. Historical task/run snapshots and ticket evidence retain
+their settings. Migration `0035_generic_task_delivery` transfers the retired
+engineering plugin defaults once and preserves existing generic values.
+
+`tracker.startDelivery` freezes project defaults, task overrides and optional
+`agent_assignments` into one execution snapshot. The map identifies canonical
+ticket keys and selected arbitrary role keys in `agents`; frozen step
+extension `agent_assignment` supplies mirror defaults and explicit entries win.
+Otherwise admission uses the unique applicable selected declared workflow role;
+ambiguity rejects. Ordinary tickets retain a separate independent reviewer.
+
+Each role can declare `execution_requirements: {"filesystem_write": true}`.
+Requirements are typed assignment needs, separate from native authority. They
+survive saved/default/task round trips; false or omitted permits inspection-only
+review. Admission and launch use the host's effective sandbox resolution, including
+source restrictions and actual retained phase settings. An incompatible requirement
+rejects before scheduling delivery with structured `execution_requirement_mismatch`
+repair context containing role, phase, required/effective permissions and selected
+versus retained source identities. Native settings, session history and normal
+approval behavior remain unchanged; no command inference or automatic escalation follows.
+
+Fresh Codex admission reads exact project source refs through the bounded source
+owner and freezes instructions/digest/supported native options. Source model and
+effort override execution fallbacks; no source field grants permissions, provider
+or MCP changes. Legacy inline Codex configuration needs explicit adoption.
+`tracker.configureDelivery` also accepts `project_dir`, `adopt_sources` with exact
+refs/digests, and `preview` in place of `delivery`. Preview compares without writes;
+explicit adoption preserves unrelated settings and verifies saved readback. See
+[source adoption](task-tracker.md#automated-task-delivery).
+For workflows the running `step_id` is entry context. The existing job traverses
+all dependency-ready work, activates nested groups without launching them,
+claims mirrors through the run-plan owner, runs accepted descendants and then
+launches each remaining frozen mirror contract once. Zero-child mirrors launch
+directly. Only `RunPlanRepository` records terminal mirror/plan/run state.
+Bound controller context stays daemon-held; worker packets carry no raw token.
+
+Every native result has `status` (success/repair/blocked/failed), `summary`,
+`outputs` (a JSON-encoded object string), and `followups` (text objects).
+This closed envelope transports arbitrary output contracts through native
+harness restrictions. Malformed JSON/nonobjects reject; mirror outputs pass to
+the canonical frozen-schema validation. Agents explicitly map domain conclusions
+to status. Runtime has no domain verdict table. Only success accepts a gate;
+unfinished non-ready work stops. After native validation, a valid success or
+repair result following supported persisted correction/reopen returns to
+dependency scanning without accepting the superseded occurrence. Mirror repair
+without persisted progress stops; mirrors do not enter a duplicate ordinary-ticket
+review loop. See the
+[agent-owned correction method](task-tracker.md#agent-owned-automatic-corrections).
+
+Ordinary tickets retain independent review and up to three scoped repairs in the same
+delivery/review sessions, with persisted rejection, attempt receipts and consumed
+repair allowance surviving requeue. Reviewers execute planned specs and relevant
+integration checks; failures report repair, unavailable required checks blocked.
+Unrelated notes stay in nonactionable followups and never enter repair prompts,
+dependencies or automatic work.
+
+Git is optional. Supplied `outputs.commit_sha` evidence retains clean-current-HEAD,
+ancestry and exact review identity checks. Observation may cite unchanged HEAD;
+project guidance requires separate commits for source changes/repairs.
+Non-Git tasks invoke no Git commands; Codex uses `--skip-git-repo-check`.
+Native/access/model/resume/schema failure, candidate mismatch or rejection after the third repair
+stops the same task, with no fresh-session, host or model fallback.
+See [task delivery](task-tracker.md#automated-task-delivery) for session/followup
+storage and native execution modes.
+
+Source/local guidance changes require manual adoption per project through the
+local-admin `tracker.configureDelivery` configuration owner. Ordinary
+MCP grants do not authorize that setup. Read the current configuration, copy its
+complete `delivery` object, replace only selected role `instructions`, and save
+that object; a supplied `delivery` replaces the key. Preserve names, task/role
+hosts, models, provider/profile and unrelated fields, then read back exact equality
+outside those instruction strings and exact content equality inside them. Keep
+the approved source refs/revisions and candidate with the receipt, and verify a
+subsequent new handoff prompt. No source edit refreshes saved prompts or active/
+historical snapshots, and no synchronizer, watcher or cross-project rollout exists.
+
+For this repository the manual mapping after independent candidate approval is:
+
+| Existing saved field | Accepted local source |
+| --- | --- |
+| `delivery.delivery_agent.instructions` | `.codex/agents/sdlc-delivery.toml` parsed `developer_instructions` |
+| `delivery.review_agent.instructions` | `.codex/agents/sdlc-delivery-reviewer.toml` parsed `developer_instructions` |
+
+Current-project adoption is a separately authorized setup action after independent
+source/local review and old-job completion. A reviewed one-time operational
+helper may perform it when explicitly assigned, outside the daemon lifetime;
+this is not a shipped synchronizer. Compare instruction strings with canonical
+whitespace normalization and every other setting exactly. Preserve completed
+tasks and frozen run/templates; an explicit rehandoff after completed/stopped
+execution may refresh only current task execution settings while retaining
+ticket receipts, sessions and consumed repair allowance. Never refresh a
+queued/running job silently.
+Other projects select and adapt their own available sources individually; host
+files are optional and no other project is changed by this handoff.
+
 ## Human task content
 
 `tracker.updateTaskContent` is an exact-path browser-safe REST/CLI operation
@@ -408,6 +1261,18 @@ The raw-only response keeps the saved task, revision, input receipt and replay
 status; ACK and compact modes are not available. See [task content](task-tracker.md#ui)
 for storage and UI behavior. Broader tracker operations remain agent/controller
 surfaces and do not become browser-safe through this exception.
+
+`tracker.updateTaskPriority` and `tracker.reorderTask` expose bounded task Board
+edits through MCP, REST (including the local browser) and CLI, with one repository
+transaction owner. Strict inputs require the task's status/timestamp and an
+intent-bound retry key; they cannot supply lifecycle or arbitrary patches.
+See [Board priority and order writes](task-tracker.md#board-priority-and-order-writes)
+for neighbor placement, ordering, conflicts and existing-stream invalidation.
+Each accepted reorder commits one tracker revision and one
+`tracker.tasks.changed` timeline/SSE event with structured affected task
+membership and that revision. Priority edits retain `tracker.task.changed`.
+The raw Board receipt's `affected_task_keys` and `rev` identify the same accepted
+mutation; retries and no-ops do not emit another event.
 
 ## CLI Calls
 
@@ -484,6 +1349,22 @@ stackos tracker next --project 1
 stackos tracker brief workflow-42-review --project 1
 stackos tracker pick --project 1 --assignee codex
 stackos tracker patch --project 1 --input tracker-patch.json
+```
+
+Use `tracker.startDelivery` for a task-level background handoff of an independent
+task whose tickets and dependencies are prepared. The `handoff.json` input file
+contains the task handoff (task key, project directory, and optional delivery/review
+role overrides). Project defaults use generic `TaskTracker.config_json.delivery`
+through local-admin `tracker.configureDelivery`; omitted role fields inherit those
+defaults and resolved roles must be complete. Task overrides merge by role once,
+preserving unrelated metadata. No ticket settings or permission expansion is needed.
+See [Automated Task Delivery](task-tracker.md#automated-task-delivery)
+for its structure. The call returns immediately while the daemon runs ready tickets
+sequentially through delivery and review. Inspect progress with `tracker.get`
+using `response_mode="raw"`.
+
+```bash
+stackos ops call tracker.startDelivery --project 1 --input handoff.json --response-mode raw
 ```
 
 Provider execution context stays outside endpoint payloads. Pass it directly
@@ -616,6 +1497,7 @@ index for common core operations, not a replacement for registry discovery.
 - `tracker.brief`
 - `tracker.why`
 - `tracker.execute`
+- `tracker.startDelivery`
 - `tracker.verify`
 - `tracker.history`
 - `tracker.changed`
@@ -624,6 +1506,8 @@ index for common core operations, not a replacement for registry discovery.
 - `tracker.createTicket`
 - `tracker.updateTask`
 - `tracker.updateTaskContent`
+- `tracker.updateTaskPriority`
+- `tracker.reorderTask`
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`
@@ -885,6 +1769,17 @@ Use `action.execute` when the action belongs to a workflow:
    bootstrap/system write. Normal callers need a `run_token` whose active
    run-plan step explicitly grants `agentRequest.create`.
 6. Agent request operations never call Telegram, SMTP, IMAP, or any provider API.
+
+Native request execution has an additional ownership fence: expired requests with
+admitted `native_execution` evidence are excluded from claimable reads and cannot
+be reclaimed, released, ignored or prepared by a replacement runner. Only the
+native host service writes that metadata through `AgentRequestRepository`; callers
+cannot supply it through request create/complete metadata. Completion uses the
+original claim token and retained terminal evidence, including after lease expiry.
+Resolving requires an actual successful native exit and identity, with no
+cancellation. Crashed or interrupted work remains unresolved for explicit handling.
+See [request-owned native execution](architecture.md#request-owned-native-execution)
+for the internal lease, usage, liveness and final-persistence boundary.
 
 `localAgentChat.createMessage` stores local human/agent chat messages as
 communications resources and may create a generic `agent_request` for inbound

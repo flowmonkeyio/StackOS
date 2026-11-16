@@ -92,6 +92,97 @@ exact-path exception so no sibling route inherits it. Currently:
 | `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 | `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. v2 verification is unsupported. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
 
+## Internal project cleanup
+
+`ProjectCleanupService` is the permanent-cleanup owner behind `project.delete`.
+It requires `permanent=true`, the exact project ID and its immutable slug before
+mutation; it never resolves the target by display name. All admitted adapters
+delegate to this owner. The unconfirmed archive route and raw `hard=true` route
+are removed. Bound MCP calls retain injected-project scope; global calls require
+an explicit existing ID; the browser-safe generic REST call requires catalog
+scope. Deletion revalidates retries without keeping a replay row or deleted
+project history. Compact and raw preserve the complete typed receipt; ack rejects.
+
+Cleanup rejects actual native invocations, admitted delivery, running actions,
+durable work/leases, active request claims, owned browser processes (including
+unhealthy processes) and busy managed-file writers. It does not stop work or
+terminate external agents. The existing native launch lock, browser profile
+locks, managed-file writer locks and SQLite admission transactions coordinate
+with a project-local `cleanup_json` state. Fresh admission rechecks that state;
+an old Session object or inactive project flag does not authorize a new writer.
+Future project schedules are disabled and reconciled when cleanup is admitted.
+The global native launch lock covers only the quiescence check and committed
+fence. Custody recovery, schedule reconciliation, file removal and final purge
+retain the existing project writer locks without holding the global lock.
+A project-specific lock uses the existing flock writer boundary in private
+runtime state, outside the managed roots being removed. Final purge reserves
+the project row and rechecks the fence and blockers. The lock pathname survives
+failed purge rollback and incomplete-state persistence; it is retired only after
+successful purge commit, while the original flock is still held. Concurrent
+retries reserve and recheck the row before opening the lock, so they cannot
+replace its inode during failure handling or reopen it after committed deletion.
+No deleted-project lock file remains after success.
+Admission writers reserve the project row through their write, so a check made
+before fencing cannot authorize a late write. Run-plan creation reserves after
+catalog/template setup commits; reopen and recovery reserve at their retained
+lifecycle owners before reactivating an existing run.
+
+The project row and source records remain while managed files are removed.
+Pending/incomplete projects remain discoverable through the full catalog and
+cannot admit new work. Retry uses the same ID, slug and cleanup operation ID,
+including after restart; some files may already be gone. Only after file cleanup
+succeeds does one database transaction remove durable artifact pins, explicit
+session/OAuth/auth-event exceptions and the cascading project records. No
+deleted-project history or tombstone is retained. SQLite's project ID high-water
+mark remains intact.
+
+Only derived managed roots and individual files with private producer custody
+are cleanup candidates. Editable artifact URI/provenance/metadata cannot grant
+that custody. Media, Telegram download and HubSpot export owners register the
+actual regular file, managed root and filesystem identity through the artifact
+owner; public artifact create/update cannot set that internal record. Cleanup
+does not traverse artifact-referenced directories or remove replaced files.
+Legacy files can recover custody from successful daemon-owned action receipts
+for the demonstrated media, Telegram download and HubSpot export producers.
+The action-output owner interprets the finite recognized legacy receipts; the
+artifact repository validates their normalized file facts. Generic cleanup uses
+private custody and requests reconciliation for unresolved producer hints.
+Recovery correlates the project, artifact ID, creation before completion and
+exact current artifact/producer output URI. File-backed receipts must match their
+stored digest and project, call, action and successful non-dry envelope identity;
+recovery is committed before those receipt files are removed.
+Ambiguous legacy generated references retain their source rows and return
+`ownership_required_artifact_ids` in an incomplete cleanup. Editable provenance
+alone never establishes ownership. The admin REST/CLI-only
+`project.reconcileFileOwnership` operation delegates to the existing artifact
+reconciliation method. It requires trusted local-admin context and an exact project
+ID/slug, artifact ID/URI and current content SHA-256 ownership decision. It is
+limited to the stopped cleanup's reported gaps; retry retains its operation ID.
+It is unavailable to MCP and browser-console callers and grants no automatic
+agent authority. The authenticated exact registered REST path owns its trusted
+context; headers, run tokens and caller fields cannot grant it.
+Shared references preserve bytes, including the original private file reference
+when public metadata is later edited. During final purge, verified file custody
+passes to surviving artifact references in the same database transaction. The
+last referencing project's cleanup removes those files; a rollback retains the
+original owner and rolls back the handoff. This includes shared action-response
+files and other leaves owned through derived project directories without a
+source Artifact. Cleanup inventories those remaining roots through no-follow
+directory descriptors; a reference never selects an additional inventory root.
+Transferred custody retains the original project-root boundary and leaf type,
+device and inode. Final-reference cleanup removes the matching leaf and prunes
+only empty parents inside that original root, preserving unrelated files and
+symlink targets. A durable pin or project-template
+binding owned by another project blocks deletion rather than deleting that
+owner's dependency. Repository folders, external exports,
+shared Accounts/catalog/browser runtimes and whole-instance backup archives are
+preserved. Arbitrary artifact URIs and request paths never grant file ownership.
+Cleanup errors retain a safe error class and truthful incomplete/retry status;
+they do not claim rollback or secure erasure of historical copies.
+Finance publication cleanup may recreate a lock already removed by the same
+cleanup only after project admission is fenced and the parent writer locks are
+held. Existing busy locks, symlinks and unsafe aliases remain failures.
+
 ## Generated asset and IMAP staging boundary
 
 Ordinary generated media remains available from the loopback-local
@@ -167,6 +258,37 @@ before persistence. Secret-like keys such as `api_key`, `access_token`,
 `refresh_token`, `authorization`, and nested equivalents are stored as
 `[redacted]`.
 
+Text scanning recognizes quoted credentials, equals assignments, line headers,
+explicit object/log delimiters, bearer credentials, private keys and signed URLs.
+Bare unquoted inline colons after sentence text are ambiguous and treated as
+prose, for example `After separate authorization: verify the environment.` This
+syntax boundary does not exempt structured secret fields or impose a minimum
+credential length.
+
+Run-plan secret rejections expose the stable `raw_secret` rule and at most eight
+paths of 256 characters each. Paths preserve a fixed vocabulary of known fields;
+key segments over 48 characters or outside that vocabulary become `[field]`,
+and long paths end with `...`. This changes diagnostics only: original keys and
+values still undergo secret checks.
+Automatic delivery retains these paths with `runPlan.recordStep` and the phase
+in its validation context. Before any receipt write, it checks decoded native
+output with the shared guard, including cancelled, superseded and native-error
+returns. Secret-bearing or unparseable output is omitted from the result receipt;
+safe output evidence, session identity, history and lifecycle observations remain.
+Canonical output validation still owns acceptance. Diagnostics preserve a concise
+stop reason without forwarding arbitrary exception data.
+
+Workflow validation distinguishes the exact `operator_authorization` instruction
+field in supported metadata from authentication material. Both template and
+run-plan validators still inspect that field's contents and nested keys; it is
+not an exemption for raw secrets. Tracker task metadata similarly preserves
+`delivery.agent_assignments` references only when the key identifies an actual
+ticket in that task and the value is a valid role identifier bound in the
+sanitized `delivery.agents` map. Ticket identifiers containing words such as
+`secret` are selectors in this map. Unknown mappings, credential-bearing values,
+agent contents and other metadata retain normal redaction. This persistence
+rule does not replace delivery admission's role and independent-review checks.
+
 Telegram's shared application hash is encrypted as daemon-held configuration.
 Native Accounts keep their own bot tokens, TDLib database keys, and proxy
 authentication in encrypted Account backing.
@@ -230,6 +352,11 @@ request envelopes retain the symbolic marker.
 For every value StackOS resolves, the shared action boundary removes exact
 occurrences from connector results, structured errors, metadata, response
 files, and controlled exception text before persistence or return. Connector
+outputs may retain an exact opaque provider-object reference after the repository
+verifies its project, provider, and account ownership. This only protects a
+coincidental substring match: whole-value secrets, keys, unregistered lookalikes,
+foreign references, and references embedded in text remain subject to redaction.
+Connector
 request representations omit payloads entirely. This defense does not claim to
 control telemetry in an external agent host or a provider that transforms or
 partially echoes a value; connectors must still avoid logging input and
@@ -245,7 +372,32 @@ project (`account.start`, secret storage and edits, sanitized auth tests, and
 revoke). Provider-auth route definitions own method validity inside that
 namespace. Mutating operation calls are allowed only when the operation's REST
 surface declares `browser_safe=True` for explicit local setup, the bounded
-human finance console contract described below, or the task-content contract.
+human finance console contract described below, the task-content contract, or
+the bounded run abort control.
+`plugin.enable` is browser-safe for explicit local project setup through its
+registered operation. It validates one installed plugin and an available project;
+it neither provisions Finance files nor grants workflow execution. Finance file
+initialization remains with authenticated `finance.status` after explicit enablement.
+The UI cannot supply `config_json`, even as null. `plugin.disable` and other
+legacy plugin mutation URLs remain daemon-admin surfaces.
+`project.update` and `project.move` are browser-safe only for the bounded
+project management contract: explicit `scope: "catalog"`, display-name-only
+patches and single-project moves. Catalog scope requires authenticated REST
+console/admin authority and is rejected through MCP. Bound agents retain the
+existing project-ID injection and may rename/move only their own target;
+move anchors must be active visible projects. `project.delete` separately permits
+only explicit permanent confirmation under that same target/catalog boundary.
+File ownership reconciliation remains admin REST/CLI only. This grants no
+general cross-project bridge access.
+The explicit project automation setup operations `schedule.set`,
+`schedule.toggle` and `schedule.remove` are browser-safe. They validate the
+selected project and saved setup without granting workflow action approvals;
+delivery-default administration and other run lifecycle mutations retain their
+existing separate authority. `runPlan.abort` is the sole browser-safe run-plan
+mutation. It validates the selected project and run, preserves completed
+evidence, and terminates only registered StackOS-owned automated invocations;
+external agent sessions receive a status change only. This permission does not
+grant workflow action approvals or enable starting, reopening, or advancing runs.
 `tracker.updateTaskContent` is MCP-disabled and uses the exact-path
 `local-admin-console-write` boundary. It permits only description correction
 and appended operator input on an existing project task. Server-owned actor,
@@ -351,9 +503,10 @@ as local setup. Its body must be absent or an empty JSON object. Middleware
 rejects all configuration fields (including `config_json: null`), unknown keys,
 and other bodies before repository mutation. Normal project/plugin validation
 still applies. Enabling preserves existing configuration and does not provision,
-reset, or reconcile Finance files. This does not permit disable/install routes,
-`plugin.enable` operation calls, MCP, or changes to agent grants. The daemon
-admin token retains its existing configuration-write authority.
+reset, or reconcile Finance files. The registered `plugin.enable` operation is
+also available for explicit setup, but the UI may not supply `config_json`.
+Neither path permits disable/install routes, MCP, or changes to agent grants.
+The daemon admin token retains its existing configuration-write authority.
 
 Adding `/api/v1/auth/ui-token` accepts a reduction in defence depth.
 
@@ -371,9 +524,12 @@ calls, `POST /api/v1/projects`, narrow no-secret setup operations such as
 `communicationProfile.upsert` and `ingressEndpoint.*`, and the
 global Account routes under `/api/v1/auth/accounts/*` plus explicit project
 Connection attach/detach routes. It can also
-call local setup operations and the bounded task-content operation whose REST
-surface is explicitly marked browser-safe; it cannot access `/mcp` and cannot mutate existing projects,
-tracker lifecycle, resources, runs, action execution, templates, or project data.
+call local setup operations, bounded task-content updates, and `runPlan.abort`
+whose REST surfaces are explicitly marked browser-safe. Abort changes only the
+selected run and its linked workflow task/tickets, and stops only its owned
+automated invocations. The token cannot access `/mcp`, make other run lifecycle
+changes, or mutate existing projects, tracker lifecycle directly, resources,
+action execution, templates, or project data.
 Previously, only a process that could read `auth.token` (mode 0600, owned by
 the daemon's user) could obtain any bearer token. On a single-user macOS or
 Linux box that's a near-zero delta (same-user processes already had file

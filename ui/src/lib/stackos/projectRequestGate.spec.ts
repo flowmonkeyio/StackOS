@@ -5,6 +5,22 @@ import { describe, expect, it, vi } from 'vitest'
 import { createProjectRequestGate } from './projectRequestGate'
 
 describe('createProjectRequestGate', () => {
+  it('captures an existing scope without claiming it and fences exit/return lifetimes', () => {
+    const gate = createProjectRequestGate()
+    const absent = gate.captureScope(1)
+    gate.begin(1, 'connections')
+    expect(absent()).toBe(false)
+    const current = gate.captureScope(1)
+    gate.begin(1, 'connections')
+    expect(current()).toBe(true)
+    gate.begin(2, 'connections')
+    gate.begin(1, 'connections')
+    expect(current()).toBe(false)
+    const returned = gate.captureScope(1)
+    gate.invalidate()
+    gate.begin(1, 'connections')
+    expect(returned()).toBe(false)
+  })
   it('invalidates every old request when the project changes', () => {
     const onScopeChange = vi.fn()
     const gate = createProjectRequestGate(onScopeChange)

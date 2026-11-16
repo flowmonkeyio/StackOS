@@ -686,6 +686,65 @@ def test_action_execute_file_backs_context_output_as_plain_file(
     assert out.action_call.metadata_json["file_backed_output"]["path"] == pointer["path"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["inline", "transient"])
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_project_cleanup_blocks_foreground_action_until_late_outcome(
+    session, project_id, tmp_path, mode, cancel
+):
+    from stackos.config import Settings
+    from stackos.project_cleanup import ProjectCleanupService
+
+    _seed_action(session)
+    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
+    action.risk_level = "read"
+    session.add(action)
+    session.commit()
+    credential_ref = _credential_ref(session, project_id)
+    entered, release, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class PausedConnector(_TransientReadConnector):
+        async def execute(self, request):
+            entered.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                await release.wait()  # A provider may still return after cancellation.
+            return ActionConnectorResult(output_json={"ok": True})
+
+    registry = ActionConnectorRegistry()
+    registry.register(PausedConnector())
+    settings = Settings(data_dir=tmp_path / "cleanup-data", state_dir=tmp_path / "cleanup-state")
+    settings.ensure_dirs()
+    repo = ActionRepository(session, connectors=registry, asset_dir=settings.generated_assets_dir)
+    running = asyncio.create_task(
+        repo.execute(
+            project_id=project_id,
+            action_ref="test-actions.echo.run",
+            input_json={"name": "Ada"},
+            credential_ref=credential_ref,
+            output_policy_json={"mode": mode},
+            allow_transient_response=True,
+        )
+    )
+    await asyncio.wait_for(entered.wait(), 5)
+    if cancel:
+        running.cancel()
+        await asyncio.wait_for(cancelled.wait(), 5)
+    target = ProjectRepository(session).get(project_id)
+    confirmation = {"permanent": True, "project_id": project_id, "project_slug": target.slug}
+    service = ProjectCleanupService(session, settings)
+    try:
+        blocked = await service.delete(project_id, confirmation=confirmation)
+        assert blocked.status == "blocked" and "foreground_action" in blocked.blockers
+    finally:
+        release.set()
+        outcomes = await asyncio.gather(running, return_exceptions=True)
+    assert not isinstance(outcomes[0], BaseException)
+    assert (await service.delete(project_id, confirmation=confirmation)).status == "deleted"
+
+
 def test_transient_read_returns_result_once_and_retains_only_audit_counts(
     session: Session,
     project_id: int,

@@ -132,13 +132,17 @@ def build_operation_registry() -> OperationRegistry:
         catalog,
         communications,
         cost,
+        desktop,
         discovery,
         execution_contexts,
         finance,
         guides,
         integrations,
+        patterns,
+        project_agents,
         project_bootstrap,
         project_setup,
+        project_setup_state,
         readiness,
         resources,
         run_plans,
@@ -153,6 +157,10 @@ def build_operation_registry() -> OperationRegistry:
     from stackos.operations import tracker as tracker_operations
 
     registry = OperationRegistry()
+    for spec in patterns.operation_specs():
+        registry.register(spec)
+    for spec in desktop.operation_specs():
+        registry.register(spec)
     for spec in finance.operation_specs():
         registry.register(spec)
     for spec in discovery.operation_specs():
@@ -161,6 +169,8 @@ def build_operation_registry() -> OperationRegistry:
         registry.register(spec)
     for spec in project_setup.operation_specs():
         registry.register(spec)
+    for spec in project_setup_state.operation_specs():
+        registry.register(spec)
     for spec in readiness.operation_specs():
         registry.register(spec)
     for spec in agent_requests.operation_specs():
@@ -168,6 +178,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in auth.operation_specs():
         registry.register(spec)
     for spec in backups.operation_specs():
+        registry.register(spec)
+    for spec in project_agents.operation_specs():
         registry.register(spec)
     for spec in browser.operation_specs():
         registry.register(spec)

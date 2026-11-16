@@ -73,6 +73,15 @@ async def call_operation(
     if normalized_client_surface not in {"cli"}:
         normalized_client_surface = None
     auth_scope = getattr(request.state, "auth_scope", None)
+    if (
+        operation_name == "plugin.enable"
+        and str(auth_scope).startswith("ui-")
+        and "config_json" in payload.arguments
+    ):
+        return JSONResponse(
+            {"detail": "UI plugin enablement cannot change plugin configuration"},
+            status_code=403,
+        )
     if operation_name == "localAgentChat.createMessage" and str(auth_scope).startswith("ui-"):
         # Validate the browser-owned intent before a possible generic replay.
         from stackos.operations.communications import (
@@ -106,6 +115,17 @@ async def call_operation(
                 "local-admin-backup-write",
             }
             or console_contract
+            or (
+                spec.name == "plugin.enable"
+                and spec.grant_policy == "local-admin-plugin-write"
+                and spec.surfaces.rest.browser_safe
+            )
+            or (
+                spec.name == "project.reconcileFileOwnership"
+                and not spec.surfaces.mcp.enabled
+                and not spec.surfaces.rest.browser_safe
+                and auth_scope == "daemon-admin"
+            )
         )
         and spec.surfaces.rest.path == generic_operation_path
     )

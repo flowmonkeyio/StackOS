@@ -161,10 +161,12 @@ def direct_dependency_handoffs(
     step: RunPlanStep,
     *,
     all_steps: list[RunPlanStep],
+    full_context: bool = False,
 ) -> list[RunPlanStepHandoffOut]:
     by_step_id = {item.step_id: item for item in all_steps}
     handoffs: list[RunPlanStepHandoffOut] = []
-    for dependency_id in (step.depends_on_json or [])[:12]:
+    dependency_ids = step.depends_on_json or []
+    for dependency_id in dependency_ids if full_context else dependency_ids[:12]:
         dependency = by_step_id.get(dependency_id)
         if dependency is None:
             continue
@@ -173,6 +175,8 @@ def direct_dependency_handoffs(
             run_plan_id=dependency.run_plan_id,
             step_id=dependency.step_id,
         )
+        if full_context:
+            result, truncated = jsonable(dependency.result_json), False
         handoffs.append(
             RunPlanStepHandoffOut(
                 step_id=dependency.step_id,

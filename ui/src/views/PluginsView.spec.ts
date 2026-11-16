@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -7,7 +7,17 @@ import PluginsView from './PluginsView.vue'
 
 const ORIGINAL_FETCH = globalThis.fetch
 
+async function chooseSort(wrapper: ReturnType<typeof mount>, label: string) {
+  const sort = wrapper.get('button[aria-label="Sort catalog"]')
+  await sort.trigger('click')
+  const listbox = new DOMWrapper(document.body).get(`[role="listbox"][id="${sort.attributes('aria-controls')}"]`)
+  const option = listbox.findAll('[role="option"]').find(option => option.text() === label)
+  expect(option, `Sort option ${label}`).toBeDefined()
+  await option!.trigger('click')
+}
+
 describe('PluginsView directory', () => {
+  enableAutoUnmount(afterEach)
   beforeEach(() => setActivePinia(createPinia()))
 
   afterEach(() => {
@@ -18,7 +28,7 @@ describe('PluginsView directory', () => {
   it('brings provider marks, cross-catalog search, and provider browsing into the app', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
-      if (url === '/api/v1/plugins?project_id=1') {
+      if (url === '/api/v1/plugins?project_id=1&compact=true') {
         return json([
           {
             id: 1,
@@ -32,6 +42,7 @@ describe('PluginsView directory', () => {
             created_at: '2026-07-11T00:00:00Z',
             updated_at: '2026-07-11T00:00:00Z',
           },
+          { id: 2, slug: 'seo', name: 'Other tools', description: 'Uses utils guides.', version: '1.0.0', source: 'builtin', enabled_for_project: false },
         ])
       }
       if (url === '/api/v1/providers?project_id=1') {
@@ -46,6 +57,7 @@ describe('PluginsView directory', () => {
             auth_type: 'api-key',
             config_json: null,
           },
+          { id: 12, plugin_id: 2, plugin_slug: 'seo', key: 'archive', name: 'Archive service', description: 'Uses utils guides.', auth_type: 'none' },
         ])
       }
       if (url === '/api/v1/capabilities?project_id=1') {
@@ -62,8 +74,8 @@ describe('PluginsView directory', () => {
           },
         ])
       }
-      if (url === '/api/v1/actions?project_id=1') {
-        return json([
+      if (url === '/api/v1/operations/action.list/call') {
+        return json({ count: 1, items: [
           {
             id: 31,
             plugin_id: 1,
@@ -76,7 +88,7 @@ describe('PluginsView directory', () => {
             description: 'Extract a website.',
             operation: 'read',
           },
-        ])
+        ] })
       }
       if (url === '/api/v1/resources?project_id=1') return json([])
       if (url === '/api/v1/operations/integration.list/call') return json({
@@ -106,16 +118,25 @@ describe('PluginsView directory', () => {
     expect(wrapper.text()).toContain('Firecrawl')
     expect(wrapper.get('img').attributes('src')).toBe('/images/integrations/firecrawl-icon.png')
     expect(wrapper.text()).toContain('2 of 9 actions executable')
+    expect(wrapper.text()).not.toContain('Open Operations')
+    expect(wrapper.find('a[href$="/operations"]').exists()).toBe(false)
+
+    await wrapper.get('section[aria-label="Utilities"] button').trigger('click')
+    expect(wrapper.text()).toContain('Firecrawl')
+    // A service whose description mentions the slug must not leak into this exact-plugin view.
+    expect(wrapper.text()).not.toContain('Archive service')
+    await wrapper.findAll('button').find((button) => button.text() === 'Clear all')?.trigger('click')
+    expect(wrapper.text()).toContain('Archive service')
 
     const search = wrapper.get<HTMLInputElement>(
-      'input[placeholder="Search plugins, providers, capabilities, or actions…"]',
+      'input[placeholder="Search plugins or services"]',
     )
     await search.setValue('crawl website')
     expect(wrapper.text()).toContain('Utilities')
 
     const providersTab = wrapper
       .findAll('button[role="tab"]')
-      .find((button) => button.text().trim() === 'Providers')
+      .find((button) => button.text().trim() === 'Services')
     expect(providersTab).toBeDefined()
     await providersTab?.trigger('click')
     expect(wrapper.text()).toContain('Crawl and extract websites.')
@@ -127,6 +148,19 @@ describe('PluginsView directory', () => {
 
     await search.setValue('no matching tool')
     expect(wrapper.text()).toContain('No matching catalog items')
+    await wrapper.findAll('button').find((button) => button.text() === 'Clear search')?.trigger('click')
+    expect(wrapper.text()).toContain('Archive service')
+
+    const pluginsTab = wrapper.findAll('button[role="tab"]').find((button) => button.text() === 'Plugins')
+    await pluginsTab?.trigger('click')
+    expect(wrapper.findAll('h3').map((heading) => heading.text())).toEqual(['Other tools', 'Utilities'])
+    await chooseSort(wrapper, 'Most actions')
+    expect(wrapper.findAll('h3').map((heading) => heading.text())).toEqual(['Utilities', 'Other tools'])
+    await wrapper.findAll('button').find((button) => button.text() === 'Refresh')?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Utilities'))
+    expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith('integration.list/call'))).toHaveLength(2)
+    expect(vi.mocked(fetch).mock.calls.every(([input, init]) => !init?.method || init.method === 'GET'
+      || ['integration.list/call', 'action.list/call'].some(path => String(input).endsWith(path)))).toBe(true)
     wrapper.unmount()
   })
 
@@ -140,11 +174,12 @@ describe('PluginsView directory', () => {
         enabled = true
         return json({ data: { project_id: 1, enabled: true } })
       }
-      if (url === '/api/v1/plugins?project_id=1') return json([{
+      if (url === '/api/v1/plugins?project_id=1&compact=true') return json([{
         id: 1, slug: 'finance', name: 'Finance Operations', description: 'Finance tools',
         enabled_for_project: enabled ? true : null, source: 'builtin', version: '1.0.0',
       }])
       if (url === '/api/v1/operations/integration.list/call') return json({ project_id: 1, items: [] })
+      if (url.endsWith('action.list/call')) return json({ items: [], count: 0 })
       return json([])
     }) as typeof fetch
     const router = createRouter({
@@ -169,7 +204,8 @@ describe('PluginsView directory', () => {
       if (url === '/api/v1/operations/integration.list/call') {
         return result === 'failed' ? json({ detail: 'Unavailable' }, 503) : json({ project_id: 1, items: [] })
       }
-      if (url === '/api/v1/plugins?project_id=1') return json([{
+      if (url.endsWith('action.list/call')) return json({ items: [], count: 0 })
+      if (url === '/api/v1/plugins?project_id=1&compact=true') return json([{
         id: 1, slug: 'utils', name: 'Utilities', description: 'Tools',
         enabled_for_project: true, source: 'builtin', version: '1.0.0',
       }])
@@ -189,12 +225,128 @@ describe('PluginsView directory', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Utilities'))
     expect(wrapper.text()).toContain(result === 'failed'
       ? 'Availability unavailable. The catalog is still available; refresh to retry the integration check.'
-      : 'No integration availability reported.')
-    const providerLink = wrapper.findAll('button').find((button) => button.text() === 'View provider availability')
+      : 'Availability unavailable')
+    const providerLink = wrapper.findAll('button').find((button) => button.text() === 'View services')
     await providerLink?.trigger('click')
     expect(wrapper.text()).toContain('Crawl websites.')
     expect(wrapper.text()).toContain('Availability unavailable')
     expect(wrapper.text()).not.toContain('Account repair required')
+    wrapper.unmount()
+  })
+
+  it('returns to the same plugin list while clearing the chip keeps all services in the current project', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.startsWith('/api/v1/plugins?')) return json([
+        { id: 1, slug: 'utils', name: 'Utilities', enabled_for_project: true },
+        { id: 2, slug: 'seo', name: 'SEO', enabled_for_project: true },
+      ])
+      if (url.startsWith('/api/v1/providers?')) return json([
+        { id: 11, plugin_id: 1, plugin_slug: 'utils', key: 'crawl', name: 'Crawler', auth_type: 'none' },
+        { id: 12, plugin_id: 2, plugin_slug: 'seo', key: 'audit', name: 'Auditor', auth_type: 'none' },
+      ])
+      if (url.endsWith('integration.list/call')) return json({ project_id: 1, items: [] })
+      if (url.endsWith('action.list/call')) return json({ items: [], count: 0 })
+      return json([])
+    }) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id/plugins', component: PluginsView }] })
+    await router.push('/projects/1/plugins')
+    const wrapper = mount(PluginsView, { global: { plugins: [router, createPinia()] } })
+    await flushPromises()
+    const search = wrapper.get<HTMLInputElement>('input[placeholder="Search plugins or services"]')
+    await search.setValue('Utilities')
+    await chooseSort(wrapper, 'Most actions')
+    await wrapper.get('section[aria-label="Utilities"] button').trigger('click')
+    expect(search.element.value).toBe('')
+    expect(wrapper.text()).toContain('Crawler')
+    expect(wrapper.text()).not.toContain('Auditor')
+    const back = () => wrapper.findAll('button').find(button => button.text() === 'Back to plugins')!
+    expect(back()).toBeDefined()
+    await wrapper.get('button[aria-label="Remove Plugin filter: Utilities"]').trigger('click')
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Services')
+    expect(wrapper.text()).toContain('Auditor')
+    expect(back()).toBeDefined()
+    await search.setValue('no service')
+    await chooseSort(wrapper, 'Name')
+    const calls = vi.mocked(fetch).mock.calls.length
+    await back().trigger('click')
+    expect(router.currentRoute.value.path).toBe('/projects/1/plugins')
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Plugins')
+    expect(search.element.value).toBe('Utilities')
+    expect(wrapper.get('button[aria-label="Sort catalog"]').text()).toBe('Most actions')
+    expect(wrapper.findAll('h3').map(heading => heading.text())).toEqual(['Utilities'])
+    expect(wrapper.find('.ui-badge[aria-label^="Remove Plugin"]').exists()).toBe(false)
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(calls)
+    await wrapper.get('section[aria-label="Utilities"] button').trigger('click')
+    await router.push('/projects/2/plugins'); await flushPromises()
+    await search.setValue('Auditor')
+    await back().trigger('click')
+    expect(router.currentRoute.value.path).toBe('/projects/2/plugins')
+    expect(search.element.value).toBe('Auditor')
+    wrapper.unmount()
+  })
+
+  it.each(['empty', 'failed', 'no-services'])('supports the %s catalog read state and refresh', async (state) => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/plugins?project_id=1&compact=true') {
+        if (state === 'failed') return json({ detail: 'Catalog read failed' }, 503)
+        return json(state === 'empty' ? [] : [{ id: 1, slug: 'agency', name: 'Agency', enabled_for_project: true }])
+      }
+      if (url.endsWith('integration.list/call')) return json({ project_id: 1, items: [] })
+      if (url.endsWith('action.list/call')) return json({ items: [], count: 0 })
+      return json([])
+    }) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id/plugins', component: PluginsView }] })
+    await router.push('/projects/1/plugins')
+    const wrapper = mount(PluginsView, { global: { plugins: [router, createPinia()] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain(state === 'failed' ? 'Catalog read failed' : state === 'empty' ? 'No plugins installed' : 'Agency'))
+    if (state === 'no-services') {
+      await wrapper.findAll('button[role="tab"]').find((button) => button.text() === 'Services')?.trigger('click')
+      expect(wrapper.text()).toContain('No services available')
+      expect(wrapper.text()).not.toContain('No plugins installed')
+    }
+    expect(wrapper.findAll('button').find((button) => button.text() === 'Refresh')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('searches past 25 actions and keeps filters, focus and cards mounted during a failed refresh', async () => {
+    let release!: (response: Response) => void
+    let pending = false
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('/plugins?')) return json([{ id: 1, slug: 'utils', name: 'Utilities', enabled_for_project: true }])
+      if (url.includes('/providers?')) return json([{ id: 1, plugin_slug: 'utils', key: 'mock', name: 'Mock', auth_type: 'none' }])
+      if (url.endsWith('integration.list/call')) return json({ project_id: 1, items: [] })
+      if (url.endsWith('action.list/call')) {
+        if (pending) return new Promise<Response>(resolve => { release = resolve })
+        return json({ count: 31, items: Array.from({ length: 31 }, (_, i) => ({
+          plugin_slug: 'utils', provider_key: 'mock', name: `Action ${i}`, description: `Description ${i}`,
+          key: `action.${i}`, operation: `operation.${i}`,
+        })) })
+      }
+      return json([])
+    }) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id/plugins', component: PluginsView }] })
+    await router.push('/projects/1/plugins')
+    const wrapper = mount(PluginsView, { attachTo: document.body, global: { plugins: [router, createPinia()] } })
+    await flushPromises()
+    const search = wrapper.get<HTMLInputElement>('input[placeholder="Search plugins or services"]')
+    await search.setValue('operation.30')
+    expect(wrapper.text()).toContain('Utilities')
+    const card = wrapper.get('section[aria-label="Utilities"]').element
+    search.element.focus()
+    pending = true
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    expect(wrapper.get('section[aria-label="Utilities"]').element).toBe(card)
+    expect(wrapper.get('input').element).toBe(search.element)
+    expect(document.activeElement).toBe(search.element)
+    release(json({ detail: 'Catalog retry failed' }, 503))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Catalog retry failed')
+    expect(wrapper.get('section[aria-label="Utilities"]').element).toBe(card)
+    expect(search.element.value).toBe('operation.30')
+    expect(document.activeElement).toBe(search.element)
     wrapper.unmount()
   })
 })

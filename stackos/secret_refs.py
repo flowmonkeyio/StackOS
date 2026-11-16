@@ -90,8 +90,17 @@ def materialize_secret_refs(
     return materialized, sensitive_values
 
 
-def redact_secret_values(value: Any, sensitive_values: tuple[str, ...]) -> Any:
-    """Redact exact daemon-resolved values from controlled JSON and text outputs."""
+def redact_secret_values(
+    value: Any,
+    sensitive_values: tuple[str, ...],
+    *,
+    preserve_value: Callable[[str], bool] | None = None,
+) -> Any:
+    """Redact resolved secrets; callers may verify public opaque value identities.
+
+    Preservation applies only to whole string values, never keys or a value that
+    is itself a secret. The predicate must verify ownership, not merely syntax.
+    """
     values = tuple(item for item in sensitive_values if item)
     if not values:
         return value
@@ -104,13 +113,23 @@ def redact_secret_values(value: Any, sensitive_values: tuple[str, ...]) -> Any:
 
     if isinstance(value, Mapping):
         return {
-            redact_text(str(key)): redact_secret_values(item, values) for key, item in value.items()
+            redact_text(str(key)): redact_secret_values(item, values, preserve_value=preserve_value)
+            for key, item in value.items()
         }
     if isinstance(value, list):
-        return [redact_secret_values(item, values) for item in value]
+        return [redact_secret_values(item, values, preserve_value=preserve_value) for item in value]
     if isinstance(value, tuple):
-        return tuple(redact_secret_values(item, values) for item in value)
+        return tuple(
+            redact_secret_values(item, values, preserve_value=preserve_value) for item in value
+        )
     if isinstance(value, str):
+        if (
+            preserve_value is not None
+            and value not in values
+            and any(secret in value for secret in values)
+            and preserve_value(value)
+        ):
+            return value
         return redact_text(value)
     return value
 

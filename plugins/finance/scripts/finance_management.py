@@ -1752,6 +1752,8 @@ def render_report(
             "currency",
             "minor",
             "exponent",
+            "precision_basis",
+            "precision_warning",
             "business_purpose",
             "metric_exclusion",
             "status",
@@ -1806,7 +1808,12 @@ def render_report(
             sign = "-" if minor.startswith("-") else ""
             digits = minor.removeprefix("-").zfill(exponent + 1)
             decimal = f"{digits[:-exponent]}.{digits[-exponent:]}" if exponent else digits
-            return f"{currency} {sign}{decimal}"
+            qualifier = (
+                " (display units only; precision not reviewed)"
+                if value.get("precision_basis") == "currency-convention"
+                else ""
+            )
+            return f"{currency} {sign}{decimal}{qualifier}"
 
         lines = [
             "# Finance period report",

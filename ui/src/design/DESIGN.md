@@ -17,8 +17,11 @@ heights at operational density. Surfaces are differentiated by *material*
    (`bg-bg-surface`, `text-fg-muted`, `border-default`, `bg-accent`,
    `text-success-fg`, `bg-sb-bg`…) or CSS vars (`var(--color-…)`, `var(--sb-…)`).
    Never raw hex, never Tailwind palette colors (`text-slate-500` is banned).
-2. **No Vue watchers** (`watch`, `watchEffect`…) — enforced by
-   `src/no-watch-ui.spec.ts`. Use `computed`, event handlers, lifecycle hooks.
+2. **No Vue watchers** (`watch`, `watchEffect`…) in UI source.
+   Use `computed`, event handlers and lifecycle hooks. This source rule applies
+   independently of filesystem watching, polling or SSE transport changes.
+   Delivery and review use the existing guard from the repository root:
+   `pnpm --dir ui exec vitest run src/no-watch-ui.spec.ts`.
 3. **No unreviewed write operations.** Observer reads and bounded local-admin
    writes use explicit intent allowlists enforced by `src/read-only-ui.spec.ts`.
 4. **Component APIs stay stable.** Props/emits/slots may gain optional

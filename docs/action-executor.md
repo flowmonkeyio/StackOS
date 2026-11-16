@@ -65,6 +65,10 @@ prepared data and `ConnectorAuth` containing only the selected method's resolved
 execution fields and configuration. Provider declarations fix the operation,
 route and schemas; input data cannot replace them. The package receives no
 StackOS ORM objects, credential references, grant state or workflow context.
+For generated actions, the repository also supplies the persisted manifest's
+input schema on the in-process connector request. An adapter can bind that
+schema to the native declaration without duplicating it in route configuration;
+callers cannot override it through action inputs.
 
 The package returns provider facts and plain file descriptors. Host adapters
 resolve and project account-bound references, apply admission and budget rules,
@@ -112,6 +116,11 @@ direct or workflow execution. Automatically derived workflow keys do not replay
 reads. An explicit read `idempotency_key` still replays the selected observation;
 omit it when independently verifying a later provider write. Write-action retry
 keys and deduplication are unchanged.
+Generated-action replay must also match the original scoped inventory entry.
+Changing the selected organization, server or other inventory scope conflicts
+instead of returning the previous scope's result or repeating a mutation.
+Same-scope catalog refreshes preserve replay, including projection updates;
+historical action-call records remain available through the audit APIs.
 
 Refresh/acquisition is serialized per credential in the daemon and committed
 with an `updated_at` compare-and-swap. Concurrent actions therefore reuse the

@@ -90,6 +90,15 @@ def _bridge_workspace_scoped_arguments(
     git_remote_url: str | None,
     client_session_id: str | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if tool_name in {"projectSetup.start", "projectSetup.report"}:
+        out = dict(arguments)
+        error = _bridge_apply_expected_argument(
+            out=out,
+            tool_name=tool_name,
+            field="client_session_id",
+            expected=client_session_id,
+        )
+        return (None, error) if error is not None else (out, None)
     if tool_name not in {
         "workspace.resolve",
         "workspace.startSession",

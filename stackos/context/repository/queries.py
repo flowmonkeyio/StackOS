@@ -5,15 +5,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy import select as sa_select
 from sqlmodel import col, select
 
 from stackos.db.models import ProjectEvent
 from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.tracker.events import (
+    TRACKER_EXECUTION_CHANGED,
+    TRACKER_TASK_CHANGED,
     TRACKER_TASK_STATUS_CHANGED,
+    TRACKER_TASKS_CHANGED,
     TRACKER_TICKET_STATUS_CHANGED,
+    TRACKER_USAGE_CHANGED,
+    tracker_batch_task_filter,
 )
 
 from .schema import ContextItemOut, ContextPageOut, ContextQueryOut, ProjectEventOut
@@ -132,25 +137,47 @@ class ContextQueryMixin(ContextRepositorySupport):
     def tracker_status_timeline(
         self,
         *,
-        project_id: int,
+        project_id: int | None,
         limit: int | None = None,
         after_id: int | None = None,
         task_key: str | None = None,
+        include_total: bool = True,
     ) -> Page[ProjectEventOut]:
-        """Page tracker task/ticket status events for realtime UI streams."""
-        self._require_project(project_id)
+        """Page status events; cursor-only stream polls opt out of the unused total."""
+        if project_id is not None:
+            self._require_project(project_id)
         n = _normalise_limit(limit)
-        event_types = [TRACKER_TASK_STATUS_CHANGED, TRACKER_TICKET_STATUS_CHANGED]
+        event_types = [
+            TRACKER_TASK_CHANGED,
+            TRACKER_TASKS_CHANGED,
+            TRACKER_TASK_STATUS_CHANGED,
+            TRACKER_TICKET_STATUS_CHANGED,
+            TRACKER_EXECUTION_CHANGED,
+            TRACKER_USAGE_CHANGED,
+        ]
         filters: list[Any] = [
-            col(ProjectEvent.project_id) == project_id,
             col(ProjectEvent.event_type).in_(event_types),
         ]
+        if project_id is not None:
+            filters.append(col(ProjectEvent.project_id) == project_id)
         if task_key:
             metadata_json: Any = ProjectEvent.metadata_json
-            filters.append(metadata_json["task_key"].as_string() == task_key)
-        total = _scalar_count(
-            self._s,
-            sa_select(func.count()).select_from(ProjectEvent).where(*filters),
+            filters.append(
+                or_(
+                    and_(
+                        col(ProjectEvent.event_type) != TRACKER_TASKS_CHANGED,
+                        metadata_json["task_key"].as_string() == task_key,
+                    ),
+                    tracker_batch_task_filter(task_key=task_key),
+                )
+            )
+        total = (
+            _scalar_count(
+                self._s,
+                sa_select(func.count()).select_from(ProjectEvent).where(*filters),
+            )
+            if include_total
+            else 0
         )
         stmt = select(ProjectEvent).where(*filters)
         if after_id is not None:
@@ -164,25 +191,61 @@ class ContextQueryMixin(ContextRepositorySupport):
             total_estimate=total,
         )
 
+    def latest_event_id(self, *, project_id: int | None) -> int | None:
+        """Cheap read watermark, distinct from a stream's emitted status cursor."""
+        position = self.event_position(project_id=project_id)
+        return position[0] if position is not None else None
+
+    def event_position(
+        self, *, project_id: int | None, event_id: int | None = None
+    ) -> tuple[int, int] | None:
+        """Read an event ID and its non-reused project identity, latest by default."""
+        if project_id is not None:
+            self._require_project(project_id)
+        stmt = select(ProjectEvent.id, ProjectEvent.project_id)
+        if project_id is not None:
+            stmt = stmt.where(ProjectEvent.project_id == project_id)
+        if event_id is not None:
+            stmt = stmt.where(ProjectEvent.id == event_id)
+        row = self._s.exec(stmt.order_by(col(ProjectEvent.id).desc()).limit(1)).first()
+        return (_required_id(row[0]), row[1]) if row is not None else None
+
     def latest_tracker_status_event_id(
         self,
         *,
-        project_id: int,
+        project_id: int | None,
         task_key: str | None = None,
     ) -> int | None:
-        self._require_project(project_id)
-        event_types = [TRACKER_TASK_STATUS_CHANGED, TRACKER_TICKET_STATUS_CHANGED]
+        if project_id is not None:
+            self._require_project(project_id)
+        event_types = [
+            TRACKER_TASK_CHANGED,
+            TRACKER_TASKS_CHANGED,
+            TRACKER_TASK_STATUS_CHANGED,
+            TRACKER_TICKET_STATUS_CHANGED,
+            TRACKER_EXECUTION_CHANGED,
+            TRACKER_USAGE_CHANGED,
+        ]
         filters: list[Any] = [
-            col(ProjectEvent.project_id) == project_id,
             col(ProjectEvent.event_type).in_(event_types),
         ]
+        if project_id is not None:
+            filters.append(col(ProjectEvent.project_id) == project_id)
         if task_key:
             metadata_json: Any = ProjectEvent.metadata_json
-            filters.append(metadata_json["task_key"].as_string() == task_key)
+            filters.append(
+                or_(
+                    and_(
+                        col(ProjectEvent.event_type) != TRACKER_TASKS_CHANGED,
+                        metadata_json["task_key"].as_string() == task_key,
+                    ),
+                    tracker_batch_task_filter(task_key=task_key),
+                )
+            )
         row = self._s.exec(
-            select(ProjectEvent).where(*filters).order_by(col(ProjectEvent.id).desc()).limit(1)
+            select(ProjectEvent.id).where(*filters).order_by(col(ProjectEvent.id).desc()).limit(1)
         ).first()
-        return _required_id(row.id) if row is not None else None
+        return row
 
     def query_event_context(
         self,

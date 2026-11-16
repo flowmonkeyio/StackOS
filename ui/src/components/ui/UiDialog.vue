@@ -22,6 +22,8 @@ export interface UiDialogProps {
   modelValue: boolean;
   title?: string;
   description?: string;
+  /** Accessible description supplied by content in a body slot. */
+  describedBy?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /** Hide the X. Use only when dismiss requires explicit user action. */
   hideClose?: boolean;
@@ -33,13 +35,17 @@ export interface UiDialogProps {
   scrollBody?: boolean;
   /** Stable viewport-bounded frame for reading and editing detail content. */
   layout?: 'default' | 'detail';
+  /** Optional bounded height for a detail flow; ordinary dialogs keep their size. */
+  detailHeight?: string;
 }
 
 const props = withDefaults(defineProps<UiDialogProps>(), {
   title: undefined,
   description: undefined,
+  describedBy: undefined,
   size: 'md',
   layout: 'default',
+  detailHeight: undefined,
 });
 
 const emit = defineEmits<{
@@ -52,6 +58,7 @@ const dialogRef = ref<HTMLDivElement | null>(null);
 const overlayRef = ref<HTMLDivElement | null>(null);
 const bodyRef = ref<HTMLDivElement | null>(null);
 let overlayEntry: OverlayEntry | null = null;
+let focusObserver: MutationObserver | null = null;
 
 function close() {
   emit('update:modelValue', false);
@@ -59,6 +66,8 @@ function close() {
 }
 
 function removeFromStack() {
+  focusObserver?.disconnect();
+  focusObserver = null;
   closeOverlay(overlayEntry);
   overlayEntry = null;
 }
@@ -88,15 +97,30 @@ function trapFocus(ev: KeyboardEvent) {
     }
     return true;
   });
-  if (!focusables.length) return;
+  if (!focusables.length) {
+    ev.preventDefault();
+    node.focus({ preventScroll: true });
+    return;
+  }
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
   if (ev.shiftKey && (document.activeElement === first || !focusables.includes(document.activeElement as HTMLElement))) {
     last.focus();
     ev.preventDefault();
-  } else if (!ev.shiftKey && document.activeElement === last) {
+  } else if (!ev.shiftKey && (document.activeElement === last || !focusables.includes(document.activeElement as HTMLElement))) {
     first.focus();
     ev.preventDefault();
+  }
+}
+
+function retainFocus() {
+  if (!props.modelValue || !isTopOverlay(overlayEntry)) return;
+  const node = dialogRef.value;
+  const active = document.activeElement;
+  // Disabling the active action can send native focus to BODY. Keep the
+  // mounted frame as a safe target without enabling pending controls.
+  if (node && (!node.contains(active) || (active instanceof HTMLElement && active.matches(':disabled')))) {
+    node.focus({ preventScroll: true });
   }
 }
 
@@ -109,9 +133,14 @@ async function onDialogOpened() {
   applyStackStyles();
   await nextTick();
   if (!isTopOverlay(overlayEntry)) return;
-  const target = dialogRef.value?.querySelector<HTMLElement>('[data-autofocus]')
-    ?? dialogRef.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  const target = dialogRef.value?.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)')
+    ?? dialogRef.value?.querySelector<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+    ?? dialogRef.value;
   target?.focus();
+  if (dialogRef.value) {
+    focusObserver = new MutationObserver(retainFocus);
+    focusObserver.observe(dialogRef.value, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled'] });
+  }
 }
 
 function onDialogClosed() {
@@ -174,9 +203,11 @@ defineExpose({ body: bodyRef, focusTitle });
             v-if="modelValue"
             ref="dialogRef"
             role="dialog"
+            tabindex="-1"
             aria-modal="true"
             :aria-labelledby="titleId"
-            :aria-describedby="descriptionId"
+            :aria-describedby="describedBy ?? descriptionId"
+            :style="layout === 'detail' && detailHeight ? { '--ui-dialog-detail-height': detailHeight } : undefined"
             :class="[
               'ui-dialog z-modal w-full rounded-xl border border-default bg-bg-surface shadow-xl flex flex-col max-h-[calc(100vh-2rem)]',
               sizeClass,
@@ -192,7 +223,7 @@ defineExpose({ body: bodyRef, focusTitle });
                   <h2
                     v-if="title"
                     :id="titleId"
-                    class="ui-dialog__title t-h2 text-fg-strong"
+                    class="ui-dialog__title t-h2 break-words text-fg-strong"
                     tabindex="-1"
                     :title="title"
                   >
@@ -201,7 +232,7 @@ defineExpose({ body: bodyRef, focusTitle });
                   <p
                     v-if="description"
                     :id="descriptionId"
-                    class="text-sm text-fg-muted mt-1"
+                    class="text-sm text-fg-muted mt-1 break-words"
                   >
                     {{ description }}
                   </p>
@@ -250,8 +281,8 @@ defineExpose({ body: bodyRef, focusTitle });
 
 <style scoped>
 .ui-dialog--detail {
-  height: min(880px, calc(100dvh - 48px));
-  max-height: min(880px, calc(100dvh - 48px));
+  height: min(var(--ui-dialog-detail-height, 880px), calc(100dvh - 48px));
+  max-height: min(var(--ui-dialog-detail-height, 880px), calc(100dvh - 48px));
   min-width: 0;
   overflow: hidden;
 }

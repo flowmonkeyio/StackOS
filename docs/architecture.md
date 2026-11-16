@@ -88,6 +88,130 @@ grant policy, examples, and agent-facing guidance once. MCP tools, generic REST
 operation calls, and CLI `ops` commands are adapters over the same operation
 spec.
 
+## Optional Task Delivery
+
+`tracker.startDelivery` hands an independently prepared tracker task to the
+existing daemon scheduler. Its generic dependency scan traverses all remaining
+ready work without workflow phase-name routing. Ordinary tickets use delivery
+and independent exact-candidate review; valid scoped ordinary rejections permit
+up to three repair passes after the initial delivery, using the same native
+delivery/review sessions and a separate descendant source commit for each pass.
+Explicit requeue preserves the consumed repair count and historical sessions;
+integration-origin corrections follow the existing
+[repair-budget contract](task-tracker.md#automated-task-delivery). Workflow mirrors
+execute frozen contracts through existing selected roles after accepted children;
+RunPlanRepository alone records mirror/plan/run lifecycle. Child approval never
+substitutes for integration proof.
+
+Assigned automatic verifiers/reviewers may use existing tracker operations for
+scoped corrections on owning tickets, preserving failed proof, merged context,
+sessions, attempts and consumed repair allowance. After checks and other affected
+actions finish, `tracker.reopen` at the earliest affected bound gate is the final
+mutation, followed immediately by a truthful `repair` return. The runner validates
+the native result, retains superseded observations and rescans persisted state;
+it alone resumes original sessions. Fresh correction outranks historical approval,
+and corrected source requires independent exact descendant review. Unsupported
+or no-progress repair and actual execution errors stop; agents never self-accept,
+claim/record steps or dispatch. See the
+[bounded correction contract](task-tracker.md#agent-owned-automatic-corrections).
+
+Task metadata holds the selected harness, project directory, named project-agent
+instruction packets, and execution progress. Canonical tracker briefs,
+dependencies, evidence, and completion rollup remain the work-state owners.
+There is no additional table or scheduler. The initial memory job continues
+after the submitting process exits but does not resume after a daemon restart.
+
+`stackos.host_mcp` owns the shared internal `run_agent` entry point through the
+same host registry and capability catalog used by Overview. Harness/model choices
+come from project defaults in `TaskTracker.config_json.delivery` and role-merged
+task overrides, frozen at handoff. The planner supplies adapted instructions, so
+launch requires no particular agent-file layout. Defaults are configured through
+local-admin REST-only `tracker.configureDelivery`; reviewed adoption is manual
+per project, preserves other settings and proves a fresh snapshot/prompt. Source
+edits do not update saved instructions, installed runtimes or frozen jobs. No
+synchronizer or cross-project rollout exists. Main retains scope admission and
+final claims; terminal-managed delivery keeps its sole-writer contract.
+
+## Request-Owned Native Execution
+
+`host_mcp.service.run_agent` accepts either project/task/ticket attribution or
+project/request attribution, exclusively. Request-only execution uses
+`AgentRequestExecution` with a daemon-held claim token and session factory; it
+creates no tracker records or run plan. The service records the actual admitted
+launch options and caller context in `AgentRequest.metadata_json.native_execution`
+through `AgentRequestRepository` before invoking the native adapter. Claim tokens
+are never part of that snapshot. Missing ownership or failed admission prevents
+native launch.
+
+The existing active invocation registry owns live thread identity, process control
+and counters. The repository retains the thread ID when the native host first
+announces it, so a later daemon crash does not erase that identity.
+`active_request_execution(project_id, request_id)` reads that
+transient lifetime. Request counters are excluded from task/ticket provisional
+statistics. The existing five-second collector verifies the exact registered
+owner and renews its repository lease only near expiry. Renewal and native exit
+share the launch lock, acquired before the registry lock; a collector observation
+cannot become stale between its ownership check and renewal. A live renewal
+failure records cancellation before completion, with process stopping outside the
+locks. Cancellation and exit fence renewal and late session callbacks. An admitted
+request cannot be reclaimed, released or prepared by a different runner even after
+its lease expires; an interrupted occurrence remains unresolved for explicit
+inspection, with no replay.
+
+At native exit the service persists one final native result, identity, measured
+usage and bounded samples through the same repository owner before retiring the
+registry snapshot. `AgentRequestRepository.execution_evidence` copies registry
+observation before reading SQL, covering the native-exit handoff without reporting
+a finished process as live; committed final evidence wins over an older copy.
+Counters come from the adapter, never the agent's result body;
+repeated checkpoints replace the invocation contribution. The controller still
+interprets the domain result and calls the existing request `complete` operation.
+Resolution requires successful native terminal evidence; cancellation, missing
+identity or an unobserved exit cannot become success. Failed work can be explicitly
+completed as failed with the original claim. A persistence failure propagates and
+leaves the request unresolved rather than reporting success.
+
+Request cancellation returns only the exact project/request's managed handles for
+the caller to stop. Daemon shutdown stops owned request processes and retains the
+registry until their final handoff. Project cleanup's existing native-invocation
+blocker also covers these calls. No second process registry or polling loop exists.
+
+## Native Desktop Schedule Admission
+
+Electron main owns one authenticated availability stream through
+`desktop/src/service.js`, independently of BrowserWindow and notifications.
+The REST-only `desktop.availability` operation declares the dedicated POST
+stream at `/api/v1/desktop/availability`; browser console tokens, MCP and CLI
+cannot advertise native presence. Suspend and Quit close the connection;
+resume/start and transport reconnection open a new one. No presence field,
+heartbeat, lease, or occurrence replay is persisted.
+
+`WorkflowScheduleRuntime` holds the current connection and generation in daemon
+memory and uses the existing APScheduler memory jobstore. One stable job ID per
+schedule carries its exact next cron instant in a date trigger with one-second
+misfire tolerance. Execution or misfire rearms strictly after the current time.
+Losing availability removes only these workflow timers. Superseded callbacks,
+late firings and old stream cleanup cannot admit work or clear newer presence.
+Schedule mutations reconcile the affected timer; admission re-reads the current
+enabled configuration and fences edits even during asynchronous preflight.
+
+The occurrence-launch consumer receives `(row, due_utc, admit)`. It must call
+`admit()` after any awaited readiness checks, immediately before creating work,
+without an intervening await. Each occurrence creates and claims one AgentRequest
+and calls the shared native host service once for a project main-agent thread.
+The one-second due-time window applies through initial request admission only.
+Native registration and spawn retain the admitted generation/configuration and
+project-folder fences without expiring valid work during native preparation.
+Goal and optional workflow are context for that agent, which reads current project
+and effective workflow guidance and decides how to use ordinary tools/approvals.
+The scheduler does not create or advance plans or dispatch task-delivery roles.
+Project setup owns the folder; only host_key inherits from explicit schedule,
+project delivery defaults, then the native default. Specialist instructions/model
+pins do not become main-agent settings. Request-first history includes actual
+native results/usage with optional same-project real plan links, without tokens
+or launch snapshots. Unresolved requests and linked unfinished plans prevent
+overlap independently of leases; blocked/crashed work is never silently retried.
+
 ## Data Model
 
 Core StackOS tables include:
@@ -98,6 +222,7 @@ Core StackOS tables include:
 - `auth_providers`, `credential_accounts`, `credentials`,
   `credential_scopes`, `credential_usage_events`, `credential_refresh_events`
 - `payload_secrets`
+- `patterns` (installation-wide, without `project_id`)
 - `resources`, `resource_records`
 - `artifacts`
 - `workflow_templates`, `workflow_template_versions`,
@@ -113,6 +238,36 @@ Core StackOS tables include:
 Plugin tables may exist for first-party domains when they provide durable
 domain resources. Those tables are plugin-owned and should not drive core UI
 or MCP design.
+
+`PatternRepository` owns the shared local Patterns catalog in the existing
+database. It stores a stable ID/key, title, summary, Markdown body, freeform tags,
+timestamps and optimistic revision. Project resources remain project-scoped;
+patterns are not resources under a hidden project. Whole-database backup and
+recovery preserve them, and project cleanup leaves them intact. The migration
+creates an empty table. Trusted package assets carry stable bundled IDs and a
+version; the production bundle may be empty. After migration, each daemon startup
+invokes one refresh in this same repository. List/detail reads never refresh.
+The repository hashes normalized title, summary, tags and exact Markdown body,
+excluding key, timestamps and provenance. It stores the current content hash and
+last-applied shipped hash/version; only a matching baseline permits an atomic
+revision-checked replacement. A skipped customization retains its entire record
+and prior baseline. Ordinary saves update the content hash through the same
+revision boundary and cannot set trusted fields. Keys/titles never confer bundled
+identity; collisions are preserved with bounded counts. Explicit bundled deletion
+removes the content and retains only its ID in `pattern_deletions`. Package removal
+does not remove local entries. Content and markers survive whole-DB recovery and
+project deletion. There is no merge, reset or history subsystem.
+The additive catalog migrations resume after partial SQLite DDL or a lost revision
+stamp without rebuilding records or resetting ID high-water marks. Legacy
+create-all recovery stamps the pre-catalog baseline and runs those same migrations
+before claiming head, including when an older catalog table already exists.
+The public-key unique index is recovered independently of table creation;
+revision `0046_pattern_key_index` also repairs already-stamped older catalogs by
+adding only that missing index, preserving records and identity high-water.
+`pattern.list/get/upsert/delete` are registered once and use the existing MCP,
+generic HTTP, CLI and browser-safe operation adapters. Lists select summary
+columns only; detail loads the body. No semantic content validation or automatic
+project application occurs.
 
 ## MCP And Permissions
 

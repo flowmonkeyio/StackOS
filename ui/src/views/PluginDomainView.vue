@@ -1,0 +1,248 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { SchemaWorkflowTemplateSummaryOut } from '@/api'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
+import { UiButton, UiCallout, UiPageShell, UiSectionHeader, UiSkeleton } from '@/components/ui'
+import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
+import { projectIdFromRoute } from '@/lib/stackos/projectNavigation'
+import { domainPage, isProjectPluginEnabled } from '@/lib/stackos/pluginPage'
+import { useStackOsCatalogStore } from '@/stores/plugins'
+import DomainContentSection from './plugin-domain/DomainContentSection.vue'
+import { workflowLocation } from './plugin-domain/viewModel'
+
+const route = useRoute()
+const router = useRouter()
+const { projectId } = useProjectRouteScope(route)
+const slug = computed(() => String(route.params.pluginSlug ?? ''))
+const catalog = useStackOsCatalogStore()
+const plugin = computed(() => catalog.pluginProjectId === projectId.value
+  ? catalog.plugins.find(item => item.slug === slug.value) : undefined)
+const enabled = computed(() => plugin.value && isProjectPluginEnabled(plugin.value))
+const page = computed(() => domainPage(plugin.value))
+const contentSections = computed(() => page.value.sections.filter((section): section is 'saved' | 'files' => section !== 'workflows'))
+const workflowRows = ref<SchemaWorkflowTemplateSummaryOut[]>([])
+const workflowScope = ref<() => boolean>(() => false)
+const workflows = computed(() => plugin.value && workflowScope.value() ? workflowRows.value : [])
+const acceptedWorkflows = ref(false)
+const workflowsLoaded = computed(() => plugin.value && workflowScope.value() && acceptedWorkflows.value)
+const loadingSections = computed(() => plugin.value ? page.value.sections : ['workflows', 'saved'])
+const loading = ref(true)
+const initialized = ref(false)
+const loadError = ref('')
+const error = computed(() => catalog.pluginError ?? loadError.value)
+const contentReaders = ref<InstanceType<typeof DomainContentSection>[]>([])
+let generation = 0
+async function load(nextProjectId = projectId.value, nextSlug = slug.value) {
+  const current = ++generation
+  const mountedReaders = [...contentReaders.value]
+  loading.value = true
+  loadError.value = ''
+  if (!Number.isSafeInteger(nextProjectId)) { loading.value = false; return }
+  const ready = await catalog.refreshPlugins(nextProjectId)
+  if (current !== generation) return
+  if (ready) {
+    if (!enabled.value || !page.value.sections.includes('workflows')) {
+      workflowRows.value = []
+      acceptedWorkflows.value = false
+    }
+  }
+  if (!ready) {
+    loadError.value = catalog.pluginError ?? 'Plugin availability could not be refreshed.'
+  }
+  else if (enabled.value && page.value.sections.includes('workflows')) {
+    const isCurrentScope = catalog.capturePluginScope(nextProjectId)
+    try {
+      const result = await apiFetch<{ templates: SchemaWorkflowTemplateSummaryOut[] }>(`/api/v1/projects/${nextProjectId}/workflow-templates?plugin_slug=${encodeURIComponent(nextSlug)}`)
+      if (current === generation && isCurrentScope()) {
+        workflowRows.value = result.templates.filter(item => item.plugin_slug === nextSlug)
+        workflowScope.value = isCurrentScope
+        acceptedWorkflows.value = true
+      }
+    } catch (err) {
+      if (current === generation && isCurrentScope()) {
+        loadError.value = formatApiError(err, 'Failed to load workflows')
+        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) {
+          workflowRows.value = []
+          acceptedWorkflows.value = false
+        }
+      }
+    }
+  }
+  if (current !== generation) return
+  loading.value = false
+  initialized.value = true
+  await nextTick()
+  if (current !== generation) return
+  // New sections initialize themselves. Refresh only the retained instances,
+  // preserving their filters and reading state without a prop observer.
+  await Promise.all(contentReaders.value.filter(reader => mountedReaders.includes(reader)).map(reader => reader.refresh()))
+}
+function enterScope(nextProjectId: number, nextSlug: string) {
+  workflowRows.value = []
+  acceptedWorkflows.value = false
+  initialized.value = false
+  void load(nextProjectId, nextSlug)
+}
+const domainRoute = route.matched[route.matched.length - 1]
+const removeRouteListener = router.afterEach((to, from, failure) => {
+  if (failure) return
+  if (!domainRoute || !to.matched.includes(domainRoute)) { generation++; return }
+  const nextProjectId = projectIdFromRoute(to) ?? Number.NaN
+  const nextSlug = String(to.params.pluginSlug ?? '')
+  if (nextProjectId !== projectIdFromRoute(from) || nextSlug !== String(from.params.pluginSlug ?? '')) enterScope(nextProjectId, nextSlug)
+})
+enterScope(projectId.value, slug.value)
+onBeforeUnmount(() => { generation++; removeRouteListener() })
+</script>
+
+<template>
+  <UiPageShell class="domain-page">
+    <ProjectPageHeader
+      :project-id="projectId"
+      :title="plugin?.name ?? 'Domain'"
+      :description="page.description"
+    >
+      <template #actions>
+        <UiButton
+          icon-left="refresh"
+          :loading="loading"
+          @click="load()"
+        >
+          Refresh
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
+    <div data-domain-status class="min-h-5 text-xs text-fg-muted" role="status">
+      <details v-if="error && enabled">
+        <summary class="focus-ring cursor-pointer rounded-sm">Domain reads need refresh</summary>
+        <UiCallout tone="warning" class="mt-2">
+          {{ error }} <UiButton size="sm" @click="load()">Retry</UiButton>
+        </UiCallout>
+      </details>
+      <p v-else>{{ loading ? initialized ? 'Refreshing domain…' : 'Loading domain…' : error ? 'Domain read failed.' : 'Domain content current.' }}</p>
+    </div>
+    <UiCallout
+      v-if="error && !enabled"
+      tone="danger"
+    >
+      {{ error }} <UiButton
+        size="sm"
+        @click="load()"
+      >
+        Retry
+      </UiButton>
+    </UiCallout>
+    <div
+      v-if="loading && !initialized"
+      aria-label="Loading domain"
+      aria-busy="true"
+      class="min-w-0 space-y-7"
+    >
+      <div v-for="section in loadingSections" :key="section" aria-hidden="true" class="space-y-4 py-5">
+        <UiSkeleton width="9rem" :height="20" />
+        <div class="overflow-hidden rounded-lg border border-default bg-bg-surface">
+          <div v-for="row in 2" :key="row" class="domain-workflow">
+            <UiSkeleton width="65%" />
+            <UiSkeleton width="85%" />
+          </div>
+        </div>
+      </div>
+    </div>
+    <UiCallout
+      v-else-if="!enabled && !error"
+      tone="neutral"
+    >
+      {{ plugin ? 'This plugin is disabled for this project.' : 'This plugin is unavailable for this project.' }}
+    </UiCallout>
+    <template v-else-if="enabled">
+      <section
+        v-if="page.sections.includes('workflows')"
+        class="domain-section"
+        aria-label="Workflows"
+      >
+        <UiSectionHeader
+          title="Workflows"
+          as="h2"
+        />
+        <div
+          v-if="workflows.length"
+          class="domain-workflows"
+        >
+          <div
+            v-for="workflow in workflows"
+            :key="`${workflow.source}:${workflow.key}`"
+            class="domain-workflow"
+          >
+            <RouterLink
+              class="focus-ring rounded-sm font-semibold text-fg-link hover:underline"
+              :to="workflowLocation(projectId, slug, workflow.key)"
+              :title="workflow.name"
+            >
+              {{ workflow.name }}
+            </RouterLink>
+            <p>{{ workflow.description }}</p>
+          </div>
+        </div>
+        <p
+          v-else-if="workflowsLoaded"
+          class="text-sm text-fg-muted"
+        >
+          No workflows available for this domain.
+        </p>
+      </section>
+      <DomainContentSection
+        v-for="section in contentSections"
+        ref="contentReaders"
+        :key="`${projectId}:${slug}:${section}`"
+        :project-id="projectId"
+        :plugin-slug="slug"
+        :kind="section"
+      />
+      <div
+        v-if="!page.sections.length"
+        class="grid gap-3 py-5 text-sm text-fg-muted"
+      >
+        <p>Find this plugin's services in setup and its saved information and files in Library.</p>
+        <div class="flex flex-wrap gap-4">
+          <RouterLink
+            class="focus-ring rounded-sm text-fg-link hover:underline"
+            :to="`/projects/${projectId}/plugins`"
+          >
+            Browse plugins and services
+          </RouterLink>
+          <RouterLink
+            class="focus-ring rounded-sm text-fg-link hover:underline"
+            :to="`/projects/${projectId}/connections?section=services`"
+          >
+            Manage connections
+          </RouterLink>
+          <RouterLink
+            class="focus-ring rounded-sm text-fg-link hover:underline"
+            :to="{ path: `/projects/${projectId}/library`, query: { tab: 'saved', plugin: slug } }"
+          >
+            Saved information
+          </RouterLink>
+          <RouterLink
+            class="focus-ring rounded-sm text-fg-link hover:underline"
+            :to="{ path: `/projects/${projectId}/library`, query: { tab: 'files', plugin: slug } }"
+          >
+            Files
+          </RouterLink>
+        </div>
+      </div>
+    </template>
+  </UiPageShell>
+</template>
+
+<style scoped>
+.domain-page :deep(.ui-page-header h1) { white-space: normal; overflow-wrap: anywhere; }
+.domain-section { min-width: 0; display: grid; gap: 16px; padding: 20px 0 16px; }
+.domain-section :deep(.ui-section-header) { margin-bottom: 0; }
+.domain-workflows { border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
+.domain-workflow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 20px; align-items: center; padding: 14px 16px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.domain-workflow + .domain-workflow { border-top: 1px solid var(--color-border-subtle); }
+.domain-workflow p { color: var(--color-fg-muted); }
+@media (max-width: 900px) { .domain-workflow { grid-template-columns: minmax(0, 1fr); gap: 8px; } }
+</style>

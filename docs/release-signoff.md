@@ -26,6 +26,13 @@ The signoff UI build waits for all checks to finish because
 it rewrites the committed bundle that wheel packaging tests read. UI dependency
 preparation uses the frozen lockfile and runs once per Make invocation, shared
 by the UI test and build targets. Standalone UI targets also prepare their deps.
+Preparation streams pnpm's diagnostics and reports its exit status on failure;
+it does not retry with an unlocked install or another package manager. A failed
+`ui-deps` prerequisite stops its consuming UI checks. Finish dependency setup
+before running checks against that environment; do not run a separate install
+concurrently with signoff. For desktop checks, the standalone Node scaffold
+doctor and the complete `make desktop-doctor` have different prerequisites; see
+[desktop verification](./desktop-distribution.md#verification).
 
 Use one complete gate for an unchanged candidate. `make test` runs the same
 Python suite and UI unit tests; running it and then `make signoff` in separate
@@ -41,6 +48,61 @@ transport, and MCP tests remain separate where they detect distinct failures,
 including grants, credential handling, response files, and audit persistence.
 Do not remove those assertions or skip slow tests to meet the runtime budget.
 
+Closeout uses the existing [incident resolution method](./feedback-resolution-spec.md#learn-during-current-delivery)
+to link selected failures and useful review findings to reviewed changes, adoption
+and later observation. Required current defects remain blockers. Retain decisive
+facts and refs in receipts; keep temporary logs, captures and QA scratch outside
+Git while maintaining intentional product assets and regressions. Source review,
+saved-instruction readback, isolated native consumption and primary installed
+activation need their own evidence. Pending later use stays pending; one fixture
+cannot establish production prevention. Final integrated signoff remains required
+even when ticket-local guidance checks pass.
+
+Classify each failure against the assigned criteria, affected consumers and owning
+gate. Pre-existing alone does not establish that a defect is unrelated. An ordinary
+ticket whose criteria pass can return candidate-ready and receive independent
+approval when an extra full-suite check exposes an unrelated defect. Preserve the
+failed command, exact candidate and evidence in the existing receipt and nonblocking
+followups; do not turn it into that ticket's failure, rejection, blocker, dependency
+or required repair. A followup grants no authority to fix or create work; separate
+repair authorization remains explicit. Necessary corrections without an owner or
+authority remain unresolved at the affected gate and route to main.
+
+Relevant failed or unavailable required checks still prevent acceptance at their
+owning gate. If complete signoff is required by the current gate, a failed check
+prevents final approval. Never describe a failed signoff command as passed or
+retroactively fail unrelated accepted children. Preserve the observation and route
+its required correction through existing ownership, without a new scheduler or
+weakened final-signoff requirement.
+
+Choose ticket-local checks from the requested flow, actual directly affected
+consumers and relevant failure/recovery transitions. Stop expanding after those
+obligations are answered unless new evidence, a material change or a mandatory
+gate warrants more. This does not replace the final integrated signoff above.
+Judge a command by its actual exit status, completion and unhandled errors as
+well as assertions: green assertions with a nonzero exit or unhandled error are
+failed proof. Repair affected code, fixtures or setup without weakening their
+guarantees, and retain the failed observation when later proof supersedes it.
+
+At each gate, identify evidence executed on the current candidate, unchanged
+proof reused with covered-scope/prerequisite/environment justification, stale
+changed-consumer proof needing rerun and required never-executed checks. Reuse
+does not waive mandatory final signoff. Keep dependency-mutating setup exclusive
+against checks consuming that environment; run readiness checks after the relevant
+transition. Select concrete commands here and in affected local docs, not core
+runtime policy. A bounded guidance exercise records explicit source consumption
+and observed actions; phrase checks or hashes alone do not establish behavior.
+
+For affected authorization boundaries, prove the legitimate owner call and the
+denied foreign call through the real caller, including the response envelope and
+absence of unauthorized mutation. A reproduced invariant failure requires a
+bounded check of other active producers, retained consumers and implicated recovery
+transitions. Keep distinct rules separate: formatter or transport checks cannot
+establish the Vue watcher prohibition, and passing UI tests cannot establish Python
+lint. An absent required check stays not reviewed until executed. Record why a
+reject or rerun was needed; useful rejects, changed evidence and newly covered
+obligations are not token waste merely because attempts or totals increased.
+
 ## Test Runtime And Maintenance
 
 The complete automated signoff should stay below ten minutes on a prepared
@@ -55,6 +117,33 @@ addopts = ["-ra", "--strict-markers", "-n", "auto", "--maxprocesses=6", "--dist=
 ```
 
 Concurrency is a throughput setting, not a substitute for fixing repeated work.
+Run source tests through pytest so `tests/conftest.py` clears inherited
+`STACKOS_DATA_DIR`, `STACKOS_HOST`, `STACKOS_LOG_LEVEL`, `STACKOS_PACKAGED_CLI`,
+`STACKOS_PORT`, and `STACKOS_STATE_DIR` before each test's fixtures run:
+
+```bash
+env -u PYTHONHOME -u PYTHONPATH .venv/bin/python -m pytest tests/ -q
+```
+
+Tests that need non-default settings set them explicitly through fixtures,
+`monkeypatch`, or `Settings` arguments and use disposable data/state directories
+or a sandbox HOME. The reset applies only to source tests; production host
+subprocesses still inherit their service settings and CLI PATH context.
+
+For a bounded subprocess timeout, preserve the failing command, candidate,
+stdout/stderr and suite context before diagnosis. The Finance evidence FIFO
+regression in `tests/integration/test_routes/test_finance_project_storage.py`
+has a two-second alarm around the evidence read and a separate 15-second
+subprocess deadline that includes imports and fixture setup. A subprocess
+timeout alone does not identify a blocked evidence read. Check the exact
+variants in isolation and, when needed, once in the original suite context
+with stable dependencies and the normal worker cap. An isolated pass does not
+turn a failed signoff into a pass. Retain both safeguards; change the harness
+only for a demonstrated cause, and route a recurring unexplained timeout to
+the existing test owner with stage/timing evidence rather than raising the
+deadline blindly. Finance functionality outside that reproduced cause remains
+separately scoped work.
+
 The 2026-10-26 audit removed these costs while retaining distinct failure checks:
 
 | Bottleneck or redundancy | Change and retained proof |
@@ -220,6 +309,78 @@ Use the finance package's [signoff and activation checklist](../plugins/finance/
 for its synthetic-month rehearsal, external custody and selected provider-route
 checks. Passing fixtures proves the package contract, not production activation
 or authorization for live financial work.
+
+## Accepted Sources And Release Identity
+
+Before building a release, the named main integration/release owner reconciles
+the intended accepted source set in the existing release preparation or receipt.
+Ticket completion or the name `main` alone does not establish that set. Record:
+
+- Each admitted ticket/branch, exact accepted commit, independent review ref,
+  required prerequisites and inclusion evidence in the integration candidate.
+- Explicit excluded branches/work, their reason and the operator decision or
+  resume condition. Acceptance elsewhere does not admit an excluded branch.
+- The named integration owner, exact candidate commit, working tree and dirty
+  baseline, plus the owners of build outputs and the shared installed runtime.
+
+Use `git merge-base --is-ancestor <accepted-sha> <candidate-sha>` for each
+accepted merge-preserved source. Exit `1` means missing ancestry; other errors
+mean the check failed to execute. For cherry-picks or conflict resolutions,
+record the accepted-to-integrated commit mapping and independently reviewed
+diff/behavior evidence instead of treating missing ancestry as inclusion.
+Inspect the affected paths and prerequisites for reversions or overwritten fixes;
+ancestry alone cannot prove retained behavior. Reuse unchanged accepted fixes and
+valid proof; resolve omissions with the existing accepted source rather than
+reimplementing it. Main admits sources and resolves integration conflicts, then
+reruns affected proof and review when merged behavior changes.
+
+Execute the existing release path in this order, retaining evidence in that same
+receipt rather than creating another install tracker:
+
+1. Reconcile admitted/excluded sources and freeze the integration candidate.
+2. Run required integrated signoff once on that candidate, including the UI
+   production bundle. Record the resulting commit and generated asset hashes;
+   if generation changes the candidate, bind proof to the final committed state.
+3. Build the payload and package from that verified state using the existing
+   [desktop commands](./desktop-distribution.md#build-commands). Record the
+   source commit, exact command/result, payload `build-info.json` fields
+   (`version`, `buildId`, `builtAt`), produced app/package paths and checksums,
+   and representative packaged source/UI hashes. Build info has no Git commit;
+   the receipt must establish that source-to-artifact link. Version equality
+   alone cannot identify a same-version replacement.
+4. Before replacement, reconcile the produced app's identity and packaged
+   source/UI against that record. A missing accepted source, changed candidate,
+   unexplained artifact difference or mismatched build identity holds release
+   claims and requires affected re-verification.
+5. Only with explicit install authority and a coordinated shared-runtime window,
+   install/repair, restart and reopen the installed app. Execute the lifecycle
+   checks below and in [lifecycle smoke](./lifecycle-smoke-verification.md),
+   including health/doctor, launchd ownership, preserved database/auth/settings
+   and the affected installed UI flow. Read installed build info and compare
+   packaged/served assets to the produced artifact. Record installed identity,
+   commands/results and observations separately from produced identity.
+
+The build owner retains each mutable output until its consuming child process
+finishes: `stackos/ui_dist/`, `desktop/payload/`, generated packaging config and
+`desktop/dist/`. Sequence writers and consumers that share these paths; use
+test-owned isolated outputs where the existing scripts support them. Doctor or
+config tests must not delete another invocation's output. Packaging isolation
+does not authorize parallel installation or ownership of the live daemon.
+
+A source-ready handoff names the reconciled set, exclusions, candidate, proof
+and pending release owner/gates. It does not claim installed-complete. The
+existing release gate owns that claim only after identity reconciliation and
+installed proof; stale or unavailable evidence stays explicit.
+
+For a bounded guidance check, consume this procedure against a known accepted
+change and a candidate deliberately missing it; record the detected omission.
+Then use the reconciled candidate, deliberately mismatch a copied payload build
+identity, and record the hold before any installed-complete claim. Restore the
+matching identity as the safe alternative and confirm unrelated excluded work
+does not become required. Use read-only history and disposable evidence copies;
+do not rebuild accepted fixes, replace the app or restart shared processes for
+this exercise. Record source refs, actual commands/observations and substitution
+limits. This proves the reconciliation method, not a new live installation.
 
 ## Execution Evidence And Shared Runtime
 

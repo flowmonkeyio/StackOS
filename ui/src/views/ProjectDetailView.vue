@@ -23,7 +23,7 @@ const project = computed(() => projects.getById(projectId.value))
 
 // The Home console (project-home) renders its own page chrome, so this shell
 // steps aside for it and only wraps the configuration tabs.
-const isHome = computed<boolean>(() => route.name === 'project-home')
+const isHome = computed<boolean>(() => route.name === 'project-home' || route.name === 'project-setup')
 
 const activeKey = computed<string>(() => {
   const name = String(route.name ?? '')
@@ -49,11 +49,11 @@ const PAGE_COPY = {
       'Project state, enabled plugins, reusable templates, run plans, resources, and recent runs.',
   },
   schedules: {
-    title: 'Schedules',
+    title: 'Automations',
     description: 'Recurring project operations and scheduled maintenance.',
   },
   'cost-budget': {
-    title: 'Cost & Budget',
+    title: 'Spend',
     description: 'Monthly spend, vendor caps, alerts, and request-rate controls.',
   },
 } satisfies ProjectConfigurationPageCopy

@@ -2,8 +2,246 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal
+import re
+from dataclasses import dataclass, field, replace
+from typing import Any, Literal, TypedDict
+
+from jsonschema import ValidationError, validate
+
+AgentSandbox = Literal["read-only", "workspace-write", "normal"]
+
+
+class ModelObservation(TypedDict):
+    """Native evidence for one invocation, separate from requested launch.model.
+
+    Ambiguous evidence never permits selection fallback or allocation of mixed
+    totals. Absence permits selection-only attribution, without claiming native
+    observation. Unsupported hosts leave this absent.
+    """
+
+    status: Literal["observed", "ambiguous"]
+    model: str | None
+    source: Literal["codex.turn_context"]
+    session_id: str
+
+
+def normalize_model_observation(
+    value: Any, *, session_id: str | None, host_key: str | None
+) -> ModelObservation | None:
+    """Allowlist structured evidence only; a requested model cannot supply it."""
+    if (
+        not isinstance(value, dict)
+        or host_key != "codex"
+        or not session_id
+        or value.get("session_id") != session_id
+        or value.get("source") != "codex.turn_context"
+        or value.get("status") not in ("observed", "ambiguous")
+    ):
+        return None
+    model = value.get("model")
+    if value["status"] == "observed":
+        if (
+            not isinstance(model, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,199}", model) is None
+            or looks_secretish(model)
+        ):
+            return None
+    elif model is not None:
+        return None
+    return {
+        "status": value["status"],
+        "model": model,
+        "source": "codex.turn_context",
+        "session_id": session_id,
+    }
+
+
+@dataclass(frozen=True)
+class AgentRunResult:
+    """One host process result; the caller interprets the agent's decision."""
+
+    exit_code: int | None
+    thread_id: str | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    usage: dict[str, Any] | None = None
+    model_observation: ModelObservation | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.exit_code == 0 and self.error is None and self.result is not None
+
+
+def validate_agent_result(
+    result: AgentRunResult, schema: dict[str, Any], host: str
+) -> AgentRunResult:
+    """All native adapters enforce the same caller-supplied result contract."""
+    if result.result is None and (result.error is not None or result.exit_code != 0):
+        return result
+    try:
+        validate(result.result, schema)
+    except ValidationError as exc:
+        detail = f"Invalid {host} result: {exc}"
+        return replace(
+            result, result=None, error=f"{result.error}\n{detail}" if result.error else detail
+        )
+    return result
+
+
+def usage_snapshot(
+    scope: Any,
+    basis: Any,
+    input_count: Any,
+    output_count: Any,
+    total: Any = None,
+    *,
+    cache_read: Any = None,
+    cache_write: Any = None,
+    reasoning: Any = None,
+) -> dict[str, Any] | None:
+    """Safe native counters, independent of the agent-authored result contract."""
+    if not isinstance(basis, str) or basis not in {"invocation", "session"}:
+        return None
+    if not isinstance(scope, str) or not scope:
+        return None
+    if any(type(n) is not int or n < 0 for n in (input_count, output_count)):
+        return None
+    if total is None:
+        total = input_count + output_count
+    if type(total) is not int or total != input_count + output_count:
+        return None
+    # Details are subsets, independently available from the valid parent counts.
+    details = {"cache_read": cache_read, "cache_write": cache_write, "reasoning": reasoning}
+    for key, count in details.items():
+        parent = output_count if key == "reasoning" else input_count
+        if type(count) is not int or not 0 <= count <= parent:
+            details[key] = None
+    if (
+        details["cache_read"] is not None
+        and details["cache_write"] is not None
+        and details["cache_read"] + details["cache_write"] > input_count
+    ):
+        details["cache_read"] = details["cache_write"] = None
+    return {
+        "unit": "tokens",
+        "scope": scope,
+        "basis": basis,
+        "snapshot": {"input": input_count, "output": output_count, "total": total, **details},
+    }
+
+
+def normalize_usage(
+    usage: Any, *, session_id: str | None, resumed: bool, previous: Any = None
+) -> dict[str, Any]:
+    """Measure one invocation; cumulative counters require a compatible baseline.
+
+    Only measured is additive. A missing legacy baseline still retains a usable
+    snapshot for the next same-session delta. Never bridge an unobserved call.
+    """
+    unavailable = {"status": "unavailable", "reason": "missing_or_unsupported", "measured": None}
+    if not isinstance(usage, dict):
+        return unavailable
+    snapshot = usage.get("snapshot")
+    if not isinstance(snapshot, dict) or type(snapshot.get("total")) is not int:
+        return {**unavailable, "reason": "malformed"}
+    safe = usage_snapshot(
+        usage.get("scope"),
+        usage.get("basis"),
+        snapshot.get("input"),
+        snapshot.get("output"),
+        snapshot.get("total"),
+        cache_read=snapshot.get("cache_read"),
+        cache_write=snapshot.get("cache_write"),
+        reasoning=snapshot.get("reasoning"),
+    )
+    if safe is None or usage.get("unit") != "tokens":
+        return {**unavailable, "reason": "malformed"}
+    measured = safe["snapshot"].copy()
+    reason = None
+    if safe["basis"] == "session":
+        if not isinstance(session_id, str) or not session_id.strip():
+            reason = "missing_session"
+        elif resumed:
+            if not isinstance(previous, dict) or any(
+                previous.get(key) != value
+                for key, value in {
+                    **{k: safe[k] for k in ("unit", "basis", "scope")},
+                    "session_id": session_id,
+                }.items()
+            ):
+                reason = "missing_baseline"
+            else:
+                baseline = previous.get("snapshot")
+                if not isinstance(baseline, dict) or any(
+                    type(baseline.get(k)) is not int or baseline[k] < 0
+                    for k in ("input", "output", "total")
+                ):
+                    reason = "missing_baseline"
+                else:
+                    prior = usage_snapshot(
+                        safe["scope"],
+                        safe["basis"],
+                        baseline["input"],
+                        baseline["output"],
+                        baseline["total"],
+                        cache_read=baseline.get("cache_read"),
+                        cache_write=baseline.get("cache_write"),
+                        reasoning=baseline.get("reasoning"),
+                    )
+                    if prior is None:
+                        reason = "invalid_delta"
+                    else:
+                        counts = {
+                            k: n - prior["snapshot"][k]
+                            if n is not None and prior["snapshot"][k] is not None
+                            else None
+                            for k, n in measured.items()
+                        }
+                        delta = usage_snapshot(
+                            safe["scope"],
+                            safe["basis"],
+                            counts["input"],
+                            counts["output"],
+                            counts["total"],
+                            cache_read=counts["cache_read"],
+                            cache_write=counts["cache_write"],
+                            reasoning=counts["reasoning"],
+                        )
+                        if delta is None:
+                            reason = "invalid_delta"
+                        else:
+                            measured = delta["snapshot"]
+    return {
+        **safe,
+        "session_id": session_id,
+        "status": "unavailable" if reason else "measured",
+        "reason": reason,
+        "measured": None if reason else measured,
+    }
+
+
+@dataclass(frozen=True)
+class AgentCapabilities:
+    """Native execution facts attached to the existing host registry."""
+
+    sandboxes: tuple[AgentSandbox, ...] = ()
+    review_sandbox: AgentSandbox | None = None
+    models: tuple[str, ...] = ()
+    recommended_model: str | None = None
+    # Only verified model/effort pairs. Unknown/custom/native-default models
+    # retain native reasoning rather than guessing their capabilities. Existing
+    # Codex source settings have a separate native syntax contract; this map
+    # constrains new explicit selections, not legacy source-file parsing.
+    reasoning_efforts: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    custom_models: bool = False
+    provider_selection: bool = False
+    profile_selection: bool = False
+    requires_provider_model: bool = False
+    auth_status_command: tuple[str, ...] = ()
+    notes: str = "Headless agent execution is unsupported."
+    sources: tuple[str, ...] = ()
+    checked_on: str = "2026-11-05"
+
 
 HostMcpStatus = Literal[
     "absent",
@@ -61,10 +299,12 @@ class HostMcpResult:
     setup_policy: HostMcpSetupPolicy | None = None
     target: dict[str, str] | None = None
     targets: list[dict[str, str]] = field(default_factory=list)
+    agent_execution: dict[str, Any] = field(default_factory=dict)
 
     def to_info(self) -> dict[str, object]:
         return {
             "host_key": self.host_key,
+            "agent_execution": self.agent_execution,
             "surface": self.surface,
             "status": self.status,
             "message": self.message,

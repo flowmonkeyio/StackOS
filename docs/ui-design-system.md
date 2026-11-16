@@ -49,16 +49,28 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 - Sidebar: 256px desktop rail.
 - The project picker directly precedes the scrollable project navigation.
-  **Operate** leads (Home, Attention, Work, Activity), then **Configure**
-  (Connections, Automation, Spend, Plugins), **Execution**, **Catalog**,
-  **Data & evidence**, and enabled plugin groups.
-- A separated **App** footer holds Overview, Accounts, and Backups outside the
-  project navigation scroll, above the theme control. All three are available
+  Home, Work, Automations and Library lead without a category heading. **Setup**
+  contains Connections, Spend, Agents and Plugins. The following **Plugins**
+  group contains direct enabled-domain links, including the existing Finance
+  destination. Domain links never expand into Data/Workflows submenus.
+- A separated **App** footer holds Overview, Accounts, Backups, and Patterns outside the
+  project navigation scroll, above the theme control. All four are available
   without a project. Backups retains the global `/setup` route.
   Domain-specific surfaces are plugin contributions or generic resource links,
-  not new top-level product lanes. The root `/` is the project portfolio +
-  local system status; `/projects/:id` is the operations console (Home). See
+  not new top-level product lanes. The root `/` shows local system status and
+  active work across projects; `/projects/:id` is the project Home. Both retain
+  existing Usage followed by Connected tools. See
   [`ui-redesign-direction.md`](./ui-redesign-direction.md).
+  There are no Attention, Activity, Execution, Catalog, Data & evidence,
+  Settings, Diagnostics or Advanced navigation wrappers. Work owns contextual
+  results/history; Library owns saved information/files; domain pages own their
+  workflow details. Finance request inspection stays at its origin even before
+  a tracker task exists. See the [route map](./ui-page-layout-map.md).
+- Patterns uses global `/patterns` list and `/patterns/:patternId` reading
+  routes. Search, source selection and clickable freeform tags combine through
+  the shared bounded catalog operation. Source badges are server-derived
+  metadata. Add/edit uses ordinary fields and sanitized Markdown preview;
+  shared dialogs protect dirty drafts and confirm app-wide deletion.
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
 - Page header: title, slug, description, and utility controls (right). Breadcrumbs optional, above title.
@@ -79,17 +91,50 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 **UiButton.** Default `secondary`. Reserve `primary` for the main permitted action on the surface: navigation, a local utility, or an explicitly registered setup/human-decision operation. `danger` is reserved for explicit local-admin revocation/destructive controls. Icon-only slots center the supplied icon in both axes; the button owns the hit target and the icon keeps its declared dimensions.
 
+Content defaults to centered. Use `align="start"` for full-width menu choices
+instead of competing justification utilities; icon-only buttons stay centered.
+
 **UiCard.** For real things such as projects, plugins, runs, resources, and integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 
 **UiSectionHeader.** Use for section titles inside a page, panel, or card. Keep actions in the action slot; they align right on desktop and wrap below the heading copy on narrow screens so titles and descriptions never squeeze into one-word columns.
 
 **UiDialog.** Header / body / footer. Footer right-aligned, ghost cancel + primary confirm. Trap focus. `Esc` requests close; the owning flow protects unsaved or in-flight work. The backdrop teleports to `body` and covers the viewport independently of page spacing, scrolling or transformed ancestors. The canonical close control is a nonshrinking `UiIconButton` at `md` (32 × 32px), with a centered 16 × 16px registry close icon aligned to the first header row.
 
+When pending work disables every control, the dialog frame remains a
+programmatic focus target and contains Tab/Shift+Tab. The owning flow can move
+focus to the retained title when disabling the focused action; it does not
+enable close or another submission to keep keyboard focus inside.
+The top dialog also recovers focus to its frame after content disables or
+removes the active control. Tab and Shift+Tab recover into its
+enabled controls, preserving nested overlay ownership and final opener return.
+
 Use `layout="detail"` for stable reading/editing dialogs. This opt-in preset has height `min(880px, 100dvh - 48px)`, fixed header/footer regions and one flexible, vertically scrolling body with `min-height: 0`. Width still follows `size` (`lg` is 672px) and the viewport clamp. Long headings wrap to two lines with their full text available as the title; the body wraps long content and prevents horizontal overflow. The default content-sized dialog remains unchanged. A detail flow keeps one shell mounted while switching its internal content; the flow owns identity, retained reading/draft state and intentional focus, never the primitive.
+
+`detailHeight` optionally sets the detail frame's preferred height while keeping
+the same viewport clamp. Project setup uses 720px through catalog loading,
+errors, host and optional-field changes, and pending submission.
+
+**UiSelect.** Menus portal to `body`, flip above the trigger when needed, and
+scroll within the available viewport space. Opening or navigating options never
+scrolls the containing form. The shared overlay stack owns menu layering;
+Escape closes the menu first, and Tab/Shift+Tab continue from its logical trigger
+in the parent dialog. Search, grouped/disabled options, slots and right metadata
+retain the same contract. Standalone menus do not lock page scrolling.
+
+`UiPopover` also joins this stack without locking page scroll. Its portaled
+select descendants share logical pointer ownership, so interacting with search
+or options stays inside the parent; menu-first Escape and final trigger focus
+follow the same opening order.
 
 **UiSidePanel.** Right edge, 480px default, 720px for editors. Same H/B/F structure as dialog.
 
 Dialogs and side panels share `overlayStack.ts`: opening order owns layering and keyboard handling, only the top overlay handles Escape/Tab, and the body remains locked until the final overlay closes. Closing restores the opener; removing a lower overlay preserves the surviving overlay's final return target. Do not add local stacking wrappers around these primitives.
+
+`UiConfirmDialog` places its explanation and optional supplemental slot content
+in the body, between the title and actions. `UiDialog.describedBy` links an
+accessible description supplied by body content; ordinary dialog descriptions
+remain in the header. Confirmation actions and dismissal keep their existing
+flow ownership, including pending and unsaved-edit guards.
 
 **UiToast.** Top-right, 320px, auto-dismiss after 5s except `danger` (sticky). One queue, max 3 visible. Live region.
 
@@ -107,6 +152,38 @@ its tone from `resolveStatus()` rather than inline string comparisons.
 header. Selection column: 32px. Long ledgers and catalog registries should use
 `DataTable`'s `max-height` so rows scroll inside the table region, and
 master/detail pages should pass `selected-id` to keep the active row visible.
+
+**Work cards and task header.** Concept 3 keeps title/status primary, then
+quiet Input / Cache / Output slots and a fixed 56px execution footer. Graph
+tickets are 328 × 224px. Board columns have a 336px minimum; cards start at
+224px tall and grow with their wrapping header. Priority, Auto (accessible as
+Automated task delivery), completed/total counts and state labels remain fully
+visible. The body and 56px footer follow the header in normal flow, including
+large counts and run-action controls. Manual work uses the same minimum card
+geometry and omits usage. Current
+execution uses the canonical host mark, readable recorded role and exact model;
+retained execution is explicitly `Last:`. The same footer slot shows compact
+Work time (`0m`, `<1m`, `14m`, `2h 22m`, `1d 4h`) with an accessible Work time
+label, independently of identity, automation or tokens. The canonical
+`work_duration` projection unions recorded managed invocation intervals across
+delivery, review and repair; task totals union all ticket intervals, counting
+overlap once. Queued, stopped and reopened gaps add nothing. Recorded duration
+has no coverage qualifier; coverage remains in the data. Unavailable history
+shows `N/A`, never a guessed zero.
+Only the exact owned live identity in that projection can extend its total after
+`observed_at`, once, using the shared Work heartbeat without per-card timers.
+Stopped, closed and disconnected observations freeze at the supported total;
+the final receipt replaces the provisional observation. Lifecycle dates retain
+their own meaning and never fill missing duration. Work time is invocation wall
+time, including unobserved machine sleep, not CPU-active time.
+Task and shared ticket details use the same presentation and omit duplicate
+Started facts. Ordinary assignment
+never invents an occurrence. Genuine prerequisites use actual ticket titles
+in a bounded bottom-edge badge with full text available on inspection. Board
+has no Graph handles. The contextual task header groups identity/Automated,
+status and completion, inline task-lifetime usage, then Task details. At narrow
+desktop container widths it uses two fixed rows; changing values never selects
+the layout. Redundant ticket/dependency counts and an extra agent row are absent.
 
 **StackOS renderers.** `TemplateRenderer`, `RunPlanRenderer`,
 `ResourceViewRenderer`, `ArtifactRenderer`, `ContextQueryRenderer`,

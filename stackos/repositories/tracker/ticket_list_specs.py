@@ -4,13 +4,24 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError as PydanticValidationError
+
 from stackos.db.models import (
     TrackerItemStatus,
     TrackerSourceKind,
     TrackerTicketKind,
 )
-from stackos.repositories.tracker.schema import TrackerListIssueOut
+from stackos.repositories.base import ValidationError
+from stackos.repositories.tracker.schema import TrackerCorrectionIntent, TrackerListIssueOut
 from stackos.repositories.tracker.utils import _clean_text, _slug
+
+
+def ticket_reference_ref(reference: dict[str, Any]) -> str:
+    """Apply the existing reference coercion and required-ref rule."""
+    ref = str(reference.get("ref") or "")
+    if not ref:
+        raise ValidationError("ticket reference ref is required")
+    return ref
 
 
 def normalize_ticket_key(
@@ -70,6 +81,14 @@ def normalize_ticket_spec(
 
     issues: list[TrackerListIssueOut] = []
     warnings: list[str] = []
+    try:
+        TrackerCorrectionIntent.from_context(raw.get("context_json"))
+    except PydanticValidationError as error:
+        issues.append(
+            TrackerListIssueOut(
+                index=index, key=key, field="context_json.correction", message=str(error)
+            )
+        )
     title = _clean_text(raw.get("title")) if raw.get("title") is not None else ""
     if not title:
         title = key
@@ -126,6 +145,19 @@ def normalize_ticket_spec(
             )
         )
         references_json = []
+    else:
+        for reference_index, reference in enumerate(references_json):
+            try:
+                ticket_reference_ref(reference)
+            except ValidationError as exc:
+                issues.append(
+                    TrackerListIssueOut(
+                        index=index,
+                        key=key,
+                        field=f"references_json[{reference_index}].ref",
+                        message=str(exc),
+                    )
+                )
     completion_evidence_json = raw.get("completion_evidence_json")
     if completion_evidence_json is not None and not isinstance(completion_evidence_json, dict):
         issues.append(
@@ -326,4 +358,5 @@ __all__ = [
     "normalize_ticket_key",
     "normalize_ticket_spec",
     "self_dependency_issue",
+    "ticket_reference_ref",
 ]

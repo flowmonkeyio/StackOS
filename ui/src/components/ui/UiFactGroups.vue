@@ -28,6 +28,8 @@ const props = withDefaults(
   defineProps<{
     groups: UiFactGroup[]
     density?: 'compact' | 'comfortable'
+    /** Unframed reading sections inside an existing object detail panel. */
+    plain?: boolean
     ariaLabel?: string
   }>(),
   {
@@ -55,11 +57,10 @@ function displayValue(value: UiFactItem['value']): string | number {
     <section
       v-for="group in props.groups"
       :key="group.title"
-      class="rounded-lg border border-subtle bg-bg-surface-alt"
-      :class="props.density === 'compact' ? 'p-3' : 'p-4'"
+      :class="props.plain ? 'border-t border-subtle pt-4 first:border-t-0 first:pt-0' : ['rounded-lg border border-subtle bg-bg-surface-alt', props.density === 'compact' ? 'p-3' : 'p-4']"
     >
       <div class="mb-3">
-        <h3 class="text-xs font-semibold text-fg-default">
+        <h3 :class="props.plain ? 'text-base font-semibold text-fg-strong' : 'text-xs font-semibold text-fg-default'">
           {{ group.title }}
         </h3>
         <p

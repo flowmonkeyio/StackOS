@@ -75,6 +75,9 @@ class OperationDispatcher:
         ctx.extras["auth_scope"] = auth_scope
         if settings is not None:
             ctx.extras["settings"] = settings
+        # A permanent-delete handler can purge this very Run. Keep scope as
+        # immutable request data rather than refreshing an expired ORM row later.
+        run_project_id = ctx.run.project_id if ctx.run is not None else None
         with bind_context(ctx):
             if (
                 ctx.run is not None
@@ -93,6 +96,14 @@ class OperationDispatcher:
                 )
             if not trusted_local_admin or spec.name in RUN_PLAN_OWNER_TOOL_NAMES:
                 check_call_grant(spec.name, ctx, parsed)
+            if (
+                not spec.read_only
+                and ctx.project_id is not None
+                and name not in {"project.delete", "project.reconcileFileOwnership"}
+            ):
+                from stackos.repositories.projects import ProjectRepository
+
+                ProjectRepository(session).require_available(ctx.project_id)
             if (
                 spec.idempotency_policy == "dispatcher"
                 and not spec.read_only
@@ -135,15 +146,15 @@ class OperationDispatcher:
                 ) from exc
 
             payload = _result_to_json(result)
-            if ctx.run is not None and ctx.run.project_id is not None:
-                seen = _find_mismatched_project_id(payload, ctx.run.project_id)
+            if run_project_id is not None:
+                seen = _find_mismatched_project_id(payload, run_project_id)
                 if seen is not None:
                     raise ToolNotGrantedError(
                         "run_token cannot access data from another project",
                         data={
                             "operation": spec.name,
                             "run_id": ctx.run_id,
-                            "run_project_id": ctx.run.project_id,
+                            "run_project_id": run_project_id,
                             "result_project_id": seen,
                         },
                     )
@@ -153,7 +164,7 @@ class OperationDispatcher:
                 and ctx.idempotency_key is not None
                 and ctx.project_id is not None
             ):
-                self._idempotency_record(spec.name, ctx, payload)
+                self._idempotency_record(spec.name, ctx, parsed, payload)
             shaped = shape_operation_response(spec, payload, response_mode=response_mode)
             return OperationDispatchResult(payload=shaped, duration_ms=duration_ms)
 
@@ -180,6 +191,16 @@ class OperationDispatcher:
                     from stackos.operations.runs import validate_owner_replay
 
                     return validate_owner_replay(operation_name, parsed, ctx, cached)
+                if operation_name in {
+                    "projectSetup.start",
+                    "projectSetup.report",
+                    "projectSetup.answer",
+                    "projectSetup.continue",
+                    "projectSetup.cancel",
+                }:
+                    from stackos.operations.project_setup_state import validate_setup_replay
+
+                    return validate_setup_replay(operation_name, parsed, ctx, cached)
                 return cached
             raise ConflictError(
                 "idempotency key is already in-flight",
@@ -210,10 +231,24 @@ class OperationDispatcher:
         self,
         operation_name: str,
         ctx: Any,
+        parsed: Any,
         payload: dict[str, Any],
     ) -> None:
         assert ctx.project_id is not None
         assert ctx.idempotency_key is not None
+        if operation_name in {
+            "projectSetup.start",
+            "projectSetup.report",
+            "projectSetup.answer",
+            "projectSetup.continue",
+            "projectSetup.cancel",
+        }:
+            from stackos.operations.project_setup_state import (
+                SETUP_REPLAY_DIGEST_FIELD,
+                setup_request_digest,
+            )
+
+            payload = {**payload, SETUP_REPLAY_DIGEST_FIELD: setup_request_digest(parsed)}
         IdempotencyKeyRepository(ctx.session).update_response(
             project_id=ctx.project_id,
             tool_name=operation_name,

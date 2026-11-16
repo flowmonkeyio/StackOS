@@ -11,8 +11,10 @@ import pytest
 import yaml
 
 import stackos.host_mcp.service as host_mcp_service
+from stackos.config import Settings
 from stackos.host_mcp.adapters import claude_desktop, codex, gemini_cli, hermes
-from stackos.host_mcp.bridge import resolve_bridge_command
+from stackos.host_mcp.bridge import command_line_mentions, command_matches, resolve_bridge_command
+from stackos.host_mcp.discovery import subprocess_env_for_cli
 from stackos.host_mcp.restart_state import state_path
 from stackos.host_mcp.result import HostMcpResult
 from stackos.host_mcp.service import (
@@ -23,10 +25,113 @@ from stackos.host_mcp.service import (
 )
 
 
-@pytest.fixture(autouse=True)
-def _isolate_default_host_context(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("STACKOS_DATA_DIR", raising=False)
-    monkeypatch.delenv("STACKOS_STATE_DIR", raising=False)
+def test_host_subprocess_preserves_explicit_service_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    overrides = {
+        "STACKOS_DATA_DIR": str(tmp_path / "data"),
+        "STACKOS_HOST": "localhost",
+        "STACKOS_LOG_LEVEL": "debug",
+        "STACKOS_PACKAGED_CLI": str(tmp_path / "bin" / "stackos"),
+        "STACKOS_PORT": "5199",
+        "STACKOS_STATE_DIR": str(tmp_path / "state"),
+    }
+    for key, value in overrides.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    settings = Settings()
+    assert (settings.host, settings.port, settings.log_level) == ("localhost", 5199, "DEBUG")
+    assert settings.data_dir == tmp_path / "data"
+    assert settings.state_dir == tmp_path / "state"
+    env = subprocess_env_for_cli(overrides["STACKOS_PACKAGED_CLI"])
+    assert {key: env[key] for key in overrides} == overrides
+    assert env["PATH"] == f"{tmp_path / 'bin'}:/usr/bin:/bin"
+
+
+@pytest.mark.parametrize("launcher", [["/app/stackos"], ["/venv/python", "-m", "stackos"]])
+def test_bridge_command_equivalence_preserves_identity_and_custom_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, launcher: list[str]
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    bare = [*launcher, "mcp-bridge", "--runtime", "codex"]
+    defaults = [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5180",
+        "--data-dir",
+        str(tmp_path / ".local/share/stackos"),
+        "--state-dir",
+        str(tmp_path / ".local/state/stackos"),
+    ]
+    explicit = [*bare, *defaults]
+    assert command_matches(bare, explicit)
+    assert command_matches(explicit, bare)
+    assert command_matches(bare, [*bare, "--port=5180"])
+    assert command_line_mentions(explicit, "stackos " + " ".join(bare) + " - - enabled")
+    for difference in (
+        ["--host", "localhost"],
+        ["--port", "5199"],
+        ["--data-dir", str(tmp_path / "custom-data")],
+        ["--data-dir", "~/.local/share/stackos"],
+        ["--state-dir", str(tmp_path / "custom-state")],
+        ["--workspace-root", str(tmp_path)],
+        ["--unknown", "value"],
+        ["--port", "5180", "--port", "5199"],
+        ["--port"],
+    ):
+        actual = [*bare, *difference]
+        assert not command_matches(explicit, actual), difference
+        assert not command_line_mentions(explicit, "stackos " + " ".join(actual)), difference
+    assert not command_matches(explicit, ["/old/stackos", *explicit[1:]])
+    assert not command_matches(explicit, [*bare[:-1], "claude-code", *defaults])
+    assert not command_matches(explicit, ["foreign", *explicit[1:]])
+    custom = [*bare, "--port", "5199"]
+    assert command_matches(custom, [*custom, "--host", "127.0.0.1"])
+    # Omitted settings are canonical defaults, never the inspecting process's custom env.
+    monkeypatch.setenv("STACKOS_PORT", "5199")
+    assert not command_matches(custom, bare)
+
+
+@pytest.mark.parametrize("host", ["gemini-cli", "hermes"])
+def test_selected_optional_host_config_uses_shared_default_equivalence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    from stackos.install import copy_stackos_skill_to
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("STACKOS_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    command = resolve_bridge_command(runtime=host)
+    entry = {"command": command[0], "args": command[1:]}
+    if host == "gemini-cli":
+        path = tmp_path / ".gemini/settings.json"
+        path.parent.mkdir()
+        path.write_text(json.dumps({"mcpServers": {"stackos": entry}}))
+        monkeypatch.setattr(gemini_cli, "resolve_gemini_bin", lambda: "/fixture/gemini")
+
+        def list_servers(_binary, args):
+            assert args == ["mcp", "list"]
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(gemini_cli, "_run_gemini", list_servers)
+    else:
+        path = tmp_path / ".hermes/config.yaml"
+        path.parent.mkdir()
+        path.write_text(yaml.safe_dump({"mcp_servers": {"stackos": entry}}))
+        copy_stackos_skill_to(path.parent / "skills")
+        monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fixture/hermes")
+    before = path.read_bytes(), path.stat().st_mtime_ns
+    monkeypatch.setenv("STACKOS_HOST", "127.0.0.1")
+    monkeypatch.setenv("STACKOS_PORT", "5180")
+    monkeypatch.setenv("STACKOS_DATA_DIR", str(tmp_path / ".local/share/stackos"))
+    monkeypatch.setenv("STACKOS_STATE_DIR", str(tmp_path / ".local/state/stackos"))
+    result = (
+        gemini_cli.inspect(tmp_path) if host == "gemini-cli" else hermes.inspect_profile(tmp_path)
+    )
+    assert result.status == "registered_current", result
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
 
 def _write_token(home: Path) -> None:

@@ -223,16 +223,5 @@ resources:
     name: Publish Target
     description: Safe metadata for a configured CMS target or destination.
     schema: *object_schema
-ui:
-  nav:
-    section: Publishing
-    items:
-      - key: publishing.resources
-        label: Data
-        to: resources?plugin_slug=publishing
-        matchPrefix: true
-      - key: publishing.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=publishing
 config:
   schema_version: stackos.plugin.v1

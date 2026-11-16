@@ -359,7 +359,9 @@ def _register_generated_image_artifacts(
             continue
         path = _artifact_path(asset_dir, uri)
         file_format = str(item.get("file_format") or path.suffix.removeprefix(".") or "jpg")
-        artifact = repository.create(
+        artifact = repository.create_generated_file(
+            asset_root=asset_dir,
+            path=path,
             project_id=request.project_id,
             plugin_slug="utils",
             kind="image",

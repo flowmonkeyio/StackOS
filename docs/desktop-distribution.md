@@ -82,6 +82,14 @@ pnpm --dir desktop run release:preflight
 
 ## Build Commands
 
+The main integration/release owner first reconciles the intended accepted source
+set and explicit exclusions using [accepted sources and release
+identity](./release-signoff.md#accepted-sources-and-release-identity). Run the
+verified UI build, payload and package stages in order with exclusive ownership
+of shared outputs. Keep the source-to-produced-artifact receipt separate from
+installed identity and install/repair/restart proof. A successful package build
+does not establish an installed-complete result or grant installation authority.
+
 Install desktop dependencies:
 
 ```bash
@@ -463,6 +471,22 @@ STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 node desktop/scripts/build-mac.mjs
 ```
 
+Each build writes generated Electron and update configuration into its own
+temporary directory and keeps it until the build's children finish. Normal
+success and failure remove only that invocation's directory. Config tests use
+their own temporary roots, so running desktop doctor cannot remove a build's
+configuration. Payload, icon and distribution outputs still require exclusive
+ownership as described above.
+
+Dry runs do not write files by default. Set
+`STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG=1` to inspect generated configuration;
+successful dry runs print `generatedConfig` and `generatedUpdateConfig` paths
+and leave those files for the caller to remove. Optionally set
+`STACKOS_DESKTOP_CONFIG_ROOT` to an existing caller-owned directory to contain
+the unique invocation directories (the default is the OS temporary directory).
+The update resource uses an absolute source path, while its packaged name stays
+`update-config.json`. Signing inputs and release commands are unchanged.
+
 For an unsigned local smoke where release metadata should still be generated,
 make the bypass explicit:
 
@@ -629,12 +653,34 @@ release system.
 
 ## Verification
 
-Scaffold checks that do not require Electron dependencies:
+Dependency-light scaffold inspection needs Node.js and the source checkout,
+without installed desktop packages or a running Electron app:
 
 ```bash
-make desktop-doctor
-pnpm --dir desktop check
+node desktop/scripts/doctor.mjs
+node --check desktop/src/main.js
 ```
+
+The complete desktop check requires the packages in `desktop/package.json`,
+including the `electron-builder` dev dependency. Prepare them with the frozen
+lockfile before running either equivalent check command:
+
+```bash
+pnpm --dir desktop install --frozen-lockfile
+pnpm --dir desktop check
+# Equivalent to the preceding check, not an additional gate:
+make desktop-doctor
+```
+
+The `check` script runs syntax inspection, the scaffold doctor and regression
+scripts. In particular, `test-release-metadata-refresh.cjs` invokes
+`refresh-notarized-update-metadata.cjs`, which loads electron-builder's blockmap
+implementation; `test-build-mac-isolation.cjs` also loads its configuration and
+file-matching implementation. These checks use synthetic artifacts and do not
+launch the desktop app or perform signed release packaging. A missing builder
+module is a dependency setup failure, not a successful scaffold-only check.
+Do not install dependencies concurrently with checks or packaging that use the
+same dependency directory.
 
 Release checks, once dependencies and signing are configured:
 

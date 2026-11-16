@@ -834,6 +834,14 @@ def _resolve_source(kind: Literal["skills", "plugins"]) -> Path | Traversable:
     return source
 
 
+def bundled_patterns_source() -> Path | Traversable:
+    """Trusted package asset only; no mutable data-dir or caller selector."""
+    repo = _repo_root_if_clone()
+    if repo is not None:
+        return repo / "stackos" / "db" / "bundled_patterns.json"
+    return _bundled_assets_root().joinpath("patterns", "bundle.json")
+
+
 # ---------------------------------------------------------------------------
 # Copy primitives
 # ---------------------------------------------------------------------------

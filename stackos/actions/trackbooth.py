@@ -7,13 +7,16 @@ from dataclasses import replace
 from time import perf_counter
 from typing import Any
 
-from stackos_connectors.connectors.trackbooth.assets import _path_param_names, _schema_descriptor
+from stackos_connectors.connectors.trackbooth.assets import _path_param_names
 from stackos_connectors.connectors.trackbooth.integration import (
     TRACKBOOTH_DEFAULT_API_BASE_URL,
     TrackboothConfigError,
     normalize_trackbooth_base_url,
     parse_trackbooth_api_key,
 )
+from stackos_connectors.connectors.trackbooth.schema import operation_input_schema
+from stackos_connectors.errors import ValidationError as NativeValidationError
+from stackos_connectors.validation import schema_issues
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -62,8 +65,6 @@ from stackos.actions.trackbooth_schema import (
     _configured_endpoint,
     _dedupe_issues,
     _missing_required_body_issues,
-    _operation_accepts_body,
-    _schema_value_issues,
 )
 from stackos.actions.trackbooth_transport import (
     _elapsed_ms,
@@ -242,9 +243,9 @@ class TrackboothActionConnector:
         issues: list[ActionValidationIssue] = []
         if operation_id_override is None:
             required_str(payload, "operation_id", issues)
-        for key in ("path_params", "query", "body"):
+        for key in ("path_params", "query"):
             value = payload.get(key)
-            if value is not None and not isinstance(value, dict):
+            if key in payload and not isinstance(value, dict):
                 issues.append(issue(f"$.{key}", f"{key} must be an object", "type_error"))
         operation_id = operation_id_override or payload.get("operation_id")
         if not isinstance(operation_id, str) or not operation_id.strip():
@@ -300,26 +301,30 @@ class TrackboothActionConnector:
                 issues.append(
                     issue(f"$.path_params.{name}", "path parameter is required", "required")
                 )
-        query_schema = self._assets.expand_schema(_schema_descriptor(endpoint, "query_schema"))
-        if isinstance(payload.get("query"), dict):
-            issues.extend(_schema_value_issues(query_schema, payload["query"], "$.query"))
-        body_schema = self._assets.expand_schema(_schema_descriptor(endpoint, "body_schema"))
-        body_allowed = _operation_accepts_body(request, endpoint, body_schema=body_schema)
-        body = payload.get("body")
-        if body is not None and body_schema is None and not body_allowed:
-            issues.append(
-                issue(
-                    "$.body",
-                    "selected operation does not accept a request body",
-                    "body_not_allowed",
+        input_schema: Mapping[str, Any] | None = request.input_schema_json
+        if (
+            request.config_json.get("inventory_source") != _RUNTIME_INVENTORY_SOURCE
+            or input_schema is None
+        ):
+            try:
+                detail = _detail_from_endpoint(
+                    endpoint, openapi_schemas=self._assets.openapi_schemas
                 )
-            )
-        body_requires_validation = request.operation == "rest.write" or method in _WRITE_METHODS
-        if body_requires_validation and body_schema is not None:
-            if body is None:
-                issues.extend(_missing_required_body_issues(body_schema))
-            elif isinstance(body, dict):
-                issues.extend(_schema_value_issues(body_schema, body, "$.body"))
+                input_schema = dict(operation_input_schema(detail))
+            except (NativeValidationError, ValidationError) as exc:
+                issues.append(issue("$.operation_id", str(exc), "invalid_schema"))
+                return _dedupe_issues(issues)
+        data = {key: value for key, value in payload.items() if key != "operation_id"}
+        issues.extend(
+            issue(item.path, item.message, item.code) for item in schema_issues(input_schema, data)
+        )
+        body_schema = input_schema.get("properties", {}).get("body")
+        if (
+            "body" not in payload
+            and "body" in input_schema.get("required", [])
+            and isinstance(body_schema, Mapping)
+        ):
+            issues.extend(_missing_required_body_issues(body_schema))
         return _dedupe_issues(issues)
 
     def _endpoint_for_request(
@@ -565,7 +570,15 @@ class TrackboothActionConnector:
         key = "trackbooth." + operation
         if endpoint is not None:
             key = request.action_key
-            client = client.register_actions([declare_action(key, endpoint)])
+            declaration = declare_action(key, endpoint)
+            if (
+                request.config_json.get("inventory_source") == _RUNTIME_INVENTORY_SOURCE
+                and request.input_schema_json is not None
+            ):
+                # The inventory owns the full schema. Route metadata is deliberately
+                # smaller; never reconstruct validation from its placeholder shapes.
+                declaration = replace(declaration, input_schema=request.input_schema_json)
+            client = client.register_actions([declaration])
         prepared = replace(
             request,
             action_key=key,

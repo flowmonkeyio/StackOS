@@ -135,7 +135,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             returns=(
                 "Safe project metadata only: id, slug, name, domain, locale, active flag, "
-                "and timestamps.",
+                "stored order_index and timestamps. Lists and ID cursors follow (order_index, id); "
+                "new projects append. Refresh pagination after a concurrent catalog move.",
             ),
             examples=(OperationExample(title="List projects", arguments={"limit": 20}),),
             mutating=False,
@@ -157,7 +158,13 @@ def operation_specs() -> list[OperationSpec]:
             when_to_use=(
                 "The agent has a candidate project id or slug and wants the exact metadata.",
             ),
-            returns=("One safe project record.",),
+            returns=(
+                "One safe project record, the explicit primary_workspace_binding_id, "
+                "resolved project_dir, project_folder_status (ready, directoryless, missing, "
+                "unavailable or conflict) and actionable project_folder_issue. Resolution never "
+                "chooses a workspace from binding order, sessions or remote names and grants "
+                "no file access. Explicit task and saved schedule targets stay independent.",
+            ),
             examples=(OperationExample(title="Get project", arguments={"id_or_slug": "acme"}),),
             mutating=False,
             grant_policy="direct-setup-read",
@@ -224,6 +231,9 @@ def operation_specs() -> list[OperationSpec]:
                 "directory is bootstrapped. Pass project_id to select an existing project or "
                 "omit it for discovery. Global startup never creates a directory binding and "
                 "every later project-scoped call still needs its own explicit project_id."
+                " An unbound directory sharing an existing binding's Git remote waits for "
+                "explicit workspace.connect; the remote cannot select a directory or authorize "
+                "automatic project creation."
             ),
             when_to_use=(
                 "An agent starts work and needs the workspace-bound project_id.",
@@ -232,6 +242,9 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Let the bridge inject cwd, repo_fingerprint, git_remote_url, runtime, and "
                 "client_session_id when possible.",
+                "project_setup reports setup/update needs and the current attempt "
+                "without launching "
+                "or editing setup. Follow its shared guidance_ref before projectSetup.start.",
                 "Existing workspace bindings and deliberate StackOS roots cannot become global.",
                 "auto_bootstrap=false skips folder bootstrap but still records the session; "
                 "workspace.resolve is read-only. Global startup ignores auto_bootstrap.",
@@ -273,7 +286,9 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Use this as the read-only first check. It never creates projects or bindings; "
-                "when unbound it returns model-readable bootstrap or project-selection next steps."
+                "a usable directory resolves by its exact or most specific containing binding, "
+                "never by another root's fingerprint or shared Git remote. When unbound it "
+                "returns project candidates and explicit connect/bootstrap next steps."
             ),
             when_to_use=(
                 "An agent starts in a repository and needs to know whether StackOS already "
@@ -412,6 +427,9 @@ def operation_specs() -> list[OperationSpec]:
                 "workspace_alias for an explicitly named no-directory binding.",
                 "Pass rebind_existing=true only when intentionally moving an existing "
                 "repo binding to a different project.",
+                "A selected primary folder cannot move implicitly. Task worktrees use "
+                "distinct directory bindings. Clear the primary reference in project setup "
+                "before deliberately relocating its binding, then select it again.",
             ),
             returns=("A write envelope with the workspace binding.",),
             examples=(

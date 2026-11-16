@@ -29,6 +29,7 @@ from stackos.workflows.run_plan_grants import (
     parse_run_plan_mcp_tool_grants,
     validate_run_plan_mcp_tool_grants,
 )
+from stackos.workflows.secret_policy import is_operator_authorization_metadata
 from stackos.workflows.template_schema import ActionContractSpec
 
 if TYPE_CHECKING:
@@ -44,6 +45,8 @@ _SECRET_KEY_PARTS = (
     "api_key",
     "apikey",
     "authorization",
+    "authentication",
+    "bearer",
     "client_secret",
     "credential",
     "password",
@@ -53,6 +56,44 @@ _SECRET_KEY_PARTS = (
     "token",
 )
 _OPAQUE_REF_KEYS = frozenset({"auth_ref", "credential_ref"})
+# Diagnostic vocabulary only: unknown keys are still scanned in full. Never
+# echo arbitrary identifiers, credentials embedded in keys, or path syntax from
+# a rejected payload. Keep established structural/credential fields useful.
+_DIAGNOSTIC_FIELDS = frozenset(_SECRET_KEY_PARTS) | frozenset(
+    {
+        "inputs",
+        "inputs_json",
+        "steps",
+        "metadata",
+        "metadata_json",
+        "outputs",
+        "result",
+        "result_json",
+        "error",
+        "reason",
+        "note",
+        "nested",
+        "action_payloads",
+        "action_payloads_json",
+        "operator_authorization",
+        "secret_ref",
+        "prior_tokens",
+        "cumulative_planning_exposure_tokens",
+        "release_summary",
+        "recovery_plan",
+        "post_release",
+    }
+)
+_MAX_SECRET_PATHS = 8
+_MAX_SECRET_PATH_LENGTH = 256
+_MAX_SECRET_SEGMENT_LENGTH = 48
+
+
+def _secret_child_path(path: str, segment: str) -> str:
+    child = path + segment
+    if len(child) > _MAX_SECRET_PATH_LENGTH:
+        return child[: _MAX_SECRET_PATH_LENGTH - 3] + "..."
+    return child
 
 
 def _validate_key(value: str) -> str:
@@ -68,39 +109,57 @@ def _is_secret_key(key: str) -> bool:
     return any(part in normalized for part in _SECRET_KEY_PARTS)
 
 
-def _secret_paths(value: Any, *, path: str = "$") -> list[str]:
+def _secret_paths(value: Any, *, path: str = "$", workflow_metadata: bool = False) -> list[str]:
     if is_secret_ref_marker(value):
         return []
     paths: list[str] = []
     if isinstance(value, dict):
         for raw_key, raw_value in value.items():
             key = str(raw_key)
-            child_path = f"{path}.{key}"
+            child_path = _secret_child_path(
+                path,
+                f".{key}"
+                if len(key) <= _MAX_SECRET_SEGMENT_LENGTH and key in _DIAGNOSTIC_FIELDS
+                else ".[field]",
+            )
             normalized_key = key.lower().replace("-", "_")
             opaque_secret_ref = normalized_key == "secret_ref" and is_opaque_secret_ref(raw_value)
             if (
                 _is_secret_key(key)
+                and not (workflow_metadata and is_operator_authorization_metadata(key, path=path))
                 and not is_secret_ref_marker(raw_value)
                 and not opaque_secret_ref
             ):
                 paths.append(child_path)
-            paths.extend(_secret_paths(raw_value, path=child_path))
+            paths.extend(
+                _secret_paths(raw_value, path=child_path, workflow_metadata=workflow_metadata)
+            )
+            if len(paths) >= _MAX_SECRET_PATHS:
+                break
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            paths.extend(_secret_paths(item, path=f"{path}[{index}]"))
+            paths.extend(
+                _secret_paths(
+                    item,
+                    path=_secret_child_path(path, f"[{index}]"),
+                    workflow_metadata=workflow_metadata,
+                )
+            )
+            if len(paths) >= _MAX_SECRET_PATHS:
+                break
     elif isinstance(value, str) and redact_secret_text(value) != value:
         paths.append(path)
-    return paths
+    return paths[:_MAX_SECRET_PATHS]
 
 
-def find_run_plan_secret_paths(value: Any) -> list[str]:
-    """Return paths that look like raw secrets in run-plan input."""
-    return _secret_paths(value)
+def find_run_plan_secret_paths(value: Any, *, workflow_metadata: bool = False) -> list[str]:
+    """Scan strictly unless the caller owns validated workflow metadata."""
+    return _secret_paths(value, workflow_metadata=workflow_metadata)
 
 
-def ensure_run_plan_has_no_secrets(value: Any) -> None:
+def ensure_run_plan_has_no_secrets(value: Any, *, workflow_metadata: bool = False) -> None:
     """Raise ``ValueError`` if run-plan input contains raw secrets."""
-    paths = find_run_plan_secret_paths(value)
+    paths = find_run_plan_secret_paths(value, workflow_metadata=workflow_metadata)
     if paths:
         raise ValueError(
             "run plans must not contain secrets as raw values; use credential_ref for "
@@ -326,7 +385,9 @@ class RunPlanSpec(BaseModel):
             raise ValueError("cyclic step dependencies are not allowed: " + " -> ".join(cycle))
 
         validate_run_plan_mcp_tool_grants(self.grant_snapshot_json, step_ids=step_ids)
-        ensure_run_plan_has_no_secrets(self.model_dump(mode="python", exclude_none=True))
+        ensure_run_plan_has_no_secrets(
+            self.model_dump(mode="python", exclude_none=True), workflow_metadata=True
+        )
         return self
 
 

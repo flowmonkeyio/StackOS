@@ -1,0 +1,86 @@
+<script setup lang="ts">
+import { usageFields, usageValue, formatUsage, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
+import { computed, ref } from 'vue'
+import { useUsageFeed } from '@/composables/useUsageFeed'
+import { useUsageVisibility } from '@/composables/useUsageCanvas'
+import { prepareUsageSamples, usageTraces, usageWindowAnchor } from '@/lib/liveUsage'
+import UsageTrace from './UsageTrace.vue'
+
+const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean; inline?: boolean; active?: boolean }>(), { metrics: null, compact: false, inline: false, active: false })
+const feed = useUsageFeed()
+const root = ref<HTMLElement | null>(null)
+const visible = useUsageVisibility(root)
+const endAt = computed(() => prepared.value ? usageWindowAnchor(prepared.value, props.active ? feed?.value.receivedAt ?? undefined : undefined) : undefined)
+const fields = computed(() => usageFields.map(field => ({
+  ...field,
+  value: usageValue(props.metrics, field.key),
+  formatted: formatUsage(usageValue(props.metrics, field.key)),
+  exact: exactUsage(props.metrics, field.key),
+})))
+const samples = computed(() => props.metrics?.samples ?? [])
+const prepared = computed(() => visible.value && props.compact ? prepareUsageSamples(samples.value) : null)
+const traces = computed(() => prepared.value ? usageTraces(prepared.value, endAt.value) : null)
+const scopeTitle = 'Numbers are task or ticket totals, including delivery and review. Bars show newly reported tokens in one-minute intervals; sparse deltas use an interval average weighted by overlap, not exact consumption times. Each metric has a separate zero-based scale. Missing history stays empty.'
+</script>
+
+<template>
+  <dl
+    ref="root"
+    class="agent-usage-summary"
+    :class="{ 'agent-usage-summary--compact': compact, 'agent-usage-summary--inline': compact && inline }"
+    :style="compact ? undefined : { gridTemplateColumns: `repeat(${fields.length}, minmax(0, 1fr))` }"
+    aria-label="Recorded token usage"
+    :title="compact ? scopeTitle : undefined"
+  >
+    <div
+      v-for="field in fields"
+      :key="field.key"
+      class="agent-usage-summary__metric"
+      :data-usage-field="field.key"
+    >
+      <dt>{{ field.label }}</dt>
+      <dd
+        :title="field.exact"
+        :aria-label="field.exact"
+        :class="{ 'agent-usage-summary__unavailable': field.value == null }"
+        tabindex="0"
+      >
+        {{ field.formatted }}
+      </dd>
+      <UsageTrace
+        v-if="compact && visible"
+        :samples="samples"
+        :metric="field.key"
+        :end-at="endAt"
+        :prepared-geometry="traces?.[field.key]"
+        :active="active && feed?.status === 'live'"
+      />
+    </div>
+  </dl>
+</template>
+
+<style scoped>
+.agent-usage-summary { display: grid; grid-template-columns: minmax(0, 0.8fr) repeat(2, minmax(0, 1fr)); margin: 0; gap: 20px; }
+.agent-usage-summary__metric { min-width: 0; padding-right: 16px; }
+.agent-usage-summary__metric + .agent-usage-summary__metric { border-left: 1px solid var(--color-border-default); padding-left: 24px; }
+dt { color: var(--color-fg-muted); font-size: 13px; line-height: 18px; margin-bottom: 6px; }
+dd { width: fit-content; margin: 0; color: var(--color-fg-strong); font-size: 32px; line-height: 38px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.025em; white-space: nowrap; border-radius: var(--radius-xs); }
+dd:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+dd.agent-usage-summary__unavailable { color: var(--color-fg-muted); font-size: 13px; line-height: 38px; font-weight: 500; letter-spacing: 0; }
+@media (max-width: 900px) { .agent-usage-summary { gap: 12px; } .agent-usage-summary__metric + .agent-usage-summary__metric { padding-left: 12px; } dd { font-size: 24px; line-height: 30px; } }
+.agent-usage-summary--compact { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.agent-usage-summary--compact .agent-usage-summary__metric { display: grid; grid-template-rows: 16px 20px 18px; align-items: center; padding: 0; white-space: nowrap; }
+.agent-usage-summary--compact .agent-usage-summary__metric + .agent-usage-summary__metric { border: 0; padding: 0; }
+.agent-usage-summary--compact dt { color: var(--color-fg-muted); font-size: 11px; line-height: 16px; margin: 0; }
+.agent-usage-summary--compact dd { width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--color-fg-default); font-size: 13px; line-height: 20px; font-weight: 500; letter-spacing: 0; }
+.agent-usage-summary--compact dd.agent-usage-summary__unavailable { color: var(--color-fg-muted); }
+.agent-usage-summary--compact :deep(.usage-trace) { width: 100%; }
+.agent-usage-summary--inline { container-type: inline-size; }
+.agent-usage-summary--inline .agent-usage-summary__metric { grid-template-columns: 56px minmax(0, 1fr); grid-template-rows: 16px 20px; column-gap: 4px; }
+.agent-usage-summary--inline dt { grid-column: 1 / -1; }
+.agent-usage-summary--inline :deep(.usage-trace) { grid-column: 2; grid-row: 2; }
+@container (max-width: 330px) {
+  .agent-usage-summary--inline .agent-usage-summary__metric { grid-template-columns: minmax(0, 1fr); grid-template-rows: 16px 20px 18px; }
+  .agent-usage-summary--inline :deep(.usage-trace) { grid-column: 1; grid-row: 3; }
+}
+</style>

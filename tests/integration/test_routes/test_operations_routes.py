@@ -576,6 +576,102 @@ def test_operation_rest_call_enforces_mcp_grants(api: TestClient, project_id: in
     assert body["data"]["tool"] == "action.execute"
 
 
+def test_ui_token_can_abort_only_the_selected_project_run(api: TestClient, project_id: int) -> None:
+    created = api.post(
+        "/api/v1/operations/runPlan.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_json": _sitemap_action_plan_json(),
+            }
+        },
+    )
+    assert created.status_code == 200, created.text
+    run_plan_id = created.json()["data"]["id"]
+    arguments = {"project_id": project_id, "run_plan_id": run_plan_id}
+    started = api.post("/api/v1/operations/runPlan.start/call", json={"arguments": arguments})
+    assert started.status_code == 200, started.text
+    other_project = api.post(
+        "/api/v1/projects",
+        json={"slug": "other-abort-project", "name": "Other project", "domain": "example.com"},
+    )
+    assert other_project.status_code == 201, other_project.text
+
+    # Override the fixture's daemon bearer with the actual browser bootstrap token.
+    bootstrap = api.get("/api/v1/auth/ui-token")
+    assert bootstrap.status_code == 200, bootstrap.text
+    headers = {"Authorization": f"Bearer {bootstrap.json()['token']}"}
+    rejected = api.post(
+        "/api/v1/operations/runPlan.abort/call",
+        headers=headers,
+        json={"arguments": {**arguments, "project_id": other_project.json()["data"]["id"]}},
+    )
+    assert rejected.status_code == 404, rejected.text
+    unchanged = api.post(
+        "/api/v1/operations/runPlan.get/call",
+        headers=headers,
+        json={"arguments": {**arguments, "response_mode": "raw"}},
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["status"] == "started"
+    assert unchanged.json()["steps"][0]["status"] == "pending"
+
+    aborted = api.post(
+        "/api/v1/operations/runPlan.abort/call",
+        headers=headers,
+        json={
+            "arguments": {
+                **arguments,
+                "reason": "Aborted by operator from the local console.",
+                "actor": "local-console",
+            }
+        },
+    )
+    assert aborted.status_code == 200, aborted.text
+    assert aborted.json()["data"]["status"] == "aborted"
+    assert aborted.json()["data"]["cancellation"]["status"] == "state_only"
+    assert aborted.json()["data"]["cancellation"]["external_sessions_terminated"] is False
+    fetched = api.post(
+        "/api/v1/operations/runPlan.get/call",
+        headers=headers,
+        json={"arguments": {**arguments, "response_mode": "raw"}},
+    )
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["status"] == "aborted"
+    assert fetched.json()["steps"][0]["status"] == "skipped"
+
+
+def test_ui_token_abort_permission_does_not_allow_other_run_lifecycle_calls(
+    api: TestClient,
+) -> None:
+    bootstrap = api.get("/api/v1/auth/ui-token")
+    assert bootstrap.status_code == 200, bootstrap.text
+    headers = {"Authorization": f"Bearer {bootstrap.json()['token']}"}
+    for operation in ("create", "start", "reopen", "claimStep", "recordStep"):
+        response = api.post(
+            f"/api/v1/operations/runPlan.{operation}/call",
+            headers=headers,
+            json={"arguments": {}},
+        )
+        assert response.status_code == 403, response.text
+        assert "browser-safe operations" in response.json()["detail"]
+
+
+def test_ui_run_abort_keeps_same_origin_browser_protection(api: TestClient) -> None:
+    path = "/api/v1/operations/runPlan.abort/call"
+    preflight = {
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+    }
+    denied = api.options(path, headers={**preflight, "Origin": "https://untrusted.example"})
+    assert denied.status_code == 400, denied.text
+    assert "access-control-allow-origin" not in denied.headers
+
+    allowed = api.options(path, headers={**preflight, "Origin": "http://127.0.0.1:5180"})
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.headers["access-control-allow-origin"] == "http://127.0.0.1:5180"
+
+
 def test_operation_rest_action_execute_uses_run_plan_boundary(
     api: TestClient,
     project_id: int,

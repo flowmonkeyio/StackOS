@@ -20,6 +20,7 @@ from stackos.db.models import (
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
+    TrackerTicketKind,
     TrackerTicketLink,
     TrackerTicketReference,
 )
@@ -33,6 +34,7 @@ from stackos.repositories.tracker.schema import (
     TrackerLinkOut,
     TrackerOwnerItemOut,
 )
+from stackos.repositories.tracker.ticket_list_specs import ticket_reference_ref
 from stackos.repositories.tracker.utils import (
     ACTIVATES_DEPENDENCY_TYPE,
     BLOCKS_DEPENDENCY_TYPE,
@@ -200,15 +202,34 @@ class TrackerRelationsMixin:
         tracker_id: int | None,
         task_ids: set[int | None],
         ticket_ids: set[int | None],
+        *,
+        summary: bool = False,
     ) -> list[TrackerLinkOut]:
         tracker_id = _required_id(tracker_id, "tracker")
-        rows = list(
-            self._s.exec(
-                select(TrackerTicketLink).where(TrackerTicketLink.tracker_id == tracker_id)
-            )
+        from sqlalchemy import or_
+        from sqlalchemy.orm import load_only
+
+        statement = select(TrackerTicketLink).where(
+            TrackerTicketLink.tracker_id == tracker_id,
+            or_(
+                col(TrackerTicketLink.task_id).in_(task_ids),
+                col(TrackerTicketLink.ticket_id).in_(ticket_ids),
+            ),
         )
+        fields = [
+            getattr(TrackerTicketLink, name)
+            for name in TrackerLinkOut.model_fields
+            if name != "metadata_json"
+        ]
+        if summary:
+            statement = statement.options(load_only(*fields, raiseload=True))
+        rows = list(self._s.exec(statement))
         return [
-            TrackerLinkOut.model_validate(row)
+            TrackerLinkOut.model_validate(
+                {**{field.key: getattr(row, field.key) for field in fields}, "metadata_json": None}
+                if summary
+                else row
+            )
             for row in rows
             if row.task_id in task_ids or row.ticket_id in ticket_ids
         ]
@@ -230,7 +251,11 @@ class TrackerRelationsMixin:
         by_id = {ticket.id: ticket.key for ticket in tickets}
         for dependency in rows:
             if dependency.depends_on_ticket_id not in by_id:
-                dep_ticket = self._s.get(TrackerTicket, dependency.depends_on_ticket_id)
+                dep_ticket = self._s.exec(
+                    select(TrackerTicket.id, TrackerTicket.key).where(
+                        TrackerTicket.id == dependency.depends_on_ticket_id,
+                    )
+                ).first()
                 if dep_ticket is not None:
                     by_id[dep_ticket.id] = dep_ticket.key
         return [
@@ -255,11 +280,17 @@ class TrackerRelationsMixin:
         dependency_type = (
             ACTIVATES_DEPENDENCY_TYPE
             if ticket.parent_ticket_id == dependency_ticket.id
-            and ticket.run_plan_id is not None
-            and ticket.run_plan_id == dependency_ticket.run_plan_id
-            and ticket.run_plan_step_id is not None
-            and ticket.run_plan_step_id == dependency_ticket.run_plan_step_id
-            and dependency_ticket.parent_ticket_id is None
+            and ticket.task_id == dependency_ticket.task_id
+            and (
+                dependency_ticket.kind == TrackerTicketKind.GROUP
+                or (
+                    ticket.run_plan_id is not None
+                    and ticket.run_plan_id == dependency_ticket.run_plan_id
+                    and ticket.run_plan_step_id is not None
+                    and ticket.run_plan_step_id == dependency_ticket.run_plan_step_id
+                    and dependency_ticket.parent_ticket_id is None
+                )
+            )
             else BLOCKS_DEPENDENCY_TYPE
         )
         existing = self._s.exec(
@@ -296,9 +327,7 @@ class TrackerRelationsMixin:
         reference: dict[str, Any],
     ) -> None:
         ref_type = str(reference.get("ref_type") or reference.get("type") or "note")
-        ref = str(reference.get("ref") or "")
-        if not ref:
-            raise ValidationError("ticket reference ref is required")
+        ref = ticket_reference_ref(reference)
         self._s.add(
             TrackerTicketReference(
                 tracker_id=_required_id(tracker.id, "tracker"),

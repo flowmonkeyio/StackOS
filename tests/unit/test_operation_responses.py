@@ -17,6 +17,28 @@ async def _handler(*_args: object, **_kwargs: object) -> dict[str, object]:
     return {}
 
 
+@pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
+def test_invalid_validation_response_retains_complete_repair_context(mode) -> None:
+    payload = {
+        "project_id": 7,
+        "data": {
+            "valid": False,
+            "rev": 3,
+            "errors": [
+                {
+                    "index": 1,
+                    "key": "bad",
+                    "field": "references_json[0].ref",
+                    "message": "ticket reference ref is required",
+                }
+            ],
+            "results": [{"index": 1, "key": "bad", "action": "error"}],
+        },
+    }
+    shaped = shape_operation_response(_spec("tracker.createTicket"), payload, response_mode=mode)
+    assert shaped["data"] == payload["data"]
+
+
 def _spec(name: str, *, mutating: bool = True) -> OperationSpec:
     return OperationSpec(
         name=name,
@@ -34,6 +56,24 @@ def _spec(name: str, *, mutating: bool = True) -> OperationSpec:
     )
 
 
+@pytest.mark.parametrize("name", ["tracker.taskActivity", "tracker.taskResults"])
+def test_task_inspection_compact_preserves_bounded_projection(name):
+    spec = _spec(name, mutating=False)
+    payload = {
+        "project_id": 1,
+        "task_id": 4,
+        "task_key": "work",
+        "next_cursor": "opaque",
+        "items": [{"source_kind": "artifact", "source_id": 123}],
+        "coverage": "Explicit sources",
+        "warnings": ["Missing source omitted"],
+    }
+    assert shape_operation_response(spec, payload, response_mode="compact") == payload
+    assert shape_operation_response(spec, payload, response_mode="raw") == payload
+    with pytest.raises(ValidationError):
+        resolve_response_mode(spec, {"response_mode": "ack"}, surface="mcp")
+
+
 def test_provider_side_effect_operations_are_raw_only() -> None:
     spec = _spec("communication.send")
 
@@ -45,6 +85,80 @@ def test_provider_side_effect_operations_are_raw_only() -> None:
 
     assert exc.value.data["side_effect"] == "not_started"
     assert exc.value.data["allowed_modes"] == ["raw"]
+
+
+@pytest.mark.parametrize("status", ["managed_stopped", "state_only"])
+def test_run_abort_compact_keeps_truthful_safe_cancellation_summary(status) -> None:
+    cancellation = {
+        "status": status,
+        "invocation_count": int(status == "managed_stopped"),
+        "stopped_count": int(status == "managed_stopped"),
+        "prevented_count": 0,
+        "external_sessions_terminated": False,
+    }
+    payload = {
+        "project_id": 7,
+        "run_id": 11,
+        "data": {
+            "id": 42,
+            "project_id": 7,
+            "key": "bounded-abort",
+            "status": "aborted",
+            "cancellation": cancellation,
+        },
+    }
+    shaped = shape_operation_response(_spec("runPlan.abort"), payload, response_mode="compact")
+    assert shaped["data"]["cancellation"] == cancellation
+    assert shaped["data"]["run_plan_id"] == 42
+
+
+def test_schedule_compact_keeps_state_snapshots_and_canonical_metrics() -> None:
+    row = {
+        "project_id": 7,
+        "request_id": 11,
+        "schedule_id": 3,
+        "schedule_name": "Original automation",
+        "timezone": "Europe/London",
+        "cron_expr": "0 9 * * 1",
+        "setup_issue": "Schedule needs setup: execution_json",
+        "enabled": False,
+        "status": "in-progress",
+        "duration_seconds": 25,
+        "task_key": "workflow-8",
+        "agent_stats": {"reported_usage": {"input": 0, "output": None}},
+        "active_execution": {"invocation_id": "owned-call"},
+    }
+    page = shape_operation_response(
+        _spec("schedule.runs", mutating=False),
+        {
+            "items": [row],
+            "next_cursor": 11,
+            "total_estimate": 2,
+        },
+        response_mode="compact",
+    )
+    assert page["items"] == [row]
+    assert page["next_cursor"] == 11 and page["total_estimate"] == 2
+    removed = {"data": {"project_id": 7, "job_id": 3, "removed": True}, "project_id": 7}
+    assert (
+        shape_operation_response(_spec("schedule.remove"), removed, response_mode="compact")["data"]
+        == removed["data"]
+    )
+
+
+def test_schedule_goal_configuration_stays_in_raw_response() -> None:
+    payload = {
+        "data": {
+            "id": 3,
+            "goal": "Concrete operator instructions",
+            "inputs_json": {"context": "value"},
+            "execution_json": {"host_key": "codex"},
+        },
+        "project_id": 7,
+    }
+    compact = shape_operation_response(_spec("schedule.set"), payload, response_mode="compact")
+    assert compact["data"] == {"id": 3}
+    assert shape_operation_response(_spec("schedule.set"), payload, response_mode="raw") == payload
 
 
 @pytest.mark.parametrize("operation", ["runPlan.get", "runPlan.getStep", "runPlan.claimStep"])
@@ -541,15 +655,21 @@ def test_run_plan_inventory_does_not_include_saved_step_results(operation: str) 
 @pytest.mark.parametrize(
     "operation,role_field",
     [
+        ("agentPreset.describe", None),
+        ("skillPreset.describe", None),
         ("agentPreset.resolveForWorkflow", "required_agents"),
         ("agentPreset.resolveForWorkflow", "required_skill_presets"),
         ("skillPreset.resolveForWorkflow", "required_skill_presets"),
     ],
 )
 def test_preset_compact_adaptation_preserves_context_references(
-    operation: str, role_field: str
+    operation: str, role_field: str | None
 ) -> None:
     adaptation = {
+        "adaptation_required": True,
+        "adaptation_status": "required",
+        "instruction": "Read the raw preset and adapt it before use.",
+        "required_agent_action": "Resolve the referenced project sources.",
         "required_context_refs": [
             {
                 "ref": "project:external-record",
@@ -566,13 +686,59 @@ def test_preset_compact_adaptation_preserves_context_references(
             }
         ],
     }
-    payload = {role_field: [{"project_adaptation": adaptation}]}
+    payload = (
+        {role_field: [{"project_adaptation": adaptation}]}
+        if role_field
+        else {"project_adaptation": adaptation}
+    )
 
     compact = shape_operation_response(
         _spec(operation, mutating=False), payload, response_mode="compact"
     )["data"]
 
-    assert compact[role_field][0]["project_adaptation"] == adaptation
+    packet = compact[role_field][0] if role_field else compact
+    assert packet["project_adaptation"] == adaptation
+
+
+@pytest.mark.parametrize("operation", ["agentPreset.describe", "skillPreset.describe"])
+def test_preset_description_adaptation_stays_bounded_and_excludes_private_fields(operation):
+    reference = {
+        "ref": "project:rules",
+        "purpose": "p" * 1000,
+        "required": True,
+        "when": "w" * 1000,
+        "private_note": "excluded",
+        "private_ref": "excluded-reference",
+    }
+    payload = {
+        "project_adaptation": {
+            "instruction": "i" * 1000,
+            "required_context_refs": [reference.copy() for _ in range(30)],
+            "conditional_context_refs": [reference.copy()],
+            "private_ref": "excluded-adaptation",
+        },
+        "ref": "not-a-global-keep-field",
+        "when": "not-a-global-keep-field",
+    }
+    spec = _spec(operation, mutating=False)
+    compact = shape_operation_response(spec, payload, response_mode="compact")["data"]
+    adaptation = compact["project_adaptation"]
+    assert len(adaptation["instruction"]) == 803
+    assert adaptation["instruction"].endswith("...")
+    assert len(adaptation["required_context_refs"]) == 25
+    for field in ("required_context_refs", "conditional_context_refs"):
+        for item in adaptation[field]:
+            assert set(item) == {"ref", "purpose", "required", "when"}
+            assert item["ref"] == "project:rules"
+            assert len(item["purpose"]) == 803
+            assert len(item["when"]) == 803
+    assert "private_ref" not in adaptation
+    assert "ref" not in compact
+    assert "when" not in compact
+    # Shaping neither mutates canonical raw data nor changes raw replay content.
+    assert shape_operation_response(spec, payload, response_mode="raw") == payload
+    assert len(payload["project_adaptation"]["required_context_refs"]) == 30
+    assert payload["project_adaptation"]["required_context_refs"][0] == reference
 
 
 def test_tracker_get_compact_summarizes_snapshot_without_full_rows() -> None:

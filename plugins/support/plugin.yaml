@@ -80,9 +80,12 @@ resources:
       record_kind: support-investigation
       agent_guidance: Store only investigation conclusions and handoff context that future support or delivery agents can reuse.
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Support
     items:
-      - key: support.resources
-        label: Data
-        route: /resources?plugin=support
+      - key: support.domain
+        label: Support
+        to: plugins/support
+        matchPrefix: true

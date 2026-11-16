@@ -1,0 +1,206 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref, useId } from 'vue'
+import { useUsageCanvas, type UsageCanvasFrame } from '@/composables/useUsageCanvas'
+import { useUsageFeed } from '@/composables/useUsageFeed'
+import { BarController, BarElement, CategoryScale, Chart, LinearScale, type ChartOptions, type Plugin } from 'chart.js'
+import { UiButton, UiButtonGroup } from '@/components/ui'
+import { exactUsage, fieldCoverage, formatTokens, formatUsage, usageFields, usageValue, type AgentStatsDay, type AgentStatsMetrics, type UsageField } from '@/lib/agentActivity'
+import { activityDayLabel } from '@/lib/deliveryTrends'
+
+Chart.register(BarController, BarElement, CategoryScale, LinearScale)
+const props = defineProps<{ days: AgentStatsDay[]; totals?: AgentStatsMetrics; timezone: string }>()
+const field = defineModel<UsageField>('field', { default: 'total' })
+const selected = ref<number | null>(null)
+const canvas = ref<HTMLCanvasElement | null>(null)
+const plot = ref<HTMLElement | null>(null)
+const detailId = `daily-values-${useId()}`
+let chart: Chart<'bar'> | null = null
+let signature = ''
+const feed = useUsageFeed()
+const visible = useUsageCanvas(canvas, paint, plot, () => feed?.value.status === 'live')
+const fields = [{ key: 'total', label: 'All', token: 'accent-primary' }, ...usageFields] as const
+const series = computed<{ key: UsageField; label: string; token: string; values: (number | null)[] }[]>(previous => visible.value
+  ? (field.value === 'total' ? usageFields : fields.filter(item => item.key === field.value)).map(item => ({ ...item, values: props.days.map(day => usageValue(day, item.key)) }))
+  : previous ?? [])
+const focused = computed(() => selected.value == null ? null : props.days[selected.value] ?? null)
+const selectedField = computed(() => fields.find(item => item.key === field.value) ?? fields[0])
+// Minimum positive segment sizes are display geometry only. Keep one contiguous
+// stack, reserving each tiny segment's space so neighbors cannot cover it.
+const positiveMarks: Plugin<'bar'> = {
+  id: 'positive-token-marks',
+  afterDatasetsUpdate(chart) {
+    if (field.value !== 'total') return
+    const scale = chart.scales.y!
+    const baseline = scale.getPixelForValue(0)
+    props.days.forEach((_, index) => {
+      const segments = chart.data.datasets.flatMap((dataset, datasetIndex) => {
+        const value = dataset.data[index]
+        const bar = chart.getDatasetMeta(datasetIndex).data[index] as BarElement | undefined
+        return typeof value === 'number' && value > 0 && bar
+          ? [{ bar, height: Math.max(2, Math.abs(baseline - scale.getPixelForValue(value))) }] : []
+      })
+      const total = segments.reduce((sum, segment) => sum + segment.height, 0)
+      const overflow = total - (baseline - chart.chartArea.top)
+      // A full-height stack borrows only the extra minimum-size pixels from
+      // its largest segment, keeping all positives inside the same plot.
+      if (overflow > 0 && segments.length) {
+        const largest = segments.reduce((a, b) => a.height > b.height ? a : b)
+        largest.height = Math.max(2, largest.height - overflow)
+      }
+      let base = baseline
+      for (const segment of segments) {
+        Object.assign(segment.bar, { base, y: base - segment.height, height: segment.height })
+        base -= segment.height
+      }
+    })
+  },
+}
+function focusDay(index: number): void { selected.value = props.days.length ? index : null }
+function leavePlot(): void {
+  if (document.activeElement !== canvas.value) selected.value = null
+}
+function moveDay(event: KeyboardEvent): void {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return
+  event.preventDefault()
+  if (event.key === 'Escape') { selected.value = null; return }
+  focusDay(event.key === 'Home' ? 0 : event.key === 'End' ? props.days.length - 1 : Math.max(0, Math.min(props.days.length - 1, (selected.value ?? 0) + (event.key === 'ArrowRight' ? 1 : -1))))
+}
+function hover(event: MouseEvent): void {
+  if (document.activeElement === canvas.value || !props.days.length || !chart?.scales.x) return
+  const bounds = canvas.value!.getBoundingClientRect()
+  const index = chart.scales.x.getValueForPixel(event.clientX - bounds.left)
+  selected.value = index == null ? null : Math.max(0, Math.min(props.days.length - 1, Math.round(index)))
+}
+function paint(): UsageCanvasFrame | void {
+  if (!canvas.value || !plot.value) return
+  const style = getComputedStyle(canvas.value)
+  const width = plot.value.clientWidth
+  const height = plot.value.clientHeight
+  const next = JSON.stringify([series.value, props.days.map(day => day.date), field.value, width, height, window.devicePixelRatio, document.documentElement.dataset.theme])
+  if (chart && signature === next) return
+  signature = next
+  const token = (name: string) => style.getPropertyValue(`--color-${name}`).trim()
+  const data = {
+    labels: props.days.map(day => activityDayLabel(day.date)),
+    datasets: series.value.map(item => ({ label: item.label, data: item.values, backgroundColor: token(item.token), borderSkipped: false as const,
+      stack: field.value === 'total' ? 'tokens' : undefined,
+      borderRadius: 3, maxBarThickness: 8, categoryPercentage: 0.8, barPercentage: 0.8 })),
+  }
+  const options: ChartOptions<'bar'> = {
+    responsive: false, maintainAspectRatio: false, animation: false, events: [], devicePixelRatio: window.devicePixelRatio || 1,
+    layout: { padding: { right: 4 } },
+    scales: {
+      x: { stacked: field.value === 'total', grid: { display: false }, ticks: { color: token('fg-muted'), font: { family: style.fontFamily, size: 10 }, maxTicksLimit: 5, maxRotation: 0 }, border: { color: token('border-default') } },
+      y: { stacked: field.value === 'total', beginAtZero: true, suggestedMax: 1, afterFit: axis => { axis.width = 45 }, grid: { color: token('border-subtle') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, font: { size: 10 }, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
+    },
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+  }
+  if (chart) { chart.data = data; chart.options = options; chart.resize(width, height); chart.update('none') }
+  else { canvas.value.width = width; canvas.value.height = height; chart = new Chart(canvas.value, { type: 'bar', data, options, plugins: [positiveMarks] }) }
+  return { scope: JSON.stringify([props.days.map(day => day.date), field.value, props.timezone, width, height]), geometry: JSON.stringify(series.value.map(item => item.values)) }
+}
+onBeforeUnmount(() => { chart?.destroy(); chart = null })
+</script>
+
+<template>
+  <figure
+    :data-visible="visible"
+    :data-live="feed?.status === 'live'"
+    class="activity-chart"
+    aria-label="Daily recorded agent usage"
+  >
+    <figcaption>
+      <h3 class="text-base font-semibold text-fg-strong">
+        Daily tokens
+      </h3>
+    </figcaption>
+    <UiButtonGroup
+      aria-label="Token metric"
+      class="activity-chart__metrics"
+    >
+      <UiButton
+        v-for="option in fields"
+        :key="option.key"
+        size="sm"
+        :variant="field === option.key ? 'secondary' : 'ghost'"
+        :aria-pressed="field === option.key"
+        :title="exactUsage(totals, option.key)"
+        @click="field = option.key; selected = null"
+      >
+        <span
+          v-if="option.key !== 'total'"
+          class="activity-chart__swatch"
+          :style="{ backgroundColor: `var(--color-${option.token})` }"
+          aria-hidden="true"
+        />
+        {{ option.label }} <span class="tabular-nums">{{ formatUsage(usageValue(totals, option.key)) }}</span>
+      </UiButton>
+    </UiButtonGroup>
+    <div
+      ref="plot"
+      class="activity-chart__plot"
+      @mouseleave="leavePlot"
+    >
+      <canvas
+        ref="canvas"
+        class="focus-ring"
+        role="img"
+        tabindex="0"
+        :aria-describedby="detailId"
+        :aria-label="`${selectedField.label} tokens per day. ${field === 'total' ? 'Small positive components have a minimum visible mark, not a proportional height. ' : ''}Use Left and Right arrow keys, Home or End to inspect exact daily values.`"
+        @focus="focusDay(0)"
+        @blur="selected = null"
+        @keydown="moveDay"
+        @mousemove="hover"
+      />
+      <div
+        v-if="focused"
+        :id="detailId"
+        class="activity-chart__tooltip"
+        role="tooltip"
+        aria-label="Daily usage details"
+        aria-live="polite"
+      >
+        <strong>{{ focused.date }}</strong>
+        <ul>
+          <li
+            v-for="item in usageFields"
+            :key="item.key"
+          >
+            <span
+              class="activity-chart__swatch"
+              :style="{ backgroundColor: `var(--color-${item.token})` }"
+              aria-hidden="true"
+            />
+            <span>{{ item.label }}</span><span :title="fieldCoverage(focused, item.key)">{{ formatUsage(usageValue(focused, item.key), false) }}</span>
+          </li>
+        </ul>
+        <footer>Total: {{ formatUsage(usageValue(focused, 'total'), false) }}</footer>
+        <p v-if="focused.reported_usage.input_with_unknown_cache">
+          Includes {{ formatTokens(focused.reported_usage.input_with_unknown_cache, false) }} input tokens with unknown cache split.
+        </p>
+        <p v-if="focused.coverage.usage_unavailable_attempts">
+          Usage missing for {{ focused.coverage.usage_unavailable_attempts }} attempts.
+        </p>
+      </div>
+      <span
+        v-else
+        :id="detailId"
+        class="sr-only"
+      >Hover a bar or focus the chart and use arrow keys for exact values.</span>
+    </div>
+  </figure>
+</template>
+
+<style scoped>
+.activity-chart { min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
+.activity-chart__metrics { display: flex; margin-top: 8px; width: 100%; }
+.activity-chart__metrics :deep(button) { min-width: 0; flex: 1; padding: 4px 6px; gap: 5px; font-size: 11px; white-space: nowrap; }
+.activity-chart__plot { position: relative; height: 200px; margin-top: 16px; }
+.activity-chart__plot canvas { display: block; width: 100%; height: 100%; }
+.activity-chart__tooltip { position: absolute; z-index: var(--z-tooltip); top: 4px; right: 4px; width: 210px; max-width: calc(100% - 8px); display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-bg-surface); color: var(--color-fg-default); font-size: 11px; line-height: 16px; box-shadow: var(--shadow-md); }
+.activity-chart__tooltip strong, .activity-chart__tooltip footer { font-weight: 600; color: var(--color-fg-strong); }
+.activity-chart__tooltip li { display: grid; grid-template-columns: 8px minmax(0, 1fr) max-content; align-items: center; gap: 6px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+.activity-chart__tooltip footer { border-top: 1px solid var(--color-border-default); padding-top: 4px; text-align: right; }
+.activity-chart__swatch { display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex: none; }
+</style>

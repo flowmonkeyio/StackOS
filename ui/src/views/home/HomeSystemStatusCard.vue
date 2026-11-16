@@ -69,17 +69,8 @@ const STATUS_DOT: Record<string, string> = {
       </UiButton>
     </template>
 
-    <div
-      v-if="health.kind === 'loading'"
-      class="space-y-2"
-    >
-      <UiSkeleton
-        shape="line"
-        width="22rem"
-      />
-    </div>
     <UiCallout
-      v-else-if="health.kind === 'down'"
+      v-if="health.kind === 'down'"
       tone="danger"
       title="Can't reach the local service"
     >
@@ -110,9 +101,11 @@ const STATUS_DOT: Record<string, string> = {
       class="space-y-3"
     >
       <UiMetadataStrip
+        v-if="health.kind === 'ok'"
         :items="systemFacts"
         aria-label="System facts"
       />
+      <UiSkeleton v-else shape="block" height="38px" />
       <HomeAgentHostStatus
         :state="hostStatuses"
         :summary="hostStatusSummary"

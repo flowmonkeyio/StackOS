@@ -19,7 +19,9 @@ def _ui_paths(project_id: int | None) -> dict[str, str]:
         "home": f"/projects/{project_id}",
         "connections": f"/projects/{project_id}/connections",
         "tasks": f"/projects/{project_id}/tasks",
-        "workflow_templates": f"/projects/{project_id}/workflow-templates",
+        "plugins": f"/projects/{project_id}/plugins",
+        "library": f"/projects/{project_id}/library",
+        "agents": f"/projects/{project_id}/agents",
     }
 
 
@@ -231,7 +233,20 @@ def _connect_required_next_step(
     }
 
 
-def _connected_next_step(project_id: int) -> dict[str, Any]:
+def _connected_next_step(project_id: int | None) -> dict[str, Any]:
+    guidance = [
+        "Shared Patterns are optional recommendations: when relevant, search bounded "
+        "summaries with pattern.list, then read selected entries with pattern.get via "
+        "toolbox.call. Available without a project; no startup catalog scan or automatic "
+        "application. Project/operator rules and current repository choices take precedence."
+    ]
+    if project_id is None:
+        return {
+            "status": "project_selection_required",
+            "why": "Choose an explicit project for each task; no last-used project is selected.",
+            "recommended_tools": ["project.list", "workspace.startSession", "workspace.bootstrap"],
+            "guidance": guidance,
+        }
     return {
         "status": "ready",
         "call_via": "toolbox.call",
@@ -244,4 +259,5 @@ def _connected_next_step(project_id: int) -> dict[str, Any]:
             "connection.list",
         ],
         "ui_paths": _ui_paths(project_id),
+        "guidance": guidance,
     }

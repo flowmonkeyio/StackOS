@@ -5,6 +5,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { UiBadge } from '@/components/ui'
 import { resolveStatus, type Tone } from '@/design/status'
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
+import TaskPriorityBadge from './TaskPriorityBadge.vue'
 
 const props = defineProps<{
   data: TrackerVueNodeData
@@ -59,13 +60,7 @@ const statusColor = computed(() => TONE_VAR[resolveStatus('tracker', props.data.
       </div>
     </div>
     <div class="mt-3 flex flex-wrap gap-2">
-      <UiBadge
-        tone="neutral"
-        variant="outline"
-        size="sm"
-      >
-        {{ data.priorityKey }}
-      </UiBadge>
+      <TaskPriorityBadge :priority="data.priorityKey" />
       <UiBadge
         tone="neutral"
         variant="outline"

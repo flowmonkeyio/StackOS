@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, mount } from '@vue/test-utils'
 import FinanceFilters from './FinanceFilters.vue'
 import { comparisonWindow, timeframe, type FinanceQuery } from '@/lib/finance'
 
@@ -14,6 +14,7 @@ const query: FinanceQuery = {
 }
 
 describe('finance filter synchronization', () => {
+  enableAutoUnmount(afterEach)
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-14T12:00:00Z'))
@@ -65,7 +66,8 @@ describe('finance filter synchronization', () => {
     await account.setValue('bank:draft')
     const compare = filters.findAll('[role="combobox"]')[1]!
     await compare.trigger('click')
-    await filters
+    const comparisonListbox = new DOMWrapper(document.body).get(`[role="listbox"][id="${compare.attributes('aria-controls')}"]`)
+    await comparisonListbox
       .findAll('[role="option"]')
       .find((option) => option.text() === 'Previous year')!
       .trigger('click')
@@ -268,8 +270,10 @@ describe('finance filter synchronization', () => {
     })
     await filters.get('[data-test="toggle-finance-filters"]').trigger('click')
     async function choose(label: string) {
-      await filters.findAll('[role="combobox"]')[0]!.trigger('click')
-      await filters
+      const period = filters.findAll('[role="combobox"]')[0]!
+      await period.trigger('click')
+      const periodListbox = new DOMWrapper(document.body).get(`[role="listbox"][id="${period.attributes('aria-controls')}"]`)
+      await periodListbox
         .findAll('[role="option"]')
         .find((option) => option.text() === label)!
         .trigger('click')

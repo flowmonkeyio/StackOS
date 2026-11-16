@@ -46,8 +46,10 @@ def finance_recover(
     if not apply and confirmation_sha256:
         typer.echo("finance-recover: confirmation requires --apply", err=True)
         raise typer.Exit(1)
-    # Recovery does not alter SQLite state, plugin enablement or grants.
-    engine = create_engine(f"sqlite:///file:{settings.db_path}?mode=ro&uri=true")
+    # Apply reserves the existing project admission fence through publication.
+    # The transaction is rolled back on session close; no SQLite facts change.
+    mode = "rw" if apply else "ro"
+    engine = create_engine(f"sqlite:///file:{settings.db_path}?mode={mode}&uri=true")
     try:
         with Session(engine) as session:
             recovery = FinanceRecovery(session, settings)

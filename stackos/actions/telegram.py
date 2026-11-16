@@ -1686,7 +1686,9 @@ class TelegramActionConnector:
         uri = "/generated-assets/" + relative.as_posix()
         artifact = (
             ArtifactRepository(session)
-            .create(
+            .create_generated_file(
+                asset_root=request.asset_dir.resolve(),
+                path=destination,
                 project_id=request.project_id,
                 plugin_slug="communications",
                 kind="file",

@@ -8,14 +8,23 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
 from stackos.config import Settings
-from stackos.jobs.scheduler import build_scheduler
+from stackos.jobs.scheduler import build_scheduler, task_executor
 
 
 def test_scheduler_has_default_and_long_executors(engine: object) -> None:
-    """The runner needs both async + thread executors."""
+    """The runner needs async jobs plus capacity for three long jobs."""
     s = build_scheduler(Settings(), engine)  # type: ignore[arg-type]
     assert isinstance(s._executors["default"], AsyncIOExecutor)
     assert isinstance(s._executors["long"], ThreadPoolExecutor)
+    assert s._executors["long"]._pool._max_workers == 3
+    assert set(s._executors) == {"default", "long"}
+    first = task_executor(s, 1)
+    other = task_executor(s, 2)
+    assert first != other
+    assert task_executor(s, 1) == first
+    assert s._executors[first] is not s._executors[other]
+    assert isinstance(s._executors[first], ThreadPoolExecutor)
+    assert s._executors[first]._pool._max_workers == 32
 
 
 def test_scheduler_has_sqlalchemy_default_jobstore_and_memory(engine: object) -> None:

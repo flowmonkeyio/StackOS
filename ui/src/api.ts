@@ -380,6 +380,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/context/timeline/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Global Context Timeline Stream
+         * @description The same local-admin tracker transport for Overview's global usage scope.
+         */
+        get: operations["global_context_timeline_stream_api_v1_context_timeline_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/desktop/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Native Availability */
+        post: operations["native_availability_api_v1_desktop_availability_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -596,8 +633,7 @@ export interface paths {
         get: operations["get_project_api_v1_projects__project_id__get"];
         put?: never;
         post?: never;
-        /** Delete Project */
-        delete: operations["delete_project_api_v1_projects__project_id__delete"];
+        delete?: never;
         options?: never;
         head?: never;
         /** Update Project */
@@ -2220,6 +2256,141 @@ export interface components {
             /** Visible By Default */
             visible_by_default: boolean;
         };
+        /**
+         * ActionListInput
+         * @example {
+         *       "plugin_slug": "utils",
+         *       "project_id": 1,
+         *       "query": "sitemap"
+         *     }
+         */
+        ActionListInput: {
+            /**
+             * Capability Key
+             * @default null
+             */
+            capability_key: string | null;
+            /**
+             * Executable
+             * @default null
+             */
+            executable: boolean | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Include Unavailable Integrations
+             * @description When false, normal agent discovery hides disconnected, deferred, project-local, missing-connector, and otherwise non-executable external-provider actions. Set true for setup, readiness debugging, or catalog inventory.
+             * @default false
+             */
+            include_unavailable_integrations: boolean;
+            /**
+             * Plugin Slug
+             * @default null
+             */
+            plugin_slug: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Provider Key
+             * @default null
+             */
+            provider_key: string | null;
+            /**
+             * Query
+             * @default null
+             */
+            query: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ActionListInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ActionListItemOut */
+        ActionListItemOut: {
+            /** Action Ref */
+            action_ref: string;
+            /** Allows Credential */
+            allows_credential: boolean;
+            /** Availability Reasons */
+            availability_reasons?: string[];
+            /** Availability Status */
+            availability_status: string;
+            /**
+             * Budget Kind
+             * @default null
+             */
+            budget_kind: string | null;
+            /** Budget State */
+            budget_state: string;
+            /**
+             * Capability Key
+             * @default null
+             */
+            capability_key: string | null;
+            /**
+             * Connector Key
+             * @default null
+             */
+            connector_key: string | null;
+            /** Credential State */
+            credential_state: string;
+            /** Description */
+            description: string;
+            /** Executable */
+            executable: boolean;
+            exposure: components["schemas"]["ActionExposureOut"];
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Operation */
+            operation: string;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /**
+             * Provider Key
+             * @default null
+             */
+            provider_key: string | null;
+            /** Requires Credential */
+            requires_credential: boolean;
+            /** Risk Level */
+            risk_level: string;
+        };
+        /** ActionListOut */
+        ActionListOut: {
+            /** Count */
+            count: number;
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Hidden Count
+             * @default 0
+             */
+            hidden_count: number;
+            /** Items */
+            items: components["schemas"]["ActionListItemOut"][];
+        };
         /** ActionOut */
         ActionOut: {
             /** Action Ref */
@@ -2279,6 +2450,301 @@ export interface components {
             requires_credential: boolean;
             /** Risk Level */
             risk_level: string;
+        };
+        /**
+         * ActiveExecutionOut
+         * @description Actual host-call identity; absent when no call is registered in this daemon.
+         */
+        ActiveExecutionOut: {
+            /** Agent */
+            agent: string;
+            /** Host Key */
+            host_key: string;
+            /** Invocation Id */
+            invocation_id: string;
+            /** @default null */
+            live_usage: components["schemas"]["LiveUsageOut"] | null;
+            /** Model */
+            model: string | null;
+            /** Started At */
+            started_at: string;
+            /** Ticket Key */
+            ticket_key: string;
+        };
+        /**
+         * ActiveTaskOut
+         * @description Whitelisted task-index projection; identity is (project_id, key).
+         */
+        ActiveTaskOut: {
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            delivery: components["schemas"]["TaskDeliveryStateOut"] | null;
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Owner */
+            owner: string | null;
+            /** Priority Key */
+            priority_key: string;
+            project: components["schemas"]["ActiveTaskProjectOut"];
+            /** Project Id */
+            project_id: number;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            ticket_summary: components["schemas"]["TrackerTaskTicketSummaryOut"] | null;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+        };
+        /** ActiveTaskProjectOut */
+        ActiveTaskProjectOut: {
+            /** Domain */
+            domain: string;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ActiveTasksOut */
+        ActiveTasksOut: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Items */
+            items: components["schemas"]["ActiveTaskOut"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: number | null;
+            /** Project Id */
+            project_id: number | null;
+            /**
+             * Read Token
+             * @default null
+             */
+            read_token: string | null;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: ActiveTasksOutScope;
+        };
+        /** AgentDefinition */
+        AgentDefinition: {
+            /** Capabilities */
+            capabilities?: {
+                [key: string]: boolean;
+            };
+            /** Diagnostics */
+            diagnostics?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Digest
+             * @default null
+             */
+            digest: string | null;
+            /** @default null */
+            fields: components["schemas"]["AgentFields"] | null;
+            /** Inherited Fields */
+            inherited_fields?: string[];
+            /** Native Reasoning Efforts */
+            native_reasoning_efforts?: string[];
+            /** Native Settings */
+            native_settings?: {
+                [key: string]: unknown;
+            };
+            /** Project Dir */
+            project_dir: string;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Registration Digest
+             * @default null
+             */
+            registration_digest: string | null;
+            /** Registration Keys */
+            registration_keys?: string[];
+            source_ref: components["schemas"]["AgentSourceRef"];
+            /** Unsupported Fields */
+            unsupported_fields?: string[];
+        };
+        /**
+         * AgentExecutionRequirements
+         * @description Assignment needs, never native permission grants.
+         */
+        AgentExecutionRequirements: {
+            /**
+             * Filesystem Write
+             * @default false
+             */
+            filesystem_write: boolean;
+        };
+        /** AgentFields */
+        AgentFields: {
+            /** Description */
+            description: string;
+            /** Developer Instructions */
+            developer_instructions: string;
+            /**
+             * Features
+             * @default null
+             */
+            features: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
+             * Model Reasoning Summary
+             * @default null
+             */
+            model_reasoning_summary: string | null;
+            /**
+             * Model Verbosity
+             * @default null
+             */
+            model_verbosity: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Sandbox Mode
+             * @default null
+             */
+            sandbox_mode: string | null;
+            /**
+             * Skills
+             * @default null
+             */
+            skills: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** AgentList */
+        AgentList: {
+            /** Diagnostics */
+            diagnostics?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /** Items */
+            items?: components["schemas"]["AgentDefinition"][];
+            /** Native Reasoning Efforts */
+            native_reasoning_efforts?: string[];
+            /** Project Dir */
+            project_dir: string;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Registration Digest
+             * @default null
+             */
+            registration_digest: string | null;
+        };
+        /** AgentPatch */
+        AgentPatch: {
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Developer Instructions
+             * @default null
+             */
+            developer_instructions: string | null;
+            /**
+             * Features
+             * @default null
+             */
+            features: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
+             * Model Reasoning Summary
+             * @default null
+             */
+            model_reasoning_summary: string | null;
+            /**
+             * Model Verbosity
+             * @default null
+             */
+            model_verbosity: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /**
+             * Sandbox Mode
+             * @default null
+             */
+            sandbox_mode: string | null;
+            /**
+             * Skills
+             * @default null
+             */
+            skills: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * AgentRequestAttentionStatus
@@ -2345,6 +2811,198 @@ export interface components {
          * @enum {string}
          */
         AgentRequestStatus: AgentRequestStatus;
+        /** AgentSourceAdoption */
+        AgentSourceAdoption: {
+            /** Expected Digest */
+            expected_digest: string;
+            source_ref: components["schemas"]["AgentSourceRef"];
+        };
+        /** AgentSourceRef */
+        AgentSourceRef: {
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /** Native Name */
+            native_name: string;
+            /** Source Path */
+            source_path: string;
+        };
+        /** AgentStatsCoverageOut */
+        AgentStatsCoverageOut: {
+            /** Classification Known Attempts */
+            classification_known_attempts: number;
+            /**
+             * Classification Status
+             * @enum {string}
+             */
+            classification_status: AgentStatsCoverageOutClassification_status;
+            /** Classification Unknown Attempts */
+            classification_unknown_attempts: number;
+            /** Fields */
+            fields?: {
+                [key: string]: components["schemas"]["AgentStatsFieldCoverageOut"];
+            };
+            /** Usage Measured Attempts */
+            usage_measured_attempts: number;
+            /**
+             * Usage Status
+             * @enum {string}
+             */
+            usage_status: AgentStatsCoverageOutUsage_status;
+            /** Usage Unavailable Attempts */
+            usage_unavailable_attempts: number;
+        };
+        /** AgentStatsDayOut */
+        AgentStatsDayOut: {
+            /** By Agent */
+            by_agent: components["schemas"]["AgentStatsRowOut"][];
+            /** By Agent Model */
+            by_agent_model: components["schemas"]["AgentStatsRowOut"][];
+            /** By Model */
+            by_model: components["schemas"]["AgentStatsRowOut"][];
+            coverage: components["schemas"]["AgentStatsCoverageOut"];
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** @default null */
+            last_execution: components["schemas"]["ExecutionIdentityOut"] | null;
+            /** Launch Attempts */
+            launch_attempts: number;
+            /** Recorded Reviewer Rejects */
+            recorded_reviewer_rejects: number;
+            reported_usage: components["schemas"]["AgentStatsUsageOut"];
+            /**
+             * Review Outcomes
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome without evidenced cancellation.
+             */
+            review_outcomes?: {
+                [key: string]: number;
+            };
+            /** Samples */
+            samples?: components["schemas"]["UsageSampleOut"][];
+        };
+        /** AgentStatsFieldCoverageOut */
+        AgentStatsFieldCoverageOut: {
+            /** Measured Attempts */
+            measured_attempts: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: AgentStatsFieldCoverageOutStatus;
+            /** Unavailable Attempts */
+            unavailable_attempts: number;
+        };
+        /** AgentStatsMetricsOut */
+        AgentStatsMetricsOut: {
+            coverage: components["schemas"]["AgentStatsCoverageOut"];
+            /** @default null */
+            last_execution: components["schemas"]["ExecutionIdentityOut"] | null;
+            /** Launch Attempts */
+            launch_attempts: number;
+            /** Recorded Reviewer Rejects */
+            recorded_reviewer_rejects: number;
+            reported_usage: components["schemas"]["AgentStatsUsageOut"];
+            /**
+             * Review Outcomes
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome without evidenced cancellation.
+             */
+            review_outcomes?: {
+                [key: string]: number;
+            };
+            /** Samples */
+            samples?: components["schemas"]["UsageSampleOut"][];
+        };
+        /** AgentStatsRowOut */
+        AgentStatsRowOut: {
+            /** Agent Name */
+            agent_name: string | null;
+            coverage: components["schemas"]["AgentStatsCoverageOut"];
+            /** Group Key */
+            group_key: string;
+            /** Host Key */
+            host_key: string | null;
+            /** @default null */
+            last_execution: components["schemas"]["ExecutionIdentityOut"] | null;
+            /** Launch Attempts */
+            launch_attempts: number;
+            /** Model */
+            model: string | null;
+            /**
+             * Model Basis
+             * @default null
+             */
+            model_basis: AgentStatsRowOutModel_basisAnyOf0 | null;
+            /** Project Id */
+            project_id: number | null;
+            /** Project Ids */
+            project_ids: number[];
+            /** Project Name */
+            project_name: string | null;
+            /** Project Slug */
+            project_slug: string | null;
+            /** Recorded Reviewer Rejects */
+            recorded_reviewer_rejects: number;
+            reported_usage: components["schemas"]["AgentStatsUsageOut"];
+            /**
+             * Review Outcomes
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome without evidenced cancellation.
+             */
+            review_outcomes?: {
+                [key: string]: number;
+            };
+            /** Samples */
+            samples?: components["schemas"]["UsageSampleOut"][];
+            /** Selected Role */
+            selected_role: string | null;
+        };
+        /** AgentStatsUsageOut */
+        AgentStatsUsageOut: {
+            /**
+             * Cache Read
+             * @default null
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @default null
+             */
+            cache_write: number | null;
+            /** Input */
+            input: number | null;
+            /**
+             * Input With Unknown Cache
+             * @description Measured input whose cache-read split is unreported; never assigned to remaining input.
+             * @default null
+             */
+            input_with_unknown_cache: number | null;
+            /** Output */
+            output: number | null;
+            /**
+             * Reasoning
+             * @default null
+             */
+            reasoning: number | null;
+            /**
+             * Remaining Input
+             * @description Input less cache read, only for receipts with known cache read. Includes cache write.
+             * @default null
+             */
+            remaining_input: number | null;
+            /** Total */
+            total: number | null;
+            /**
+             * Unit
+             * @default tokens
+             * @constant
+             */
+            unit: "tokens";
+        };
         /** ApprovalGateSpec */
         ApprovalGateSpec: {
             /** Approver */
@@ -2817,6 +3475,11 @@ export interface components {
             provider_key: string | null;
             /** Providers */
             providers: components["schemas"]["AuthProviderOut"][];
+            /**
+             * Summary Only
+             * @default false
+             */
+            summary_only: boolean;
         };
         /** AuthTestOut */
         AuthTestOut: {
@@ -3148,6 +3811,123 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** DeliveryCapacityInput */
+        DeliveryCapacityInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: DeliveryCapacityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** DeliveryCapacityOut */
+        DeliveryCapacityOut: {
+            /** Projects */
+            projects: components["schemas"]["ProjectDeliveryCapacityOut"][];
+            /**
+             * Scope
+             * @default project
+             * @constant
+             */
+            scope: "project";
+            /**
+             * Supported Max
+             * @default 32
+             */
+            supported_max: number;
+            /**
+             * Supported Min
+             * @default 1
+             */
+            supported_min: number;
+        };
+        /** DeliveryCountOut */
+        DeliveryCountOut: {
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /** DeliveryMetricCoverageOut */
+        DeliveryMetricCoverageOut: {
+            /** Issues */
+            issues?: string[];
+            /**
+             * Recorded
+             * @default 0
+             */
+            recorded: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: DeliveryMetricCoverageOutStatus;
+            /**
+             * Unavailable
+             * @default 0
+             */
+            unavailable: number;
+        };
+        /** DeliveryTrendDayOut */
+        DeliveryTrendDayOut: {
+            changes_requested: components["schemas"]["DeliveryCountOut"];
+            completed_tasks: components["schemas"]["DeliveryCountOut"];
+            completed_tickets: components["schemas"]["DeliveryCountOut"];
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            first_review_acceptance: components["schemas"]["FirstReviewAcceptanceOut"];
+            stops: components["schemas"]["DeliveryCountOut"];
+            work_time: components["schemas"]["DeliveryWorkTimeOut"];
+        };
+        /** DeliveryTrendMetricsOut */
+        DeliveryTrendMetricsOut: {
+            changes_requested: components["schemas"]["DeliveryCountOut"];
+            completed_tasks: components["schemas"]["DeliveryCountOut"];
+            completed_tickets: components["schemas"]["DeliveryCountOut"];
+            first_review_acceptance: components["schemas"]["FirstReviewAcceptanceOut"];
+            stops: components["schemas"]["DeliveryCountOut"];
+            work_time: components["schemas"]["DeliveryWorkTimeOut"];
+        };
+        /** DeliveryTrendsOut */
+        DeliveryTrendsOut: {
+            /** Daily */
+            daily: components["schemas"]["DeliveryTrendDayOut"][];
+            totals: components["schemas"]["DeliveryTrendMetricsOut"];
+        };
+        /** DeliveryWorkTimeOut */
+        DeliveryWorkTimeOut: {
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Total Seconds
+             * @default null
+             */
+            total_seconds: number | null;
+        };
         /** DurableActionItemOut */
         DurableActionItemOut: {
             /** Attempt Count */
@@ -3370,6 +4150,27 @@ export interface components {
             runs_kind: string[];
             /** Runs Status */
             runs_status: string[];
+        };
+        /**
+         * ExecutionIdentityOut
+         * @description Recorded actual execution, without prompts, native paths or live state.
+         */
+        ExecutionIdentityOut: {
+            /** Agent */
+            agent: string;
+            /** Host Key */
+            host_key: string;
+            /**
+             * Invocation Id
+             * @default null
+             */
+            invocation_id: string | null;
+            /** Model */
+            model: string | null;
+            /** Started At */
+            started_at: string;
+            /** Ticket Key */
+            ticket_key: string;
         };
         /** ExperimentCreateRequest */
         ExperimentCreateRequest: {
@@ -4395,6 +5196,25 @@ export interface components {
             /** Readiness */
             readiness: string;
         };
+        /** FirstReviewAcceptanceOut */
+        FirstReviewAcceptanceOut: {
+            /**
+             * Accepted
+             * @default 0
+             */
+            accepted: number;
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Rate
+             * @default null
+             */
+            rate: number | null;
+            /**
+             * Reviewed
+             * @default 0
+             */
+            reviewed: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -4430,6 +5250,30 @@ export interface components {
             /** Run Id */
             run_id: number | null;
         };
+        /** IntegrationActionSummaryOut */
+        IntegrationActionSummaryOut: {
+            /** Action Ref */
+            action_ref: string;
+            /** Availability Status */
+            availability_status: string;
+            /** Executable */
+            executable: boolean;
+            /** Exposure State */
+            exposure_state: string;
+            /**
+             * Hidden Reason
+             * @default null
+             */
+            hidden_reason: string | null;
+            /** Name */
+            name: string;
+            /** Operation */
+            operation: string;
+            /** Risk Level */
+            risk_level: string;
+            /** Visible By Default */
+            visible_by_default: boolean;
+        };
         /** IntegrationBudgetOut */
         IntegrationBudgetOut: {
             /** Alert Threshold Pct */
@@ -4463,6 +5307,164 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * IntegrationListInput
+         * @example {
+         *       "plugin_slug": "communications",
+         *       "project_id": 1
+         *     }
+         */
+        IntegrationListInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Include Actions
+             * @description Include compact per-action exposure summaries for each integration.
+             * @default false
+             */
+            include_actions: boolean;
+            /**
+             * Include Unavailable
+             * @description When true, include disconnected providers and their hidden actions. Set false for a compact current-ready integration view.
+             * @default true
+             */
+            include_unavailable: boolean;
+            /**
+             * Plugin Slug
+             * @default null
+             */
+            plugin_slug: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Provider Key
+             * @default null
+             */
+            provider_key: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: IntegrationListInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** IntegrationListItemOut */
+        IntegrationListItemOut: {
+            /** Actions */
+            actions?: components["schemas"]["IntegrationActionSummaryOut"][];
+            /** Auth Type */
+            auth_type: string;
+            /** Connected */
+            connected: boolean;
+            /**
+             * Connected Credential Count
+             * @default 0
+             */
+            connected_credential_count: number;
+            /**
+             * Credential Count
+             * @default 0
+             */
+            credential_count: number;
+            /** Description */
+            description: string;
+            /**
+             * Executable Action Count
+             * @default 0
+             */
+            executable_action_count: number;
+            /**
+             * Exposed Action Count
+             * @default 0
+             */
+            exposed_action_count: number;
+            /**
+             * Hidden Action Count
+             * @default 0
+             */
+            hidden_action_count: number;
+            /** Name */
+            name: string;
+            /** @default null */
+            next_action: components["schemas"]["ActionExposureNextActionOut"] | null;
+            /**
+             * Optional Action Count
+             * @default 0
+             */
+            optional_action_count: number;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /** Provider Key */
+            provider_key: string;
+            /**
+             * Required Action Count
+             * @default 0
+             */
+            required_action_count: number;
+            /** @default null */
+            setup: components["schemas"]["ProviderSetupOut"] | null;
+            /** State */
+            state: string;
+            /**
+             * Total Action Count
+             * @default 0
+             */
+            total_action_count: number;
+        };
+        /** IntegrationListOut */
+        IntegrationListOut: {
+            /**
+             * Connected Count
+             * @default 0
+             */
+            connected_count: number;
+            /** Count */
+            count: number;
+            /**
+             * Executable Action Count
+             * @default 0
+             */
+            executable_action_count: number;
+            /**
+             * Exposed Action Count
+             * @default 0
+             */
+            exposed_action_count: number;
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Hidden Action Count
+             * @default 0
+             */
+            hidden_action_count: number;
+            /** Items */
+            items: components["schemas"]["IntegrationListItemOut"][];
+            /** Project Id */
+            project_id: number;
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
         };
         /** LearningCreateRequest */
         LearningCreateRequest: {
@@ -4591,6 +5593,30 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /** LiveUsageOut */
+        LiveUsageOut: {
+            /** Measured At */
+            measured_at: string;
+            /** Samples */
+            samples?: components["schemas"]["UsageSampleOut"][];
+            usage: components["schemas"]["LiveUsageSnapshotOut"];
+        };
+        /** LiveUsageSnapshotOut */
+        LiveUsageSnapshotOut: {
+            measured: components["schemas"]["AgentStatsUsageOut"];
+            /**
+             * Status
+             * @default measured
+             * @constant
+             */
+            status: "measured";
+            /**
+             * Unit
+             * @default tokens
+             * @constant
+             */
+            unit: "tokens";
+        };
         /** LoadedWorkflowTemplate */
         LoadedWorkflowTemplate: {
             project_extension?: components["schemas"]["WorkflowTemplateExtensionOut"] | null;
@@ -4693,6 +5719,37 @@ export interface components {
             thread_record_id: number;
             /** Thread Ref */
             thread_ref: string;
+        };
+        /**
+         * MainAgentPreferences
+         * @description Launch choices only; instructions and specialist contracts have other owners.
+         */
+        MainAgentPreferences: {
+            /**
+             * Host Key
+             * @default null
+             */
+            host_key: string | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
+             * Profile
+             * @default null
+             */
+            profile: string | null;
+            /**
+             * Provider
+             * @default null
+             */
+            provider: string | null;
         };
         /** MetricSnapshotOut */
         MetricSnapshotOut: {
@@ -5130,6 +6187,264 @@ export interface components {
              */
             total_estimate: number;
         };
+        /** Page[ScheduledRunOut] */
+        Page_ScheduledRunOut_: {
+            /** Items */
+            items: components["schemas"]["ScheduledRunOut"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /** PatternDeleteInput */
+        PatternDeleteInput: {
+            /** Expected Etag */
+            expected_etag: string;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Pattern Id */
+            pattern_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: PatternDeleteInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** PatternDetail */
+        PatternDetail: {
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Etag
+             * @description Opaque record identity/revision token; copy it unchanged.
+             */
+            etag: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Pattern Ref */
+            pattern_ref: string;
+            /** Revision */
+            revision: number;
+            /**
+             * Source
+             * @default custom
+             * @enum {string}
+             */
+            source: PatternDetailSource;
+            /**
+             * Source Label
+             * @default Custom
+             */
+            source_label: string;
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags: string[];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PatternGetInput */
+        PatternGetInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Key
+             * @default null
+             */
+            key: string | null;
+            /**
+             * Pattern Id
+             * @default null
+             */
+            pattern_id: number | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: PatternGetInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** PatternListInput */
+        PatternListInput: {
+            /**
+             * Cursor
+             * @default null
+             */
+            cursor: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 25
+             */
+            limit: number;
+            /**
+             * Query
+             * @default null
+             */
+            query: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: PatternListInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Source
+             * @default all
+             * @enum {string}
+             */
+            source: PatternListInputSource;
+            /** Tags */
+            tags?: string[];
+        };
+        /** PatternPage */
+        PatternPage: {
+            /** Catalog Total */
+            catalog_total: number;
+            /** Items */
+            items: components["schemas"]["PatternSummary"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /** PatternSummary */
+        PatternSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Etag
+             * @description Opaque record identity/revision token; copy it unchanged.
+             */
+            etag: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Pattern Ref */
+            pattern_ref: string;
+            /** Revision */
+            revision: number;
+            /**
+             * Source
+             * @default custom
+             * @enum {string}
+             */
+            source: PatternSummarySource;
+            /**
+             * Source Label
+             * @default Custom
+             */
+            source_label: string;
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags: string[];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PatternUpsertInput */
+        PatternUpsertInput: {
+            /** Body */
+            body: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Key */
+            key: string;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: PatternUpsertInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags?: string[];
+            /** Title */
+            title: string;
+        };
         /**
          * PermissionVerificationOut
          * @description Safe, manifest-owned grant evidence posture exposed to callers.
@@ -5226,6 +6541,195 @@ export interface components {
              */
             kind: string;
         };
+        /** ProjectAgentCreateInput */
+        ProjectAgentCreateInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            fields: components["schemas"]["AgentFields"];
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: ProjectAgentCreateInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectAgentGetInput */
+        ProjectAgentGetInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectAgentGetInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            source_ref: components["schemas"]["AgentSourceRef"];
+        };
+        /** ProjectAgentScope */
+        ProjectAgentScope: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectAgentScopeResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectAgentUpdateInput */
+        ProjectAgentUpdateInput: {
+            /** Expected Digest */
+            expected_digest: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Expected Registration Digest
+             * @default null
+             */
+            expected_registration_digest: string | null;
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            patch: components["schemas"]["AgentPatch"];
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: ProjectAgentUpdateInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            source_ref: components["schemas"]["AgentSourceRef"];
+        };
+        /** ProjectCapacityUpdate */
+        ProjectCapacityUpdate: {
+            /** Max Concurrent Tasks */
+            max_concurrent_tasks: number;
+            /** Project Id */
+            project_id: number;
+        };
+        /** ProjectCleanupResult */
+        ProjectCleanupResult: {
+            /**
+             * Blockers
+             * @default []
+             */
+            blockers: string[];
+            /**
+             * Error Code
+             * @default null
+             */
+            error_code: string | null;
+            /**
+             * Operation Id
+             * @default null
+             */
+            operation_id: string | null;
+            /**
+             * Ownership Required Artifact Ids
+             * @default []
+             */
+            ownership_required_artifact_ids: number[];
+            /** Project Id */
+            project_id: number;
+            /**
+             * Retryable
+             * @default false
+             */
+            retryable: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: ProjectCleanupResultStatus;
+        };
         /**
          * ProjectCreateRequest
          * @example {
@@ -5253,6 +6757,65 @@ export interface components {
             } | null;
             /** Slug */
             slug: string;
+        };
+        /** ProjectDeleteConfirmation */
+        ProjectDeleteConfirmation: {
+            /**
+             * Permanent
+             * @constant
+             */
+            permanent: true;
+            /** Project Id */
+            project_id: number;
+            /** Project Slug */
+            project_slug: string;
+        };
+        /** ProjectDeleteInput */
+        ProjectDeleteInput: {
+            confirmation: components["schemas"]["ProjectDeleteConfirmation"];
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default null
+             */
+            response_mode: ProjectDeleteInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Scope
+             * @default project
+             * @enum {string}
+             */
+            scope: ProjectDeleteInputScope;
+        };
+        /** ProjectDeliveryCapacityOut */
+        ProjectDeliveryCapacityOut: {
+            /** Configured Limit */
+            configured_limit: number;
+            /** Project Id */
+            project_id: number;
+            /** Project Name */
+            project_name: string;
+            /** Project Slug */
+            project_slug: string;
+            /** Queued Count */
+            queued_count: number;
+            /** Running Count */
+            running_count: number;
         };
         /** ProjectEventOut */
         ProjectEventOut: {
@@ -5289,8 +6852,100 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /** ProjectFileOwnershipInput */
+        ProjectFileOwnershipInput: {
+            /** Artifact Id */
+            artifact_id: number;
+            /** Confirm Ownership */
+            confirm_ownership: boolean;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Expected Sha256 */
+            expected_sha256: string;
+            /** Expected Uri */
+            expected_uri: string;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Project Slug */
+            project_slug: string;
+            /**
+             * Response Mode
+             * @default null
+             */
+            response_mode: ProjectFileOwnershipInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectFileOwnershipResult */
+        ProjectFileOwnershipResult: {
+            /** Artifact Id */
+            artifact_id: number;
+            /** Operation Id */
+            operation_id: string;
+            /** Project Id */
+            project_id: number;
+            /** Reconciled */
+            reconciled: boolean;
+        };
+        /** ProjectMoveInput */
+        ProjectMoveInput: {
+            /**
+             * Anchor Id
+             * @default null
+             */
+            anchor_id: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Placement
+             * @enum {string}
+             */
+            placement: ProjectMoveInputPlacement;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ProjectMoveInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Scope
+             * @default project
+             * @enum {string}
+             */
+            scope: ProjectMoveInputScope;
+        };
         /** ProjectOut */
         ProjectOut: {
+            /** Cleanup Json */
+            cleanup_json?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time
@@ -5308,6 +6963,16 @@ export interface components {
             name: string;
             /** Niche */
             niche: string | null;
+            /** Order Index */
+            order_index: number;
+            /** Primary Workspace Binding Id */
+            primary_workspace_binding_id?: number | null;
+            /** Project Dir */
+            project_dir?: string | null;
+            /** Project Folder Issue */
+            project_folder_issue?: string | null;
+            /** Project Folder Status */
+            project_folder_status?: ProjectOutProject_folder_statusAnyOf0 | null;
             /** Schedule Json */
             schedule_json: {
                 [key: string]: unknown;
@@ -5351,6 +7016,366 @@ export interface components {
              */
             updated_at: string;
         };
+        /** ProjectSetupAnswerInput */
+        ProjectSetupAnswerInput: {
+            /** Answer */
+            answer: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Question Id */
+            question_id: string;
+            /** Question Revision */
+            question_revision: number;
+            /** Request Id */
+            request_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupAnswerInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectSetupCancelInput */
+        ProjectSetupCancelInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Expected Revision
+             * @default null
+             */
+            expected_revision: number | null;
+            /**
+             * External Work Stopped
+             * @default false
+             */
+            external_work_stopped: boolean;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Request Id */
+            request_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupCancelInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectSetupContinueInput */
+        ProjectSetupContinueInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Request Id */
+            request_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupContinueInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectSetupGetInput */
+        ProjectSetupGetInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Resolve Launch Preferences
+             * @description Console-only preview of effective native launch choices; ordinary reads retain saved preferences without inspecting hosts.
+             * @default false
+             */
+            resolve_launch_preferences: boolean;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupGetInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Workflow Key
+             * @default null
+             */
+            workflow_key: string | null;
+        };
+        /** ProjectSetupOut */
+        ProjectSetupOut: {
+            /**
+             * Attempt Diagnostic
+             * @default null
+             */
+            attempt_diagnostic: string | null;
+            /**
+             * Binding Id
+             * @default null
+             */
+            binding_id: number | null;
+            /**
+             * Configured Count
+             * @default 0
+             */
+            configured_count: number;
+            /** @default null */
+            current_attempt: components["schemas"]["SetupAttempt"] | null;
+            /** Detail Ref */
+            detail_ref: {
+                [key: string]: unknown;
+            };
+            /** Eligible */
+            eligible: boolean;
+            /**
+             * Folder Status
+             * @enum {string}
+             */
+            folder_status: ProjectSetupOutFolder_status;
+            /** Guidance Ref */
+            guidance_ref?: {
+                [key: string]: unknown;
+            };
+            /** Launch Preferences */
+            launch_preferences?: {
+                [key: string]: unknown;
+            };
+            /** Next Action */
+            next_action: string;
+            /**
+             * Notice
+             * @default null
+             */
+            notice: string | null;
+            /**
+             * Project Folder Issue
+             * @default null
+             */
+            project_folder_issue: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Setup Reminder Dismissed At
+             * @default null
+             */
+            setup_reminder_dismissed_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: ProjectSetupOutStatus;
+            /**
+             * Unknown Count
+             * @default 0
+             */
+            unknown_count: number;
+            /**
+             * Update Count
+             * @default 0
+             */
+            update_count: number;
+            /**
+             * Update Reminder Dismissed At
+             * @default null
+             */
+            update_reminder_dismissed_at: string | null;
+            /** Workflows */
+            workflows?: components["schemas"]["SetupWorkflowOut"][];
+        };
+        /** ProjectSetupRemindersInput */
+        ProjectSetupRemindersInput: {
+            /**
+             * Dismiss Setup
+             * @default false
+             */
+            dismiss_setup: boolean;
+            /**
+             * Dismiss Updates
+             * @default false
+             */
+            dismiss_updates: boolean;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupRemindersInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectSetupStartInput */
+        ProjectSetupStartInput: {
+            /**
+             * Client Session Id
+             * @default null
+             */
+            client_session_id: string | null;
+            /**
+             * Entry Kind
+             * @default existing_agent
+             * @enum {string}
+             */
+            entry_kind: ProjectSetupStartInputEntry_kind;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Mode
+             * @default setup
+             * @enum {string}
+             */
+            mode: ProjectSetupStartInputMode;
+            /** @default null */
+            preferences: components["schemas"]["MainAgentPreferences"] | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Requested Scope
+             * @description Ordinary setup/update completes activation. Select infrastructure_only explicitly for preparation; scope grants no local-admin or business-action authority.
+             * @default ready_to_use
+             * @enum {string}
+             */
+            requested_scope: ProjectSetupStartInputRequested_scope;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupStartInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Session Id
+             * @default null
+             */
+            session_id: number | null;
+            /** Workflow Keys */
+            workflow_keys?: string[];
+        };
+        /**
+         * ProjectUpdateInput
+         * @example {
+         *       "patch": {
+         *         "name": "Acme Pro"
+         *       },
+         *       "project_id": 1
+         *     }
+         */
+        ProjectUpdateInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Patch */
+            patch: {
+                [key: string]: unknown;
+            };
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ProjectUpdateInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Scope
+             * @default project
+             * @enum {string}
+             */
+            scope: ProjectUpdateInputScope;
+        };
         /** ProjectUpdateRequest */
         ProjectUpdateRequest: {
             /** Domain */
@@ -5363,6 +7388,8 @@ export interface components {
             name?: string | null;
             /** Niche */
             niche?: string | null;
+            /** Primary Workspace Binding Id */
+            primary_workspace_binding_id?: number | null;
             /** Schedule Json */
             schedule_json?: {
                 [key: string]: unknown;
@@ -5937,17 +7964,267 @@ export interface components {
          * @enum {string}
          */
         RunStatus: RunStatus;
+        /**
+         * ScheduleExecution
+         * @description Native launch settings; project_dir only fences a saved legacy target.
+         */
+        ScheduleExecution: {
+            /** Host Key */
+            host_key?: string | null;
+            mcp_config_ref?: components["schemas"]["TaskMcpConfigRef"] | null;
+            /** Project Dir */
+            project_dir?: string | null;
+        };
+        /**
+         * ScheduleListInput
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        ScheduleListInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleListInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ScheduleRemovalOut */
+        ScheduleRemovalOut: {
+            /** Job Id */
+            job_id: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Removed
+             * @default true
+             */
+            removed: boolean;
+        };
+        /**
+         * ScheduleRemoveInput
+         * @example {
+         *       "job_id": 1,
+         *       "project_id": 1
+         *     }
+         */
+        ScheduleRemoveInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Job Id */
+            job_id: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleRemoveInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ScheduleRunsInput */
+        ScheduleRunsInput: {
+            /**
+             * After Id
+             * @default null
+             */
+            after_id: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleRunsInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Schedule Id
+             * @default null
+             */
+            schedule_id: number | null;
+        };
+        /**
+         * ScheduleSetInput
+         * @example {
+         *       "cron_expr": "0 9 * * 1",
+         *       "kind": "weekly-review",
+         *       "project_id": 1
+         *     }
+         */
+        ScheduleSetInput: {
+            /** Cron Expr */
+            cron_expr: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** @default null */
+            execution_json: components["schemas"]["ScheduleExecution"] | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Goal
+             * @default null
+             */
+            goal: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Inputs Json
+             * @default null
+             */
+            inputs_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Kind */
+            kind: string;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleSetInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Template Key
+             * @default null
+             */
+            template_key: string | null;
+            /**
+             * Timezone
+             * @default null
+             */
+            timezone: string | null;
+        };
+        /**
+         * ScheduleToggleInput
+         * @example {
+         *       "enabled": false,
+         *       "job_id": 1,
+         *       "project_id": 1
+         *     }
+         */
+        ScheduleToggleInput: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Job Id */
+            job_id: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleToggleInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
         /** ScheduleUpsertRequest */
         ScheduleUpsertRequest: {
             /** Cron Expr */
             cron_expr: string;
             /**
              * Enabled
-             * @default true
+             * @default false
              */
             enabled: boolean;
+            execution_json?: components["schemas"]["ScheduleExecution"] | null;
+            /** Goal */
+            goal?: string | null;
+            /** Inputs Json */
+            inputs_json?: {
+                [key: string]: unknown;
+            } | null;
             /** Kind */
             kind: string;
+            /** Name */
+            name?: string | null;
+            /** Template Key */
+            template_key?: string | null;
+            /** Timezone */
+            timezone?: string | null;
         };
         /** ScheduledJobOut */
         ScheduledJobOut: {
@@ -5955,18 +8232,626 @@ export interface components {
             cron_expr: string;
             /** Enabled */
             enabled: boolean;
+            execution_json: components["schemas"]["ScheduleExecution"] | null;
+            /** Goal */
+            goal: string | null;
             /** Id */
             id: number;
+            /** Inputs Json */
+            inputs_json: {
+                [key: string]: unknown;
+            } | null;
             /** Kind */
             kind: string;
+            /** Last Request Id */
+            last_request_id: number | null;
             /** Last Run At */
             last_run_at: string | null;
             /** Last Run Status */
             last_run_status: string | null;
+            /** Name */
+            name: string | null;
             /** Next Run At */
             next_run_at: string | null;
             /** Project Id */
             project_id: number;
+            /** Setup Issue */
+            setup_issue?: string | null;
+            /** Template Key */
+            template_key: string | null;
+            /** Timezone */
+            timezone: string | null;
+        };
+        /** ScheduledNativeExecutionOut */
+        ScheduledNativeExecutionOut: {
+            /** Agent */
+            agent: string;
+            /** Host Key */
+            host_key: string;
+            /** Invocation Id */
+            invocation_id: string;
+            /**
+             * Live Usage
+             * @default null
+             */
+            live_usage: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /** Request Id */
+            request_id: number;
+            /** Started At */
+            started_at: string;
+            /**
+             * Thread Id
+             * @default null
+             */
+            thread_id: string | null;
+        };
+        /** ScheduledRunOut */
+        ScheduledRunOut: {
+            /** Active Execution */
+            active_execution: components["schemas"]["ScheduledNativeExecutionOut"] | components["schemas"]["ActiveExecutionOut"] | null;
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Ended At */
+            ended_at: string | null;
+            /**
+             * Error
+             * @default null
+             */
+            error: string | null;
+            /** @default null */
+            native_execution: components["schemas"]["ScheduledNativeExecutionOut"] | null;
+            /**
+             * Outcome Status
+             * @default null
+             */
+            outcome_status: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Request Id */
+            request_id: number;
+            /** Request Status */
+            request_status: string;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Schedule Id */
+            schedule_id: number;
+            /** Schedule Name */
+            schedule_name: string;
+            /** Started At */
+            started_at: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Summary
+             * @default null
+             */
+            summary: string | null;
+            /** Task Key */
+            task_key: string | null;
+            /** Template Key */
+            template_key: string | null;
+            /**
+             * Usage
+             * @default null
+             */
+            usage: {
+                [key: string]: unknown;
+            } | null;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+            /** Workflow Title */
+            workflow_title: string | null;
+        };
+        /** SetDeliveryCapacityInput */
+        SetDeliveryCapacityInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: SetDeliveryCapacityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /** Updates */
+            updates: components["schemas"]["ProjectCapacityUpdate"][];
+        };
+        /** SetupAdoptionProposal */
+        SetupAdoptionProposal: {
+            /** Binding Id */
+            binding_id: number;
+            /** Expected Delivery Digest */
+            expected_delivery_digest: string;
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /** Roles */
+            roles: {
+                [key: string]: components["schemas"]["SetupRoleProposal"];
+            };
+        };
+        /** SetupAnswer */
+        SetupAnswer: {
+            /** Answer */
+            answer: string;
+            /**
+             * Answered At
+             * Format: date-time
+             */
+            answered_at: string;
+            /** Question Id */
+            question_id: string;
+            /** Question Request Id */
+            question_request_id: number;
+            /** Question Revision */
+            question_revision: number;
+        };
+        /**
+         * SetupAttempt
+         * @description Versioned AgentRequest metadata; native execution evidence stays alongside it.
+         */
+        SetupAttempt: {
+            /** @default null */
+            adoption_proposal: components["schemas"]["SetupAdoptionProposal"] | null;
+            /** Answers */
+            answers?: components["schemas"]["SetupAnswer"][];
+            /** Attempt Ref */
+            attempt_ref: string;
+            /**
+             * Entry Kind
+             * @enum {string}
+             */
+            entry_kind: SetupAttemptEntry_kind;
+            /** @default null */
+            managed: components["schemas"]["SetupManagedExecution"] | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: SetupAttemptMode;
+            /** Observed Receipt Revisions */
+            observed_receipt_revisions: {
+                [key: string]: number;
+            };
+            /** Outcomes */
+            outcomes?: {
+                [key: string]: components["schemas"]["SetupWorkflowOutcome"];
+            };
+            /**
+             * Partial Changes Possible
+             * @default false
+             */
+            partial_changes_possible: boolean;
+            /**
+             * Predecessor Request Id
+             * @default null
+             */
+            predecessor_request_id: number | null;
+            /** @default null */
+            progress: components["schemas"]["SetupProgress"] | null;
+            /** Project Id */
+            project_id: number;
+            /** @default null */
+            question: components["schemas"]["SetupQuestion"] | null;
+            /**
+             * Recovery Condition
+             * @default null
+             */
+            recovery_condition: string | null;
+            /** Remaining Workflow Keys */
+            remaining_workflow_keys?: string[];
+            /** Reports */
+            reports?: components["schemas"]["SetupReportReceipt"][];
+            /** Request Id */
+            request_id: number;
+            /**
+             * Requested Scope
+             * @default infrastructure_only
+             * @enum {string}
+             */
+            requested_scope: SetupAttemptRequested_scope;
+            /** Revalidate Workflow Keys */
+            revalidate_workflow_keys?: string[];
+            /**
+             * Revision
+             * @default 1
+             */
+            revision: number;
+            /** Root Request Id */
+            root_request_id: number;
+            /** Runtime */
+            runtime: string;
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Session Id */
+            session_id: number | null;
+            /**
+             * Status
+             * @default running
+             * @enum {string}
+             */
+            status: SetupAttemptStatus;
+            /**
+             * Successor Request Id
+             * @default null
+             */
+            successor_request_id: number | null;
+            /**
+             * Thread Id
+             * @default null
+             */
+            thread_id: string | null;
+            /** Workflow Keys */
+            workflow_keys: string[];
+        };
+        /**
+         * SetupExecutionBinding
+         * @description Identity of the role which actually performed a declared check.
+         */
+        SetupExecutionBinding: {
+            /** Agent */
+            agent: string;
+            /** Binding Id */
+            binding_id: number;
+            /** Host Key */
+            host_key: string;
+            /** Role */
+            role: string;
+            /** Settings Digest */
+            settings_digest: string;
+            /**
+             * Source Digest
+             * @default null
+             */
+            source_digest: string | null;
+            /** @default null */
+            source_ref: components["schemas"]["AgentSourceRef"] | null;
+        };
+        /** SetupManagedExecution */
+        SetupManagedExecution: {
+            /** Admission Id */
+            admission_id: string;
+            /**
+             * Adopted Delivery Digest
+             * @default null
+             */
+            adopted_delivery_digest: string | null;
+            /**
+             * Adoption Authorized
+             * @default false
+             */
+            adoption_authorized: boolean;
+            /** Binding Id */
+            binding_id: number;
+            /**
+             * Callback Started
+             * @default false
+             */
+            callback_started: boolean;
+            /**
+             * Cancel Requested
+             * @default false
+             */
+            cancel_requested: boolean;
+            /**
+             * Coordinator Thread Id
+             * @default null
+             */
+            coordinator_thread_id: string | null;
+            /**
+             * Diagnostic
+             * @default null
+             */
+            diagnostic: string | null;
+            /** Job Ref */
+            job_ref: string;
+            /**
+             * Phase
+             * @default preparation
+             * @enum {string}
+             */
+            phase: SetupManagedExecutionPhase;
+            /**
+             * Preflight Failed
+             * @default false
+             */
+            preflight_failed: boolean;
+            /**
+             * Resume Thread Id
+             * @default null
+             */
+            resume_thread_id: string | null;
+            /** @default null */
+            role_check: components["schemas"]["SetupNativeRoleCheck"] | null;
+            /** Role Verification Request Ids */
+            role_verification_request_ids?: number[];
+            /** Settings */
+            settings: {
+                [key: string]: unknown;
+            };
+            /**
+             * Slot Reserved
+             * @default false
+             */
+            slot_reserved: boolean;
+            /**
+             * Verification Request Id
+             * @default null
+             */
+            verification_request_id: number | null;
+        };
+        /** SetupNativeRoleCheck */
+        SetupNativeRoleCheck: {
+            /** Agent Snapshot */
+            agent_snapshot: {
+                [key: string]: unknown;
+            };
+            execution: components["schemas"]["SetupExecutionBinding"];
+            request: components["schemas"]["SetupRoleCheckRequest"];
+            /** Workflow Key */
+            workflow_key: string;
+        };
+        /** SetupProgress */
+        SetupProgress: {
+            /** Evidence Ref */
+            evidence_ref: string;
+            /** Message */
+            message: string;
+        };
+        /** SetupQuestion */
+        SetupQuestion: {
+            /**
+             * Answer State
+             * @default pending
+             * @enum {string}
+             */
+            answer_state: SetupQuestionAnswer_state;
+            /** Prompt */
+            prompt: string;
+            /** Question Id */
+            question_id: string;
+            /**
+             * Response Channel
+             * @default existing_agent
+             * @enum {string}
+             */
+            response_channel: SetupQuestionResponse_channel;
+            /** Revision */
+            revision: number;
+            /** Workflow Keys */
+            workflow_keys: string[];
+        };
+        /** SetupReportReceipt */
+        SetupReportReceipt: {
+            /** @default null */
+            adoption_proposal: components["schemas"]["SetupAdoptionProposal"] | null;
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            progress: components["schemas"]["SetupProgress"];
+            question: components["schemas"]["SetupQuestion"] | null;
+            /**
+             * Report Digest
+             * @default null
+             */
+            report_digest: string | null;
+            /** Result Refs */
+            result_refs: string[];
+            /** Revision */
+            revision: number;
+            /** Status */
+            status: string;
+        };
+        /**
+         * SetupRoleCheckRequest
+         * @description Project-selected bounded proof, executed by the existing setup owner.
+         */
+        SetupRoleCheckRequest: {
+            /** Claims */
+            claims: string[];
+            /** Environment Ref */
+            environment_ref: string;
+            /** Evidence Ref */
+            evidence_ref: string;
+            /** Instructions */
+            instructions: string;
+            /** Role */
+            role: string;
+        };
+        /**
+         * SetupRoleProposal
+         * @description A bounded selection for the existing defaults owner, never write authority.
+         */
+        SetupRoleProposal: {
+            /** @default null */
+            execution_requirements: components["schemas"]["AgentExecutionRequirements"] | null;
+            /** Expected Digest */
+            expected_digest: string;
+            /** Host Key */
+            host_key: string;
+            /**
+             * Instructions
+             * @default null
+             */
+            instructions: string | null;
+            /** Name */
+            name: string;
+            /** Provenance Ref */
+            provenance_ref: string;
+            /** @default null */
+            source_ref: components["schemas"]["AgentSourceRef"] | null;
+        };
+        /** SetupSource */
+        SetupSource: {
+            /**
+             * Content
+             * @description May be omitted in reports; the owner resolves the exact current source.
+             * @default null
+             */
+            content: {
+                [key: string]: unknown;
+            } | null;
+            /** Digest */
+            digest: string;
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: SetupSourceKind;
+            /** Origin */
+            origin: string;
+            /** Ref */
+            ref: string;
+            /**
+             * Version
+             * @default null
+             */
+            version: string | null;
+        };
+        /** SetupStartOut */
+        SetupStartOut: {
+            /** Attached */
+            attached: boolean;
+            attempt: components["schemas"]["SetupAttempt"];
+            /**
+             * Claim Token
+             * @default null
+             */
+            claim_token: string | null;
+            /** Guidance Ref */
+            guidance_ref?: {
+                [key: string]: unknown;
+            };
+            /** Next Action */
+            next_action: string;
+        };
+        /** SetupWorkflowOut */
+        SetupWorkflowOut: {
+            /**
+             * Activation Status
+             * @default unknown
+             * @enum {string}
+             */
+            activation_status: SetupWorkflowOutActivation_status;
+            /**
+             * Attempt Ref
+             * @default null
+             */
+            attempt_ref: string | null;
+            /** Available Sources */
+            available_sources?: components["schemas"]["SetupSource"][];
+            /**
+             * Diagnostic
+             * @default null
+             */
+            diagnostic: string | null;
+            /**
+             * Latest Result
+             * @default null
+             */
+            latest_result: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Latest Status
+             * @default null
+             */
+            latest_status: string | null;
+            /** Missing Activation Claims */
+            missing_activation_claims?: string[];
+            /**
+             * Partial Changes
+             * @default false
+             */
+            partial_changes: boolean;
+            /**
+             * Receipt Id
+             * @default null
+             */
+            receipt_id: number | null;
+            /**
+             * Requested Scope
+             * @default infrastructure_only
+             * @enum {string}
+             */
+            requested_scope: SetupWorkflowOutRequested_scope;
+            /**
+             * Result Ref
+             * @default null
+             */
+            result_ref: string | null;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: SetupWorkflowOutStatus;
+            /**
+             * Successful
+             * @default null
+             */
+            successful: {
+                [key: string]: unknown;
+            } | null;
+            /** Workflow Key */
+            workflow_key: string;
+        };
+        /** SetupWorkflowOutcome */
+        SetupWorkflowOutcome: {
+            /**
+             * Activation Status
+             * @default unknown
+             * @enum {string}
+             */
+            activation_status: SetupWorkflowOutcomeActivation_status;
+            /** Missing Activation Claims */
+            missing_activation_claims?: string[];
+            /** Receipt Id */
+            receipt_id: number;
+            /** Result Ref */
+            result_ref: string;
+            /** Revision */
+            revision: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: SetupWorkflowOutcomeStatus;
         };
         /** SitemapFetchRequest */
         SitemapFetchRequest: {
@@ -5997,6 +8882,230 @@ export interface components {
             revision: number;
             /** Sha256 */
             sha256: string;
+        };
+        /** TaskActivityItem */
+        TaskActivityItem: {
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            };
+            /** Kind */
+            kind: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Phase
+             * @default null
+             */
+            phase: string | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+            /**
+             * Run Plan Id
+             * @default null
+             */
+            run_plan_id: number | null;
+            /** Source Id */
+            source_id: number;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: TaskActivityItemSource_kind;
+            /** Summary */
+            summary: string;
+            /** Task Key */
+            task_key: string;
+            /**
+             * Ticket Key
+             * @default null
+             */
+            ticket_key: string | null;
+        };
+        /** TaskActivityOut */
+        TaskActivityOut: {
+            /**
+             * Coverage
+             * @default Persisted linked project events and structured delivery lifecycle revisions; not a complete internal audit.
+             */
+            coverage: string;
+            /** Items */
+            items: components["schemas"]["TaskActivityItem"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Task Id */
+            task_id: number;
+            /** Task Key */
+            task_key: string;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * TaskDeliveryAgentOverride
+         * @description Task choices may omit fields supplied by project defaults.
+         */
+        TaskDeliveryAgentOverride: {
+            /** @default null */
+            execution_requirements: components["schemas"]["AgentExecutionRequirements"] | null;
+            /**
+             * Host Key
+             * @default null
+             */
+            host_key: string | null;
+            /**
+             * Instructions
+             * @default null
+             */
+            instructions: string | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /**
+             * Profile
+             * @default null
+             */
+            profile: string | null;
+            /**
+             * Provider
+             * @default null
+             */
+            provider: string | null;
+            /** @default null */
+            source_ref: components["schemas"]["AgentSourceRef"] | null;
+        };
+        /**
+         * TaskDeliveryDefaults
+         * @description Project defaults; task handoff validates the complete resolved roles.
+         */
+        TaskDeliveryDefaults: {
+            /**
+             * Agents
+             * @default null
+             */
+            agents: {
+                [key: string]: components["schemas"]["TaskDeliveryAgentOverride"];
+            } | null;
+            /** @default null */
+            delivery_agent: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+            /**
+             * Host Key
+             * @default null
+             */
+            host_key: string | null;
+            /** @default null */
+            main_agent: components["schemas"]["MainAgentPreferences"] | null;
+            /** @default null */
+            review_agent: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+        };
+        /**
+         * TaskDeliveryStateOut
+         * @description Public handoff facts, excluding frozen agents, prompts and native paths.
+         */
+        TaskDeliveryStateOut: {
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: TaskDeliveryStateOutStatus;
+            /**
+             * Ticketkey
+             * @default null
+             */
+            ticketKey: string | null;
+        };
+        /**
+         * TaskMcpConfigRef
+         * @description Task-only native route identity; never a project/default setting.
+         */
+        TaskMcpConfigRef: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+        };
+        /** TaskResultAssociation */
+        TaskResultAssociation: {
+            /** Kind */
+            kind: string;
+            /** Path */
+            path: string;
+            /** Ref */
+            ref: string;
+        };
+        /** TaskResultItem */
+        TaskResultItem: {
+            /** Associations */
+            associations: components["schemas"]["TaskResultAssociation"][];
+            /** Data */
+            data: components["schemas"]["ResourceRecordOut"] | components["schemas"]["ArtifactOut"] | components["schemas"]["LearningOut"] | components["schemas"]["DecisionOut"] | components["schemas"]["ExperimentOut"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Source Id */
+            source_id: number;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: TaskResultItemSource_kind;
+        };
+        /** TaskResultsOut */
+        TaskResultsOut: {
+            /**
+             * Coverage
+             * @default Explicit tracker, run, historical execution-context and typed provenance associations only; association does not imply approval or exclusive production. Unlinked content remains in Library.
+             */
+            coverage: string;
+            /** Items */
+            items: components["schemas"]["TaskResultItem"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Source Kind
+             * @default null
+             */
+            source_kind: TaskResultsOutSource_kindAnyOf0 | null;
+            /** Task Id */
+            task_id: number;
+            /** Task Key */
+            task_key: string;
+            /** Warnings */
+            warnings?: string[];
         };
         /** TelegramApplicationStatusOut */
         TelegramApplicationStatusOut: {
@@ -6056,6 +9165,1325 @@ export interface components {
             /** Team */
             team?: string | null;
         };
+        /** TrackerActiveTasksAllInput */
+        TrackerActiveTasksAllInput: {
+            /**
+             * After Id
+             * @default null
+             */
+            after_id: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 100
+             */
+            limit: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerActiveTasksAllInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** TrackerActiveTasksInput */
+        TrackerActiveTasksInput: {
+            /**
+             * After Id
+             * @default null
+             */
+            after_id: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 100
+             */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerActiveTasksInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** TrackerAgentStatsAllInput */
+        TrackerAgentStatsAllInput: {
+            /**
+             * End Date
+             * @description Inclusive local calendar date; supply with start_date.
+             * @default null
+             */
+            end_date: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Group By
+             * @default agent_model
+             * @enum {string}
+             */
+            group_by: TrackerAgentStatsAllInputGroup_by;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: TrackerAgentStatsAllInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Start Date
+             * @description Inclusive local calendar date; supply with end_date, at most 366 days.
+             * @default null
+             */
+            start_date: string | null;
+            /**
+             * Timezone
+             * @description IANA timezone for launch.started_at calendar days. UI chooses its own default range.
+             * @default UTC
+             */
+            timezone: string;
+        };
+        /**
+         * TrackerAgentStatsInput
+         * @example {
+         *       "project_id": 1,
+         *       "response_mode": "compact"
+         *     }
+         */
+        TrackerAgentStatsInput: {
+            /**
+             * End Date
+             * @description Inclusive local calendar date; supply with start_date.
+             * @default null
+             */
+            end_date: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Group By
+             * @default agent_model
+             * @enum {string}
+             */
+            group_by: TrackerAgentStatsInputGroup_by;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact is default; raw/standard/verbose return the full tracker rows for diagnostics. raw aliases standard.
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerAgentStatsInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Start Date
+             * @description Inclusive local calendar date; supply with end_date, at most 366 days.
+             * @default null
+             */
+            start_date: string | null;
+            /**
+             * Timezone
+             * @description IANA timezone for launch.started_at calendar days. UI chooses its own default range.
+             * @default UTC
+             */
+            timezone: string;
+        };
+        /** TrackerAgentStatsOut */
+        TrackerAgentStatsOut: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Daily */
+            daily: components["schemas"]["AgentStatsDayOut"][];
+            delivery_trends: components["schemas"]["DeliveryTrendsOut"];
+            /** End Date */
+            end_date: string | null;
+            /**
+             * Group By
+             * @enum {string}
+             */
+            group_by: TrackerAgentStatsOutGroup_by;
+            /** Is Active */
+            is_active: boolean | null;
+            /** Project Id */
+            project_id: number | null;
+            /**
+             * Read Token
+             * @default null
+             */
+            read_token: string | null;
+            /** Rows */
+            rows: components["schemas"]["AgentStatsRowOut"][];
+            /** Start Date */
+            start_date: string | null;
+            /** Timezone */
+            timezone: string;
+            totals: components["schemas"]["AgentStatsMetricsOut"];
+            /** @description Eligible receipts without a valid offset-aware launch.started_at, excluded when a date range is supplied. */
+            undated: components["schemas"]["AgentStatsMetricsOut"];
+        };
+        /** TrackerConfigureDeliveryInput */
+        TrackerConfigureDeliveryInput: {
+            /**
+             * Adopt Sources
+             * @default null
+             */
+            adopt_sources: {
+                [key: string]: components["schemas"]["AgentSourceAdoption"];
+            } | null;
+            /** @default null */
+            delivery: components["schemas"]["TaskDeliveryDefaults"] | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** @default null */
+            main_agent: components["schemas"]["MainAgentPreferences"] | null;
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
+            /**
+             * Project Dir
+             * @default null
+             */
+            project_dir: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerConfigureDeliveryInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** TrackerDependencyOut */
+        TrackerDependencyOut: {
+            /** Dependency Type */
+            dependency_type: string;
+            /** Depends On Ticket Key */
+            depends_on_ticket_key: string;
+            /** Id */
+            id: number;
+            /**
+             * Metadata Json
+             * @default null
+             */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Ticket Key */
+            ticket_key: string;
+        };
+        /**
+         * TrackerGetInput
+         * @example {
+         *       "include_graph": true,
+         *       "project_id": 1
+         *     }
+         * @example {
+         *       "include_graph": false,
+         *       "project_id": 1,
+         *       "response_mode": "raw",
+         *       "task_index_only": true,
+         *       "task_statuses": [
+         *         "not-started",
+         *         "in-progress"
+         *       ]
+         *     }
+         * @example {
+         *       "include_graph": false,
+         *       "project_id": 1,
+         *       "task_key": "telegram-comms",
+         *       "ticket_keys": [
+         *         "telegram-ingress",
+         *         "telegram-reply"
+         *       ]
+         *     }
+         */
+        TrackerGetInput: {
+            /**
+             * Assignee
+             * @default null
+             */
+            assignee: string | null;
+            /**
+             * Block State
+             * @default null
+             */
+            block_state: TrackerGetInputBlock_stateAnyOf0 | null;
+            /**
+             * Dependency Ticket Key
+             * @default null
+             */
+            dependency_ticket_key: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Include Graph
+             * @default true
+             */
+            include_graph: boolean;
+            /** @default null */
+            metric_demand: components["schemas"]["TrackerMetricDemand"] | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Projection
+             * @default full
+             * @enum {string}
+             */
+            projection: TrackerGetInputProjection;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: TrackerGetInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Plan Id
+             * @default null
+             */
+            run_plan_id: number | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Statuses
+             * @default null
+             */
+            statuses: components["schemas"]["TrackerItemStatus"][] | null;
+            /**
+             * Task Index Only
+             * @description Return every matching task with whole-task agent_stats and an aggregate ticket summary while skipping ticket, dependency, link, and graph hydration. Pair with include_graph=false. This is intended for operator task indexes before one focused graph is loaded.
+             * @default false
+             */
+            task_index_only: boolean;
+            /**
+             * Task Key
+             * @default null
+             */
+            task_key: string | null;
+            /**
+             * Task Statuses
+             * @description Filter top-level tasks by their own lifecycle status without filtering their ticket summaries. Use this with task_index_only for bounded operator views such as open-work portfolios.
+             * @default null
+             */
+            task_statuses: components["schemas"]["TrackerItemStatus"][] | null;
+            /**
+             * Ticket Ids
+             * @default null
+             */
+            ticket_ids: number[] | null;
+            /**
+             * Ticket Keys
+             * @default null
+             */
+            ticket_keys: string[] | null;
+            /**
+             * Workflow Key
+             * @default null
+             */
+            workflow_key: string | null;
+        };
+        /** TrackerGraphEdgeOut */
+        TrackerGraphEdgeOut: {
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default null
+             */
+            label: string | null;
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: TrackerGraphEdgeOutType;
+        };
+        /** TrackerGraphNodeOut */
+        TrackerGraphNodeOut: {
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Parent Id
+             * @default null
+             */
+            parent_id: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Status */
+            status: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: TrackerGraphNodeOutType;
+        };
+        /** TrackerGraphOut */
+        TrackerGraphOut: {
+            /** Edges */
+            edges?: components["schemas"]["TrackerGraphEdgeOut"][];
+            /** Layout Hints */
+            layout_hints?: {
+                [key: string]: unknown;
+            };
+            /** Nodes */
+            nodes?: components["schemas"]["TrackerGraphNodeOut"][];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * TrackerItemStatus
+         * @description Persists to tracker task/ticket status columns.
+         *
+         *     Meanings: not-started = planned but not begun; in-progress = actively
+         *     being worked; complete = finished successfully; deferred = valid work
+         *     postponed for later; aborted = stopped, cancelled, or rejected; failed =
+         *     attempted and unsuccessful; skipped = intentionally not executed.
+         * @enum {string}
+         */
+        TrackerItemStatus: TrackerItemStatus;
+        /** TrackerLaneOut */
+        TrackerLaneOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Position */
+            position: number;
+        };
+        /**
+         * TrackerLinkKind
+         * @description Persists to ``tracker_ticket_links.link_kind``.
+         * @enum {string}
+         */
+        TrackerLinkKind: TrackerLinkKind;
+        /** TrackerLinkOut */
+        TrackerLinkOut: {
+            /** Action Call Id */
+            action_call_id: number | null;
+            /** Agent Request Id */
+            agent_request_id: number | null;
+            /** Artifact Id */
+            artifact_id: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            link_kind: components["schemas"]["TrackerLinkKind"];
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Ref */
+            ref: string | null;
+            /** Resource Record Id */
+            resource_record_id: number | null;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
+            /** Task Id */
+            task_id: number | null;
+            /** Ticket Id */
+            ticket_id: number | null;
+            /** Title */
+            title: string | null;
+        };
+        /**
+         * TrackerMetricDemand
+         * @description Exact current UI demand. Empty means no metrics, never all metrics.
+         */
+        TrackerMetricDemand: {
+            /** Task Keys */
+            task_keys?: string[];
+            /** Ticket Keys */
+            ticket_keys?: string[];
+        };
+        /** TrackerPlaceTaskInput */
+        TrackerPlaceTaskInput: {
+            /**
+             * Board Column
+             * @enum {string}
+             */
+            board_column: TrackerPlaceTaskInputBoard_column;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_status: components["schemas"]["TrackerItemStatus"];
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerPlaceTaskInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
+        };
+        /** TrackerPriorityOut */
+        TrackerPriorityOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Position */
+            position: number;
+            /** Rank */
+            rank: number;
+        };
+        /** TrackerReorderTaskInput */
+        TrackerReorderTaskInput: {
+            /** Anchor Task Key */
+            anchor_task_key: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_status: components["schemas"]["TrackerItemStatus"];
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Placement
+             * @enum {string}
+             */
+            placement: TrackerReorderTaskInputPlacement;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerReorderTaskInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
+        };
+        /** TrackerSnapshotOut */
+        TrackerSnapshotOut: {
+            /** Dependencies */
+            dependencies: components["schemas"]["TrackerDependencyOut"][];
+            /** @default null */
+            graph: components["schemas"]["TrackerGraphOut"] | null;
+            /** Lanes */
+            lanes: components["schemas"]["TrackerLaneOut"][];
+            /** Links */
+            links: components["schemas"]["TrackerLinkOut"][];
+            /** @default null */
+            metric_demand: components["schemas"]["TrackerMetricDemand"] | null;
+            /**
+             * Metric Scope
+             * @default all
+             * @enum {string}
+             */
+            metric_scope: TrackerSnapshotOutMetric_scope;
+            /** Priorities */
+            priorities: components["schemas"]["TrackerPriorityOut"][];
+            /**
+             * Projection
+             * @default full
+             * @enum {string}
+             */
+            projection: TrackerSnapshotOutProjection;
+            /**
+             * Scope Complete
+             * @default true
+             */
+            scope_complete: boolean;
+            /** Tasks */
+            tasks: components["schemas"]["TrackerTaskOut"][] | components["schemas"]["TrackerTaskSummaryOut"][];
+            /** Tickets */
+            tickets: components["schemas"]["TrackerTicketOut"][] | components["schemas"]["TrackerTicketSummaryOut"][];
+            tracker: components["schemas"]["TrackerSummaryOut"];
+        };
+        /**
+         * TrackerSourceKind
+         * @description Persists to tracker source-kind columns.
+         * @enum {string}
+         */
+        TrackerSourceKind: TrackerSourceKind;
+        /** TrackerSummaryOut */
+        TrackerSummaryOut: {
+            /**
+             * Config Json
+             * @default null
+             */
+            config_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id: number;
+            /** Rev */
+            rev: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** TrackerTaskActivityInput */
+        TrackerTaskActivityInput: {
+            /**
+             * Cursor
+             * @default null
+             */
+            cursor: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerTaskActivityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /** Task Key */
+            task_key: string;
+        };
+        /** TrackerTaskBoardOut */
+        TrackerTaskBoardOut: {
+            /** Affected Task Keys */
+            affected_task_keys: string[];
+            /** Changed */
+            changed: boolean;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Replayed
+             * @default false
+             */
+            replayed: boolean;
+            /** Request Sha256 */
+            request_sha256: string;
+            /** Rev */
+            rev: number;
+            task: components["schemas"]["TrackerTaskOut"];
+        };
+        /** TrackerTaskContentOut */
+        TrackerTaskContentOut: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** @default null */
+            input: components["schemas"]["TrackerTaskInputOut"] | null;
+            /**
+             * Replayed
+             * @default false
+             */
+            replayed: boolean;
+            /** Request Sha256 */
+            request_sha256: string;
+            /** Rev */
+            rev: number;
+            task: components["schemas"]["TrackerTaskOut"];
+        };
+        /** TrackerTaskInputOut */
+        TrackerTaskInputOut: {
+            /** Actor */
+            actor: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+        };
+        /** TrackerTaskOut */
+        TrackerTaskOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /**
+             * @description Whole-task receipt metrics, including all tickets regardless of visible filters.
+             * @default null
+             */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /**
+             * Board Column
+             * @description Projected Board column; lifecycle status is unchanged.
+             * @default todo
+             * @enum {string}
+             */
+            board_column: TrackerTaskOutBoard_column;
+            /** Completed At */
+            completed_at: string | null;
+            /** Completion Evidence Json */
+            completion_evidence_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Constraints Json */
+            constraints_json: string[];
+            /** Context Json */
+            context_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Definition Of Done Json */
+            definition_of_done_json: string[];
+            /** Description */
+            description: string;
+            /** Expected Outcomes Json */
+            expected_outcomes_json: string[];
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Lane Key */
+            lane_key: string;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Owner */
+            owner: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /** Source Json */
+            source_json: {
+                [key: string]: unknown;
+            } | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Type */
+            task_type: string;
+            /** @default null */
+            ticket_summary: components["schemas"]["TrackerTaskTicketSummaryOut"] | null;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+        };
+        /** TrackerTaskResultsInput */
+        TrackerTaskResultsInput: {
+            /**
+             * Cursor
+             * @default null
+             */
+            cursor: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerTaskResultsInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Source Kind
+             * @default null
+             */
+            source_kind: TrackerTaskResultsInputSource_kindAnyOf0 | null;
+            /** Task Key */
+            task_key: string;
+        };
+        /**
+         * TrackerTaskSummaryOut
+         * @description Complete discovery/filter facts; primary instructions belong to a full read.
+         */
+        TrackerTaskSummaryOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** @default null */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Board Column */
+            board_column: string;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            delivery: components["schemas"]["TaskDeliveryStateOut"] | null;
+            /** Description */
+            description: string;
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Metadata Json
+             * @description Only delivery_scope.resume_condition, for the retained Board display.
+             * @default null
+             */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Owner */
+            owner: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /** Source Json */
+            source_json: {
+                [key: string]: unknown;
+            } | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Type */
+            task_type: string;
+            /** @default null */
+            ticket_summary: components["schemas"]["TrackerTaskTicketSummaryOut"] | null;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+        };
+        /**
+         * TrackerTaskTicketSummaryOut
+         * @description Ticket rollup used by lightweight task-index reads.
+         */
+        TrackerTaskTicketSummaryOut: {
+            /** Assignees */
+            assignees?: string[];
+            /** Blocked By Titles */
+            blocked_by_titles?: string[];
+            /**
+             * Blocked Count
+             * @default 0
+             */
+            blocked_count: number;
+            /**
+             * In Progress Count
+             * @default 0
+             */
+            in_progress_count: number;
+            /**
+             * Search Text
+             * @default
+             */
+            search_text: string;
+            /** Status Counts */
+            status_counts?: {
+                [key: string]: number;
+            };
+            /**
+             * Terminal Count
+             * @default 0
+             */
+            terminal_count: number;
+            /**
+             * Total Count
+             * @default 0
+             */
+            total_count: number;
+        };
+        /**
+         * TrackerTicketKind
+         * @description Persists to ``tracker_tickets.kind`` for graph rendering.
+         * @enum {string}
+         */
+        TrackerTicketKind: TrackerTicketKind;
+        /** TrackerTicketOut */
+        TrackerTicketOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** Agent Request Id */
+            agent_request_id: number | null;
+            /**
+             * @description This ticket's own deduplicated invocation receipt metrics.
+             * @default null
+             */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Allowed Paths Json */
+            allowed_paths_json: string[];
+            /** Assignee */
+            assignee: string | null;
+            /** Blocked By */
+            blocked_by?: string[];
+            /** Blocked By Titles */
+            blocked_by_titles?: string[];
+            /** Blocker Reason */
+            blocker_reason: string | null;
+            /** Claimed At */
+            claimed_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Completion Evidence Json */
+            completion_evidence_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Constraints Json */
+            constraints_json: string[];
+            /** Context Json */
+            context_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Definition Of Done Json */
+            definition_of_done_json: string[];
+            /** Dependency Keys */
+            dependency_keys?: string[];
+            /** Effort */
+            effort: string | null;
+            /** Expected Changes Json */
+            expected_changes_json: string[];
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            kind: components["schemas"]["TrackerTicketKind"];
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Link Count
+             * @default 0
+             */
+            link_count: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Outcome */
+            outcome: string | null;
+            /** Parent Ticket Id */
+            parent_ticket_id: number | null;
+            /**
+             * Parent Ticket Key
+             * @default null
+             */
+            parent_ticket_key: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Reference Count
+             * @default 0
+             */
+            reference_count: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
+            /** Source Json */
+            source_json: {
+                [key: string]: unknown;
+            } | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Id */
+            task_id: number;
+            /**
+             * Task Key
+             * @default
+             */
+            task_key: string;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+        };
+        /** TrackerTicketSummaryOut */
+        TrackerTicketSummaryOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** @default null */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Assignee */
+            assignee: string | null;
+            /** Blocked By */
+            blocked_by?: string[];
+            /** Blocked By Titles */
+            blocked_by_titles?: string[];
+            /** Blocker Reason */
+            blocker_reason: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dependency Keys */
+            dependency_keys?: string[];
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            kind: components["schemas"]["TrackerTicketKind"];
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Link Count
+             * @default 0
+             */
+            link_count: number;
+            /**
+             * Metadata Json
+             * @default null
+             */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Parent Ticket Id */
+            parent_ticket_id: number | null;
+            /**
+             * Parent Ticket Key
+             * @default null
+             */
+            parent_ticket_key: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Reference Count
+             * @default 0
+             */
+            reference_count: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Id */
+            task_id: number;
+            /**
+             * Task Key
+             * @default
+             */
+            task_key: string;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+        };
+        /**
+         * TrackerUpdateTaskContentInput
+         * @description Human content edits cannot supply tracker or workflow execution state.
+         */
+        TrackerUpdateTaskContentInput: {
+            /**
+             * Additional Input
+             * @default null
+             */
+            additional_input: string | null;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerUpdateTaskContentInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
+        };
+        /** TrackerUpdateTaskPriorityInput */
+        TrackerUpdateTaskPriorityInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_status: components["schemas"]["TrackerItemStatus"];
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Priority Key
+             * @enum {string}
+             */
+            priority_key: TrackerUpdateTaskPriorityInputPriority_key;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerUpdateTaskPriorityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
+        };
         /**
          * UiTokenResponse
          * @description Wire shape for ``GET /api/v1/auth/ui-token``.
@@ -6063,6 +10491,100 @@ export interface components {
         UiTokenResponse: {
             /** Token */
             token: string;
+        };
+        /**
+         * UsageIntervalOut
+         * @description One invocation's change, before combining lifetime counters across calls.
+         */
+        UsageIntervalOut: {
+            /**
+             * Cache Read
+             * @default null
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @default null
+             */
+            cache_write: number | null;
+            /**
+             * Input
+             * @default null
+             */
+            input: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: UsageIntervalOutKind;
+            /**
+             * Output
+             * @default null
+             */
+            output: number | null;
+            /**
+             * Reasoning
+             * @default null
+             */
+            reasoning: number | null;
+            /**
+             * Remaining Input
+             * @default null
+             */
+            remaining_input: number | null;
+            /**
+             * Start At
+             * @default null
+             */
+            start_at: string | null;
+            /**
+             * Total
+             * @default null
+             */
+            total: number | null;
+        };
+        /** UsageSampleOut */
+        UsageSampleOut: {
+            /** At */
+            at: string;
+            /**
+             * Cache Read
+             * @default null
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @default null
+             */
+            cache_write: number | null;
+            /** Input */
+            input: number;
+            /**
+             * Intervals
+             * @description Per-invocation temporal evidence; null on legacy counter-only payloads.
+             * @default null
+             */
+            intervals: components["schemas"]["UsageIntervalOut"][] | null;
+            /** Output */
+            output: number;
+            /**
+             * Reasoning
+             * @default null
+             */
+            reasoning: number | null;
+            /**
+             * Remaining Input
+             * @description Cumulative non-cache Input from paired measurements only.
+             * @default null
+             */
+            remaining_input: number | null;
+            /**
+             * Source
+             * @default null
+             */
+            source: UsageSampleOutSourceAnyOf0 | null;
+            /** Total */
+            total: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -6076,6 +10598,47 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * WorkDurationOut
+         * @description Union of recorded invocation wall intervals, never lifecycle elapsed time.
+         */
+        WorkDurationOut: {
+            /**
+             * Coverage
+             * @default unavailable
+             * @enum {string}
+             */
+            coverage: WorkDurationOutCoverage;
+            /**
+             * Endpoint At
+             * @default null
+             */
+            endpoint_at: string | null;
+            /** Issues */
+            issues?: string[];
+            /** Live */
+            live?: components["schemas"]["ExecutionIdentityOut"][];
+            /**
+             * Observed At
+             * @default null
+             */
+            observed_at: string | null;
+            /**
+             * Recorded Intervals
+             * @default 0
+             */
+            recorded_intervals: number;
+            /**
+             * Total Seconds
+             * @default null
+             */
+            total_seconds: number | null;
+            /**
+             * Unavailable Intervals
+             * @default 0
+             */
+            unavailable_intervals: number;
         };
         /**
          * WorkflowAgentRequirementSpec
@@ -6564,6 +11127,34 @@ export interface components {
             /** Version Id */
             version_id?: number | null;
         };
+        /** WriteEnvelope[AgentDefinition] */
+        WriteEnvelope_AgentDefinition_: {
+            data: components["schemas"]["AgentDefinition"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[DeliveryCapacityOut] */
+        WriteEnvelope_DeliveryCapacityOut_: {
+            data: components["schemas"]["DeliveryCapacityOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[DurableActionJobOut] */
         WriteEnvelope_DurableActionJobOut_: {
             data: components["schemas"]["DurableActionJobOut"];
@@ -6620,6 +11211,160 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[PatternSummary] */
+        WriteEnvelope_PatternSummary_: {
+            data: components["schemas"]["PatternSummary"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[ProjectCleanupResult] */
+        WriteEnvelope_ProjectCleanupResult_: {
+            data: components["schemas"]["ProjectCleanupResult"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[ProjectFileOwnershipResult] */
+        WriteEnvelope_ProjectFileOwnershipResult_: {
+            data: components["schemas"]["ProjectFileOwnershipResult"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[ProjectOut] */
+        WriteEnvelope_ProjectOut_: {
+            data: components["schemas"]["ProjectOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[ProjectSetupOut] */
+        WriteEnvelope_ProjectSetupOut_: {
+            data: components["schemas"]["ProjectSetupOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[ScheduleRemovalOut] */
+        WriteEnvelope_ScheduleRemovalOut_: {
+            data: components["schemas"]["ScheduleRemovalOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[ScheduledJobOut] */
+        WriteEnvelope_ScheduledJobOut_: {
+            data: components["schemas"]["ScheduledJobOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[SetupAttempt] */
+        WriteEnvelope_SetupAttempt_: {
+            data: components["schemas"]["SetupAttempt"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[SetupStartOut] */
+        WriteEnvelope_SetupStartOut_: {
+            data: components["schemas"]["SetupStartOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[TrackerTaskBoardOut] */
+        WriteEnvelope_TrackerTaskBoardOut_: {
+            data: components["schemas"]["TrackerTaskBoardOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[TrackerTaskContentOut] */
+        WriteEnvelope_TrackerTaskContentOut_: {
+            data: components["schemas"]["TrackerTaskContentOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[WorkflowTemplateExtensionDeleteOut] */
         WriteEnvelope_WorkflowTemplateExtensionDeleteOut_: {
             data: components["schemas"]["WorkflowTemplateExtensionDeleteOut"];
@@ -6635,6 +11380,23 @@ export interface components {
             project_id?: number | null;
             /** Run Id */
             run_id?: number | null;
+        };
+        /** WriteEnvelope[dict[str, Any]] */
+        WriteEnvelope_dict_str__Any__: {
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
         };
         /**
          * WriteResponse[AccountAuthStatusOut]
@@ -6871,6 +11633,19 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[ScheduleRemovalOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_ScheduleRemovalOut_: {
+            data: components["schemas"]["ScheduleRemovalOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[ScheduledJobOut]
          * @example {
          *       "project_id": 1
@@ -6907,8 +11682,28 @@ export type SchemaActionCallRetryInput = components['schemas']['ActionCallRetryI
 export type SchemaActionContractSpec = components['schemas']['ActionContractSpec'];
 export type SchemaActionExposureNextActionOut = components['schemas']['ActionExposureNextActionOut'];
 export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
+export type SchemaActionListInput = components['schemas']['ActionListInput'];
+export type SchemaActionListItemOut = components['schemas']['ActionListItemOut'];
+export type SchemaActionListOut = components['schemas']['ActionListOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
+export type SchemaActiveExecutionOut = components['schemas']['ActiveExecutionOut'];
+export type SchemaActiveTaskOut = components['schemas']['ActiveTaskOut'];
+export type SchemaActiveTaskProjectOut = components['schemas']['ActiveTaskProjectOut'];
+export type SchemaActiveTasksOut = components['schemas']['ActiveTasksOut'];
+export type SchemaAgentDefinition = components['schemas']['AgentDefinition'];
+export type SchemaAgentExecutionRequirements = components['schemas']['AgentExecutionRequirements'];
+export type SchemaAgentFields = components['schemas']['AgentFields'];
+export type SchemaAgentList = components['schemas']['AgentList'];
+export type SchemaAgentPatch = components['schemas']['AgentPatch'];
 export type SchemaAgentRequestOut = components['schemas']['AgentRequestOut'];
+export type SchemaAgentSourceAdoption = components['schemas']['AgentSourceAdoption'];
+export type SchemaAgentSourceRef = components['schemas']['AgentSourceRef'];
+export type SchemaAgentStatsCoverageOut = components['schemas']['AgentStatsCoverageOut'];
+export type SchemaAgentStatsDayOut = components['schemas']['AgentStatsDayOut'];
+export type SchemaAgentStatsFieldCoverageOut = components['schemas']['AgentStatsFieldCoverageOut'];
+export type SchemaAgentStatsMetricsOut = components['schemas']['AgentStatsMetricsOut'];
+export type SchemaAgentStatsRowOut = components['schemas']['AgentStatsRowOut'];
+export type SchemaAgentStatsUsageOut = components['schemas']['AgentStatsUsageOut'];
 export type SchemaApprovalGateSpec = components['schemas']['ApprovalGateSpec'];
 export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
 export type SchemaArtifactCreateRequest = components['schemas']['ArtifactCreateRequest'];
@@ -6940,9 +11735,18 @@ export type SchemaContextSnapshotOut = components['schemas']['ContextSnapshotOut
 export type SchemaCostResponse = components['schemas']['CostResponse'];
 export type SchemaDecisionOut = components['schemas']['DecisionOut'];
 export type SchemaDecisionRecordRequest = components['schemas']['DecisionRecordRequest'];
+export type SchemaDeliveryCapacityInput = components['schemas']['DeliveryCapacityInput'];
+export type SchemaDeliveryCapacityOut = components['schemas']['DeliveryCapacityOut'];
+export type SchemaDeliveryCountOut = components['schemas']['DeliveryCountOut'];
+export type SchemaDeliveryMetricCoverageOut = components['schemas']['DeliveryMetricCoverageOut'];
+export type SchemaDeliveryTrendDayOut = components['schemas']['DeliveryTrendDayOut'];
+export type SchemaDeliveryTrendMetricsOut = components['schemas']['DeliveryTrendMetricsOut'];
+export type SchemaDeliveryTrendsOut = components['schemas']['DeliveryTrendsOut'];
+export type SchemaDeliveryWorkTimeOut = components['schemas']['DeliveryWorkTimeOut'];
 export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
 export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
+export type SchemaExecutionIdentityOut = components['schemas']['ExecutionIdentityOut'];
 export type SchemaExperimentCreateRequest = components['schemas']['ExperimentCreateRequest'];
 export type SchemaExperimentDecisionRequest = components['schemas']['ExperimentDecisionRequest'];
 export type SchemaExperimentObservationOut = components['schemas']['ExperimentObservationOut'];
@@ -6970,17 +11774,25 @@ export type SchemaFinanceReportRenderInput = components['schemas']['FinanceRepor
 export type SchemaFinanceSnapshotOut = components['schemas']['FinanceSnapshotOut'];
 export type SchemaFinanceStatusInput = components['schemas']['FinanceStatusInput'];
 export type SchemaFinanceStatusOut = components['schemas']['FinanceStatusOut'];
+export type SchemaFirstReviewAcceptanceOut = components['schemas']['FirstReviewAcceptanceOut'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthResponse = components['schemas']['HealthResponse'];
 export type SchemaHeartbeatResponse = components['schemas']['HeartbeatResponse'];
+export type SchemaIntegrationActionSummaryOut = components['schemas']['IntegrationActionSummaryOut'];
 export type SchemaIntegrationBudgetOut = components['schemas']['IntegrationBudgetOut'];
+export type SchemaIntegrationListInput = components['schemas']['IntegrationListInput'];
+export type SchemaIntegrationListItemOut = components['schemas']['IntegrationListItemOut'];
+export type SchemaIntegrationListOut = components['schemas']['IntegrationListOut'];
 export type SchemaLearningCreateRequest = components['schemas']['LearningCreateRequest'];
 export type SchemaLearningHookSpec = components['schemas']['LearningHookSpec'];
 export type SchemaLearningOut = components['schemas']['LearningOut'];
 export type SchemaLearningUpdateRequest = components['schemas']['LearningUpdateRequest'];
+export type SchemaLiveUsageOut = components['schemas']['LiveUsageOut'];
+export type SchemaLiveUsageSnapshotOut = components['schemas']['LiveUsageSnapshotOut'];
 export type SchemaLoadedWorkflowTemplate = components['schemas']['LoadedWorkflowTemplate'];
 export type SchemaLocalAgentChatCreateMessageInput = components['schemas']['LocalAgentChatCreateMessageInput'];
 export type SchemaLocalAgentChatMessageOut = components['schemas']['LocalAgentChatMessageOut'];
+export type SchemaMainAgentPreferences = components['schemas']['MainAgentPreferences'];
 export type SchemaMetricSnapshotOut = components['schemas']['MetricSnapshotOut'];
 export type SchemaOperationCallIn = components['schemas']['OperationCallIn'];
 export type SchemaOperationDescribeOut = components['schemas']['OperationDescribeOut'];
@@ -7004,15 +11816,43 @@ export type SchemaPageResponseResourceRecordOut = components['schemas']['PageRes
 export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOut_'];
 export type SchemaPageResponseRunPlanSummaryOut = components['schemas']['PageResponse_RunPlanSummaryOut_'];
 export type SchemaPageActionCallAuditOut = components['schemas']['Page_ActionCallAuditOut_'];
+export type SchemaPageScheduledRunOut = components['schemas']['Page_ScheduledRunOut_'];
+export type SchemaPatternDeleteInput = components['schemas']['PatternDeleteInput'];
+export type SchemaPatternDetail = components['schemas']['PatternDetail'];
+export type SchemaPatternGetInput = components['schemas']['PatternGetInput'];
+export type SchemaPatternListInput = components['schemas']['PatternListInput'];
+export type SchemaPatternPage = components['schemas']['PatternPage'];
+export type SchemaPatternSummary = components['schemas']['PatternSummary'];
+export type SchemaPatternUpsertInput = components['schemas']['PatternUpsertInput'];
 export type SchemaPermissionVerificationOut = components['schemas']['PermissionVerificationOut'];
 export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
 export type SchemaPluginEnableRequest = components['schemas']['PluginEnableRequest'];
 export type SchemaPluginOut = components['schemas']['PluginOut'];
 export type SchemaPolicySpec = components['schemas']['PolicySpec'];
+export type SchemaProjectAgentCreateInput = components['schemas']['ProjectAgentCreateInput'];
+export type SchemaProjectAgentGetInput = components['schemas']['ProjectAgentGetInput'];
+export type SchemaProjectAgentScope = components['schemas']['ProjectAgentScope'];
+export type SchemaProjectAgentUpdateInput = components['schemas']['ProjectAgentUpdateInput'];
+export type SchemaProjectCapacityUpdate = components['schemas']['ProjectCapacityUpdate'];
+export type SchemaProjectCleanupResult = components['schemas']['ProjectCleanupResult'];
 export type SchemaProjectCreateRequest = components['schemas']['ProjectCreateRequest'];
+export type SchemaProjectDeleteConfirmation = components['schemas']['ProjectDeleteConfirmation'];
+export type SchemaProjectDeleteInput = components['schemas']['ProjectDeleteInput'];
+export type SchemaProjectDeliveryCapacityOut = components['schemas']['ProjectDeliveryCapacityOut'];
 export type SchemaProjectEventOut = components['schemas']['ProjectEventOut'];
+export type SchemaProjectFileOwnershipInput = components['schemas']['ProjectFileOwnershipInput'];
+export type SchemaProjectFileOwnershipResult = components['schemas']['ProjectFileOwnershipResult'];
+export type SchemaProjectMoveInput = components['schemas']['ProjectMoveInput'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
 export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
+export type SchemaProjectSetupAnswerInput = components['schemas']['ProjectSetupAnswerInput'];
+export type SchemaProjectSetupCancelInput = components['schemas']['ProjectSetupCancelInput'];
+export type SchemaProjectSetupContinueInput = components['schemas']['ProjectSetupContinueInput'];
+export type SchemaProjectSetupGetInput = components['schemas']['ProjectSetupGetInput'];
+export type SchemaProjectSetupOut = components['schemas']['ProjectSetupOut'];
+export type SchemaProjectSetupRemindersInput = components['schemas']['ProjectSetupRemindersInput'];
+export type SchemaProjectSetupStartInput = components['schemas']['ProjectSetupStartInput'];
+export type SchemaProjectUpdateInput = components['schemas']['ProjectUpdateInput'];
 export type SchemaProjectUpdateRequest = components['schemas']['ProjectUpdateRequest'];
 export type SchemaProviderOut = components['schemas']['ProviderOut'];
 export type SchemaProviderSetupOut = components['schemas']['ProviderSetupOut'];
@@ -7028,17 +11868,85 @@ export type SchemaRunPlanStepHandoffOut = components['schemas']['RunPlanStepHand
 export type SchemaRunPlanStepOut = components['schemas']['RunPlanStepOut'];
 export type SchemaRunPlanSummaryOut = components['schemas']['RunPlanSummaryOut'];
 export type SchemaRunPlanWorkflowContractOut = components['schemas']['RunPlanWorkflowContractOut'];
+export type SchemaScheduleExecution = components['schemas']['ScheduleExecution'];
+export type SchemaScheduleListInput = components['schemas']['ScheduleListInput'];
+export type SchemaScheduleRemovalOut = components['schemas']['ScheduleRemovalOut'];
+export type SchemaScheduleRemoveInput = components['schemas']['ScheduleRemoveInput'];
+export type SchemaScheduleRunsInput = components['schemas']['ScheduleRunsInput'];
+export type SchemaScheduleSetInput = components['schemas']['ScheduleSetInput'];
+export type SchemaScheduleToggleInput = components['schemas']['ScheduleToggleInput'];
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
+export type SchemaScheduledNativeExecutionOut = components['schemas']['ScheduledNativeExecutionOut'];
+export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
+export type SchemaSetDeliveryCapacityInput = components['schemas']['SetDeliveryCapacityInput'];
+export type SchemaSetupAdoptionProposal = components['schemas']['SetupAdoptionProposal'];
+export type SchemaSetupAnswer = components['schemas']['SetupAnswer'];
+export type SchemaSetupAttempt = components['schemas']['SetupAttempt'];
+export type SchemaSetupExecutionBinding = components['schemas']['SetupExecutionBinding'];
+export type SchemaSetupManagedExecution = components['schemas']['SetupManagedExecution'];
+export type SchemaSetupNativeRoleCheck = components['schemas']['SetupNativeRoleCheck'];
+export type SchemaSetupProgress = components['schemas']['SetupProgress'];
+export type SchemaSetupQuestion = components['schemas']['SetupQuestion'];
+export type SchemaSetupReportReceipt = components['schemas']['SetupReportReceipt'];
+export type SchemaSetupRoleCheckRequest = components['schemas']['SetupRoleCheckRequest'];
+export type SchemaSetupRoleProposal = components['schemas']['SetupRoleProposal'];
+export type SchemaSetupSource = components['schemas']['SetupSource'];
+export type SchemaSetupStartOut = components['schemas']['SetupStartOut'];
+export type SchemaSetupWorkflowOut = components['schemas']['SetupWorkflowOut'];
+export type SchemaSetupWorkflowOutcome = components['schemas']['SetupWorkflowOutcome'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
+export type SchemaTaskActivityItem = components['schemas']['TaskActivityItem'];
+export type SchemaTaskActivityOut = components['schemas']['TaskActivityOut'];
+export type SchemaTaskDeliveryAgentOverride = components['schemas']['TaskDeliveryAgentOverride'];
+export type SchemaTaskDeliveryDefaults = components['schemas']['TaskDeliveryDefaults'];
+export type SchemaTaskDeliveryStateOut = components['schemas']['TaskDeliveryStateOut'];
+export type SchemaTaskMcpConfigRef = components['schemas']['TaskMcpConfigRef'];
+export type SchemaTaskResultAssociation = components['schemas']['TaskResultAssociation'];
+export type SchemaTaskResultItem = components['schemas']['TaskResultItem'];
+export type SchemaTaskResultsOut = components['schemas']['TaskResultsOut'];
 export type SchemaTelegramApplicationStatusOut = components['schemas']['TelegramApplicationStatusOut'];
 export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
 export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
 export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec'];
+export type SchemaTrackerActiveTasksAllInput = components['schemas']['TrackerActiveTasksAllInput'];
+export type SchemaTrackerActiveTasksInput = components['schemas']['TrackerActiveTasksInput'];
+export type SchemaTrackerAgentStatsAllInput = components['schemas']['TrackerAgentStatsAllInput'];
+export type SchemaTrackerAgentStatsInput = components['schemas']['TrackerAgentStatsInput'];
+export type SchemaTrackerAgentStatsOut = components['schemas']['TrackerAgentStatsOut'];
+export type SchemaTrackerConfigureDeliveryInput = components['schemas']['TrackerConfigureDeliveryInput'];
+export type SchemaTrackerDependencyOut = components['schemas']['TrackerDependencyOut'];
+export type SchemaTrackerGetInput = components['schemas']['TrackerGetInput'];
+export type SchemaTrackerGraphEdgeOut = components['schemas']['TrackerGraphEdgeOut'];
+export type SchemaTrackerGraphNodeOut = components['schemas']['TrackerGraphNodeOut'];
+export type SchemaTrackerGraphOut = components['schemas']['TrackerGraphOut'];
+export type SchemaTrackerLaneOut = components['schemas']['TrackerLaneOut'];
+export type SchemaTrackerLinkOut = components['schemas']['TrackerLinkOut'];
+export type SchemaTrackerMetricDemand = components['schemas']['TrackerMetricDemand'];
+export type SchemaTrackerPlaceTaskInput = components['schemas']['TrackerPlaceTaskInput'];
+export type SchemaTrackerPriorityOut = components['schemas']['TrackerPriorityOut'];
+export type SchemaTrackerReorderTaskInput = components['schemas']['TrackerReorderTaskInput'];
+export type SchemaTrackerSnapshotOut = components['schemas']['TrackerSnapshotOut'];
+export type SchemaTrackerSummaryOut = components['schemas']['TrackerSummaryOut'];
+export type SchemaTrackerTaskActivityInput = components['schemas']['TrackerTaskActivityInput'];
+export type SchemaTrackerTaskBoardOut = components['schemas']['TrackerTaskBoardOut'];
+export type SchemaTrackerTaskContentOut = components['schemas']['TrackerTaskContentOut'];
+export type SchemaTrackerTaskInputOut = components['schemas']['TrackerTaskInputOut'];
+export type SchemaTrackerTaskOut = components['schemas']['TrackerTaskOut'];
+export type SchemaTrackerTaskResultsInput = components['schemas']['TrackerTaskResultsInput'];
+export type SchemaTrackerTaskSummaryOut = components['schemas']['TrackerTaskSummaryOut'];
+export type SchemaTrackerTaskTicketSummaryOut = components['schemas']['TrackerTaskTicketSummaryOut'];
+export type SchemaTrackerTicketOut = components['schemas']['TrackerTicketOut'];
+export type SchemaTrackerTicketSummaryOut = components['schemas']['TrackerTicketSummaryOut'];
+export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
+export type SchemaTrackerUpdateTaskPriorityInput = components['schemas']['TrackerUpdateTaskPriorityInput'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
+export type SchemaUsageIntervalOut = components['schemas']['UsageIntervalOut'];
+export type SchemaUsageSampleOut = components['schemas']['UsageSampleOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
+export type SchemaWorkDurationOut = components['schemas']['WorkDurationOut'];
 export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
 export type SchemaWorkflowExperienceSpec = components['schemas']['WorkflowExperienceSpec'];
 export type SchemaWorkflowHandoffSpec = components['schemas']['WorkflowHandoffSpec'];
@@ -7056,12 +11964,26 @@ export type SchemaWorkflowTemplateIssue = components['schemas']['WorkflowTemplat
 export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
+export type SchemaWriteEnvelopeAgentDefinition = components['schemas']['WriteEnvelope_AgentDefinition_'];
+export type SchemaWriteEnvelopeDeliveryCapacityOut = components['schemas']['WriteEnvelope_DeliveryCapacityOut_'];
 export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['WriteEnvelope_DurableActionJobOut_'];
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
+export type SchemaWriteEnvelopePatternSummary = components['schemas']['WriteEnvelope_PatternSummary_'];
+export type SchemaWriteEnvelopeProjectCleanupResult = components['schemas']['WriteEnvelope_ProjectCleanupResult_'];
+export type SchemaWriteEnvelopeProjectFileOwnershipResult = components['schemas']['WriteEnvelope_ProjectFileOwnershipResult_'];
+export type SchemaWriteEnvelopeProjectOut = components['schemas']['WriteEnvelope_ProjectOut_'];
+export type SchemaWriteEnvelopeProjectSetupOut = components['schemas']['WriteEnvelope_ProjectSetupOut_'];
+export type SchemaWriteEnvelopeScheduleRemovalOut = components['schemas']['WriteEnvelope_ScheduleRemovalOut_'];
+export type SchemaWriteEnvelopeScheduledJobOut = components['schemas']['WriteEnvelope_ScheduledJobOut_'];
+export type SchemaWriteEnvelopeSetupAttempt = components['schemas']['WriteEnvelope_SetupAttempt_'];
+export type SchemaWriteEnvelopeSetupStartOut = components['schemas']['WriteEnvelope_SetupStartOut_'];
+export type SchemaWriteEnvelopeTrackerTaskBoardOut = components['schemas']['WriteEnvelope_TrackerTaskBoardOut_'];
+export type SchemaWriteEnvelopeTrackerTaskContentOut = components['schemas']['WriteEnvelope_TrackerTaskContentOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionUpsertOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionUpsertOut_'];
+export type SchemaWriteEnvelopeDictStrAny = components['schemas']['WriteEnvelope_dict_str__Any__'];
 export type SchemaWriteResponseAccountAuthStatusOut = components['schemas']['WriteResponse_AccountAuthStatusOut_'];
 export type SchemaWriteResponseAccountOut = components['schemas']['WriteResponse_AccountOut_'];
 export type SchemaWriteResponseAccountSessionOut = components['schemas']['WriteResponse_AccountSessionOut_'];
@@ -7080,6 +12002,7 @@ export type SchemaWriteResponseProjectOut = components['schemas']['WriteResponse
 export type SchemaWriteResponseProjectPluginOut = components['schemas']['WriteResponse_ProjectPluginOut_'];
 export type SchemaWriteResponseResourceRecordOut = components['schemas']['WriteResponse_ResourceRecordOut_'];
 export type SchemaWriteResponseRunOut = components['schemas']['WriteResponse_RunOut_'];
+export type SchemaWriteResponseScheduleRemovalOut = components['schemas']['WriteResponse_ScheduleRemovalOut_'];
 export type SchemaWriteResponseScheduledJobOut = components['schemas']['WriteResponse_ScheduledJobOut_'];
 export type $defs = Record<string, never>;
 export interface operations {
@@ -7184,6 +12107,7 @@ export interface operations {
         parameters: {
             query?: {
                 provider_key?: string | null;
+                summary_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -7741,6 +12665,58 @@ export interface operations {
             };
         };
     };
+    global_context_timeline_stream_api_v1_context_timeline_stream_get: {
+        parameters: {
+            query?: {
+                after?: number | null;
+                ui_demand?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    native_availability_api_v1_desktop_availability_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_health_api_v1_health_get: {
         parameters: {
             query?: never;
@@ -8121,39 +13097,6 @@ export interface operations {
             };
         };
     };
-    delete_project_api_v1_projects__project_id__delete: {
-        parameters: {
-            query?: {
-                hard?: boolean;
-            };
-            header?: never;
-            path: {
-                project_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WriteResponse_ProjectOut_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     update_project_api_v1_projects__project_id__patch: {
         parameters: {
             query?: never;
@@ -8447,6 +13390,7 @@ export interface operations {
         parameters: {
             query?: {
                 provider_key?: string | null;
+                summary_only?: boolean;
             };
             header?: never;
             path: {
@@ -8787,6 +13731,7 @@ export interface operations {
                 heartbeat_ms?: number;
                 max_events?: number | null;
                 replay?: boolean;
+                ui_demand?: string | null;
             };
             header?: never;
             path: {
@@ -9543,7 +14488,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WriteResponse_ScheduledJobOut_"];
+                    "application/json": components["schemas"]["WriteResponse_ScheduleRemovalOut_"];
                 };
             };
             /** @description Validation Error */
@@ -10245,6 +15190,17 @@ export enum ActionCallStatus {
     success = "success",
     failed = "failed"
 }
+export enum ActionListInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ActiveTasksOutScope {
+    project = "project",
+    global = "global"
+}
 export enum AgentRequestAttentionStatus {
     unread = "unread",
     read = "read",
@@ -10259,6 +15215,29 @@ export enum AgentRequestStatus {
     resolved = "resolved",
     ignored = "ignored",
     failed = "failed"
+}
+export enum AgentStatsCoverageOutClassification_status {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
+}
+export enum AgentStatsCoverageOutUsage_status {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
+}
+export enum AgentStatsFieldCoverageOutStatus {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
+}
+export enum AgentStatsRowOutModel_basisAnyOf0 {
+    observed = "observed",
+    selected = "selected",
+    mixed = "mixed"
 }
 export enum ApprovalRequestStatus {
     pending = "pending",
@@ -10279,6 +15258,18 @@ export enum AuthRevokeOutRemote_logout_statusAnyOf0 {
 export enum AuthStartRequestAuthorization_mode {
     phone = "phone",
     qr = "qr"
+}
+export enum DeliveryCapacityInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum DeliveryMetricCoverageOutStatus {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
 }
 export enum DurableActionItemStatus {
     pending = "pending",
@@ -10428,6 +15419,13 @@ export enum HealthResponseDb_status {
     ok = "ok",
     unreachable = "unreachable"
 }
+export enum IntegrationListInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum LocalAgentChatCreateMessageInputDirection {
     inbound = "inbound",
     outbound = "outbound"
@@ -10457,6 +15455,50 @@ export enum OperationSummaryOutIdempotency_policy {
     dispatcher = "dispatcher",
     handler = "handler"
 }
+export enum PatternDeleteInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum PatternDetailSource {
+    custom = "custom",
+    stackos = "stackos",
+    customized = "customized"
+}
+export enum PatternGetInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum PatternListInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum PatternListInputSource {
+    all = "all",
+    stackos = "stackos",
+    customized = "customized",
+    custom = "custom"
+}
+export enum PatternSummarySource {
+    custom = "custom",
+    stackos = "stackos",
+    customized = "customized"
+}
+export enum PatternUpsertInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum PermissionVerificationOutEnforcement {
     local_required = "local_required",
     provider_enforced = "provider_enforced"
@@ -10471,6 +15513,144 @@ export enum PluginSource {
     repo = "repo",
     project = "project",
     user = "user"
+}
+export enum ProjectAgentCreateInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectAgentGetInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectAgentScopeResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectAgentUpdateInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectCleanupResultStatus {
+    blocked = "blocked",
+    incomplete = "incomplete",
+    deleted = "deleted",
+    missing = "missing"
+}
+export enum ProjectDeleteInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectDeleteInputScope {
+    project = "project",
+    catalog = "catalog"
+}
+export enum ProjectFileOwnershipInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectMoveInputPlacement {
+    top = "top",
+    before = "before",
+    after = "after"
+}
+export enum ProjectMoveInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectMoveInputScope {
+    project = "project",
+    catalog = "catalog"
+}
+export enum ProjectOutProject_folder_statusAnyOf0 {
+    ready = "ready",
+    directoryless = "directoryless",
+    missing = "missing",
+    unavailable = "unavailable",
+    conflict = "conflict"
+}
+export enum ProjectSetupAnswerInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectSetupCancelInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectSetupContinueInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectSetupGetInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectSetupOutFolder_status {
+    directoryless = "directoryless",
+    available = "available",
+    unavailable = "unavailable"
+}
+export enum ProjectSetupOutStatus {
+    ineligible = "ineligible",
+    folder_unavailable = "folder_unavailable",
+    setup_needed = "setup_needed",
+    updates_available = "updates_available",
+    current = "current"
+}
+export enum ProjectSetupRemindersInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectSetupStartInputEntry_kind {
+    existing_agent = "existing_agent",
+    managed_ui = "managed_ui"
+}
+export enum ProjectSetupStartInputMode {
+    setup = "setup",
+    update = "update"
+}
+export enum ProjectSetupStartInputRequested_scope {
+    ready_to_use = "ready_to_use",
+    infrastructure_only = "infrastructure_only"
+}
+export enum ProjectSetupStartInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectUpdateInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectUpdateInputScope {
+    project = "project",
+    catalog = "catalog"
 }
 export enum RunKind {
     run_plan = "run-plan",
@@ -10508,6 +15688,331 @@ export enum RunStatus {
     success = "success",
     failed = "failed",
     aborted = "aborted"
+}
+export enum ScheduleListInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ScheduleRemoveInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ScheduleRunsInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ScheduleSetInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ScheduleToggleInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum SetDeliveryCapacityInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum SetupAttemptEntry_kind {
+    existing_agent = "existing_agent",
+    managed_ui = "managed_ui"
+}
+export enum SetupAttemptMode {
+    setup = "setup",
+    update = "update"
+}
+export enum SetupAttemptRequested_scope {
+    ready_to_use = "ready_to_use",
+    infrastructure_only = "infrastructure_only"
+}
+export enum SetupAttemptStatus {
+    queued = "queued",
+    running = "running",
+    needs_input = "needs_input",
+    success = "success",
+    partial = "partial",
+    failed = "failed",
+    interrupted = "interrupted",
+    cancelled = "cancelled"
+}
+export enum SetupManagedExecutionPhase {
+    preparation = "preparation",
+    verification = "verification",
+    role_verification = "role_verification",
+    completion = "completion"
+}
+export enum SetupQuestionAnswer_state {
+    pending = "pending",
+    answered = "answered"
+}
+export enum SetupQuestionResponse_channel {
+    existing_agent = "existing_agent",
+    managed_ui = "managed_ui"
+}
+export enum SetupSourceKind {
+    template = "template",
+    main_agent = "main_agent",
+    specialist = "specialist",
+    override = "override"
+}
+export enum SetupWorkflowOutActivation_status {
+    unknown = "unknown",
+    pending = "pending",
+    blocked = "blocked",
+    verified = "verified"
+}
+export enum SetupWorkflowOutRequested_scope {
+    ready_to_use = "ready_to_use",
+    infrastructure_only = "infrastructure_only"
+}
+export enum SetupWorkflowOutStatus {
+    unknown = "unknown",
+    current = "current",
+    update_available = "update_available",
+    source_unavailable = "source_unavailable",
+    activation_pending = "activation_pending"
+}
+export enum SetupWorkflowOutcomeActivation_status {
+    unknown = "unknown",
+    pending = "pending",
+    blocked = "blocked",
+    verified = "verified"
+}
+export enum SetupWorkflowOutcomeStatus {
+    success = "success",
+    failed = "failed",
+    unfinished = "unfinished",
+    needs_input = "needs_input",
+    cancelled = "cancelled",
+    interrupted = "interrupted"
+}
+export enum TaskActivityItemSource_kind {
+    project_event = "project_event",
+    tracker_revision = "tracker_revision"
+}
+export enum TaskDeliveryStateOutStatus {
+    queued = "queued",
+    running = "running",
+    stopped = "stopped",
+    complete = "complete"
+}
+export enum TaskResultItemSource_kind {
+    resource_record = "resource_record",
+    artifact = "artifact",
+    learning = "learning",
+    decision = "decision",
+    experiment = "experiment"
+}
+export enum TaskResultsOutSource_kindAnyOf0 {
+    resource_record = "resource_record",
+    artifact = "artifact",
+    learning = "learning",
+    decision = "decision",
+    experiment = "experiment"
+}
+export enum TrackerActiveTasksAllInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerActiveTasksInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerAgentStatsAllInputGroup_by {
+    agent = "agent",
+    model = "model",
+    agent_model = "agent_model"
+}
+export enum TrackerAgentStatsAllInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerAgentStatsInputGroup_by {
+    agent = "agent",
+    model = "model",
+    agent_model = "agent_model"
+}
+export enum TrackerAgentStatsInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerAgentStatsOutGroup_by {
+    agent = "agent",
+    model = "model",
+    agent_model = "agent_model"
+}
+export enum TrackerConfigureDeliveryInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerGetInputBlock_stateAnyOf0 {
+    blocked = "blocked",
+    open = "open"
+}
+export enum TrackerGetInputProjection {
+    full = "full",
+    ui = "ui"
+}
+export enum TrackerGetInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerGraphEdgeOutType {
+    contains = "contains",
+    dependency = "dependency",
+    link = "link"
+}
+export enum TrackerGraphNodeOutType {
+    task = "task",
+    ticket = "ticket",
+    group = "group"
+}
+export enum TrackerItemStatus {
+    not_started = "not-started",
+    in_progress = "in-progress",
+    complete = "complete",
+    deferred = "deferred",
+    aborted = "aborted",
+    failed = "failed",
+    skipped = "skipped"
+}
+export enum TrackerLinkKind {
+    run_plan = "run-plan",
+    run_plan_step = "run-plan-step",
+    run = "run",
+    agent_request = "agent-request",
+    resource = "resource",
+    artifact = "artifact",
+    action_call = "action-call",
+    external = "external"
+}
+export enum TrackerPlaceTaskInputBoard_column {
+    backlog = "backlog",
+    todo = "todo"
+}
+export enum TrackerPlaceTaskInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerReorderTaskInputPlacement {
+    before = "before",
+    after = "after"
+}
+export enum TrackerReorderTaskInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerSnapshotOutMetric_scope {
+    all = "all",
+    demand = "demand"
+}
+export enum TrackerSnapshotOutProjection {
+    full = "full",
+    ui = "ui"
+}
+export enum TrackerSourceKind {
+    manual = "manual",
+    workflow = "workflow",
+    agent_request = "agent-request",
+    external = "external",
+    system = "system"
+}
+export enum TrackerTaskActivityInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerTaskOutBoard_column {
+    backlog = "backlog",
+    todo = "todo",
+    in_progress = "in-progress",
+    stopped = "stopped",
+    done = "done",
+    aborted = "aborted",
+    failed = "failed",
+    skipped = "skipped"
+}
+export enum TrackerTaskResultsInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerTaskResultsInputSource_kindAnyOf0 {
+    resource_record = "resource_record",
+    artifact = "artifact",
+    learning = "learning",
+    decision = "decision",
+    experiment = "experiment"
+}
+export enum TrackerTicketKind {
+    ticket = "ticket",
+    group = "group"
+}
+export enum TrackerUpdateTaskContentInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerUpdateTaskPriorityInputPriority_key {
+    p0 = "p0",
+    p1 = "p1",
+    p2 = "p2",
+    p3 = "p3"
+}
+export enum TrackerUpdateTaskPriorityInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum UsageIntervalOutKind {
+    baseline = "baseline",
+    checkpoint = "checkpoint",
+    batched = "batched",
+    reset = "reset"
+}
+export enum UsageSampleOutSourceAnyOf0 {
+    native = "native",
+    final = "final"
+}
+export enum WorkDurationOutCoverage {
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
 }
 export enum WorkflowAgentRequirementSpecRequirement {
     required = "required",

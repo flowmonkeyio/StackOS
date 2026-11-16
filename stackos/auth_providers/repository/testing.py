@@ -10,14 +10,14 @@ from typing import Any
 
 import httpx
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlmodel import col, select
 from stackos_connectors.shared.google.probe import diagnostic_facts
 
 from stackos.artifacts import redact_secret_text, redact_secrets
-from stackos.db.models import Credential, CredentialAccount, CredentialScope
+from stackos.db.models import Credential, CredentialAccount, CredentialScope, ProjectCredential
 from stackos.integrations import integration_class_for
-from stackos.repositories.base import Envelope, RepositoryError, ValidationError
+from stackos.repositories.base import ConflictError, Envelope, RepositoryError, ValidationError
 
 from .schema import AuthMethodOut, AuthProbeEvidence, AuthTestOut
 from .utils import utcnow
@@ -156,6 +156,7 @@ class CredentialTestingMixin:
                 operation="account.test.resolve",
                 required_scopes=[],
                 local_admin=True,
+                allow_unverified=True,
             )
             credential = resolved.credential
         else:
@@ -163,14 +164,29 @@ class CredentialTestingMixin:
                 project_id=project_id,
                 credential_ref=credential_ref,
             )
-            resolved = await self.resolve_for_execution(
+            resolved = await self._resolve_for_use(
                 project_id=project_id,
                 provider_key=credential.provider_key,
                 credential_ref=credential_ref,
                 operation="account.test.resolve",
                 required_scopes=[],
+                allow_unverified=True,
             )
             credential = resolved.credential
+        probe_revision = credential.updated_at
+        probe_backing_id = credential.integration_credential_id
+        probe_attachment = None
+        if credential.provider_key == "cfobooth" and project_id is not None:
+            # Scalar values remain tied to the admitted Connection even when
+            # another session detaches/recreates it and SQLite reuses its ID.
+            probe_attachment = self._s.exec(
+                select(ProjectCredential.id, ProjectCredential.attached_at).where(
+                    col(ProjectCredential.project_id) == project_id,
+                    col(ProjectCredential.credential_id) == credential.id,
+                )
+            ).first()
+            if probe_attachment is None:
+                raise ConflictError("Account Connection changed during credential test")
         integration_cls = integration_class_for(credential.provider_key)
         acquisition_only = (
             credential.auth_method_key == "service-account"
@@ -288,10 +304,87 @@ class CredentialTestingMixin:
             raw=raw_result,
         )
         now = utcnow()
+        if credential.provider_key == "cfobooth":
+            # The native probe validates provider identity and destination. The
+            # host accepts only typed evidence bound to this Account's scope.
+            try:
+                evidence = AuthProbeEvidence.model_validate(out.metadata.get("evidence"))
+                account = evidence.account
+                valid_identity = bool(
+                    raw_result.get("ok") is True
+                    and account is not None
+                    and account.provider_account_id
+                    and account.provider_account_id.strip()
+                    and account.display_name
+                    and account.display_name.strip()
+                    and account.metadata.get("organization_id")
+                    == (resolved.config_json or {}).get("organization_id")
+                    and isinstance(account.metadata.get("key_id"), str)
+                    and account.metadata["key_id"].strip()
+                    and isinstance(out.metadata.get("api_base_url"), str)
+                    and out.metadata["api_base_url"].strip()
+                )
+            except PydanticValidationError:
+                valid_identity = False
+            if out.ok and not valid_identity:
+                out = self._normalize_test_result(
+                    credential=credential,
+                    provider_key=credential.provider_key,
+                    raw=_failed_test_result(
+                        credential.provider_key, ValidationError("Invalid probe evidence")
+                    ),
+                )
+            # Claim this revision atomically before persisting any result or
+            # identity. The original Connection must still authorize a project
+            # probe; global-admin probes do not depend on project attachments.
+            claim = (
+                update(Credential)
+                .where(
+                    col(Credential.id) == credential.id,
+                    col(Credential.updated_at) == probe_revision,
+                    col(Credential.integration_credential_id) == probe_backing_id,
+                    col(Credential.revoked_at).is_(None),
+                )
+                .values(updated_at=now)
+                .execution_options(synchronize_session=False)
+            )
+            if probe_attachment is not None:
+                attachment_id, attached_at = probe_attachment
+                claim = claim.where(
+                    select(ProjectCredential.id)
+                    .where(
+                        col(ProjectCredential.id) == attachment_id,
+                        col(ProjectCredential.attached_at) == attached_at,
+                        col(ProjectCredential.project_id) == project_id,
+                        col(ProjectCredential.credential_id) == credential.id,
+                    )
+                    .exists()
+                )
+            claimed = self._s.execute(claim)
+            if claimed.rowcount != 1:
+                self._s.rollback()
+                raise ConflictError(
+                    "Account changed during credential test",
+                    data={
+                        "credential_ref": credential_ref,
+                        "next_action": "Test the current Account again.",
+                    },
+                )
+            self._s.refresh(credential)
+            if out.ok:
+                config = dict(credential.config_json or {})
+                config["api_base_url"] = out.metadata["api_base_url"]
+                credential.config_json = self._safe_config(config)
+            else:
+                self._invalidate_cfobooth_identity(credential)
         credential.last_tested_at = now
-        # A test result is diagnostic evidence, not an execution permission.
-        # Keep the stored credential usable and return/audit the real result.
-        credential.status = "connected"
+        # Most providers retain diagnostic-only tests. CFO requires current
+        # identity before its stored key scope can be used; grants stay separate.
+        credential.status = (
+            "repair-required"
+            if credential.provider_key == "cfobooth" and not out.ok
+            else "connected"
+        )
         credential.updated_at = now
         self._s.add(credential)
         self._sync_account_from_test_result(
@@ -330,10 +423,10 @@ class CredentialTestingMixin:
         ok: bool,
         metadata: Mapping[str, Any],
     ) -> None:
-        """Persist normalized account and grant evidence under the saved method posture."""
+        """Persist typed account identity; gate grant evidence by the saved posture."""
 
         posture = method.permission_verification
-        if not ok or posture is None or credential.id is None:
+        if not ok or credential.id is None:
             return
         raw_evidence = metadata.get("evidence")
         try:
@@ -351,7 +444,11 @@ class CredentialTestingMixin:
             account.metadata_json = redact_secrets(evidence.account.metadata)
             account.updated_at = utcnow()
             self._s.add(account)
-        if posture.evidence_source != "provider_probe" or posture.enforcement != "local_required":
+        if (
+            posture is None
+            or posture.evidence_source != "provider_probe"
+            or posture.enforcement != "local_required"
+        ):
             return
         safe_config = dict(credential.config_json or {})
         if evidence is None or evidence.grants is None:

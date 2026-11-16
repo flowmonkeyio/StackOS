@@ -40,6 +40,7 @@ from stackos.crypto import cleanup_old_backup
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.db.connection import make_engine
 from stackos.db.migrate import upgrade_to_head
+from stackos.install import bundled_patterns_source
 from stackos.integrations.telegram_tdlib.daemon import (
     build_telegram_runtime,
     restore_telegram_accounts,
@@ -56,8 +57,10 @@ from stackos.jobs.scheduler import (
     RUNS_REAPER_JOB_ID,
     build_scheduler,
 )
+from stackos.jobs.workflow_schedules import WorkflowScheduleRuntime
 from stackos.logging import configure_logging, get_logger
 from stackos.mcp import register_mcp
+from stackos.repositories.patterns import PatternRepository
 from stackos.repositories.runs import RunRepository
 
 _SEED_BYTES = 32
@@ -267,6 +270,16 @@ def _build_lifespan(
         engine = make_engine(settings.db_path)
 
         SQLModel.metadata.create_all(engine)
+        try:
+            with Session(engine) as session:
+                refreshed = PatternRepository(session).refresh_bundle(
+                    bundled_patterns_source().read_text(encoding="utf-8")
+                )
+            log.info("pattern_bundle_refreshed", **refreshed)
+        except Exception as exc:
+            # Invalid/missing package assets must preserve local content and
+            # leave the console available for repair. Never log bundle bodies.
+            log.warning("pattern_bundle_refresh_failed", error_type=type(exc).__name__)
         app.state.settings = settings
         app.state.token = token
         app.state.ui_token = derive_ui_token(token)
@@ -304,6 +317,13 @@ def _build_lifespan(
         # skipped) so re-running on every boot is fine.
         scheduler = build_scheduler(settings, engine)
         app.state.scheduler = scheduler
+        workflow_schedules = WorkflowScheduleRuntime(scheduler, lambda: Session(engine))
+        app.state.workflow_schedules = workflow_schedules
+        app.state.operation_services.update(
+            scheduler=scheduler,
+            session_factory=lambda: Session(engine),
+            schedule_reconcile=workflow_schedules.reconcile,
+        )
 
         # Crash-recovery sweep: any ``status='running' AND
         # heartbeat_at < now - 5 min`` row gets ``aborted`` with
@@ -365,6 +385,11 @@ def _build_lifespan(
             yield
         finally:
             log.info("daemon.shutdown.clean")
+            if workflow_schedules.connection is not None:
+                workflow_schedules.disconnect(workflow_schedules.connection)
+            from stackos.host_mcp.service import shutdown_usage
+
+            shutdown_usage()
             try:
                 await delivery.stop()
             finally:

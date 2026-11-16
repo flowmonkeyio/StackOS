@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -11,6 +13,23 @@ _GENERATED_SCOPE_PREFIXES = (
     _CURRENT_INVENTORY_SCOPE_PREFIX,
     _RETIRED_INTERNAL_SCOPE_PREFIX,
 )
+
+
+def generated_inventory_scope_key(scope: Mapping[str, Any]) -> str:
+    """Hash the complete declared scope, preserving the original Trackbooth identity."""
+    payload = json.dumps(dict(scope), sort_keys=True, separators=(",", ":"))
+    return f"inv_{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:12]}"
+
+
+def generated_manifest_hash(manifest_json: Mapping[str, Any]) -> str:
+    """Hash the complete local projection, excluding sync time and the hash itself."""
+    stable = json.loads(json.dumps(manifest_json, default=str))
+    config = stable.get("config")
+    if isinstance(config, dict):
+        config.pop("inventory_synced_at", None)
+        config.pop("inventory_manifest_hash", None)
+    raw = json.dumps(stable, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def generated_action_public_key(config_json: Mapping[str, Any] | None) -> str | None:
@@ -109,4 +128,6 @@ __all__ = [
     "generated_action_public_audit_metadata",
     "generated_action_public_key",
     "generated_action_visible_for_project",
+    "generated_inventory_scope_key",
+    "generated_manifest_hash",
 ]

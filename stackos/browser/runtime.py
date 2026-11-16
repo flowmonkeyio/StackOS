@@ -35,6 +35,12 @@ BROWSER_PROVIDER = "gstack"
 BROWSER_PROFILE_DIRNAME = "playwright-chromium"
 GSTACK_RUNTIME_DIRNAME = "browser-runtime"
 GSTACK_RUNTIME_REPAIR = "Run `stackos install` to install the StackOS gstack runtime."
+_PROFILE_OWNER_REPAIR = (
+    "Inspect owner_session_ref. Reuse a healthy, authorized owner in a task-owned tab "
+    "with --tab-id, preserving other tabs, or use a separate profile for a separate session. "
+    "Stop the owner only with authority for that handoff and after its work is quiescent; "
+    "then wait for retirement. A different session key does not isolate the same profile."
+)
 
 
 def safe_browser_key(value: str) -> str:
@@ -475,10 +481,7 @@ class BrowserRuntime:
                         data={
                             "owner_session_ref": owner.session_ref,
                             "owner_healthy": owner.healthy,
-                            "repair": (
-                                "Stop the existing owner and wait for retirement before using "
-                                "this session."
-                            ),
+                            "repair": _PROFILE_OWNER_REPAIR,
                         },
                     )
             self._require_runtime(root)
@@ -496,6 +499,7 @@ class BrowserRuntime:
         profile_dir: Path,
         state_file: Path,
         data_dir: Path | None = None,
+        admit: Callable[[], None] | None = None,
     ) -> NativeSessionState:
         root = self._resolve_data_dir(data_dir)
         async with _profile_lock(profile_dir):
@@ -526,12 +530,11 @@ class BrowserRuntime:
                     data={
                         "owner_session_ref": owner.session_ref,
                         "owner_healthy": owner.healthy,
-                        "repair": (
-                            "Stop the existing owner and wait for retirement before using another "
-                            "session key."
-                        ),
+                        "repair": _PROFILE_OWNER_REPAIR,
                     },
                 )
+            if admit is not None:
+                admit()
             self._require_runtime(root)
             self._prepare_owned_paths(profile_dir=profile_dir, state_file=state_file)
             process = await self._command_runner(
@@ -642,6 +645,15 @@ class BrowserRuntime:
                         },
                     )
                 await asyncio.sleep(_STOP_POLL_SECONDS)
+
+    def project_busy(self, *, project_id: int, data_dir: Path) -> bool:
+        """Include launches/stops awaiting native I/O, before state-file publication."""
+        root = (
+            data_dir / "browser-profiles" / BROWSER_PROFILE_DIRNAME / f"project-{project_id}"
+        ).resolve()
+        return any(
+            lock.locked() and Path(key).is_relative_to(root) for key, lock in _PROFILE_LOCKS.items()
+        )
 
     async def discover_sessions(
         self, *, project_id: int, data_dir: Path | None = None

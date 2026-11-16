@@ -6,12 +6,14 @@
  * time (no live ticking — the UI is watcher-free by contract).
  */
 
+import type { SchemaExecutionIdentityOut, SchemaWorkDurationOut } from '@/api'
+
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 const WEEK = 7 * DAY
 
-function parseStackOsDate(value: string): Date {
+export function parseStackOsDate(value: string): Date {
   const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
     ? `${value}Z`
     : value
@@ -109,4 +111,26 @@ export function formatDurationBetween(
   if (Number.isNaN(endDate.getTime())) return '-'
   const minutes = (endDate.getTime() - startDate.getTime()) / MINUTE
   return formatDurationMinutes(minutes)
+}
+
+/** Format the server's interval union; only its exact owned live call can extend it. */
+export function formatWorkTime(
+  duration: SchemaWorkDurationOut | null | undefined,
+  execution: SchemaExecutionIdentityOut | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (!duration || duration.coverage === 'unavailable' || duration.total_seconds == null
+    || !Number.isFinite(duration.total_seconds) || duration.total_seconds < 0) return 'N/A'
+  let seconds = duration.total_seconds
+  const matching = execution?.invocation_id && duration.live?.some(live =>
+    live.invocation_id === execution.invocation_id && live.agent === execution.agent
+    && live.host_key === execution.host_key && live.model === execution.model
+    && live.ticket_key === execution.ticket_key && live.started_at === execution.started_at)
+  const observed = duration.observed_at ? parseStackOsDate(duration.observed_at).getTime() : NaN
+  if (matching && Number.isFinite(observed)) {
+    // All owned open intervals already reach observed_at. Extending that union
+    // adds this tail once, even when several invocations run concurrently.
+    seconds += Math.max(0, (now.getTime() - observed) / 1000)
+  }
+  return seconds === 0 ? '0m' : formatDurationMinutes(seconds / 60)
 }

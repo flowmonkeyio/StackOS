@@ -856,7 +856,8 @@
       "recovery": [
         "Record blockers in the run and tracker instead of hiding them in chat.",
         "Use run consistency and recovery operations to resume a blocked step without losing prior handoffs.",
-        "Before reopening an earlier gate, stop active assignments and their processes, preserve evidence, and reconcile affected child tickets explicitly. Existing runs retain their frozen step order."
+        "For terminal-managed rewind, stop active assignments and their processes, preserve evidence, and reconcile affected child tickets explicitly. Existing runs retain their frozen step order.",
+        "For supported automatic correction, finish checks and other actions, preserve evidence and reconcile affected child tickets, and quiesce other affected work. Keep the caller active for its final tracker.reopen mutation, then immediately return repair; do not wait for the caller to terminate. The runner owns resumption."
       ],
       "safeStoppingPoints": [
         "Stop after a reviewed design or diagnosis when implementation authority was not granted."
@@ -918,11 +919,6 @@
           "id": "review-design",
           "title": "Delivery Readiness Review",
           "summary": "Review the complete requirements, design, proof plan, executable tickets, dependencies, and resources before implementation."
-        },
-        {
-          "id": "deliver-tickets",
-          "title": "Deliver Tickets",
-          "summary": "Delegate ready tickets, independently verify each candidate immediately, and accept integrated results before completing tickets and releasing dependents."
         },
         {
           "id": "verify-delivery",
@@ -4847,23 +4843,29 @@
       "workflowKeys": [],
       "mission": "Implement and self-check one bounded assignment, then return a reviewable candidate and evidence to the main agent.",
       "responsibilities": [
-        "Inspect the assigned code, canonical owner, accepted dependencies, and dirty baseline before editing within declared file and shared-resource ownership.",
-        "Follow the accepted design and proof plan, investigate root causes, and report blockers or contradictions promptly.",
+        "Inspect the assigned code, canonical owner, affected consumers, accepted dependencies, dirty baseline and actual shared-resource ownership before editing; listed paths are discovery anchors unless explicitly excluded.",
+        "Use the accepted design and proof plan as fallible evidence against the original outcome; investigate root causes and necessary omissions, and report actual blockers or contradictions promptly.",
         "Repair adjudicated findings within the same ticket boundary and return fresh evidence for independent re-review."
       ],
       "must_do": [
+        "Implement the assigned ordinary ticket and return its scoped committed candidate. When assigned the verify-delivery mirror instead, consume accepted ticket receipts and execute remaining integrated proof; do not repeat implementation or create a parent delivery summary.",
         "Verify ticket/attempt IDs and current contract revision; obtain the complete assigned brief or request missing fields rather than treating a compact navigation response as a full contract.",
         "Preserve unrelated changes, coordinate through the main agent on ownership conflicts, and stop affected work when scope, design, authority, or prerequisites are stale or contradictory.",
         "Reuse existing project contracts and helpers; for defects, trace the producer or writer and fix the owning boundary when possible. Remove superseded logic when the accepted design calls for clean replacement.",
+        "Complete necessary omitted consumers, files, wiring, specs and docs within the original outcome without routine main-agent relay. Record the discovered gap, why the change is necessary and proportionate, affected consumers and focused proof; for example, update a missed caller after a producer refactor, leaving unrelated naming cleanup as a nonblocking followup.",
         "Use red/green discipline for approved risky behavior checks and focused self-checks for the assigned acceptance criteria; execute assigned agent-owned E2E/manual scenarios or return exact blocked/unexecuted status.",
         "Use the proof plan's environment and browser profile_key; ensure checks use accepted prerequisites and do not pass accidentally against another ticket's unaccepted changes.",
         "Bind evidence to actual candidate/diff, covered paths/interfaces, prerequisites, environment, commands, results, and failures; identify omitted checks and their impact.",
+        "Create a separate scoped commit for source changes and each repair after focused checks, returning full outputs.commit_sha for independent exact-commit review. Observation or verification may cite unchanged HEAD; non-Git work needs no commit. Never fabricate commits for workflow outputs. Preserve unrelated edits; use normal host approval for protected writes and stop on denial.",
+        "Use the actual launcher schema. Current automatic results require status (success/repair/blocked/failed), summary, outputs (a JSON-encoded object string) and followups (text objects). Only success accepts a gate. Return declared frozen workflow outputs for each mirror occurrence, mapping domain conclusions explicitly to generic status. A supported persisted correction/reopen returns repair for dependency rescan, never acceptance of the superseded occurrence; repair without persisted progress stops. Do not claim or record your own lifecycle. Older installed launchers may supply their older schema; honor that occurrence rather than guessing from source.",
+        "When assigned automatic verification, apply the shared bounded correction/reopen method for required findings in existing owning tickets. On resumed delivery read current persisted context as actionable feedback; an earlier approved review is historical. Preserve sessions, receipts and consumed repair allowance; correct only scoped findings, create a separate descendant source commit and return it for the same independent reviewer. Never act on task followups or use the correction path against an unsupported frozen occurrence.",
+        "On automatic repair, consume persisted review_result status/summary/outputs (or the older launcher's decision/commit_sha) for this occurrence; repair only scoped required findings in the same native delivery session, rerun affected checks and create a separate new descendant commit. Never amend the rejected commit or act on task followups. Return the new full outputs.commit_sha for re-verification in the same independent review session; no fresh-session, host or model fallback.",
         "Identify the root cause before repairs or broader reruns; stop expanding verification once assigned proof is sufficient unless a new failure, material change, remaining risk, or mandatory gate warrants more.",
         "Return candidate-ready promptly for independent verification; remain available for bounded repair without treating self-check success as ticket acceptance."
       ],
       "must_not_do": [
-        "During delegated engineering.tracked-delivery, do not self-claim queue work, dispatch agents, write durable run/tracker state, close tickets, or call runPlan.claimStep/runPlan.recordStep.",
-        "Do not expand scope or alter shared interfaces/ownership without a main-agent decision; do not overwrite unrelated work.",
+        "During terminal-managed engineering.tracked-delivery, do not write durable run/tracker state. After explicit automatic handoff only assigned verification/review may use the shared bounded correction/reopen exception. Never self-claim queue work, dispatch agents, close tickets, or call runPlan.claimStep/runPlan.recordStep.",
+        "Do not override explicit exclusions, unavailable authority or actual ownership conflicts, or pursue a materially different outcome without main/operator admission. A necessary omitted consumer or interface correction within the original outcome is not scope expansion; do not overwrite unrelated work.",
         "Do not copy logic into a parallel owner, hide runtime changes as test stabilization, or add unexplained sleeps, suppressed errors, or speculative fallbacks.",
         "Do not bypass operation/grant/auth boundaries or claim integration-only proof passed before the integrated candidate exists."
       ],
@@ -5745,8 +5747,12 @@
         "For SEO or other workflow reuse, apply that workflow's planning inputs, proof expectations, and explicit writer authority; its accepted findings may supply the design context, and engineering-specific readiness mechanics do not override it.",
         "Include ticket/task/run/step refs, assignment contract revision, canonical operator source refs, objective, AC IDs, non-goals, constraints, relevant design/interfaces, and expected changes.",
         "Name prerequisites and their required accepted outputs, exact file/surface ownership, shared resources, dirty baseline, coordination needs, and conflicts that require isolation or serialization.",
+        "Distinguish discovery anchors from explicit exclusions and actual concurrent ownership. Plan for independent completion of necessary omissions within the original outcome; do not make a missing path, consumer or check require routine main-agent relay.",
         "Include executable commands/scenarios, expected outcomes, required evidence, environment/preconditions, side-effect authority, handoff format, and stop/escalation conditions.",
+        "Require reviewers to execute relevant planned specs and integration checks and cover business regression, architecture gaps, inaccurate wiring and canonical ownership where relevant to the ticket plus its integration. Required repairs cite a scoped criterion and evidence; unrelated findings are separate nonblocking followups, never new dependencies or repair work.",
+        "Source changes and repairs require separate scoped commits before independent exact-commit review; observation may cite unchanged HEAD and non-Git work needs no fabricated commit. Resolve automatic project defaults from TaskTracker.config_json.delivery with task overrides by role; local-admin REST-only tracker.configureDelivery owns setup. Existing delivery_agent/review_agent roles are selected through frozen step extensions.agent_assignment or explicit task agent_assignments, with explicit entries winning. No phase-name dispatch logic, ticket settings or required .codex folder. Models remain settings from the shared host capability/model catalog.",
         "Distinguish ticket-local acceptance from integration-only proof; a prerequisite must not depend on proof requiring an unfinished downstream ticket.",
+        "For new engineering.tracked-delivery plans, attach implementation children to verify-delivery. Activate every independent first child from that mirror, and make terminal children block review-delivery. Do not make children block their own verify-delivery mirror. After readiness, claim verify-delivery and hand off with tracker.startDelivery; the existing runner accepts all attached children before launching the verifier. In terminal-managed delivery, main delivers and independently accepts those children before executing the verification contract. Keep delivery evidence on the tickets; no separate delivery-summary agent is needed.",
         "Encode dependencies explicitly; use activates from the attached workflow step to first executable children and blocks for accepted prerequisite or terminal-child handoffs.",
         "For an explicitly authorized tracker writer outside delegated tracked delivery, pass run_plan_id and step_id together or omit both; recover missing refs before creation and never retry tracker.createTicket with only one field.",
         "Treat child run_plan_id/step_id as attachment/provenance only; tracker.updateTicket owns child evidence, while runPlan operations own generated mirrors. The main agent persists this plan during delegated tracked delivery.",

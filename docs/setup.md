@@ -158,6 +158,15 @@ replacement without reinstalling the full local runtime, and prevents the first
 status report from racing stale pre-repair state. Optional host absence remains
 advisory and does not block startup.
 
+Workflow automations are eligible only while the native StackOS process is
+running and the computer is awake. Minimized windows and closing the last
+macOS window keep the app running; **Quit StackOS**, a crash, connection loss,
+or suspend removes future workflow timers. A healthy background daemon or an
+open browser tab alone does not enable them. Opening the app, reconnecting,
+or resuming arms the next strictly future cron time; missed times are skipped.
+This admission rule does not stop workflows that already started, the runs
+reaper, or backup maintenance.
+
 The desktop home and project toolbars keep a visible **Getting started** action,
 and **Help → Getting Started** remains the menu fallback. Every entry opens
 `https://stackos.flowmonkey.io/getting-started` in the default browser. They
@@ -192,6 +201,34 @@ compatibility candidate. The StackOS plugin is the forward ChatGPT/Codex
 distribution path and direct Codex registration keeps standalone and legacy app
 readiness; both use the same local bridge with `--runtime codex`.
 
+The optional [task delivery handoff](task-tracker.md#automated-task-delivery)
+uses this same host registry and CLI discovery. Execution capability, native
+model choices and review modes come from that registry; connection readiness
+does not prove execution or model access. Save project agent defaults in
+`TaskTracker.config_json.delivery` through the local-admin, REST-only
+`tracker.configureDelivery` operation. Task overrides merge by role and freeze
+at handoff. Fresh Codex roles require exact project-native source references;
+other hosts retain supported inline contracts. Saving defaults installs no agent.
+Gemini and Hermes reviewers use normal native permissions with review-only
+instructions; receipts do not claim enforced read-only isolation. Supported
+native review controls remain in use on other hosts. See the task handoff
+contract for setup examples.
+
+In the project console, **Setup → Agents** lists and edits actual Codex project
+files and explicitly adopts selected role references into delivery defaults.
+The existing Setup/Update launch dialog edits main-agent model, reasoning and
+supported provider/profile choices. Both forms use the shared `hostMcp.status`
+execution catalog; inherited and custom choices follow its capability flags.
+Saved selections remain visible when absent from the current catalog, and
+loading or retrying that catalog does not change the draft.
+Connection or installation status does not establish authentication, subscription,
+or model access. Source saves use digest-checked `projectAgent.update`; default
+adoption and main preferences use local-admin REST `tracker.configureDelivery`
+and saved readback. Main preferences also apply to fresh scheduled occurrences.
+Queued/running work, setup continuations and resumed native sessions retain
+their admitted settings. Editing or adopting choices starts no work.
+Generic agent presets remain a separate read-only catalog.
+
 The host connection model has one brain:
 
 1. the shared bridge contract owns the local stdio command, runtime label,
@@ -202,6 +239,14 @@ The host connection model has one brain:
    blocking status, repairability, and next action;
 4. Doctor, CLI, desktop IPC, and Vue present that result without rebuilding
    host-specific policy.
+
+Registration checks compare the effective bridge context: omitted host, port,
+data and state settings agree with explicitly written canonical defaults.
+Equivalent registrations need no rewrite when Doctor and the daemon inherit
+different default environment variables. Launcher paths, runtime labels,
+workspace roots and custom settings must still match; foreign entries retain
+their existing ownership checks. Pending Claude Desktop restart markers use
+the same comparison, so equivalent defaults do not dismiss a required restart.
 
 The canonical states are:
 
@@ -371,6 +416,28 @@ strategy and passes explicit inputs.
 
 ## Agent Setup From Any Repo
 
+Ordinary workflow Setup/Update targets `ready_to_use`; only an explicit
+`infrastructure_only` request stops after preparation without execution state.
+The [canonical setup method](workflow-templates.md#agent-workflow-setup-lifecycle)
+selects proof from the effective workflow/presets: canonical configuration/readback,
+actual native consumption, reuse of current covered completed evidence, then only
+missing or invalidated small harmless checks inside the owning setup/task. It does
+not automatically create a separate full verification task/workflow or tracker
+parent merely for readiness. Existing parent review remains independent; standalone
+setup follows its method and genuine evidence. Prepared files, task overrides,
+aborted/incomplete/simulated evidence and `activation_pending` cannot establish
+ready-to-use activation. Missing authority or safe proof stays explicit, while
+unrelated business actions remain outside setup authority.
+
+Host connection discovery and automated agent execution share the existing
+`stackos.host_mcp` registry. Host status includes an `agent_execution` capability
+and model catalog with dated sources. Installation and MCP connection are
+separate from credential presence and model access, which remain `not_checked`
+until independently established. A discovered CLI can still fail to run (for
+example, a broken Hermes shim). StackOS performs no account or credential setup
+as part of task delivery. See [task harness choices](task-tracker.md#automated-task-delivery)
+for native delivery/review limits and per-role model/provider selection.
+
 After install, agents can use the `stackos` plugin from a business or
 website repository without copying setup files into that repo.
 
@@ -399,6 +466,13 @@ timeout, adjustable with `STACKOS_BRIDGE_STARTUP_TIMEOUT_SECONDS` (positive,
 at most 300). Long-running tool response reads remain unlimited. See
 [bridge diagnostics](./bridge-failure-diagnostics.md) for retry boundaries,
 automatic persistence and lookup.
+
+For a stopped native delivery, use the
+[interruption diagnosis guidance](./task-tracker.md#diagnosing-interrupted-delivery)
+to distinguish cancellation, approval transport failure, denial, unavailable
+access and suspected sleep/wake. Reconcile uncertain writes through authoritative
+readback before retrying; retain source, running-process and installed evidence
+as separate observations.
 
 Project context is directory-first and host-dependent. StackOS does not require
 a Git checkout to identify a workspace. The bridge accepts an explicit

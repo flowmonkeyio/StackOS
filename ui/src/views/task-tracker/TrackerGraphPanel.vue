@@ -14,10 +14,11 @@ import {
   TRACKER_TICKET_NODE_WIDTH,
   type TrackerFlowModel,
 } from '@/lib/task-tracker/graphModel'
-import type { TrackerStatus, TrackerTicket } from '@/lib/task-tracker/types'
+import type { TrackerStatus } from '@/lib/task-tracker/types'
 
 import TicketGraphNode from './TicketGraphNode.vue'
-import type { GraphBlockFilter } from './viewTypes'
+import type { GraphBlockFilter, TrackerGraphTicketSelection } from './viewTypes'
+import { useVisibleMetricDemand } from './useVisibleMetricDemand'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -49,7 +50,7 @@ const props = defineProps<{
   filtersActive: boolean
   selectionVisible: boolean
   selectionLabel: string
-  selectedTicket: TrackerTicket | null
+  selectedTicket: TrackerGraphTicketSelection | null
   selectedEdgeLabel: string | null
   selectionStats: string[]
 }>()
@@ -67,7 +68,18 @@ const emit = defineEmits<{
   (e: 'clearGraphFocus'): void
   (e: 'viewportChangeEnd', value: ViewportTransform): void
   (e: 'viewportReady', value: string): void
+  (e: 'metricDemand', keys: string[]): void
 }>()
+const root = ref<HTMLElement | null>(null)
+const demand = useVisibleMetricDemand(root, '.vue-flow__node[data-id]', node => {
+  const id = node.dataset.id
+  return id?.startsWith('ticket:') ? id.slice(7) : undefined
+}, keys => emit('metricDemand', keys))
+const demanded = computed(() => new Set(demand.keys.value))
+function viewportChanged(value: ViewportTransform): void {
+  demand.schedule()
+  emit('viewportChangeEnd', value)
+}
 
 const DEFAULT_VIEWPORT: ViewportTransform = { x: 48, y: 72, zoom: 0.68 }
 const initialViewportValue = computed(() => props.initialViewport ?? DEFAULT_VIEWPORT)
@@ -110,7 +122,7 @@ async function applyViewportIntent(): Promise<void> {
   const primaryFocusNodeId =
     props.primaryFocusNodeId && availableNodeIds.has(props.primaryFocusNodeId)
       ? props.primaryFocusNodeId
-      : (activeFlowNodeId ?? focusNodeIds[0] ?? null)
+      : (activeFlowNodeId ?? focusNodeIds[0] ?? props.flow.nodes[0]?.id ?? null)
   const shouldRefocus = Boolean(props.refocusKey) && props.refocusKey !== appliedRefocusKey.value
   if (props.graphFitOnInit && (shouldRefocus || (!props.initialViewport && !viewportReady.value))) {
     await fitView({ padding: props.flow.nodes.length <= 12 ? 0.08 : 0.16, minZoom: 0.16, maxZoom: 0.9, duration: 0 })
@@ -223,6 +235,7 @@ onMounted(() => {
 
 <template>
   <section
+    ref="root"
     class="tracker-flow-shell rounded-lg border border-default bg-bg-surface shadow-xs"
     aria-label="Task dependency graph"
   >
@@ -307,13 +320,16 @@ onMounted(() => {
         pan-on-scroll
         @vue:before-mount="onCanvasMount"
         @nodes-initialized="onNodesInitialized"
-        @viewport-change-end="emit('viewportChangeEnd', $event)"
+        @viewport-change-end="viewportChanged"
         @node-click="$emit('nodeClick', $event)"
         @edge-click="$emit('edgeClick', $event)"
         @pane-click="$emit('paneClick', $event)"
       >
         <template #node-tracker-ticket="nodeProps">
-          <TicketGraphNode v-bind="nodeProps" />
+          <TicketGraphNode
+            v-bind="nodeProps"
+            :metrics-visible="demanded.has(nodeProps.data.itemKey)"
+          />
         </template>
         <Background pattern-color="var(--color-border-subtle)" />
         <MiniMap

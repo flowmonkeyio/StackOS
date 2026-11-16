@@ -9,10 +9,12 @@ from stackos_connectors.connectors.trackbooth.assets import (
     TrackboothAssets as NativeTrackboothAssets,
 )
 from stackos_connectors.connectors.trackbooth.assets import _detail_from_endpoint as native_detail
+from stackos_connectors.connectors.trackbooth.assets import _schema_descriptor
 
 from stackos.actions.trackbooth_contract import BLOCKED_OPERATION_IDS as _BLOCKED_OPERATION_IDS
 from stackos.actions.trackbooth_contract import JsonObject
 from stackos.actions.trackbooth_transport import _limit, _optional_clean_str
+from stackos.repositories.base import ValidationError
 
 
 class TrackboothAssets(NativeTrackboothAssets):
@@ -84,7 +86,27 @@ def _is_blocked_endpoint(endpoint: Mapping[str, Any] | str) -> bool:
 
 
 def _detail_from_endpoint(endpoint, *, openapi_schemas=None):
+    detail = native_detail(endpoint, openapi_schemas=openapi_schemas)
+    body_descriptor = _schema_descriptor(endpoint, "body_schema")
+    if isinstance(body_descriptor, Mapping) and isinstance(body_descriptor.get("required"), bool):
+        # Retain an explicit provider fact even on older native detail readers;
+        # manifest construction checks that their projection can honor it.
+        detail.setdefault("body_required", body_descriptor["required"])
+    for source, target in (
+        ("body_schema", "request_body"),
+        ("query_schema", "query_params"),
+        ("response_schema", "response"),
+    ):
+        descriptor = _schema_descriptor(endpoint, source)
+        if (
+            isinstance(descriptor, Mapping)
+            and isinstance(descriptor.get("json_schema"), bool)
+            and detail.get(target) is None
+        ):
+            raise ValidationError(
+                "Installed connector package does not support boolean Trackbooth schemas"
+            )
     return {
-        **native_detail(endpoint, openapi_schemas=openapi_schemas),
+        **detail,
         "execution_blocked": _is_blocked_endpoint(endpoint),
     }

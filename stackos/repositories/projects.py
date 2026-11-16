@@ -3,19 +3,29 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict
+from apscheduler.triggers.cron import CronTrigger
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
+from pydantic import ValidationError as SchemaValidationError
+from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, col, select
 
 from stackos.db.models import (
+    AgentRequest,
     Credential,
     IntegrationBudget,
     IntegrationCredential,
     Project,
+    Run,
+    RunPlan,
     ScheduledJob,
     TrackerItemStatus,
+    WorkspaceBinding,
 )
+from stackos.operations.tracker.schemas import TaskMcpConfigRef
 from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -23,12 +33,31 @@ from stackos.repositories.base import (
     NotFoundError,
     Page,
     ValidationError,
-    cursor_paginate,
+    _normalise_limit,
+    cursor_paginate_desc,
+)
+from stackos.repositories.tracker.schema import (
+    ActiveExecutionOut,
+    AgentStatsMetricsOut,
+    WorkDurationOut,
 )
 
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+ProjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+_project_name = TypeAdapter(ProjectName)
+
+
+def validate_project_name(value: Any) -> str:
+    try:
+        return _project_name.validate_python(value)
+    except SchemaValidationError as exc:
+        raise ValidationError(
+            "project name must be a nonblank string of at most 200 characters"
+        ) from exc
 
 
 class ProjectOut(BaseModel):
@@ -37,11 +66,19 @@ class ProjectOut(BaseModel):
     id: int
     slug: str
     name: str
+    order_index: int
     domain: str
     niche: str | None
     locale: str
     is_active: bool
+    cleanup_json: dict[str, Any] | None = None
     schedule_json: dict[str, Any] | None
+    primary_workspace_binding_id: int | None = None
+    project_dir: str | None = None
+    project_folder_status: (
+        Literal["ready", "directoryless", "missing", "unavailable", "conflict"] | None
+    ) = None
+    project_folder_issue: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -92,6 +129,29 @@ class IntegrationBudgetOut(BaseModel):
     updated_at: datetime
 
 
+class ScheduleExecution(BaseModel):
+    """Native launch settings; project_dir only fences a saved legacy target."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    project_dir: str | None = Field(default=None, min_length=1)
+    host_key: str | None = Field(default=None, min_length=1)
+    mcp_config_ref: TaskMcpConfigRef | None = None
+
+
+class ScheduleConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    kind: str = Field(min_length=1, max_length=120)
+    cron_expr: str = Field(min_length=1, max_length=120)
+    enabled: bool = False
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    timezone: str | None = Field(default=None, min_length=1, max_length=100)
+    template_key: str | None = Field(default=None, min_length=1, max_length=160)
+    goal: str | None = Field(default=None, min_length=1)
+    inputs_json: dict[str, Any] | None = None
+    execution_json: ScheduleExecution | None = None
+
+
 class ScheduledJobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -103,6 +163,56 @@ class ScheduledJobOut(BaseModel):
     last_run_at: datetime | None
     last_run_status: str | None
     enabled: bool
+    name: str | None
+    timezone: str | None
+    template_key: str | None
+    goal: str | None
+    inputs_json: dict[str, Any] | None
+    execution_json: ScheduleExecution | None
+    last_request_id: int | None
+    setup_issue: str | None = None
+
+
+class ScheduleRemovalOut(BaseModel):
+    project_id: int
+    job_id: int
+    removed: bool = True
+
+
+class ScheduledNativeExecutionOut(BaseModel):
+    invocation_id: str
+    agent: str
+    host_key: str
+    model: str | None = None
+    started_at: str
+    thread_id: str | None = None
+    request_id: int
+    live_usage: dict[str, Any] | None = None
+
+
+class ScheduledRunOut(BaseModel):
+    project_id: int
+    request_id: int
+    schedule_id: int
+    schedule_name: str
+    template_key: str | None
+    workflow_title: str | None
+    run_plan_id: int | None
+    run_id: int | None
+    task_key: str | None
+    status: str
+    started_at: datetime | None
+    ended_at: datetime | None
+    duration_seconds: float | None
+    work_duration: WorkDurationOut | None = None
+    agent_stats: AgentStatsMetricsOut | None
+    active_execution: ScheduledNativeExecutionOut | ActiveExecutionOut | None
+    request_status: str
+    native_execution: ScheduledNativeExecutionOut | None = None
+    outcome_status: str | None = None
+    summary: str | None = None
+    error: str | None = None
+    usage: dict[str, Any] | None = None
 
 
 class ProjectRepository:
@@ -110,6 +220,29 @@ class ProjectRepository:
 
     def __init__(self, session: Session) -> None:
         self._s = session
+
+    def require_available(self, project_id: int, *, reserve: bool = False) -> Project:
+        """Fence admissions against cleanup using the existing SQLite write transaction.
+
+        Writers reserve immediately before persisting admission, without an await
+        or commit between this check and that write. Reads use a fresh SELECT so
+        an old Session identity map cannot authorize work after cleanup starts.
+        """
+        if reserve:
+            self._s.exec(update(Project).where(col(Project.id) == project_id).values(id=Project.id))
+        row = self._s.exec(
+            select(Project)
+            .where(Project.id == project_id)
+            .execution_options(populate_existing=True)
+        ).first()
+        if row is None:
+            raise NotFoundError(f"project {project_id} not found", data={"project_id": project_id})
+        if row.cleanup_json is not None:
+            raise ConflictError(
+                "project cleanup is incomplete; retry the confirmed deletion",
+                data={"project_id": project_id, "cleanup": row.cleanup_json},
+            )
+        return row
 
     def create(
         self,
@@ -121,12 +254,15 @@ class ProjectRepository:
         locale: str = "en-US",
         schedule_json: dict[str, Any] | None = None,
     ) -> Envelope[ProjectOut]:
+        name = validate_project_name(name)
+        self._lock_order()
         now = _utcnow()
         if self._s.exec(select(Project.id).where(Project.slug == slug)).first() is not None:
             raise ConflictError(f"project slug {slug!r} already exists")
         row = Project(
             slug=slug,
             name=name,
+            order_index=(self._s.exec(select(func.max(Project.order_index))).one() or 0) + 1,
             domain=domain,
             niche=niche,
             locale=locale,
@@ -138,11 +274,104 @@ class ProjectRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
+        return Envelope(data=self._out(row), project_id=row.id)
 
     def get(self, id_or_slug: int | str) -> ProjectOut:
         row = self._fetch_row(id_or_slug)
-        return ProjectOut.model_validate(row)
+        return self._out(row)
+
+    def _out(self, row: Project) -> ProjectOut:
+        out = ProjectOut.model_validate(row)
+        setup = (
+            "Ask your setup agent to select this project's folder once from its existing "
+            "workspace bindings in project setup. "
+            "Projects without a local folder can continue using other features."
+        )
+        binding = (
+            self._s.get(WorkspaceBinding, row.primary_workspace_binding_id)
+            if row.primary_workspace_binding_id
+            else None
+        )
+        if row.primary_workspace_binding_id is None:
+            has_directory = (
+                self._s.exec(
+                    select(WorkspaceBinding.id)
+                    .where(
+                        WorkspaceBinding.project_id == row.id,
+                        col(WorkspaceBinding.last_known_root).is_not(None),
+                        WorkspaceBinding.last_known_root != "",
+                    )
+                    .limit(1)
+                ).first()
+                is not None
+            )
+            return out.model_copy(
+                update={
+                    "project_folder_status": "missing" if has_directory else "directoryless",
+                    "project_folder_issue": setup
+                    if has_directory
+                    else (
+                        "This project has no local folder. Local agent files are unavailable; "
+                        "projects without a local folder can continue using other features."
+                    ),
+                }
+            )
+        if binding is None:
+            return out.model_copy(
+                update={
+                    "project_folder_status": "missing",
+                    "project_folder_issue": setup,
+                }
+            )
+        conflict = (
+            "The configured folder is associated with another project. Repair the existing "
+            "binding in project setup before loading local agents."
+        )
+        if binding.project_id != row.id:
+            return out.model_copy(
+                update={
+                    "project_folder_status": "conflict",
+                    "project_folder_issue": conflict,
+                }
+            )
+        if not binding.last_known_root:
+            return out.model_copy(
+                update={"project_folder_status": "missing", "project_folder_issue": setup}
+            )
+        try:
+            if not Path(binding.last_known_root).is_absolute():
+                raise ValueError("unavailable folder")
+            root = Path(binding.last_known_root).resolve(strict=True)
+            if not root.is_dir() or not root.is_absolute() or root == Path(root.anchor):
+                raise ValueError("unavailable folder")
+            # Match the exact project/path association enforced by projectAgent.*.
+            owners = set()
+            for candidate in self._s.exec(select(WorkspaceBinding)).all():
+                try:
+                    if (
+                        candidate.last_known_root
+                        and Path(candidate.last_known_root).resolve() == root
+                    ):
+                        owners.add(candidate.project_id)
+                except (OSError, RuntimeError, ValueError):
+                    continue
+        except (OSError, RuntimeError, ValueError):
+            return out.model_copy(
+                update={
+                    "project_folder_status": "unavailable",
+                    "project_folder_issue": "The configured project folder is unavailable. "
+                    "Reconnect that folder and retry, or ask your setup agent to repair "
+                    "this project's existing binding.",
+                }
+            )
+        if owners != {row.id}:
+            return out.model_copy(
+                update={
+                    "project_folder_status": "conflict",
+                    "project_folder_issue": conflict,
+                }
+            )
+        return out.model_copy(update={"project_dir": str(root), "project_folder_status": "ready"})
 
     def resolve_identifier(
         self,
@@ -160,7 +389,7 @@ class ProjectRepository:
             raise ValidationError("one of project_id, project_slug, or project_name is required")
         rows = self._s.exec(select(Project).where(Project.name == project_name)).all()
         if len(rows) == 1:
-            return ProjectOut.model_validate(rows[0])
+            return self._out(rows[0])
         if len(rows) > 1:
             raise ValidationError(
                 "project_name matches multiple projects; pass project_id or project_slug"
@@ -177,13 +406,30 @@ class ProjectRepository:
         stmt = select(Project)
         if active_only:
             stmt = stmt.where(col(Project.is_active).is_(True))
-        return cursor_paginate(
-            self._s,
-            stmt,
-            id_col=Project.id,
-            limit=limit,
-            after_id=after_id,
-            converter=lambda row: ProjectOut.model_validate(row),
+        size = _normalise_limit(limit)
+        total = self._s.exec(select(func.count()).select_from(stmt.subquery())).one()
+        if after_id is not None:
+            anchor = self._s.exec(stmt.where(Project.id == after_id)).first()
+            if anchor is None:
+                raise ValidationError(
+                    "project cursor no longer matches the list; refresh the first page"
+                )
+            stmt = stmt.where(
+                or_(
+                    col(Project.order_index) > anchor.order_index,
+                    and_(
+                        col(Project.order_index) == anchor.order_index, col(Project.id) > after_id
+                    ),
+                )
+            )
+        rows = self._s.exec(
+            stmt.order_by(col(Project.order_index), col(Project.id)).limit(size + 1)
+        ).all()
+        items = [self._out(row) for row in rows[:size]]
+        return Page(
+            items=items,
+            next_cursor=items[-1].id if len(rows) > size else None,
+            total_estimate=total,
         )
 
     def portfolio(
@@ -213,10 +459,39 @@ class ProjectRepository:
         )
 
     def update(self, project_id: int, **patch: Any) -> Envelope[ProjectOut]:
+        self.require_available(project_id, reserve=True)
+        if "name" in patch:
+            patch["name"] = validate_project_name(patch["name"])
         row = self._fetch_row(project_id)
         if "slug" in patch and patch["slug"] != row.slug:
             raise ValidationError("project slug is immutable")
-        allowed = {"name", "domain", "niche", "locale", "schedule_json", "is_active"}
+        if "primary_workspace_binding_id" in patch:
+            binding_id = patch["primary_workspace_binding_id"]
+            if binding_id is not None:
+                if type(binding_id) is not int or binding_id <= 0:
+                    raise ValidationError(
+                        "primary_workspace_binding_id must be a positive integer or null"
+                    )
+                binding = self._s.get(WorkspaceBinding, binding_id)
+                if (
+                    binding is None
+                    or binding.project_id != project_id
+                    or not binding.last_known_root
+                ):
+                    raise ValidationError(
+                        "Select an existing directory workspace binding belonging to this project"
+                    )
+        allowed = {
+            "name",
+            "domain",
+            "niche",
+            "locale",
+            "schedule_json",
+            "is_active",
+            "primary_workspace_binding_id",
+        }
+        if all(getattr(row, key) == value for key, value in patch.items() if key in allowed):
+            return Envelope(data=self._out(row), project_id=row.id)
         for key, value in patch.items():
             if key in allowed:
                 setattr(row, key, value)
@@ -224,21 +499,52 @@ class ProjectRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
+        return Envelope(data=self._out(row), project_id=row.id)
 
-    def delete(self, project_id: int, *, hard: bool = False) -> Envelope[ProjectOut]:
-        row = self._fetch_row(project_id)
-        if hard:
-            out = ProjectOut.model_validate(row)
-            self._s.delete(row)
+    def move(
+        self,
+        project_id: int,
+        *,
+        placement: Literal["top", "before", "after"],
+        anchor_id: int | None = None,
+    ) -> Envelope[ProjectOut]:
+        """Move one visible project, retaining every unseen/inactive catalog row."""
+        if placement not in {"top", "before", "after"} or (
+            (placement == "top") != (anchor_id is None)
+        ):
+            raise ValidationError("top requires no anchor; before/after require an anchor_id")
+        self._lock_order()
+        rows = list(
+            self._s.exec(select(Project).order_by(col(Project.order_index), col(Project.id))).all()
+        )
+        target = next((row for row in rows if row.id == project_id and row.is_active), None)
+        if target is None:
+            raise NotFoundError("visible project not found")
+        anchor = next((row for row in rows if row.id == anchor_id and row.is_active), None)
+        if anchor_id is not None and anchor is None:
+            raise NotFoundError("visible anchor project not found; refresh the project list")
+        original = [row.id for row in rows]
+        if anchor_id != project_id:
+            rows.remove(target)
+            position = 0 if anchor is None else rows.index(anchor) + (placement == "after")
+            rows.insert(position, target)
+        if original != [row.id for row in rows]:
+            for position, row in enumerate(rows, start=1):
+                if row.order_index != position:
+                    row.order_index = position
+                    self._s.add(row)
             self._s.commit()
-            return Envelope(data=out, project_id=project_id)
-        row.is_active = False
-        row.updated_at = _utcnow()
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
+        return Envelope(data=self._out(target), project_id=project_id)
+
+    def _lock_order(self) -> None:
+        # Serialize read/modify/write with moves and appends, including callers
+        # whose dispatcher already owns a write transaction for idempotency.
+        connection = self._s.connection()
+        driver = connection.connection.driver_connection
+        assert driver is not None
+        if not driver.in_transaction:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+        self._s.expire_all()
 
     def _fetch_row(self, id_or_slug: int | str) -> Project:
         if isinstance(id_or_slug, int):
@@ -478,7 +784,7 @@ class IntegrationBudgetRepository:
 
 
 class ScheduledJobRepository:
-    """Operator-facing schedule metadata."""
+    """Canonical project schedule configuration and linked execution projection."""
 
     def __init__(self, session: Session) -> None:
         self._s = session
@@ -489,7 +795,7 @@ class ScheduledJobRepository:
             .where(ScheduledJob.project_id == project_id)
             .order_by(ScheduledJob.id.asc())  # type: ignore[union-attr]
         ).all()
-        return [ScheduledJobOut.model_validate(row) for row in rows]
+        return [self._out(row) for row in rows]
 
     def set(
         self,
@@ -497,49 +803,330 @@ class ScheduledJobRepository:
         project_id: int,
         kind: str,
         cron_expr: str,
-        enabled: bool = True,
+        enabled: bool = False,
+        name: str | None = None,
+        timezone: str | None = None,
+        template_key: str | None = None,
+        goal: str | None = None,
+        inputs_json: dict[str, Any] | None = None,
+        execution_json: dict[str, Any] | None = None,
     ) -> Envelope[ScheduledJobOut]:
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
+        try:
+            config = ScheduleConfiguration.model_validate(
+                {
+                    "kind": kind,
+                    "cron_expr": cron_expr,
+                    "enabled": enabled,
+                    "name": name,
+                    "timezone": timezone,
+                    "template_key": template_key,
+                    "goal": goal,
+                    "inputs_json": inputs_json,
+                    "execution_json": execution_json,
+                }
+            ).model_dump(mode="json")
+            if execution_json is not None:
+                # Retain only deliberately supplied native launch options.
+                config["execution_json"] = ScheduleExecution.model_validate(
+                    execution_json
+                ).model_dump(mode="json", exclude_unset=True)
+        except SchemaValidationError as exc:
+            raise ValidationError(
+                "Invalid schedule configuration",
+                data={
+                    "errors": exc.errors(include_input=False, include_url=False),
+                },
+            ) from None
+        self.validate_configuration(project_id, config)
         row = self._s.exec(
             select(ScheduledJob).where(
                 ScheduledJob.project_id == project_id,
-                ScheduledJob.kind == kind,
+                ScheduledJob.kind == config["kind"],
             )
         ).first()
         if row is None:
             row = ScheduledJob(
                 project_id=project_id,
-                kind=kind,
-                cron_expr=cron_expr,
-                enabled=enabled,
+                **config,
             )
         else:
-            row.cron_expr = cron_expr
-            row.enabled = enabled
+            for key, value in config.items():
+                setattr(row, key, value)
+        row.next_run_at = self._next_run(config) if enabled else None
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=ScheduledJobOut.model_validate(row), project_id=project_id)
+        self._reconcile(row.project_id, row.id)
+        return Envelope(data=self._out(row), project_id=project_id)
 
     def toggle(
         self,
         job_id: int,
         *,
         enabled: bool,
-        project_id: int | None = None,
+        project_id: int,
     ) -> Envelope[ScheduledJobOut]:
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
+        row = self._get(project_id, job_id)
+        if enabled:
+            self.validate_configuration(
+                project_id,
+                {
+                    **{key: getattr(row, key) for key in ScheduleConfiguration.model_fields},
+                    "enabled": True,
+                },
+            )
+        row.enabled = enabled
+        row.next_run_at = (
+            self._next_run(
+                {
+                    "cron_expr": row.cron_expr,
+                    "timezone": row.timezone,
+                }
+            )
+            if enabled
+            else None
+        )
+        self._s.add(row)
+        self._s.commit()
+        self._s.refresh(row)
+        self._reconcile(project_id, job_id)
+        return Envelope(data=self._out(row), project_id=project_id)
+
+    def _get(self, project_id: int, job_id: int) -> ScheduledJob:
         row = self._s.get(ScheduledJob, job_id)
-        if row is None:
-            raise NotFoundError(f"scheduled job {job_id} not found")
-        if project_id is not None and row.project_id != project_id:
+        if row is None or row.project_id != project_id:
             raise NotFoundError(
                 f"scheduled job {job_id} not found in project {project_id}",
                 data={"project_id": project_id, "job_id": job_id},
             )
-        row.enabled = enabled
-        self._s.add(row)
+        return row
+
+    def remove(self, job_id: int, *, project_id: int) -> Envelope[ScheduleRemovalOut]:
+        row = self._get(project_id, job_id)
+        self._s.delete(row)
         self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=ScheduledJobOut.model_validate(row), project_id=row.project_id)
+        self._reconcile(project_id, job_id)
+        return Envelope(
+            data=ScheduleRemovalOut(project_id=project_id, job_id=job_id), project_id=project_id
+        )
+
+    def _reconcile(self, project_id: int, job_id: int | None) -> None:
+        # Daemon-owned seam; every adapter also reaches it via this repository.
+        reconcile = self._s.info.get("operation_services", {}).get("schedule_reconcile")
+        if reconcile is not None:
+            reconcile(project_id=project_id, job_id=job_id)
+
+    @staticmethod
+    def _next_run(config: dict[str, Any]) -> datetime | None:
+        trigger = CronTrigger.from_crontab(
+            config["cron_expr"], timezone=ZoneInfo(config["timezone"])
+        )
+        next_fire = trigger.get_next_fire_time(None, datetime.now(UTC))
+        return next_fire.astimezone(UTC).replace(tzinfo=None) if next_fire else None
+
+    def validate_configuration(
+        self, project_id: int, config: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Read-only main-thread preflight, without workflow input or role resolution."""
+        from stackos.project_setup_execution import resolve_preferences
+        from stackos.workflows.run_plan_schema import ensure_run_plan_has_no_secrets
+        from stackos.workflows.template_loader import WorkflowTemplateLoader
+
+        try:
+            ensure_run_plan_has_no_secrets(config)
+            parsed = ScheduleConfiguration.model_validate(config)
+        except (ValueError, SchemaValidationError) as exc:
+            raise ValidationError(f"Invalid schedule configuration: {exc}") from None
+        try:
+            CronTrigger.from_crontab(parsed.cron_expr, timezone=ZoneInfo(parsed.timezone or "UTC"))
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            raise ValidationError(f"Invalid schedule cron/timezone: {exc}") from None
+        execution = (
+            parsed.execution_json.model_dump(exclude_none=True) if parsed.execution_json else {}
+        )
+        project = ProjectRepository(self._s).get(project_id)
+        # A supplied workflow is a method reference, not a concrete run.
+        if parsed.template_key:
+            WorkflowTemplateLoader(self._s).describe_template(
+                key=parsed.template_key, project_id=project_id, repo_root=project.project_dir
+            )
+        if not parsed.enabled:
+            return None
+        missing = [key for key in ("name", "timezone", "goal") if not getattr(parsed, key)]
+        if missing:
+            raise ValidationError(
+                "Schedule needs setup: " + ", ".join(missing), data={"missing_fields": missing}
+            )
+        if not project.project_dir:
+            raise ValidationError(
+                project.project_folder_issue or "Select the project folder in project setup"
+            )
+        directory = Path(project.project_dir)
+        if (
+            execution.get("project_dir")
+            and Path(execution["project_dir"]).expanduser().resolve() != directory
+        ):
+            raise ValidationError(
+                "Saved automation folder differs from project setup. "
+                "Confirm the configured project folder before saving."
+            )
+        # Use the same saved main-agent choices as setup. A schedule's explicit
+        # host remains authoritative; with no preference keep the legacy Codex
+        # fallback rather than setup's available-host discovery.
+        selection = resolve_preferences(
+            self._s,
+            project_id,
+            {"host_key": execution["host_key"]} if execution.get("host_key") else {},
+            fallback_host_key="codex",
+        )
+        host_key = selection["host_key"]
+        reference = execution.get("mcp_config_ref")
+        if reference is not None:
+            if host_key != "codex":
+                raise ValidationError("Task MCP configuration is unsupported by this host")
+            from stackos.host_mcp.adapters.codex import task_mcp_overrides
+
+            try:
+                reference, _ = task_mcp_overrides(directory, reference)
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from None
+        return {
+            **selection,
+            "project_dir": str(directory),
+            **({"mcp_config_ref": reference} if reference is not None else {}),
+        }
+
+    def _out(self, row: ScheduledJob) -> ScheduledJobOut:
+        out = ScheduledJobOut.model_validate(row)
+        try:
+            self.validate_configuration(
+                row.project_id,
+                {
+                    **{key: getattr(row, key) for key in ScheduleConfiguration.model_fields},
+                    "enabled": True,
+                },
+            )
+        except (ValidationError, NotFoundError) as exc:
+            out.setup_issue = exc.detail
+        return out
+
+    def runs(
+        self,
+        *,
+        project_id: int,
+        schedule_id: int | None = None,
+        limit: int | None = None,
+        after_id: int | None = None,
+    ) -> Page[ScheduledRunOut]:
+        ProjectRepository(self._s).get(project_id)
+        statement = select(AgentRequest).where(
+            AgentRequest.project_id == project_id,
+            AgentRequest.source_kind == "schedule",
+            AgentRequest.metadata_json["schedule_id"].as_integer().is_not(None),  # type: ignore[index]
+        )
+        if schedule_id is not None:
+            statement = statement.where(
+                AgentRequest.metadata_json["schedule_id"].as_integer() == schedule_id,  # type: ignore[index]
+            )
+        return cursor_paginate_desc(
+            self._s,
+            statement,
+            id_col=col(AgentRequest.id),
+            limit=limit,
+            after_id=after_id,
+            converter=self._run_out,
+        )
+
+    def _run_out(self, request: AgentRequest) -> ScheduledRunOut:
+        from stackos.repositories.agent_requests import AgentRequestRepository
+        from stackos.repositories.tracker import TrackerRepository
+
+        assert request.id is not None
+        plan = self._s.get(RunPlan, request.run_plan_id) if request.run_plan_id else None
+        if plan is not None and plan.project_id != request.project_id:
+            plan = None
+        run = self._s.get(Run, plan.run_id) if plan and plan.run_id else None
+        tasks = (
+            TrackerRepository(self._s)
+            .get(
+                project_id=request.project_id,
+                run_plan_id=plan.id,
+                include_graph=False,
+            )
+            .tasks
+            if plan
+            else []
+        )
+        task = (
+            next(
+                (task for task in tasks if (task.source_json or {}).get("run_plan_id") == plan.id),
+                None,
+            )
+            if plan
+            else None
+        )
+        metadata = request.metadata_json or {}
+        observed = AgentRequestRepository(self._s).execution_evidence(
+            project_id=request.project_id, request_id=request.id
+        )
+        native = observed["native_execution"]
+        execution = (
+            ScheduledNativeExecutionOut.model_validate(native["execution"]) if native else None
+        )
+        result = (native.get("result") or {}) if native else {}
+        started = (
+            datetime.fromisoformat(execution.started_at).replace(tzinfo=None)
+            if execution
+            else (
+                (task.started_at if task else None)
+                or (plan.started_at if plan else None)
+                or request.claimed_at
+            )
+        )
+        ended = (
+            datetime.fromisoformat(native["finished_at"]).replace(tzinfo=None)
+            if native and native.get("finished_at")
+            else (
+                (task.completed_at if task else None)
+                or (plan.completed_at if plan else None)
+                or request.completed_at
+            )
+        )
+        return ScheduledRunOut(
+            project_id=request.project_id,
+            request_id=request.id,
+            schedule_id=metadata["schedule_id"],
+            schedule_name=metadata.get("schedule_name") or request.title,
+            template_key=plan.template_key if plan else metadata.get("template_key"),
+            workflow_title=plan.title if plan else None,
+            run_plan_id=plan.id if plan else None,
+            run_id=run.id if run and run.project_id == request.project_id else None,
+            task_key=task.key if task else None,
+            status=request.status.value
+            if native or not plan
+            else (task.status.value if task else plan.status.value),
+            request_status=request.status.value,
+            started_at=started,
+            ended_at=ended,
+            duration_seconds=(
+                max(0, (ended - started).total_seconds()) if started and ended else None
+            )
+            if native
+            else (task.work_duration.total_seconds if task and task.work_duration else None),
+            work_duration=task.work_duration if task and not native else None,
+            # A main-thread total never includes a linked task's child invocations.
+            agent_stats=task.agent_stats if task and not native else None,
+            active_execution=observed["active_execution"]
+            if native
+            else (task.active_execution if task else None),
+            native_execution=execution,
+            outcome_status=result.get("status"),
+            summary=result.get("summary"),
+            error=(native.get("error") if native else None) or metadata.get("schedule_error"),
+            usage=native.get("usage") if native else None,
+        )
 
 
 __all__ = [

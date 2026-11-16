@@ -5,10 +5,11 @@ import PluginDirectoryCard from './PluginDirectoryCard.vue'
 import type { PluginDirectoryItem } from './viewModel'
 
 describe('PluginDirectoryCard', () => {
+  const connectionsHref = '/projects/1/connections?section=services'
   it.each([null, false, true])('renders explicit enablement %s truthfully', async (enabled) => {
     const item = directoryItem(0)
     item.plugin.enabled_for_project = enabled
-    const wrapper = mount(PluginDirectoryCard, { props: { item } })
+    const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref } })
     expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : enabled === false ? 'Disabled' : 'Available')
     const button = wrapper.find('button[aria-label="Enable SEO for this project"]')
     expect(button.exists()).toBe(enabled !== true)
@@ -21,21 +22,54 @@ describe('PluginDirectoryCard', () => {
     }
   })
 
-  it('keeps description and provider content in stable card tracks', () => {
-    const wrapper = mount(PluginDirectoryCard, { props: { item: directoryItem(5) } })
 
-    expect(wrapper.get('.plugin-directory-card__description').classes()).toContain('line-clamp-3')
-    expect(wrapper.get('.plugin-directory-card__providers').text()).toContain('5 providers')
-    expect(wrapper.get('.plugin-directory-card__providers').text()).toContain('+1 more')
-    expect(wrapper.findAll('.plugin-directory-card__providers li')).toHaveLength(4)
+  it.each([null, false, true])('shows actual Finance enablement %s and a scoped next action', (enabled) => {
+    const item = directoryItem(0)
+    item.plugin.slug = 'finance'
+    item.plugin.enabled_for_project = enabled
+    const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref, projectId: 7 } })
+    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : enabled === false ? 'Disabled' : 'Available')
+    expect(wrapper.get('a').attributes('href')).toBe('/projects/7/finance')
+    expect(wrapper.get('a').text()).toBe(enabled === true ? 'Open Finance' : 'Set up Finance')
   })
 
-  it('reserves the provider track when a plugin has no providers', () => {
-    const wrapper = mount(PluginDirectoryCard, { props: { item: directoryItem(0) } })
+  it('previews services and lets the operator inspect the complete catalog details', async () => {
+    const wrapper = mount(PluginDirectoryCard, { props: { item: directoryItem(5), connectionsHref } })
 
-    expect(wrapper.get('.plugin-directory-card__providers').text()).toContain(
-      'No provider setup required.',
-    )
+    expect(wrapper.get('ul[aria-label="SEO services"]').text()).toContain('+1 more')
+    expect(wrapper.findAll('ul[aria-label="SEO services"] li')).toHaveLength(5)
+    expect(wrapper.get('details').attributes('open')).toBeUndefined()
+    expect(wrapper.get('ul[aria-label="Service availability"]').text()).toContain('Provider 5')
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('showProviders')).toEqual([[]])
+  })
+
+  it('omits service navigation when a plugin supplies no services', () => {
+    const wrapper = mount(PluginDirectoryCard, { props: { item: directoryItem(0), connectionsHref } })
+
+    expect(wrapper.text()).toContain('No services required.')
+    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Ready')
+  })
+
+  it.each([true, false])('keeps enablement %s independent of each real service state', (enabled) => {
+    const item = directoryItem(5)
+    item.plugin.enabled_for_project = enabled
+    item.integrations = ['connected', 'not_connected', 'partially_available', 'repair_required', 'unknown'].map((state, index) => ({
+      plugin_slug: 'seo', provider_key: `provider-${index + 1}`, state,
+      total_action_count: 5, executable_action_count: 0, hidden_action_count: 0,
+    }))
+    const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref } })
+    expect(wrapper.text()).toContain(enabled ? 'Enabled' : 'Disabled')
+    const states = wrapper.get('ul[aria-label="Service availability"]').text()
+    for (const label of ['Connected', 'Not connected', 'Partially available', 'Account repair required', 'Unknown']) {
+      expect(states).toContain(label)
+    }
+    expect(wrapper.text()).not.toContain('Ready')
+    const visibleRepair = wrapper.findAll('a').filter((link) => !link.element.closest('details'))
+    expect(visibleRepair).toHaveLength(1)
+    expect(visibleRepair[0]?.attributes('href')).toBe(connectionsHref)
+    expect(wrapper.findAll('.ui-badge').filter((badge) => !badge.element.closest('details')).map((badge) => badge.text())).toContain('Account repair required')
   })
 })
 

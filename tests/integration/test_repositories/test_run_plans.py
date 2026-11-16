@@ -13,6 +13,7 @@ from stackos.db.models import (
     ApprovalRequestStatus,
     ContextSnapshot,
     Run,
+    RunPlan,
     RunPlanStatus,
     RunPlanStep,
     RunPlanStepStatus,
@@ -56,6 +57,22 @@ def _run_plan_json() -> dict:
 
 def _now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+@pytest.fixture
+def stopped_delivery_metadata() -> dict:
+    agent = {"name": "fixture-agent", "instructions": "Never execute"}
+    return {
+        "delivery": {
+            "status": "stopped",
+            "reason": "Original rejected closeout",
+            "ticket_key": "original-closeout",
+            "slot_reserved": False,
+            "job_ref": "retired-fixture",
+            "delivery_agent": agent,
+            "review_agent": {**agent, "name": "fixture-reviewer"},
+        }
+    }
 
 
 def _template(version: str = "0.1.0", *, name: str = "Company Review") -> WorkflowTemplateSpec:
@@ -628,9 +645,11 @@ def test_failed_step_does_not_require_success_outputs(
     assert failed.status == RunPlanStatus.FAILED
 
 
+@pytest.mark.parametrize("middle_step", ["prepare", "deliver-tickets"])
 def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
     session: Session,
     project_id: int,
+    middle_step: str,
 ) -> None:
     repo = RunPlanRepository(session)
     plan = repo.create(
@@ -641,7 +660,7 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
             "title": "Reopen workflow run",
             "steps": [
                 {"id": "scope-work", "title": "Scope work"},
-                {"id": "deliver-tickets", "title": "Deliver tickets"},
+                {"id": middle_step, "title": "Prepare"},
                 {"id": "verify-delivery", "title": "Verify delivery"},
                 {"id": "release-closeout", "title": "Release closeout"},
             ],
@@ -651,7 +670,7 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
 
     for step_id in (
         "scope-work",
-        "deliver-tickets",
+        middle_step,
         "verify-delivery",
         "release-closeout",
     ):
@@ -691,19 +710,16 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
     assert reopened.plan.completed_at is None
     assert reopened.run_id == started.run_id
     assert reopened.run_token == started.run_token
-    assert reopened.reopened_step_id == "deliver-tickets"
-    assert reopened.reset_step_ids == [
-        "deliver-tickets",
-        "verify-delivery",
-        "release-closeout",
-    ]
+    # Old frozen step names do not override the generic last-step default.
+    assert reopened.reopened_step_id == "release-closeout"
+    assert reopened.reset_step_ids == ["release-closeout"]
     assert run is not None
     assert run.status == RunStatus.RUNNING
     assert run.ended_at is None
     assert run.error is None
     assert step_rows["scope-work"].status == RunPlanStepStatus.SUCCESS
-    assert step_rows["deliver-tickets"].status == RunPlanStepStatus.PENDING
-    assert step_rows["verify-delivery"].status == RunPlanStepStatus.PENDING
+    assert step_rows[middle_step].status == RunPlanStepStatus.SUCCESS
+    assert step_rows["verify-delivery"].status == RunPlanStepStatus.SUCCESS
     assert step_rows["release-closeout"].status == RunPlanStepStatus.PENDING
 
     snapshot = TrackerRepository(session).get(
@@ -716,8 +732,9 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
     assert task.status == TrackerItemStatus.IN_PROGRESS
     assert task.completed_at is None
     assert tickets[f"workflow-{plan.id}-scope-work"].status == TrackerItemStatus.COMPLETE
-    assert tickets[f"workflow-{plan.id}-deliver-tickets"].status == (TrackerItemStatus.NOT_STARTED)
-    assert tickets[f"workflow-{plan.id}-verify-delivery"].status == (TrackerItemStatus.NOT_STARTED)
+    assert tickets[f"workflow-{plan.id}-{middle_step}"].status == TrackerItemStatus.COMPLETE
+    assert tickets[f"workflow-{plan.id}-verify-delivery"].status == TrackerItemStatus.COMPLETE
+    assert tickets[f"workflow-{plan.id}-release-closeout"].status == TrackerItemStatus.NOT_STARTED
 
     claimed = repo.claim_step(
         run_plan_id=plan.id,
@@ -726,6 +743,388 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
         claimed_by="agent",
     ).data
     assert claimed.status == RunPlanStepStatus.RUNNING
+
+
+@pytest.mark.parametrize("resume", ["reopen", "recover"])
+def test_current_workflow_outcome_retains_abort_and_delivery_history(
+    session: Session,
+    project_id: int,
+    resume: str,
+) -> None:
+    repo = RunPlanRepository(session)
+    tracker = TrackerRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": f"current-outcome-{resume}",
+            "title": "Current outcome fixture",
+            "steps": [{"id": "closeout", "title": "Closeout"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    task_key = f"workflow-{plan.id}"
+    retained = {
+        "automatic_delivery": {"attempts": [{"attempt": 1, "usage": {"total": 42}}]},
+        "operator_evidence": {"ref": "keep-this"},
+    }
+    tracker.update_task(
+        project_id=project_id,
+        task_key=task_key,
+        patch_json={
+            "context_json": {"unrelated": {"keep": True}},
+            "completion_evidence_json": retained,
+        },
+    )
+    repo.abort(run_plan_id=plan.id, project_id=project_id, reason="daemon-restart-orphan")
+    aborted = tracker.get(project_id=project_id, task_key=task_key).tasks[0]
+    assert aborted.completion_evidence_json["reason"] == "daemon-restart-orphan"
+    if resume == "reopen":
+        repo.reopen(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="closeout",
+            reason="Finish the accepted outcome",
+        )
+    else:
+        repo.recover(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="closeout",
+            step_status=RunPlanStepStatus.PENDING,
+            reason="Resume after restart",
+        )
+    active = tracker.get(project_id=project_id, task_key=task_key).tasks[0]
+    assert active.status == TrackerItemStatus.IN_PROGRESS
+    assert active.completion_evidence_json == {**retained, "run_plan_id": plan.id}
+
+    for summary in ("Accepted first closeout", "Accepted revised closeout"):
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="closeout")
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="closeout",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json={"summary": summary, "evidence_ref": "accepted-proof"},
+        )
+        # Both list and task-detail projections expose the canonical current evidence.
+        for task in (
+            tracker.get(project_id=project_id, task_key=task_key).tasks[0],
+            next(t for t in tracker.get(project_id=project_id).tasks if t.key == task_key),
+        ):
+            evidence = task.completion_evidence_json
+            assert task.status == TrackerItemStatus.COMPLETE
+            assert evidence["summary"] == summary
+            assert "reason" not in evidence
+            assert evidence["automatic_delivery"] == retained["automatic_delivery"]
+            assert evidence["operator_evidence"] == retained["operator_evidence"]
+            assert evidence["run_plan_outcome"]["step_id"] == "closeout"
+            assert evidence["run_plan_outcome"]["run_id"] == started.run_id
+            assert evidence["run_plan_outcome"]["result_json"]["summary"] == summary
+            assert task.context_json == {"unrelated": {"keep": True}}
+        if summary == "Accepted first closeout":
+            repo.reopen(
+                run_plan_id=plan.id,
+                project_id=project_id,
+                step_id="closeout",
+                reason="Recheck changed evidence",
+            )
+            active = tracker.get(project_id=project_id, task_key=task_key).tasks[0]
+            assert "summary" not in active.completion_evidence_json
+            assert "run_plan_outcome" not in active.completion_evidence_json
+
+    revisions = tracker.history(project_id=project_id, limit=100).items
+    history = [r.before_json for r in revisions if r.entity_key == task_key and r.before_json]
+    assert any(
+        r["completion_evidence_json"].get("reason") == "daemon-restart-orphan"
+        for r in history
+        if r.get("completion_evidence_json")
+    )
+    assert any(
+        r["completion_evidence_json"].get("summary") == "Accepted first closeout"
+        for r in history
+        if r.get("completion_evidence_json")
+    )
+    activity = tracker.task_activity(project_id=project_id, task_key=task_key, limit=100)
+    assert any(
+        item.kind == "tracker.outcome.changed" and "daemon-restart-orphan" in item.summary
+        for item in activity.items
+    )
+
+
+@pytest.mark.parametrize("owner", ["retired", "reserved", "native", "foreign-plan", "foreign-run"])
+def test_current_workflow_outcome_reconciles_only_retired_delivery(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch, owner: str
+) -> None:
+    from stackos.host_mcp import service
+
+    repo = RunPlanRepository(session)
+    tracker = TrackerRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "retired-closeout",
+            "title": "Retired closeout",
+            "steps": [{"id": "closeout", "title": "Closeout"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    task_key = f"workflow-{plan.id}"
+    ticket_key = f"{task_key}-closeout"
+    child_evidence = {"automatic_delivery": {"attempt": 2, "sessions": {"review": "retained"}}}
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        parent_ticket_key=ticket_key,
+        run_plan_id=plan.id,
+        run_plan_step_id=plan.steps[0].id,
+        key="accepted-child",
+        title="Accepted child",
+        status=TrackerItemStatus.COMPLETE,
+        completion_evidence_json=child_evidence,
+    )
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="closeout")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="closeout",
+        status=RunPlanStepStatus.BLOCKED,
+        error="Original rejected closeout",
+    )
+    agent = {"name": "frozen-agent", "instructions": "Frozen fixture instructions"}
+    delivery = {
+        "status": "stopped",
+        "reason": "Original rejected closeout",
+        "ticket_key": ticket_key,
+        "slot_reserved": owner == "reserved",
+        "job_ref": "retired-fixture",
+        "handoff_id": "original-handoff",
+        "run_plan_id": plan.id + 1 if owner == "foreign-plan" else plan.id,
+        "controller_run_id": started.run_id + 1 if owner == "foreign-run" else started.run_id,
+        "delivery_agent": agent,
+        "review_agent": {**agent, "name": "frozen-reviewer"},
+        "agents": {"delivery_agent": {"source_digest": "frozen-source"}},
+        "mcp_config_ref": {"path": "/fixture/routes.toml", "sha256": "frozen-route"},
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    }
+    retained = {"automatic_delivery": {"attempts": [{"attempt": 1, "status": "stopped"}]}}
+    tracker.update_task(
+        project_id=project_id,
+        task_key=task_key,
+        patch_json={
+            "metadata_json": {"delivery": delivery, "operator_note": "keep"},
+            "completion_evidence_json": retained,
+        },
+    )
+    if owner == "native":
+        invocation = service.ActiveInvocation(
+            invocation_id="closeout-owner",
+            scope=service.AgentExecutionScope(project_id, task_key, ticket_key, "frozen-agent"),
+            host_key="codex",
+            model=None,
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        monkeypatch.setitem(service._active_invocations, invocation.invocation_id, invocation)
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="closeout")
+    result = {"release_summary": {"decision": "held", "deployment_state": "source only"}}
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="closeout",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json=result,
+    )
+    with Session(session.get_bind()) as reader:
+        reads = TrackerRepository(reader)
+        assert RunPlanRepository(reader).get(plan.id).status == RunPlanStatus.COMPLETED
+        assert reader.get(Run, started.run_id).status == RunStatus.SUCCESS
+        for projection in ("full", "ui"):
+            task = reads.get(
+                project_id=project_id, task_key=task_key, projection=projection, include_graph=False
+            ).tasks[0]
+            assert task.status == TrackerItemStatus.COMPLETE
+            assert task.board_column == "done"
+            current = task.metadata_json["delivery"] if projection == "full" else task.delivery
+            if owner == "retired":
+                if projection == "full":
+                    assert current == {
+                        **delivery,
+                        "status": "complete",
+                        "reason": None,
+                        "ticket_key": None,
+                        "updated_at": current["updated_at"],
+                    }
+                    assert task.metadata_json["operator_note"] == "keep"
+                    assert (
+                        task.completion_evidence_json["automatic_delivery"]
+                        == retained["automatic_delivery"]
+                    )
+                    assert (
+                        task.completion_evidence_json["run_plan_outcome"]["result_json"] == result
+                    )
+                else:
+                    assert current.status == "complete"
+                    assert current.reason is None and current.ticketKey is None
+            elif projection == "full":
+                assert current == delivery  # Reservation/native lifetime belongs to its owner.
+            else:
+                assert current.status == "stopped"
+        child = reads.brief(project_id=project_id, ticket_key="accepted-child").ticket
+        assert child.status == TrackerItemStatus.COMPLETE
+        assert child.completion_evidence_json == child_evidence
+
+    history = tracker.history(project_id=project_id, limit=100).items
+    if owner == "retired":
+        assert any(
+            item.entity_key == task_key
+            and (item.before_json or {}).get("metadata_json", {}).get("delivery") == delivery
+            for item in history
+        )
+    before = tracker.get(project_id=project_id, task_key=task_key).tasks[0]
+    tracker.mirror_run_plan_status(plan=session.get(RunPlan, plan.id))
+    session.commit()
+    assert tracker.get(project_id=project_id, task_key=task_key).tasks[0] == before
+    assert len(tracker.history(project_id=project_id, limit=100).items) == len(history)
+
+
+@pytest.mark.parametrize("result", [None, {}, {"release_summary": {"decision": "ready"}}])
+def test_workflow_outcome_requires_accepted_result(
+    session: Session,
+    project_id: int,
+    result: dict | None,
+    stopped_delivery_metadata: dict,
+) -> None:
+    repo = RunPlanRepository(session)
+    tracker = TrackerRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "outcome-evidence",
+            "title": "Evidence fixture",
+            "steps": [{"id": "finish", "title": "Finish"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    tracker.update_task(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        patch_json={"metadata_json": stopped_delivery_metadata},
+    )
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="finish")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="finish",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json=result,
+    )
+    task = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}").tasks[0]
+    assert task.status == TrackerItemStatus.COMPLETE
+    evidence = task.completion_evidence_json or {}
+    if result:
+        assert evidence["run_plan_outcome"]["result_json"] == result
+        assert evidence["summary"] == "Run plan completed; accepted Finish result."
+        # Reconcile a legacy stale summary even when the visible status is already complete.
+        tracker.update_task(
+            project_id=project_id,
+            task_key=task.key,
+            patch_json={
+                "completion_evidence_json": {
+                    "summary": "Run plan aborted before completion.",
+                    "reason": "old abort",
+                    "run_plan_id": plan.id,
+                    "automatic_delivery": {"attempt": 2},
+                }
+            },
+        )
+        tracker.mirror_run_plan_status(plan=session.get(RunPlan, plan.id))
+        session.commit()
+        reconciled = tracker.get(project_id=project_id, task_key=task.key).tasks[0]
+        assert reconciled.completion_evidence_json["summary"] == evidence["summary"]
+        assert reconciled.completion_evidence_json["automatic_delivery"] == {"attempt": 2}
+        assert "reason" not in reconciled.completion_evidence_json
+        revision_count = len(tracker.history(project_id=project_id, limit=100).items)
+        tracker.mirror_run_plan_status(plan=session.get(RunPlan, plan.id))
+        session.commit()
+        assert len(tracker.history(project_id=project_id, limit=100).items) == revision_count
+    else:
+        assert "summary" not in evidence
+        assert "run_plan_outcome" not in evidence
+        assert task.metadata_json == stopped_delivery_metadata
+
+
+@pytest.mark.parametrize(
+    "final_status",
+    [
+        RunPlanStepStatus.PENDING,
+        RunPlanStepStatus.SKIPPED,
+        RunPlanStepStatus.FAILED,
+        "aborted",
+    ],
+)
+def test_workflow_status_alone_does_not_project_success(
+    session: Session,
+    project_id: int,
+    final_status: RunPlanStepStatus | str,
+    stopped_delivery_metadata: dict,
+) -> None:
+    repo = RunPlanRepository(session)
+    tracker = TrackerRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "missing-accepted-closeout",
+            "title": "Missing closeout",
+            "steps": [
+                {"id": "prepare", "title": "Prepare"},
+                {"id": "finish", "title": "Finish", "depends_on": ["prepare"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="prepare")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Earlier success"},
+    )
+    tracker.update_task(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        patch_json={"metadata_json": stopped_delivery_metadata},
+    )
+    if final_status == "aborted":
+        repo.abort(run_plan_id=plan.id, project_id=project_id, reason="Operator cancelled")
+    elif final_status in {RunPlanStepStatus.SKIPPED, RunPlanStepStatus.FAILED}:
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="finish")
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="finish",
+            status=final_status,
+            result_json={"summary": "Closeout was not accepted"},
+        )
+    else:
+        # Synthetic legacy inconsistency: a completed plan with no accepted final step.
+        row = session.get(RunPlan, plan.id)
+        row.status = RunPlanStatus.COMPLETED
+        session.add(row)
+        tracker.mirror_run_plan_status(plan=row)
+        session.commit()
+    task = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}").tasks[0]
+    assert task.status == {
+        RunPlanStepStatus.FAILED: TrackerItemStatus.FAILED,
+        "aborted": TrackerItemStatus.ABORTED,
+    }.get(final_status, TrackerItemStatus.COMPLETE)
+    if final_status != "aborted":
+        assert "summary" not in (task.completion_evidence_json or {})
+    assert "run_plan_outcome" not in (task.completion_evidence_json or {})
+    assert task.metadata_json == stopped_delivery_metadata
 
 
 def test_blocked_step_keeps_run_plan_recoverable(
@@ -777,12 +1176,46 @@ def test_blocked_step_keeps_run_plan_recoverable(
     assert blocked_ticket.blocker_reason == "tracker-graph-warning"
     assert blocked_ticket.outcome == "blocked: tracker-graph-warning"
 
+    tracker = TrackerRepository(session)
+    evidence = {
+        "automatic_delivery": {
+            "sessions": {"delivery": {"thread_id": "original-session"}},
+            "attempts": [{"attempt": 1, "status": "blocked"}],
+            "repair_count": 1,
+        }
+    }
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=blocked_ticket.key,
+        patch_json={"completion_evidence_json": evidence},
+    )
+    history = tracker.history(project_id=project_id).items
+    assert tracker.delivery_ready(project_id=project_id, task_key=snapshot.tasks[0].key) == []
+
     reclaimed = repo.claim_step(
         run_plan_id=plan.id,
         run_id=started.run_id,
         step_id="graph-check",
         claimed_by="agent",
     ).data
+    resumed_ticket = tracker.brief(project_id=project_id, ticket_key=blocked_ticket.key).ticket
+    assert reclaimed.status == RunPlanStepStatus.RUNNING
+    assert resumed_ticket.blocker_reason is None
+    assert resumed_ticket.outcome == blocked_ticket.outcome
+    assert resumed_ticket.completion_evidence_json == evidence
+    assert reclaimed.result_json == blocked.steps[0].result_json
+    assert reclaimed.error == blocked.steps[0].error
+    assert [
+        ticket.key
+        for ticket in tracker.delivery_ready(project_id=project_id, task_key=snapshot.tasks[0].key)
+    ] == [blocked_ticket.key]
+    resumed_history = tracker.history(project_id=project_id).items
+    assert resumed_history[: len(history)] == history
+    claim = resumed_history[-1]
+    assert claim.change_kind == "workflow-step-claim"
+    assert claim.before_json["blocker_reason"] == "tracker-graph-warning"
+    assert claim.after_json["blocker_reason"] is None
+
     completed = repo.record_step(
         run_plan_id=plan.id,
         run_id=started.run_id,
@@ -791,7 +1224,6 @@ def test_blocked_step_keeps_run_plan_recoverable(
         result_json={"summary": "graph repaired"},
     ).data
 
-    assert reclaimed.status == RunPlanStepStatus.RUNNING
     assert completed.status == RunPlanStatus.COMPLETED
 
 
@@ -2075,7 +2507,10 @@ def test_started_plan_cannot_be_started_again_or_return_token(
     assert "run_token" not in str(exc_info.value.data)
 
 
-def test_run_plan_late_writes_reject_secrets(session: Session, project_id: int) -> None:
+@pytest.mark.parametrize("workflow_shaped", [False, True])
+def test_run_plan_late_writes_reject_secrets(
+    session: Session, project_id: int, workflow_shaped: bool
+) -> None:
     repo = RunPlanRepository(session)
     plan = repo.create(project_id=project_id, run_plan_json=_run_plan_json()).data
     started = repo.start(plan.id, project_id=project_id).data
@@ -2085,15 +2520,18 @@ def test_run_plan_late_writes_reject_secrets(session: Session, project_id: int) 
         approval_status=ApprovalRequestStatus.APPROVED,
     )
     repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="create-campaign")
+    payload = {"metadata": {"operator_authorization": "synthetic-material"}}
 
     with pytest.raises(ValidationError) as meta_exc:
-        repo.update(run_plan_id=plan.id, metadata_json={"api_key": "secret"})
+        repo.update(
+            run_plan_id=plan.id, metadata_json=payload if workflow_shaped else {"api_key": "secret"}
+        )
     with pytest.raises(ValidationError) as decision_exc:
         repo.update(
             run_plan_id=plan.id,
             approval_key="launch-review",
             approval_status=ApprovalRequestStatus.APPROVED,
-            decision_json={"authorization": "Bearer abc"},
+            decision_json=payload if workflow_shaped else {"authorization": "Bearer abc"},
         )
     with pytest.raises(ValidationError) as result_exc:
         repo.record_step(
@@ -2101,12 +2539,19 @@ def test_run_plan_late_writes_reject_secrets(session: Session, project_id: int) 
             run_id=started.run_id,
             step_id="create-campaign",
             status=RunPlanStepStatus.SUCCESS,
-            result_json={"refresh_token": "secret"},
+            result_json=payload if workflow_shaped else {"refresh_token": "secret"},
         )
 
     assert "must not contain secrets" in str(meta_exc.value)
     assert "must not contain secrets" in str(decision_exc.value)
     assert "must not contain secrets" in str(result_exc.value)
+    envelope = result_exc.value.to_dict()
+    assert envelope["code"] == -32602
+    assert envelope["data"] == {
+        "rule": "raw_secret",
+        "paths": ["$.metadata.operator_authorization"] if workflow_shaped else ["$.refresh_token"],
+    }
+    assert repo.get_step(plan.id, "create-campaign").status == RunPlanStepStatus.RUNNING
 
 
 @pytest.mark.parametrize(
@@ -2194,10 +2639,10 @@ def test_approval_accounting_rejection_is_atomic(
     [
         ({"access_token": 7}, "$.access_token"),
         ({"api_key": "fixture-credential-value"}, "$.api_key"),
-        ({"prior-tokens": 7}, "$.prior-tokens"),
-        ({"PRIOR_TOKENS": 7}, "$.PRIOR_TOKENS"),
-        ({"prefix_prior_tokens": 7}, "$.prefix_prior_tokens"),
-        ({"prior_tokens_extra": 7}, "$.prior_tokens_extra"),
+        ({"prior-tokens": 7}, "$.[field]"),
+        ({"PRIOR_TOKENS": 7}, "$.[field]"),
+        ({"prefix_prior_tokens": 7}, "$.[field]"),
+        ({"prior_tokens_extra": 7}, "$.[field]"),
         ({"nested": {"prior_tokens": 7}}, "$.nested.prior_tokens"),
         (
             {"nested": [{"cumulative_planning_exposure_tokens": 7}]},

@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import hashlib
-import json
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from time import perf_counter
 from typing import Any
 
 from sqlmodel import col, select
 
 from stackos.actions.connectors import ActionConnectorRequest, ActionValidationIssue
+from stackos.actions.generated_inventory import (
+    GeneratedInventoryIdentity,
+    retire_superseded_generated_inventory_scopes,
+    upsert_generated_actions,
+)
 from stackos.actions.provider_utils import issue
 from stackos.actions.trackbooth_assets import _is_blocked_endpoint
 from stackos.actions.trackbooth_contract import (
@@ -34,8 +36,16 @@ from stackos.actions.trackbooth_schema import (
     _operation_action_slug,
     _runtime_action_manifest,
 )
-from stackos.db.models import Action, ActionVersion, Plugin, Provider
+from stackos.db.models import Action
+from stackos.generated_inventory import generated_inventory_scope_key
 from stackos.repositories.base import ValidationError
+
+_TRACKBOOTH_INVENTORY = GeneratedInventoryIdentity(
+    plugin_slug=_TRACKBOOTH_PLUGIN_SLUG,
+    provider_key=_TRACKBOOTH_PROVIDER_KEY,
+    inventory_source=_RUNTIME_INVENTORY_SOURCE,
+    action_key_prefix=_RUNTIME_ACTION_KEY_PREFIX,
+)
 
 
 def _utcnow() -> datetime:
@@ -90,16 +100,9 @@ def _runtime_inventory_scope(
 
 
 def _runtime_inventory_scope_key(scope: Mapping[str, Any]) -> str:
-    payload = json.dumps(
-        {
-            "project_id": scope.get("project_id"),
-            "credential_ref": scope.get("credential_ref"),
-            "api_base_url": scope.get("api_base_url"),
-        },
-        sort_keys=True,
-        separators=(",", ":"),
+    return generated_inventory_scope_key(
+        {field: scope.get(field) for field in _TRACKBOOTH_INVENTORY.scope_fields}
     )
-    return f"inv_{_short_hash(payload, length=12)}"
 
 
 def _runtime_action_key(
@@ -139,55 +142,6 @@ def _short_hash(value: str, *, length: int = 10) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:length]
 
 
-def _retire_runtime_action(row: Action, *, now: datetime) -> None:
-    config = dict(row.config_json or {})
-    if config.get("inventory_source") != _RUNTIME_INVENTORY_SOURCE:
-        return
-    config.pop("connector", None)
-    config["execution_mode"] = "deferred.retired"
-    config["deferred_reason"] = (
-        "Generated Trackbooth action was not returned by the latest catalog sync "
-        "for this inventory scope."
-    )
-    config["inventory_state"] = "retired"
-    config["inventory_retired_at"] = now.isoformat()
-    row.config_json = config
-    row.updated_at = now
-
-
-def _runtime_action_logical_scope(config: Mapping[str, Any]) -> tuple[int, str, str] | None:
-    if config.get("inventory_source") != _RUNTIME_INVENTORY_SOURCE:
-        return None
-    if config.get("inventory_state") != "active":
-        return None
-    project_id = config.get("inventory_project_id")
-    credential_ref = config.get("inventory_credential_ref")
-    api_base_url = config.get("inventory_api_base_url")
-    if (
-        not isinstance(project_id, int)
-        or not isinstance(credential_ref, str)
-        or not credential_ref
-        or not isinstance(api_base_url, str)
-        or not api_base_url
-    ):
-        return None
-    return project_id, credential_ref, api_base_url
-
-
-def _runtime_row_scope_key(row: Action) -> str | None:
-    config = row.config_json if isinstance(row.config_json, Mapping) else {}
-    scope_key = config.get("inventory_scope_key")
-    return scope_key if isinstance(scope_key, str) and scope_key else None
-
-
-def _runtime_row_sort_key(row: Action) -> tuple[str, str, int]:
-    config = row.config_json if isinstance(row.config_json, Mapping) else {}
-    synced_at = config.get("inventory_synced_at")
-    synced_text = synced_at if isinstance(synced_at, str) else ""
-    updated_text = row.updated_at.isoformat() if row.updated_at is not None else ""
-    return synced_text, updated_text, int(row.id or 0)
-
-
 def retire_superseded_trackbooth_inventory_scopes(
     *,
     session: Any,
@@ -196,53 +150,15 @@ def retire_superseded_trackbooth_inventory_scopes(
     keep_logical_scope: tuple[int, str, str] | None = None,
     keep_scope_key: str | None = None,
 ) -> int:
-    """Retire older generated scopes for the same logical Trackbooth inventory."""
-    rows = session.exec(
-        select(Action).where(
-            col(Action.plugin_id) == plugin_id,
-            col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}%"),
-        )
-    ).all()
-    grouped: dict[tuple[int, str, str], list[Action]] = defaultdict(list)
-    for row in rows:
-        config = row.config_json if isinstance(row.config_json, Mapping) else {}
-        logical_scope = _runtime_action_logical_scope(config)
-        if logical_scope is None:
-            continue
-        grouped[logical_scope].append(row)
-
-    retired = 0
-    for logical_scope, scoped_rows in grouped.items():
-        scope_keys = {
-            scope_key
-            for row in scoped_rows
-            if (scope_key := _runtime_row_scope_key(row)) is not None
-        }
-        if keep_logical_scope == logical_scope and keep_scope_key:
-            for row in scoped_rows:
-                if _runtime_row_scope_key(row) == keep_scope_key:
-                    continue
-                _retire_runtime_action(row, now=now)
-                session.add(row)
-                retired += 1
-            continue
-        if len(scope_keys) <= 1:
-            continue
-        active_scope_key: str | None
-        if keep_logical_scope == logical_scope and keep_scope_key in scope_keys:
-            active_scope_key = keep_scope_key
-        else:
-            latest_row = max(scoped_rows, key=_runtime_row_sort_key)
-            active_scope_key = _runtime_row_scope_key(latest_row)
-        if active_scope_key is None:
-            continue
-        for row in scoped_rows:
-            if _runtime_row_scope_key(row) == active_scope_key:
-                continue
-            _retire_runtime_action(row, now=now)
-            session.add(row)
-            retired += 1
-    return retired
+    """Retain the public Trackbooth cleanup entry point and legacy scope identity."""
+    return retire_superseded_generated_inventory_scopes(
+        session=session,
+        identity=_TRACKBOOTH_INVENTORY,
+        plugin_id=plugin_id,
+        now=now,
+        keep_logical_scope=keep_logical_scope,
+        keep_scope_key=keep_scope_key,
+    )
 
 
 def _upsert_runtime_actions(
@@ -254,40 +170,10 @@ def _upsert_runtime_actions(
     catalog_hash: str | None,
     prune_missing: bool,
 ) -> JsonObject:
-    plugin = session.exec(select(Plugin).where(col(Plugin.slug) == _TRACKBOOTH_PLUGIN_SLUG)).first()
-    if plugin is None or plugin.id is None:
-        raise ValidationError("Trackbooth plugin must be synced before catalog sync")
-    provider = session.exec(
-        select(Provider).where(
-            col(Provider.plugin_id) == plugin.id,
-            col(Provider.key) == _TRACKBOOTH_PROVIDER_KEY,
-        )
-    ).first()
-    if provider is None or provider.id is None:
-        raise ValidationError("Trackbooth provider must be synced before catalog sync")
-
     now = _utcnow()
-    scope = _runtime_inventory_scope(
-        request=request,
-        base_url=base_url,
-    )
+    scope = _runtime_inventory_scope(request=request, base_url=base_url)
     scope_key = _runtime_inventory_scope_key(scope)
-    logical_scope = _runtime_action_logical_scope(
-        {
-            "inventory_source": _RUNTIME_INVENTORY_SOURCE,
-            "inventory_state": "active",
-            "inventory_project_id": scope["project_id"],
-            "inventory_credential_ref": scope["credential_ref"],
-            "inventory_api_base_url": scope["api_base_url"],
-        }
-    )
-    write_started = perf_counter()
-    created = 0
-    updated = 0
-    skipped = 0
-    pruned = 0
-    action_keys: set[str] = set()
-    planned_actions: list[JsonObject] = []
+    planned_actions: list[tuple[str, JsonObject]] = []
     public_action_key_operations: dict[str, str] = {}
     blocked_operation_ids: list[str] = []
     for detail in details:
@@ -307,148 +193,32 @@ def _upsert_runtime_actions(
             public_action_key = _runtime_public_action_key(detail=detail, suffix=suffix)
         public_action_key_operations[public_action_key] = operation_id
         action_key = _runtime_action_key(scope_key=scope_key, detail=detail, suffix=suffix)
-        action_keys.add(action_key)
         planned_actions.append(
-            {
-                "detail": detail,
-                "operation_id": operation_id,
-                "public_action_key": public_action_key,
-                "action_key": action_key,
-            }
+            (
+                operation_id,
+                _runtime_action_manifest(
+                    action_key=action_key,
+                    public_action_key=public_action_key,
+                    detail=detail,
+                    base_url=base_url,
+                    inventory_scope=scope,
+                    inventory_scope_key=scope_key,
+                    catalog_hash=catalog_hash,
+                    synced_at=now,
+                ),
+            )
         )
-
-    action_refs: list[str] = []
-    operation_ids: list[str] = []
-    for item in planned_actions:
-        detail = item["detail"]
-        operation_id = str(item["operation_id"])
-        public_action_key = str(item["public_action_key"])
-        action_key = str(item["action_key"])
-        row = session.exec(
-            select(Action).where(col(Action.plugin_id) == plugin.id, col(Action.key) == action_key)
-        ).first()
-        manifest_json = _runtime_action_manifest(
-            action_key=action_key,
-            public_action_key=public_action_key,
-            detail=detail,
-            base_url=base_url,
-            inventory_scope=scope,
-            inventory_scope_key=scope_key,
-            catalog_hash=catalog_hash,
-            synced_at=now,
-        )
-        manifest_json["config"]["inventory_manifest_hash"] = _runtime_manifest_hash(manifest_json)
-        if row is None:
-            row = Action(
-                plugin_id=plugin.id,
-                provider_id=provider.id,
-                key=action_key,
-                name=manifest_json["name"],
-                description=manifest_json["description"],
-                capability_key=manifest_json["capability"],
-                risk_level=manifest_json["risk_level"],
-                input_schema_json=manifest_json["input_schema"],
-                output_schema_json=manifest_json["output_schema"],
-                config_json=manifest_json["config"],
-            )
-            created += 1
-        elif _runtime_action_row_unchanged(row, manifest_json):
-            skipped += 1
-            action_refs.append(f"{_TRACKBOOTH_PLUGIN_SLUG}.{public_action_key}")
-            operation_ids.append(operation_id)
-            continue
-        else:
-            row.provider_id = provider.id
-            row.name = manifest_json["name"]
-            row.description = manifest_json["description"]
-            row.capability_key = manifest_json["capability"]
-            row.risk_level = manifest_json["risk_level"]
-            row.input_schema_json = manifest_json["input_schema"]
-            row.output_schema_json = manifest_json["output_schema"]
-            row.config_json = manifest_json["config"]
-            row.updated_at = now
-            updated += 1
-        session.add(row)
-        session.flush()
-        if row.id is None:
-            raise RuntimeError("expected persisted Trackbooth action id")
-        version = session.exec(
-            select(ActionVersion).where(
-                col(ActionVersion.action_id) == row.id,
-                col(ActionVersion.version) == "live-catalog",
-            )
-        ).first()
-        if version is None:
-            version = ActionVersion(
-                action_id=row.id,
-                version="live-catalog",
-                manifest_json=manifest_json,
-            )
-        else:
-            version.manifest_json = manifest_json
-        session.add(version)
-        action_refs.append(f"{_TRACKBOOTH_PLUGIN_SLUG}.{public_action_key}")
-        operation_ids.append(operation_id)
-    if prune_missing:
-        stale_rows = session.exec(
-            select(Action).where(
-                col(Action.plugin_id) == plugin.id,
-                col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}%"),
-            )
-        ).all()
-        for row in stale_rows:
-            config = row.config_json if isinstance(row.config_json, Mapping) else {}
-            if _runtime_action_logical_scope(config) != logical_scope:
-                continue
-            if row.key in action_keys:
-                continue
-            _retire_runtime_action(row, now=now)
-            session.add(row)
-            pruned += 1
-    pruned += retire_superseded_trackbooth_inventory_scopes(
+    result = upsert_generated_actions(
         session=session,
-        plugin_id=plugin.id,
+        identity=_TRACKBOOTH_INVENTORY,
+        scope=scope,
+        actions=planned_actions,
+        catalog_hash=catalog_hash,
+        prune_missing=prune_missing,
         now=now,
-        keep_logical_scope=logical_scope,
-        keep_scope_key=scope_key,
     )
     session.commit()
-    return {
-        "synced": len(action_refs),
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "pruned": pruned,
-        "retired": pruned,
-        "action_refs": action_refs,
-        "operation_ids": operation_ids,
-        "blocked_operation_ids": blocked_operation_ids,
-        "inventory_scope_key": scope_key,
-        "write_ms": int((perf_counter() - write_started) * 1000),
-    }
-
-
-def _runtime_manifest_hash(manifest_json: Mapping[str, Any]) -> str:
-    stable = json.loads(json.dumps(manifest_json, default=str))
-    config = stable.get("config")
-    if isinstance(config, dict):
-        config.pop("inventory_synced_at", None)
-        config.pop("inventory_manifest_hash", None)
-    raw = json.dumps(stable, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def _runtime_action_row_unchanged(row: Action, manifest_json: Mapping[str, Any]) -> bool:
-    config = row.config_json if isinstance(row.config_json, Mapping) else {}
-    if config.get("inventory_source") != _RUNTIME_INVENTORY_SOURCE:
-        return False
-    if config.get("inventory_state") != "active":
-        return False
-    manifest_config = manifest_json.get("config")
-    if not isinstance(manifest_config, Mapping):
-        return False
-    manifest_hash = manifest_config.get("inventory_manifest_hash")
-    return isinstance(manifest_hash, str) and config.get("inventory_manifest_hash") == manifest_hash
+    return {**result, "blocked_operation_ids": blocked_operation_ids}
 
 
 def _runtime_inventory_input_issues(

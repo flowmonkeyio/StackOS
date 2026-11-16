@@ -9,9 +9,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
-from stackos.db.models import WorkspaceBinding
+from stackos.db.models import Project, WorkspaceBinding
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.plugins.builtin_finance import FinanceConsole, helpers
 from stackos.plugins.finance_recovery import FinanceRecovery
@@ -65,6 +67,44 @@ def files(root: Path):
         for path in root.rglob("*")
         if path.is_file()
     }
+
+
+def test_recovery_fences_project_pending_cleanup(api, project_id, settings, tmp_path):
+    source = fixture_source(api, project_id, tmp_path)
+    with Session(api.app.state.engine) as session:
+        service = FinanceRecovery(session, settings)
+        preview = service.preview(project_id, source)
+        project = session.get(Project, project_id)
+        project.cleanup_json = {"state": "in_progress"}
+        session.add(project)
+        session.commit()
+        with pytest.raises(RepositoryError, match="cleanup"):
+            service.preview(project_id, source)
+        with pytest.raises(RepositoryError, match="cleanup"):
+            service.apply(project_id, source, preview["confirmation_sha256"])
+        assert not (settings.data_dir / "projects" / str(project_id) / "finance").exists()
+
+
+def test_recovery_holds_cleanup_fence_during_publication(api, project_id, settings, tmp_path):
+    source = fixture_source(api, project_id, tmp_path)
+    with Session(api.app.state.engine) as session:
+        service = FinanceRecovery(session, settings)
+        preview = service.preview(project_id, source)
+        finish = service._finish
+
+        def check_fence(*args):
+            with Session(api.app.state.engine) as contender:
+                contender.exec(text("PRAGMA busy_timeout=0"))
+                with pytest.raises(OperationalError, match="locked"):
+                    contender.exec(
+                        text("UPDATE projects SET id=id WHERE id=:id").bindparams(id=project_id)
+                    )
+            return finish(*args)
+
+        service._finish = check_fence
+        assert service.apply(project_id, source, preview["confirmation_sha256"])["applied"]
+        with Session(api.app.state.engine) as contender:
+            contender.exec(text("UPDATE projects SET id=id WHERE id=:id").bindparams(id=project_id))
 
 
 def test_preview_is_inert_and_apply_preserves_source_and_enablement(

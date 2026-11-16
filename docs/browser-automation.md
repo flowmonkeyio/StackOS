@@ -19,6 +19,23 @@ session. Session discovery returns `cli_argv`, a ready command prefix:
 
 ## Client Flow
 
+Browser work uses StackOS lifecycle and the returned native CLI. Computer Use
+and native desktop control will not be enabled: do not request access, wait for
+it or plan it as a verification prerequisite. Retain the required outcome proof,
+normal app authentication and any explicitly scoped operator/manual exception.
+If the supported browser route cannot exercise a required boundary, identify the
+actual unsupported boundary and missing evidence as blocked. Computer Use absence
+alone is not a blocker, and it grants no waiver or permission bypass.
+
+Main chooses and verifies this route before dispatch or resume, passing current
+profile/session refs, ticket-tab ownership and login prerequisites. Remove stale
+Computer Use or native Chrome-permission prerequisites; do not retry native
+control. An explicit operator-owned drag-and-drop check transfers only that named
+check. Other required proof, including email-link -> browser -> desktop-return
+and normal app authentication when assigned, remains agent-owned. If a required
+boundary cannot be exercised, keep its precise missing evidence blocked rather
+than transfer the remaining verification to the operator.
+
 1. Use `browser.session.list` to discover project sessions. Select the intended
    session or call `browser.session.start` with stable `profile_key` and
    `session_key` values to create/reuse it.
@@ -44,6 +61,18 @@ The browser opens visibly. For authenticated work, let the operator complete
 login/MFA in the selected profile, then keep reusing its `profile_key`. Different
 profiles have separate cookies and storage. One live process owns a profile;
 another session cannot use it concurrently.
+
+Plan one live session per `profile_key`. Discover and reuse the authorized
+same-profile session, assigning each ticket its own tab and preserving other
+tabs. A different `session_key` does not isolate the profile. A separate session
+needs a separate permitted profile or an explicit handoff after the current
+owner has finished its browser work and stopped the session. Do not replace a
+required authenticated profile with a throwaway profile.
+
+Retaining an agent's native thread/session for feedback is separate from browser
+lifecycle. It does not require leaving the browser open forever. Close only
+ticket-owned tabs; stop a shared session only within the agreed ownership and
+handoff, after other users' browser work is quiescent.
 
 For background work in an existing tab, read native `tabs`, confirm the target
 ID, and append upstream `--tab-id <id>` to each command:
@@ -85,6 +114,14 @@ its requested command does, including native startup and recovery.
 Native commands can stop or restart the selected browser. Later StackOS session
 observations reconcile its state. `browser.session.stop` remains available for
 StackOS-managed shutdown and waits for observed process/state retirement.
+
+Respect denied actions without bypassing them through another tool. Use an
+authorized alternative and continue unaffected checks when an optional tool
+call is denied. A protected `.git`/`.codex` write denial stops that write and
+dependent work, not unrelated browser checks. If required proof remains
+unavailable, report it as blocked; never turn missing or failed proof into a
+pass. Native agent launch/access/model/resume failures retain their task-stop
+contract.
 
 ## Context And Discovery
 

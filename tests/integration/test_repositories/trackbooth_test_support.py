@@ -350,8 +350,8 @@ def _trackbooth_account_listaccounts_detail() -> dict:
             "category": "accounts",
             "tags": ["accounts"],
         },
-        "query_schema": {"type": "object", "additionalProperties": False},
-        "response_schema": {"type": "object", "additionalProperties": True},
+        "query_schema": {"json_schema": {"type": "object", "additionalProperties": False}},
+        "response_schema": {"json_schema": {"type": "object", "additionalProperties": True}},
     }
 
 

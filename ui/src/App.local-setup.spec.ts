@@ -5,7 +5,17 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import App from './App.vue'
 import appRouter from './router'
+import ProjectSetupView from './views/project-setup/ProjectSetupView.vue'
+import {
+  AgentStatsCoverageOutClassification_status,
+  AgentStatsCoverageOutUsage_status,
+  AgentStatsFieldCoverageOutStatus,
+  TrackerAgentStatsOutGroup_by,
+  type SchemaAgentStatsMetricsOut,
+  type SchemaTrackerAgentStatsOut,
+} from '@/api'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
+import { emptyDeliveryTrendsFixture } from '@/views/home/agentStatsFixtures'
 import { useProjectsStore, type Project } from '@/stores/projects'
 
 const ORIG_FETCH = globalThis.fetch
@@ -25,6 +35,7 @@ it.each([null, 7])(
         : [
             {
               id: projectId,
+              order_index: projectId,
               name: 'Synthetic project',
               slug: 'synthetic',
               domain: 'example.test',
@@ -67,6 +78,8 @@ it.each([null, 7])(
           daemon_uptime_s: 10,
         })
       if (url === '/api/v1/operations/hostMcp.status/call') return json({ ok: true, items: [] })
+      if (url === '/api/v1/auth/accounts?summary_only=true')
+        return json({ accounts: [], providers: [], summary_only: true })
       if (
         url === '/api/v1/operations/project.portfolio/call' ||
         url.startsWith('/api/v1/projects?')
@@ -81,6 +94,55 @@ it.each([null, 7])(
           total_count: 0,
           ticket_counts: {},
         })
+      }
+      if (url === '/api/v1/operations/tracker.agentStatsAll/call') {
+        const emptyFieldCoverage = {
+          measured_attempts: 0,
+          unavailable_attempts: 0,
+          status: AgentStatsFieldCoverageOutStatus.empty,
+        }
+        const emptyMetrics = {
+          last_execution: null,
+          launch_attempts: 0,
+          recorded_reviewer_rejects: 0,
+          review_outcomes: {},
+          reported_usage: {
+            unit: 'tokens', input: 0, output: 0, total: 0,
+            cache_read: 0, cache_write: 0, reasoning: 0,
+            remaining_input: 0, input_with_unknown_cache: 0,
+          },
+          coverage: {
+            usage_status: AgentStatsCoverageOutUsage_status.empty,
+            usage_measured_attempts: 0,
+            usage_unavailable_attempts: 0,
+            classification_status: AgentStatsCoverageOutClassification_status.empty,
+            classification_known_attempts: 0,
+            classification_unknown_attempts: 0,
+            fields: {
+              input: emptyFieldCoverage,
+              output: emptyFieldCoverage,
+              total: emptyFieldCoverage,
+              cache_read: emptyFieldCoverage,
+              cache_write: emptyFieldCoverage,
+              reasoning: emptyFieldCoverage,
+            },
+          },
+        } satisfies SchemaAgentStatsMetricsOut
+        return json({
+          project_id: null,
+          is_active: true,
+          as_of: '2026-11-06T20:00:00Z',
+          read_token: null,
+          group_by: TrackerAgentStatsOutGroup_by.agent_model,
+          start_date: null,
+          end_date: null,
+          timezone: 'UTC',
+          totals: emptyMetrics,
+          rows: [],
+          daily: [],
+          undated: emptyMetrics,
+          delivery_trends: emptyDeliveryTrendsFixture(),
+        } satisfies SchemaTrackerAgentStatsOut)
       }
       if (url.startsWith('/api/v1/plugins')) return json([])
       if (url === '/api/v1/operations/backup.status/call') return json(status())
@@ -116,6 +178,7 @@ it.each([null, 7])(
       ['Overview', '/'],
       ['Accounts', '/accounts'],
       ['Backups', '/setup'],
+      ['Patterns', '/patterns'],
     ])
     expect(projectNav.element.nextElementSibling).toBe(appNav.element)
     expect(projectNav.element.previousElementSibling).toBe(
@@ -127,7 +190,7 @@ it.each([null, 7])(
       expect(wrapper.text()).toContain('Connect your first project to see its navigation here.')
     } else {
       expect(projectNav.find(`a[href="/projects/${projectId}/setup"]`).exists()).toBe(false)
-      expect(projectNav.text()).toContain('Configure')
+      expect(projectNav.text()).toContain('Setup')
       for (const surface of ['connections', 'schedules', 'cost-budget', 'plugins']) {
         expect(projectNav.find(`a[href="/projects/${projectId}/${surface}"]`).exists()).toBe(true)
       }
@@ -186,9 +249,13 @@ it.each([null, 7])(
   },
 )
 
-it('removes project Setup while retaining app and project configuration routes', () => {
+it('keeps project setup a bounded Home child while retaining app and configuration routes', () => {
   const paths = appRouter.getRoutes().map((route) => route.path)
-  expect(paths).not.toContain('/projects/:id/setup')
+  const setup = appRouter.getRoutes().find(route => route.name === 'project-setup')
+  expect(setup?.path).toBe('/projects/:id/setup')
+  expect(setup?.components?.default).toBe(ProjectSetupView)
+  // The removed generic configuration page is not restored. Existing sidebar
+  // assertions above still prohibit a standalone project Setup destination.
   expect(appRouter.hasRoute('project-detail-setup')).toBe(false)
   expect(paths).toEqual(expect.arrayContaining([
     '/setup',

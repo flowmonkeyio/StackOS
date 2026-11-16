@@ -18,7 +18,6 @@ from stackos.db.models import (
     ApprovalRequest,
     ApprovalRequestStatus,
     ContextSnapshot,
-    Project,
     Run,
     RunKind,
     RunPlan,
@@ -100,13 +99,17 @@ def _jsonable(value: Any) -> Any:
     return jsonable(value)
 
 
-def _ensure_no_secrets(value: Any, *, label: str) -> None:
-    paths = find_run_plan_secret_paths(value)
+class RunPlanSecretValidationError(ValidationError):
+    """Shared scanner rejection with value-free, bounded diagnostic paths."""
+
+
+def _ensure_no_secrets(value: Any, *, label: str, workflow_metadata: bool = False) -> None:
+    paths = find_run_plan_secret_paths(value, workflow_metadata=workflow_metadata)
     if paths:
-        raise ValidationError(
+        raise RunPlanSecretValidationError(
             f"{label} must not contain secrets as raw values; use credential_ref for provider "
             "auth or secret.set with an exact $secret_ref marker for action payload values",
-            data={"paths": paths[:8]},
+            data={"rule": "raw_secret", "paths": paths},
         )
 
 
@@ -191,7 +194,7 @@ class RunPlanRepository:
         metadata_json: dict[str, Any] | None = None,
         _commit: bool = True,
     ) -> Envelope[RunPlanOut]:
-        self._require_project(project_id)
+        self._require_project(project_id, reserve=False)
         loaded: LoadedWorkflowTemplate | None = None
         if template_key is not None:
             loaded = self._load_template(
@@ -234,6 +237,9 @@ class RunPlanRepository:
         if snapshot_id is not None:
             self._require_context_snapshot(project_id, snapshot_id)
 
+        # Cold template/catalog loading can commit this Session. Revalidate
+        # after setup and reserve through the plan, steps and tracker writes.
+        self._require_project(project_id)
         now = _utcnow()
         row = RunPlan(
             project_id=project_id,
@@ -444,11 +450,22 @@ class RunPlanRepository:
         step_id: str,
         *,
         project_id: int | None = None,
+        full_context: bool = False,
     ) -> RunPlanStepOut:
         plan = self._fetch_plan(run_plan_id)
         self._require_plan_project(plan, project_id)
         step = self._fetch_step(run_plan_id, step_id)
-        return self._step_out(step, plan)
+        return self._step_out(step, plan, full_context=full_context)
+
+    def validate_delivery_controller(
+        self, *, run_plan_id: int, project_id: int, run_id: int | None
+    ) -> None:
+        """Validate the daemon-held binding before automatic task work executes."""
+        plan = self._fetch_plan(run_plan_id)
+        self._require_plan_project(plan, project_id)
+        self._require_bound_run(plan, run_id)
+        if plan.status != RunPlanStatus.STARTED:
+            raise ValidationError("Automatic delivery requires a started run plan")
 
     def check_consistency(
         self,
@@ -510,6 +527,9 @@ class RunPlanRepository:
     ) -> Envelope[RunPlanReopenOut]:
         plan = self._fetch_plan(run_plan_id)
         self._require_plan_project(plan, project_id)
+        # Dispatcher admission may precede a committed cleanup fence. Reopen
+        # is a new producer of running work, including through tracker.reopen.
+        self._require_project(plan.project_id)
         reason = str(reason or "").strip()
         if not reason:
             raise ValidationError("reason is required to reopen a run plan")
@@ -658,7 +678,9 @@ class RunPlanRepository:
         # Validate the complete patch before dirtying ORM rows. A caller may commit
         # this session after a rejection, including operation idempotency cleanup.
         if metadata_json is not None:
-            _ensure_no_secrets(metadata_json, label="run plan metadata")
+            _ensure_no_secrets(
+                {"metadata_json": metadata_json}, label="run plan metadata", workflow_metadata=True
+            )
             metadata_json = _jsonable(metadata_json)
         approval = None
         if approval_key is not None or approval_status is not None:
@@ -1014,9 +1036,6 @@ class RunPlanRepository:
         )
         if failed_or_blocked is not None:
             return failed_or_blocked
-        delivery = next((step for step in steps if step.step_id == "deliver-tickets"), None)
-        if delivery is not None:
-            return delivery
         return max(steps, key=lambda item: item.position)
 
     def _reopen_plan_metadata(
@@ -1093,9 +1112,10 @@ class RunPlanRepository:
             source=source,
         )
 
-    def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+    def _require_project(self, project_id: int, *, reserve: bool = True) -> None:
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id, reserve=reserve)
 
     @staticmethod
     def _require_plan_project(plan: RunPlan, project_id: int | None) -> None:
@@ -1258,6 +1278,7 @@ class RunPlanRepository:
         *,
         all_steps: builtins.list[RunPlanStep] | None = None,
         workflow_contract: RunPlanWorkflowContractOut | None = None,
+        full_context: bool = False,
     ) -> RunPlanStepOut:
         data = RunPlanStepOut.model_validate(step)
         if plan is None:
@@ -1293,9 +1314,14 @@ class RunPlanRepository:
                     ),
                 )
                 data.input_context_truncated = inputs_truncated or context_truncated
+                if full_context:
+                    data.input_values_json = _jsonable(input_values)
+                    data.step_context_json = _jsonable(plan.selected_context_json)
+                    data.input_context_truncated = False
         data.direct_dependency_handoffs = direct_dependency_handoffs(
             step,
             all_steps=all_steps or self._step_rows(step.run_plan_id),
+            full_context=full_context,
         )
         return data
 

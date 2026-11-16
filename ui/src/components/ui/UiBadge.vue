@@ -20,6 +20,8 @@ export interface UiBadgeProps {
   pulse?: boolean;
   /** Render as <button> with click handler. */
   interactive?: boolean;
+  /** Bound the label to the container while retaining its full accessible text. */
+  truncate?: boolean;
 }
 
 type BadgeVariant = NonNullable<UiBadgeProps['variant']>;
@@ -73,16 +75,20 @@ const dotColor = computed(() => ({
       toneClass,
       sizeClass,
       interactive && 'focus-ring hover:opacity-80 transition-opacity',
+      truncate && 'min-w-0 max-w-full',
     ]"
     @click="(ev: MouseEvent) => interactive && $emit('click', ev)"
   >
     <span
       v-if="dot"
-      :class="['inline-block w-1.5 h-1.5 rounded-full shrink-0', dotColor, pulse && 'animate-pulse']"
+      :class="['ui-badge__dot inline-block w-1.5 h-1.5 rounded-full shrink-0', dotColor, pulse && 'animate-pulse']"
       aria-hidden="true"
     />
     <slot name="iconLeft" />
-    <span class="ui-badge__label"><slot /></span>
+    <span
+      class="ui-badge__label"
+      :class="truncate && 'min-w-0 truncate'"
+    ><slot /></span>
     <slot name="iconRight" />
   </component>
 </template>

@@ -2,84 +2,102 @@ import { onBeforeUnmount, ref, type Ref } from 'vue'
 import type {
   SchemaAccountOut,
   SchemaAuthStatusOut,
-  SchemaWorkflowTemplateExtensionListOut,
-  SchemaWorkflowTemplateListOut,
 } from '@/api'
-import { apiFetch, formatApiError } from '@/lib/client'
-import { callOperation } from '@/lib/operations'
-import {
-  configuredWorkflows,
-  type ConfiguredWorkflow,
-  type OverviewPage,
-  type PortfolioProject,
-  type RecordedTask,
-} from './ticketOverview'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
+import { useProjectsStore, type Project } from '@/stores/projects'
 
 export function useProjectOverview(projectId: Ref<number>) {
-  const project = ref<PortfolioProject | null>(null)
+  const projects = useProjectsStore()
+  const project = ref<Project | null>(null)
   const accounts = ref<SchemaAccountOut[]>([])
-  const workflows = ref<ConfiguredWorkflow[]>([])
-  const task = ref<RecordedTask | null>(null)
   const loading = ref(true)
+  const connectionsLoaded = ref(false)
   const errors = ref<Record<string, string>>({})
   let generation = 0
+  let scope: number | null = null
+  let retired = false
+  let metadataRead: { id: number; promise: Promise<Project> } | null = null
+  let connectionsRead: { id: number; promise: Promise<SchemaAuthStatusOut> } | null = null
   onBeforeUnmount(() => {
+    retired = true
     generation += 1
   })
 
-  async function load(): Promise<void> {
+  function readMetadata(id: number, revalidate: boolean): Promise<Project> {
+    if (metadataRead?.id === id) return metadataRead.promise
+    const cached = projects.getById(id)
+    if (cached && !revalidate) return Promise.resolve(cached)
+    const request = { id, promise: apiFetch<Project>(`/api/v1/projects/${id}`) }
+    metadataRead = request
+    request.promise = request.promise.finally(() => {
+      if (metadataRead === request) metadataRead = null
+    })
+    return request.promise
+  }
+
+  function readConnections(id: number): Promise<SchemaAuthStatusOut> {
+    if (connectionsRead?.id === id) return connectionsRead.promise
+    const request = { id, promise: apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts?summary_only=true`) }
+    connectionsRead = request
+    request.promise = request.promise.finally(() => {
+      if (connectionsRead === request) connectionsRead = null
+    })
+    return request.promise
+  }
+
+  async function load(revalidateMetadata = false): Promise<void> {
+    if (retired) return
     const request = ++generation
     const id = projectId.value
+    if (scope !== id) {
+      scope = id
+      project.value = null
+      accounts.value = []
+      errors.value = {}
+      connectionsLoaded.value = false
+    }
+    loading.value = true
     async function read<T>(key: string, promise: Promise<T>, commit: (data: T) => void) {
       try {
         const data = await promise
-        if (request !== generation) return
+        if (retired || request !== generation || id !== projectId.value) return
         commit(data)
         const next = { ...errors.value }
         delete next[key]
         errors.value = next
       } catch (err) {
-        if (request === generation)
+        if (!retired && request === generation && id === projectId.value) {
+          if (key === 'connections' && err instanceof ApiError && [401, 403, 404].includes(err.status)) {
+            accounts.value = []
+            connectionsLoaded.value = false
+          }
           errors.value = {
             ...errors.value,
             [key]: formatApiError(err, `Could not refresh ${key}.`),
           }
+        }
       }
     }
     await Promise.all([
       read(
         'connections',
-        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts`),
+        readConnections(id),
         (data) => {
           accounts.value = data.accounts
-        },
-      ),
-      read(
-        'workflows',
-        Promise.all([
-          callOperation<SchemaWorkflowTemplateExtensionListOut>('workflowExtension.list', {
-            project_id: id,
-          }),
-          apiFetch<SchemaWorkflowTemplateListOut>(`/api/v1/projects/${id}/workflow-templates`),
-        ]),
-        ([extensions, catalog]) => {
-          workflows.value = configuredWorkflows(extensions.extensions, catalog.templates)
+          connectionsLoaded.value = true
         },
       ),
       read(
         'work',
-        callOperation<OverviewPage<PortfolioProject>>('project.portfolio', {
-          project_id: id,
-          is_active: null,
-          limit: 1,
-        }),
-        (page) => {
-          project.value = page.items[0] ?? null
-          task.value = project.value?.latest_task ?? null
+        readMetadata(id, revalidateMetadata),
+        (data) => {
+          if (data.id !== id) throw new Error('Project metadata scope did not match this Home.')
+          projects.reconcileProjectMetadata([data])
+          project.value = projects.isProjectDeleted(id) ? null : projects.getById(id) ?? data
         },
       ),
     ])
     if (request === generation) loading.value = false
   }
-  return { project, accounts, workflows, task, loading, errors, load }
+  return { project, accounts, loading, connectionsLoaded, errors, load }
 }

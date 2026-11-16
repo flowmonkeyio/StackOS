@@ -60,12 +60,27 @@ def test_ui_enable_rejects_all_nonempty_bodies_before_mutation(api, project_id, 
         ("POST", "/api/v1/projects/no/plugins/finance/enable"),
         ("PATCH", "/api/v1/projects/1/plugins/finance/enable"),
         ("DELETE", "/api/v1/projects/1/plugins/finance/enable"),
-        ("POST", "/api/v1/operations/plugin.enable/call"),
         ("POST", "/mcp"),
     ],
 )
 def test_ui_enable_does_not_expand_sibling_authority(api, settings, method, path):
     response = api.request(method, path, headers=ui_headers(settings), json={})
+    assert response.status_code == 403, response.text
+
+
+@pytest.mark.parametrize("config", [None, {}, {"x": 1}])
+def test_ui_operation_enable_cannot_change_plugin_config(api, project_id, settings, config):
+    response = api.post(
+        "/api/v1/operations/plugin.enable/call",
+        headers=ui_headers(settings),
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "plugin_slug": "finance",
+                "config_json": config,
+            }
+        },
+    )
     assert response.status_code == 403, response.text
 
 

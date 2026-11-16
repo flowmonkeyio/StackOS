@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+from typing import Any
+
 from sqlmodel import select
 
 from stackos.db.models import (
@@ -11,7 +14,7 @@ from stackos.db.models import (
     TaskTrackerLane,
     TaskTrackerPriority,
 )
-from stackos.repositories.base import NotFoundError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.tracker.schema import (
     TrackerLaneOut,
     TrackerPriorityOut,
@@ -25,8 +28,181 @@ from stackos.repositories.tracker.utils import (
 )
 
 
+def _delivery_role_defaults(defaults: dict[str, Any], role: str) -> dict[str, Any]:
+    """Merge saved role fields across legacy and source-mapped configuration."""
+    mapped = defaults.get("agents")
+    if mapped is not None and not isinstance(mapped, dict):
+        raise ValidationError("Task delivery agents must be an object")
+    legacy = defaults.get(role) if role in {"delivery_agent", "review_agent"} else None
+    selected = (mapped or {}).get(role)
+    if any(value is not None and not isinstance(value, dict) for value in (legacy, selected)):
+        raise ValidationError(f"Task delivery {role} must be an object")
+    return {**(legacy or {}), **(selected or {})}
+
+
+def _delivery_host(
+    defaults: dict[str, Any], *, role_host: str | None = None, host_key: str | None = None
+) -> str:
+    """Resolve the shared role -> task -> project -> native-default host inheritance."""
+    selected = role_host or host_key or defaults.get("host_key") or "codex"
+    if not isinstance(selected, str):
+        raise ValidationError("Task delivery host_key must be a string")
+    return selected
+
+
 class TrackerSetupMixin:
     """Tracker setup and default catalogue helpers."""
+
+    def delivery_defaults(self, *, project_id: int) -> dict[str, Any]:
+        tracker = self._tracker_or_none(project_id=project_id)
+        return deepcopy((tracker.config_json or {}).get("delivery", {})) if tracker else {}
+
+    def configure_main_agent(self, *, project_id: int, preferences: dict[str, Any]):
+        """Save only typed launch choices, leaving role contracts and snapshots intact."""
+        from stackos.project_setup_execution import MainAgentPreferences, resolve_preferences
+
+        selected = MainAgentPreferences.model_validate(preferences).model_dump(exclude_none=True)
+        resolve_preferences(self._s, project_id, selected, inherit_saved=False)
+        defaults = self.delivery_defaults(project_id=project_id)
+        return self.configure_delivery(
+            project_id=project_id, delivery={**defaults, "main_agent": selected}
+        )
+
+    def adopt_delivery_sources(
+        self,
+        *,
+        project_id: int,
+        project_dir: str,
+        sources: dict[str, Any],
+        preview: bool,
+        inline_roles: dict[str, Any] | None = None,
+        _execution_requirements: dict[str, Any] | None = None,
+        _commit: bool = True,
+    ) -> dict[str, Any]:
+        """Explicit local setup only: compare before replacing selected editable owners."""
+        from pathlib import Path
+
+        from stackos.task_delivery import _project_agent_source, resolve_delivery_settings
+
+        current = self.delivery_defaults(project_id=project_id)
+        proposed = deepcopy(current)
+        roles = deepcopy(proposed.get("agents") or {})
+        differences = {}
+        for role, selection in sources.items():
+            source = _project_agent_source(
+                self._s,
+                project_id,
+                Path(project_dir).expanduser().resolve(),
+                selection["source_ref"],
+            )
+            if source.digest != selection["expected_digest"]:
+                raise ConflictError(
+                    "Project agent stale_source",
+                    data={"code": "stale_source", "source_ref": selection["source_ref"]},
+                )
+            if source.fields is None:
+                raise ValidationError("Project agent unsupported_setting")
+            before = _delivery_role_defaults(current, role)
+            differences[role] = {
+                key: {"saved": before.get(key), "source": value}
+                for key, value in {
+                    "name": source.source_ref.native_name,
+                    "instructions": source.fields.developer_instructions,
+                    **source.native_settings,
+                }.items()
+                if before.get(key) != value
+            }
+            after = {**before, "source_ref": source.source_ref.model_dump()}
+            after.pop("instructions", None)
+            roles[role] = after
+            proposed.pop(role, None)
+        # Supported non-Codex hosts keep their native inline contracts. Use the
+        # same comparison, validation, writer and readback as source adoption.
+        from stackos.operations.tracker.schemas import TaskDeliveryDefaults
+
+        if sources.keys() & (inline_roles or {}).keys():
+            raise ValidationError("An adoption role needs one instruction owner")
+        for role, selection in (inline_roles or {}).items():
+            before = _delivery_role_defaults(current, role)
+            if selection.get("host_key") == "codex" or selection.get("source_ref"):
+                raise ValidationError("Inline adoption requires a supported non-Codex host")
+            after = {**selection, **before, "instructions": selection["instructions"]}
+            if "host_key" not in before and current.get("host_key") == selection.get("host_key"):
+                # A matching inline update must retain project-host inheritance,
+                # rather than freezing an omitted role preference to today's host.
+                after.pop("host_key", None)
+            after.pop("source_ref", None)
+            TaskDeliveryDefaults.model_validate({"agents": {role: after}})
+            differences[role] = {
+                key: {"saved": before.get(key), "source": value}
+                for key, value in after.items()
+                if before.get(key) != value
+            }
+            roles[role] = after
+            proposed.pop(role, None)
+        from stackos.operations.tracker.schemas import AgentExecutionRequirements
+
+        selected_roles = sources.keys() | (inline_roles or {}).keys()
+        if (_execution_requirements or {}).keys() - selected_roles:
+            raise ValidationError("Execution requirements must belong to an adopted role")
+        for role, value in (_execution_requirements or {}).items():
+            needed = AgentExecutionRequirements.model_validate(value).model_dump()
+            before = roles[role].get("execution_requirements")
+            roles[role]["execution_requirements"] = needed
+            if before != needed:
+                differences[role]["execution_requirements"] = {"saved": before, "source": needed}
+        proposed["agents"] = roles
+        # Validate only migrated selections; unrelated hosts/settings are preserved verbatim.
+        effective = resolve_delivery_settings(
+            self._s,
+            project_id=project_id,
+            project_dir=project_dir,
+            agents={role: roles[role] for role in sources.keys() | (inline_roles or {}).keys()},
+            role_keys=set(sources) | set(inline_roles or {}),
+        )
+        adoption = {
+            "preview": preview,
+            "differences": differences,
+            "delivery": proposed,
+            "agents": effective["agents"],
+        }
+        if preview:
+            return {"adoption": adoption}
+        # Re-read sources after comparison, before any durable replacement.
+        for selection in sources.values():
+            source = _project_agent_source(
+                self._s,
+                project_id,
+                Path(project_dir).expanduser().resolve(),
+                selection["source_ref"],
+            )
+            if source.digest != selection["expected_digest"]:
+                raise ConflictError("Project agent stale_source")
+        result = self.configure_delivery(project_id=project_id, delivery=proposed, _commit=_commit)
+        if self.delivery_defaults(project_id=project_id) != proposed:
+            raise ValidationError("Delivery adoption readback failed")
+        return {**result.model_dump(mode="json"), "adoption": adoption}
+
+    def configure_delivery(
+        self, *, project_id: int, delivery: dict[str, Any], _commit: bool = True
+    ) -> TrackerSummaryOut:
+        """Replace only delivery defaults; preserve unrelated tracker configuration."""
+        tracker = self.ensure_tracker(project_id=project_id)
+        before = deepcopy(tracker.config_json)
+        tracker.config_json = {**(tracker.config_json or {}), "delivery": deepcopy(delivery)}
+        self._record_revision(
+            tracker,
+            actor="local-admin",
+            change_kind="update",
+            entity_kind="tracker",
+            entity_id=tracker.id,
+            entity_key=tracker.key,
+            summary="Updated project task delivery defaults.",
+            before_json={"config_json": before},
+            after_json={"config_json": tracker.config_json},
+            commit=_commit,
+        )
+        return TrackerSummaryOut.model_validate(tracker)
 
     def _tracker_or_none(
         self,
@@ -72,6 +248,19 @@ class TrackerSetupMixin:
     ) -> TaskTracker:
         row = self._tracker_or_none(project_id=project_id, key=key)
         if row is not None:
+            assert row.id is not None
+            lanes = self._s.exec(
+                select(TaskTrackerLane).where(TaskTrackerLane.tracker_id == row.id)
+            ).all()
+            if not any(lane.key == "backlog" for lane in lanes):
+                self._s.add(
+                    TaskTrackerLane(
+                        tracker_id=row.id,
+                        key="backlog",
+                        label="Backlog",
+                        position=max((lane.position for lane in lanes), default=-1) + 1,
+                    )
+                )
             return row
         now = _utcnow()
         row = TaskTracker(

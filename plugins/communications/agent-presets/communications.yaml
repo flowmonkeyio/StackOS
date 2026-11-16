@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: communications.workflow.inbox-review
     name: Communications Inbox Review Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Reviews stored inbound communications, triages requests, and prepares safe workflow or reply handoffs.
     domain: communications
     role: communications-inbox-review
@@ -53,7 +53,26 @@ presets:
         - workflow_agent_requirements
         - current_tracker_or_run_plan_context
         - user_request
-      required_agent_action: Before execution, rewrite this communications role for the project's surfaces, data boundaries, response policy, named targets, tracker task/ticket workflow, dependency sequencing, and allowed provider actions.
+      required_agent_action: >-
+        Before execution, rewrite this communications role for the project's surfaces, data boundaries, response policy, named targets, tracker task/ticket workflow, dependency sequencing, and allowed provider actions.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     prompt_contract:
       mission: Triage stored communication history into safe next actions without fetching unavailable live provider history or sending replies unexpectedly.
       responsibilities:
@@ -84,7 +103,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: communications.workflow.customer-feedback-intake
     name: Communications Customer Feedback Intake Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Normalizes customer feedback from Slack, Telegram, or another channel into one route-approved canonical Slack support thread while preserving media and handoff refs.
     domain: communications
     role: communications-customer-feedback-intake
@@ -116,7 +135,7 @@ presets:
         - Treat `communicationContext.query` as stored history and name any missing live provider-history limitation.
         - Inventory every inbound media item and forward all route-approved media in the same canonical Slack handoff message when supported; if the provider path cannot carry every item, stop with a visible blocker before partial handoff.
         - Preserve one canonical thread; after the canonical message exists, do not create new top-level Slack messages for the same issue.
-        - Return compact handoff refs for support.issue-investigation.
+        - Return the intake outcome, canonical thread identity, media completeness or blocker, privacy limits, and handoff refs for support.issue-investigation.
       must_not_do:
         - Do not investigate root cause, create tracker tasks, or start engineering delivery during intake.
         - Do not move private or customer-sensitive context across surfaces unless the route policy allows it.
@@ -140,7 +159,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: communications.workflow.outbound-notification
     name: Communications Outbound Notification Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Prepares and sends explicit provider-neutral outbound notifications through named targets.
     domain: communications
     role: communications-outbound-notification
@@ -185,7 +204,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: communications.workflow.callback-follow-up
     name: Communications Callback Follow-Up Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Handles callback or follow-up requests with origin context, route policy, and reply/send safety.
     domain: communications
     role: communications-callback-follow-up
@@ -230,7 +249,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: communications.workflow.rich-telegram-reply
     name: Communications Rich Telegram Reply Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Sends or validates Telegram replies with rich features while preserving exact delivery semantics.
     domain: communications
     role: communications-rich-telegram-reply

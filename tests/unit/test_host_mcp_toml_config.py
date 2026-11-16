@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import stat
 import tomllib
@@ -11,6 +12,67 @@ from stackos.host_mcp import toml_config
 
 ENTRY = {"command": "stackos", "args": ["mcp-bridge", "--runtime", "grok"]}
 ENTRY_LINES = 'command = "stackos"\nargs = ["mcp-bridge", "--runtime", "grok"]\n'
+
+
+def route_ref(tmp_path, text):
+    path = tmp_path / "route.toml"
+    path.write_text(text)
+    return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def test_task_route_hash_and_parse_use_one_read(tmp_path, monkeypatch):
+    ref = route_ref(tmp_path, '[mcp_servers.serena]\nargs = ["wrapper.py"]\n')
+    original = Path.read_bytes
+    reads = []
+
+    def read(path):
+        data = original(path)
+        reads.append(path)
+        path.write_text("model = 'forbidden'")
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", read)
+    identity, routes = toml_config.read_mcp_config_ref(ref)
+    assert identity == ref
+    assert routes == {"serena": {"args": ["wrapper.py"]}}
+    assert reads == [Path(ref["path"])]
+    with pytest.raises(ValueError, match="digest"):
+        toml_config.read_mcp_config_ref(ref)
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "model = 'forbidden'",
+        "[mcp_servers.serena]\ncommand = 'evil'",
+        "[mcp_servers.serena]\nurl = 'https://example.test'",
+        "[mcp_servers.serena]\nenv_vars = ['AUTH']",
+        "[mcp_servers.serena]\nenv = {API_KEY = 'sensitive-value'}",
+        "[mcp_servers.serena]\nargs = ['--token', 'sensitive-value']",
+        "[mcp_servers.serena]\ncwd = 'relative'",
+        "[mcp_servers.serena]\nargs = [1]",
+        "[mcp_servers.serena]\nenv = {PATH = '/different-executable'}",
+        "[mcp_servers.serena]\n",
+        "invalid [ sensitive-value",
+    ],
+)
+def test_task_route_rejects_unsupported_content_without_echo(tmp_path, contents):
+    ref = route_ref(tmp_path, contents)
+    with pytest.raises(ValueError) as error:
+        toml_config.read_mcp_config_ref(ref)
+    assert "sensitive-value" not in str(error.value)
+
+
+def test_task_route_missing_and_invalid_reference(tmp_path):
+    with pytest.raises(ValueError):
+        toml_config.read_mcp_config_ref({"path": str(tmp_path / "missing"), "sha256": "0" * 64})
+    for ref in [
+        {"path": "relative", "sha256": "0" * 64},
+        {"path": str(tmp_path), "sha256": "wrong"},
+        {"path": str(tmp_path), "sha256": "0" * 64, "extra": "no"},
+    ]:
+        with pytest.raises(ValueError):
+            toml_config.read_mcp_config_ref(ref)
 
 
 @pytest.mark.parametrize(

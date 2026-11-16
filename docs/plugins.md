@@ -37,7 +37,9 @@ private managed storage, checks bytes/counts again, and atomically publishes
 standard project custody metadata. Original files and their permissions are
 unchanged. New copies use private permissions. No financial record is rewritten
 and no empty ledger is initialized. Recovery provenance remains in project
-storage metadata; the database is opened read-only.
+storage metadata. Preview opens the database read-only; apply briefly reserves
+the project admission fence in a rolled-back database transaction, preventing
+project cleanup from racing publication. It does not persist database changes.
 
 An exact repeat verifies and returns the already-applied result without replacing
 anything. A stopped publication with saved custody metadata can be resumed with the same command;
@@ -252,6 +254,22 @@ master. Original attachments remain evidence. The generic action audit can still
 sanitized connector envelope as non-authoritative transport evidence.
 
 ## Workflow Templates
+
+Domain pages declare their supported sections in `ui.page.sections`, using
+`workflows`, `saved`, and `files`. The generic page retains declared sections
+when empty and omits undeclared sections. It uses the effective workflow loader
+and shared resource/artifact readers; a declaration does not create records,
+workflow templates, readiness, or execution controls. `ui.page.description` is
+optional operator-facing page copy. The sidebar includes enabled plugins with at
+least one supported page section, plus Finance's existing console. `ui.nav`
+section labels or links alone do not create a domain destination. Integration-only
+packages (Trackbooth, Shopify and Linear) and Publishing contribute no redundant
+page; their providers, actions, credentials and setup remain available through
+Plugins and Connections. Existing saved information and files remain in Library,
+without migration. A direct plugin URL without a page links to setup and scoped
+Library tabs rather than advertising an empty page. Library links retain the exact
+project, plugin, source type and tab. Navigation contributions use `to` and
+`plugin_slug` query parameters, including Agency and Support.
 
 Plugins can ship workflow templates under `plugins/<slug>/workflows/`. These
 templates should define reusable setup and context requirements, not one-off run

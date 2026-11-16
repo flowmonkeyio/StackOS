@@ -13,15 +13,29 @@ import tomllib
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
+from stackos.host_mcp.agent_execution import (
+    ManagedProcessControl,
+    execute_json_agent,
+    json_object,
+    structured_prompt,
+)
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
+    command_matches,
     is_stackos_bridge_command,
     resolve_bridge_command,
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
+    HostMcpResult,
+    looks_secretish,
+    usage_snapshot,
+)
 from stackos.host_mcp.toml_config import remove_mcp_server
 
 HOST_KEY = "grok"
@@ -35,6 +49,117 @@ COMMON_GROK_CLI_CANDIDATES = (
     "/usr/local/bin/grok",
 )
 REPAIR = "Run `stackos install --mcp-only --mcp-host grok` or desktop Repair."
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    model_reasoning_effort: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+    resume_thread_id: str | None = None,
+    process_control: ManagedProcessControl | None = None,
+) -> AgentRunResult:
+    cli = resolve_grok_bin(Path.home())
+    if cli is None:
+        return AgentRunResult(None, error="No Grok CLI was found by host discovery.")
+    command = [
+        cli,
+        "--no-auto-update",
+        "--cwd",
+        str(project_dir),
+        "--single",
+        structured_prompt(prompt, output_schema),
+        "--output-format",
+        "json",
+        "--rules",
+        instructions,
+        "--sandbox",
+        "workspace" if sandbox == "workspace-write" else "read-only",
+        "--permission-mode",
+        "auto" if sandbox == "workspace-write" else "dontAsk",
+    ]
+    if model is not None:
+        command += ["--model", model]
+    if model_reasoning_effort is not None:
+        command += ["--reasoning-effort", model_reasoning_effort]
+    if resume_thread_id is not None:
+        command += ["--resume", resume_thread_id]
+    return execute_json_agent(
+        command,
+        project_dir,
+        "",
+        output_schema,
+        "Grok",
+        _agent_result,
+        **({"process_control": process_control} if process_control else {}),
+    )
+
+
+def _agent_result(stdout: str) -> AgentRunResult:
+    # Native --output-format json, not the separate streaming-messages-json envelope.
+    value = json_object(stdout)
+    usage = _agent_usage(value)
+    if value.get("error") or value.get("type") == "error":
+        return AgentRunResult(
+            0,
+            thread_id=value.get("sessionId"),
+            usage=usage,
+            error=str(value.get("error") or value.get("message") or "Grok failed."),
+        )
+    if value.get("stopReason") != "end_turn":
+        return AgentRunResult(
+            0,
+            thread_id=value.get("sessionId"),
+            usage=usage,
+            error=f"Grok did not complete: {value.get('stopReason', 'missing stopReason')}",
+        )
+    try:
+        result = json_object(value["text"])
+    except (ValueError, KeyError, TypeError) as exc:
+        return AgentRunResult(
+            0,
+            thread_id=value.get("sessionId"),
+            usage=usage,
+            error=f"Invalid Grok result: {exc}",
+        )
+    return AgentRunResult(0, thread_id=value.get("sessionId"), result=result, usage=usage)
+
+
+def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
+    # Headless 1.0.77 usage covers this invocation, even on resume. Its input
+    # excludes both cache buckets; output already includes reasoning. Persisted
+    # session inputTokens has different semantics and is not this projection.
+    counters = value.get("usage")
+    if not isinstance(counters, dict) or value.get("usage_is_incomplete"):
+        return None
+    counts = [
+        counters.get(k)
+        for k in (
+            "input_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "output_tokens",
+            "total_tokens",
+        )
+    ]
+    if any(type(n) is not int or n < 0 for n in counts):
+        return None
+    return usage_snapshot(
+        "grok.headless",
+        "invocation",
+        sum(counts[:3]),
+        counts[3],
+        counts[4],
+        cache_read=counts[1],
+        cache_write=counts[2],
+        reasoning=counters.get("reasoning_tokens"),
+    )
 
 
 def grok_home(home: Path) -> Path:
@@ -181,7 +306,7 @@ def _inspect_config(home: Path, *, server_name: str) -> HostMcpResult:
     stored = _stored_command(entry)
     expected = resolve_bridge_command(runtime=HOST_KEY)
     managed = is_stackos_bridge_command(stored)
-    if stored == expected and entry.get("enabled", True) is True:
+    if command_matches(expected, stored) and entry.get("enabled", True) is True:
         return replace(
             base,
             status="registered_current",
@@ -220,7 +345,7 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
     if grok_bin is None:
         return _absent()
     command = resolve_bridge_command(runtime=HOST_KEY)
-    if current.command != command:
+    if not command_matches(command, current.command):
         added = _run_grok(
             grok_bin,
             ["mcp", "add", "--scope", "user", server_name, "--", *command],

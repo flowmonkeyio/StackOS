@@ -212,10 +212,14 @@ async def _run_heartbeat(
 async def _run_abort(
     inp: RunAbortInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[RunOut]:
-    env = RunRepository(ctx.session).abort(
+    from stackos.task_delivery import abort_audit_run
+
+    env = abort_audit_run(
+        ctx.session,
         inp.run_id,
         cascade=inp.cascade,
         project_id=inp.project_id,
+        scheduler=ctx.extras.get("scheduler"),
     )
     return WriteEnvelope[RunOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
 

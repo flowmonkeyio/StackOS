@@ -1,0 +1,2075 @@
+"""Source-backed admission uses disposable files and the existing delivery owner."""
+
+import json
+import subprocess
+from copy import deepcopy
+from pathlib import Path
+
+import pytest
+from sqlmodel import Session
+
+from stackos import task_delivery
+from stackos.host_mcp import service
+from stackos.host_mcp.adapters import claude_code, codex, grok
+from stackos.host_mcp.project_agents import ProjectAgentService
+from stackos.host_mcp.result import AgentRunResult
+from stackos.repositories.base import ValidationError
+from stackos.repositories.run_plans import RunPlanRepository
+from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.workspaces import WorkspaceRepository
+from tests.integration.test_repositories.test_task_delivery import (
+    QueuedScheduler,
+    commit,
+    disposition_workflow,
+    generic_result,
+    git,
+    stopped_review_fixture,
+    use_codex_native,
+)
+
+
+def source(session, project_id, root, name, instructions=None, settings=""):
+    root.mkdir(exist_ok=True)
+    WorkspaceRepository(session).connect(
+        project_id=project_id, last_known_root=str(root), repo_fingerprint=f"fixture:{root}"
+    )
+    folder = root / ".codex" / "agents"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{name}.toml").write_text(
+        f'name = "{name}"\ndescription = "Fixture"\n'
+        f"developer_instructions = {json.dumps(instructions or name)}\n{settings}"
+    )
+    ref = {"host_key": "codex", "native_name": name, "source_path": f".codex/agents/{name}.toml"}
+    return ProjectAgentService(root).get(ref).source_ref.model_dump()
+
+
+def start(session, project_id, root, scheduler, **kwargs):
+    return task_delivery.start_delivery(
+        session=session,
+        session_factory=lambda: Session(session.get_bind()),
+        scheduler=scheduler,
+        project_id=project_id,
+        project_dir=str(root),
+        **kwargs,
+    )
+
+
+def stopped_source_review(session, project_id, root, monkeypatch, reviewer_instructions=None):
+    """The same stopped-review scenario with committed project-native role sources."""
+    root.mkdir()
+    git(root, "init")
+    git(root, "config", "user.name", "Delivery Test")
+    git(root, "config", "user.email", "delivery@example.test")
+    writer = source(session, project_id, root, "writer")
+    reviewer = source(session, project_id, root, "reviewer", reviewer_instructions)
+    git(root, "add", ".codex")
+    git(root, "commit", "-m", "fixture sources")
+    return stopped_review_fixture(
+        session,
+        project_id,
+        root,
+        monkeypatch,
+        defaults={
+            "agents": {
+                "delivery_agent": {"source_ref": writer},
+                "review_agent": {"source_ref": reviewer},
+            }
+        },
+    )
+
+
+@pytest.mark.parametrize("status", ["skipped", "aborted", "deferred", "in-progress"])
+def test_reviewer_readiness_preserves_excluded_child_history(
+    session, project_id, tmp_path, monkeypatch, status
+):
+    repo, plans, task_key, _parent, scope, state = disposition_workflow(session, project_id)
+    task_delivery._select_work(repo, plans, project_id, task_key, state)
+    writer = source(session, project_id, tmp_path, "writer")
+    reviewer = source(
+        session, project_id, tmp_path, "reviewer", settings='sandbox_mode="workspace-write"\n'
+    )
+    excluded = status != "in-progress"
+    if status == "deferred":
+        scope.update(resume_owner_ref="team:main", resume_condition="Operator readmits scope")
+    historical = {
+        "automatic_delivery": {
+            "sessions": {
+                "review": {
+                    "thread_id": "obsolete-review-session",
+                    "agent_snapshot": {
+                        "source_ref": reviewer,
+                        "name": "reviewer",
+                        "host_key": "codex",
+                        "native_settings": {"sandbox_mode": "read-only"},
+                    },
+                }
+            }
+        }
+    }
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="optional",
+        patch_json={
+            "status": status,
+            "metadata_json": {"delivery_scope": scope} if excluded else None,
+            "completion_evidence_json": historical,
+        },
+    )
+    scheduler = QueuedScheduler()
+    calls = []
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append((key, phase))
+        return AgentRunResult(0, thread_id=f"{key}-{phase}", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    arguments = {
+        "task_key": task_key,
+        "run_plan_id": state["run_plan_id"],
+        "step_id": "verify",
+        "agents": {
+            "delivery_agent": {"source_ref": writer},
+            "review_agent": {
+                "source_ref": reviewer,
+                "execution_requirements": {"filesystem_write": True},
+            },
+        },
+    }
+    if not excluded:
+        before = repo.get(project_id=project_id, task_key=task_key).model_dump(mode="json")
+        with pytest.raises(ValidationError, match="filesystem_write") as rejected:
+            start(session, project_id, tmp_path, scheduler, **arguments)
+        assert rejected.value.data["execution_basis"] == "retained"
+        assert repo.get(project_id=project_id, task_key=task_key).model_dump(mode="json") == before
+        assert not scheduler.jobs and not calls
+        return
+
+    # Exclusion settles containment, never a real blocks edge.
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="required",
+        patch_json={"add_dependency_keys": ["optional"]},
+    )
+    start(session, project_id, tmp_path, scheduler, **arguments)
+    scheduler.run()
+    assert not calls
+    assert "optional" in repo.brief(project_id=project_id, ticket_key="required").ticket.blocked_by
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="required",
+        patch_json={"remove_dependency_keys": ["optional"]},
+    )
+    start(session, project_id, tmp_path, scheduler, **arguments)
+    scheduler.run()
+    session.expire_all()
+    optional = repo.brief(project_id=project_id, ticket_key="optional").ticket
+    assert optional.status == status
+    assert optional.metadata_json == {"delivery_scope": scope}
+    assert optional.completion_evidence_json == historical
+    assert calls[:2] == [("required", "delivery"), ("required", "review")]
+    assert all(key != "optional" for key, _ in calls)
+    assert plans.get(state["run_plan_id"], project_id=project_id).status == "completed"
+
+
+@pytest.mark.parametrize("resume_fault", [None, "candidate", "session"])
+def test_review_replacement_controller_loss_resumes_announced_session(
+    session, project_id, tmp_path, monkeypatch, resume_fault
+):
+    class ControllerLost(BaseException):
+        pass
+
+    root = tmp_path / "candidate"
+    arguments, request, before, initial_calls = stopped_source_review(
+        session, project_id, root, monkeypatch
+    )
+    repo = TrackerRepository(session)
+    calls = []
+
+    def native(_directory, _instructions, prompt, _schema, *, on_session, **kwargs):
+        packet = json.loads(prompt)
+        calls.append((packet["phase"], kwargs.get("resume_thread_id")))
+        assert packet["phase"] == "review"
+        on_session("replacement-reviewer")
+        if len(calls) == 1:
+            raise ControllerLost()
+        assert packet["candidate"] == before["automatic_delivery"]["candidate"]
+        assert packet["occurrence"]["repair_count"] == 3
+        return AgentRunResult(
+            0,
+            thread_id="replacement-reviewer",
+            result=generic_result(outputs={"commit_sha": request["expected_candidate_commit_sha"]}),
+        )
+
+    use_codex_native(monkeypatch, native)
+    task_delivery.start_delivery(**arguments, replace_review=request)
+    with pytest.raises(ControllerLost):
+        arguments["scheduler"].run()
+    session.expire_all()
+    interrupted = deepcopy(
+        repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json
+    )
+    automatic = interrupted["automatic_delivery"]
+    assert (
+        automatic["review_replacement_active"]
+        == automatic["review_replacements"][-1]["replacement_id"]
+    )
+    retained = automatic["sessions"]["review"]
+    assert retained["thread_id"] == "replacement-reviewer"
+    assert "result" not in automatic["review"]
+    # Fixture-owned explicit controller recovery; replay grants no retry.
+    task_delivery._update_delivery(
+        repo, project_id, "replace", status="stopped", reason="Fixture controller loss"
+    )
+    replay = task_delivery.start_delivery(**arguments, replace_review=request)
+    assert replay["status"] == "stopped" and not arguments["scheduler"].jobs
+    if resume_fault == "candidate":
+        commit(root, "different-candidate")
+    elif resume_fault == "session":
+        automatic["sessions"].pop("review")
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"completion_evidence_json": interrupted},
+        )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="work",
+        patch_json={"status": "not-started", "blocker_reason": None},
+    )
+    task_delivery.start_delivery(**arguments)
+    arguments["scheduler"].run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="work").ticket
+    final = ticket.completion_evidence_json["automatic_delivery"]
+    assert len(initial_calls) == 2
+    assert final["candidate"] == before["automatic_delivery"]["candidate"]
+    assert final["delivery"] == before["automatic_delivery"]["delivery"]
+    assert final["sessions"]["delivery"] == before["automatic_delivery"]["sessions"]["delivery"]
+    assert final["repair_count"] == 3
+    assert "review_replacement_active" not in final
+    assert final["review_replacements"] == automatic["review_replacements"]
+    if resume_fault:
+        assert calls == [("review", None)]
+        assert ticket.status == "failed"
+        assert (
+            repo.get(project_id=project_id, task_key="replace")
+            .tasks[0]
+            .metadata_json["delivery"]["status"]
+            == "stopped"
+        )
+    else:
+        assert calls == [("review", None), ("review", "replacement-reviewer")]
+        assert ticket.status == "complete", ticket.outcome
+        assert final["sessions"]["review"] == retained
+        assert final["attempts"][-1]["review"] == automatic["review"]
+        assert final["attempt"] == automatic["attempt"] + 1
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "foreign", "missing", "digest", "escape", "unregistered", "symlink"]
+)
+def test_review_replacement_bound_source_retains_clean_candidate(
+    session, project_id, tmp_path, monkeypatch, fault
+):
+    from hashlib import sha256
+
+    from stackos.repositories.projects import ProjectRepository
+
+    root = tmp_path / "candidate"
+    arguments, request, before, calls = stopped_source_review(
+        session,
+        project_id,
+        root,
+        monkeypatch,
+        reviewer_instructions="Old immutable review instructions",
+    )
+    execution = tmp_path / "approved-execution"
+    selected = source(
+        session, project_id, execution, "reviewer", "Current approved review instructions"
+    )
+    binding = next(
+        item
+        for item in WorkspaceRepository(session).list_bindings()
+        if item.last_known_root == str(execution)
+    )
+    new = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(root),
+        role_keys={"review_agent"},
+        review_agent={"source_ref": selected},
+        _source_bindings={"review_agent": binding.id},
+    )["agents"]["review_agent"]
+    request["reviewer_source"] = {
+        "binding_id": binding.id,
+        "source_ref": selected,
+        "expected_digest": new["source_digest"],
+    }
+    request["expected_reviewer_snapshot_digest"] = sha256(
+        json.dumps(new, sort_keys=True).encode()
+    ).hexdigest()
+    if fault == "foreign":
+        other = (
+            ProjectRepository(session).create(name="Foreign", slug="foreign", domain="test").data
+        )
+        foreign = tmp_path / "foreign"
+        source(session, other.id, foreign, "reviewer")
+        request["reviewer_source"]["binding_id"] = next(
+            item.id
+            for item in WorkspaceRepository(session).list_bindings()
+            if item.project_id == other.id
+        )
+    elif fault == "missing":
+        request["reviewer_source"]["binding_id"] = 987654321
+    elif fault == "digest":
+        request["reviewer_source"]["expected_digest"] = "0" * 64
+    elif fault in {"escape", "unregistered"}:
+        request["reviewer_source"]["source_ref"] = {
+            **selected,
+            "source_path": "../reviewer.toml" if fault == "escape" else "reviewer.toml",
+        }
+        (execution / "reviewer.toml").write_text((execution / selected["source_path"]).read_text())
+    elif fault == "symlink":
+        path = execution / selected["source_path"]
+        outside = tmp_path / "outside.toml"
+        path.rename(outside)
+        path.symlink_to(outside)
+    repo = TrackerRepository(session)
+    original = repo.get(project_id=project_id, task_key="replace").model_dump(mode="json")
+    if fault:
+        with pytest.raises((ValidationError, ValueError)):
+            start(
+                session,
+                project_id,
+                root,
+                arguments["scheduler"],
+                task_key="replace",
+                replace_review=request,
+            )
+        assert (
+            repo.get(project_id=project_id, task_key="replace").model_dump(mode="json") == original
+        )
+        assert not arguments["scheduler"].jobs
+        return
+
+    def launch(directory, instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        calls.append((packet, kwargs))
+        assert Path(directory) == root
+        assert packet["phase"] == "review"
+        assert "Current approved review instructions" in instructions
+        assert kwargs.get("resume_thread_id") is None
+        kwargs["on_session"]("source-replacement")
+        with Session(session.get_bind()) as reader:
+            early = (
+                TrackerRepository(reader)
+                .brief(project_id=project_id, ticket_key="work")
+                .ticket.completion_evidence_json["automatic_delivery"]
+            )
+            assert early["sessions"]["review"]["thread_id"] == "source-replacement"
+            assert early["sessions"]["review"]["source_digest"] == new["source_digest"]
+            assert "result" not in early["review"]
+        return AgentRunResult(
+            0,
+            thread_id="source-replacement",
+            result=generic_result(outputs={"commit_sha": request["expected_candidate_commit_sha"]}),
+        )
+
+    use_codex_native(monkeypatch, launch)
+    start(
+        session,
+        project_id,
+        root,
+        arguments["scheduler"],
+        task_key="replace",
+        replace_review=request,
+    )
+    arguments["scheduler"].run()
+    session.expire_all()
+    current = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert current["candidate"] == before["automatic_delivery"]["candidate"]
+    assert current["review"].get("validated_outcome") == "success", repo.brief(
+        project_id=project_id, ticket_key="work"
+    ).ticket.outcome
+    assert current["sessions"]["review"]["source_digest"] == new["source_digest"]
+    assert current["review_replacements"][0]["source_origin"] == request["reviewer_source"]
+    assert not git(root, "status", "--porcelain")
+    assert len(calls) == 3
+
+
+def test_reviewer_readiness_rejects_source_narrowing_before_delivery(
+    session, project_id, tmp_path, monkeypatch
+):
+    writer = source(session, project_id, tmp_path, "writer")
+    reviewer = source(
+        session, project_id, tmp_path, "reviewer", settings='sandbox_mode="read-only"\n'
+    )
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="readiness", title="Readiness")
+    repo.create_ticket(project_id=project_id, task_key="readiness", key="work", title="Work")
+    scheduler = QueuedScheduler()
+    calls = []
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **k: calls.append(k))
+    before = repo.get(project_id=project_id, task_key="readiness").model_dump(mode="json")
+    with pytest.raises(ValidationError, match="filesystem_write") as rejected:
+        start(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            task_key="readiness",
+            agents={
+                "delivery_agent": {"source_ref": writer},
+                "review_agent": {
+                    "source_ref": reviewer,
+                    "execution_requirements": {"filesystem_write": True},
+                },
+            },
+        )
+    assert rejected.value.data["code"] == "execution_requirement_mismatch"
+    assert rejected.value.data["role"] == "review_agent"
+    assert rejected.value.data["effective_sandbox"] == "read-only"
+    assert rejected.value.data["selected_source"]["source_ref"] == reviewer
+    assert rejected.value.data["execution_basis"] == "selected"
+    assert repo.get(project_id=project_id, task_key="readiness").model_dump(mode="json") == before
+    assert not scheduler.jobs and not calls
+
+
+@pytest.mark.parametrize("mode", ["workspace-write", "read-only"])
+def test_reviewer_readiness_resolver_matches_real_adapter_command(
+    session, project_id, tmp_path, monkeypatch, mode
+):
+    reviewer = source(
+        session, project_id, tmp_path, "reviewer", settings=f'sandbox_mode="{mode}"\n'
+    )
+    repo = TrackerRepository(session)
+    saved = {
+        "agents": {
+            "review_agent": {
+                "source_ref": reviewer,
+                "execution_requirements": {"filesystem_write": mode != "read-only"},
+            }
+        }
+    }
+    repo.configure_delivery(project_id=project_id, delivery=saved)
+    agent = task_delivery.resolve_delivery_settings(
+        session, project_id=project_id, project_dir=str(tmp_path), role_keys={"review_agent"}
+    )["agents"]["review_agent"]
+    commands = []
+
+    def execute(command, **kwargs):
+        commands.append(command)
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"checked"}')
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"review-thread"}', ""
+        )
+
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    monkeypatch.setattr(codex.subprocess, "run", execute)
+    result = service.run_agent(
+        "codex",
+        tmp_path,
+        agent["instructions"],
+        "Inspect",
+        {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]},
+        sandbox=service.agent_review_sandbox("codex"),
+        native_settings=agent["native_settings"],
+    )
+    assert result.ok, result.error
+    assert len(commands) == 1
+    if mode == "read-only":
+        assert commands[0][commands[0].index("--sandbox") + 1] == "read-only"
+        assert "--approve-for-me" not in commands[0]
+    else:
+        assert "--approve-for-me" in commands[0]
+        assert "--sandbox" not in commands[0]
+    assert (
+        agent["execution_requirements"] == saved["agents"]["review_agent"]["execution_requirements"]
+    )
+    assert repo.delivery_defaults(project_id=project_id) == saved
+
+
+@pytest.mark.parametrize("requirements", [{"network": True}, {"filesystem_write": "true"}])
+def test_reviewer_readiness_rejects_unknown_or_untyped_requirements(
+    session, project_id, tmp_path, requirements
+):
+    reviewer = source(session, project_id, tmp_path, "reviewer")
+    with pytest.raises(ValidationError, match="invalid"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            role_keys={"review_agent"},
+            review_agent={"source_ref": reviewer, "execution_requirements": requirements},
+        )
+
+
+@pytest.mark.parametrize(
+    "required,original_mode,legacy",
+    [
+        (None, "read-only", False),
+        (False, "read-only", False),
+        (True, "read-only", False),
+        (True, "read-only", True),
+        (True, "workspace-write", False),
+    ],
+)
+def test_reviewer_readiness_checks_retained_reviewer_before_delivery(
+    session, project_id, tmp_path, monkeypatch, required, original_mode, legacy
+):
+    writer = source(session, project_id, tmp_path, "writer")
+    reviewer = source(
+        session,
+        project_id,
+        tmp_path,
+        "reviewer",
+        instructions="Original review",
+        settings=f'sandbox_mode="{original_mode}"\n',
+    )
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="resume-review", title="Resume review")
+    repo.create_ticket(project_id=project_id, task_key="resume-review", key="work", title="Work")
+    git(tmp_path, "init")
+    commit(tmp_path, "Baseline")
+    calls = []
+
+    def launch(_host, _dir, instructions, prompt, _schema, **kwargs):
+        phase = json.loads(prompt)["phase"]
+        calls.append((phase, instructions.split("\n\n", 1)[0], kwargs))
+        return AgentRunResult(
+            0,
+            thread_id=f"thread-{phase}",
+            result=generic_result("blocked" if len(calls) == 2 else "success"),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    roles = {"delivery_agent": {"source_ref": writer}, "review_agent": {"source_ref": reviewer}}
+    start(session, project_id, tmp_path, scheduler, task_key="resume-review", agents=roles)
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert "execution_requirements" not in first["sessions"]["review"]["agent_snapshot"]
+    if legacy:
+        first = deepcopy(first)
+        first["sessions"]["review"].pop("agent_snapshot")
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={
+                "completion_evidence_json": {"automatic_delivery": first},
+            },
+        )
+    future_mode = "workspace-write" if original_mode == "read-only" else "read-only"
+    source(
+        session,
+        project_id,
+        tmp_path,
+        "reviewer",
+        instructions="Future review",
+        settings=f'sandbox_mode="{future_mode}"\n',
+    )
+    commit(tmp_path, "Source edit for future sessions")
+    for status in ("in-progress", "not-started"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"status": status, "blocker_reason": None},
+        )
+    if required is not None:
+        roles["review_agent"]["execution_requirements"] = {"filesystem_write": required}
+    before = repo.get(project_id=project_id, task_key="resume-review").model_dump(mode="json")
+    if required and original_mode == "read-only":
+        with pytest.raises(ValidationError, match="filesystem_write") as rejected:
+            start(session, project_id, tmp_path, scheduler, task_key="resume-review", agents=roles)
+        assert rejected.value.data["execution_basis"] == "retained"
+        assert (
+            rejected.value.data["effective_source"]["source_digest"]
+            == first["sessions"]["review"]["source_digest"]
+        )
+        assert (
+            rejected.value.data["selected_source"]["source_digest"]
+            != rejected.value.data["effective_source"]["source_digest"]
+        )
+        assert (
+            repo.get(project_id=project_id, task_key="resume-review").model_dump(mode="json")
+            == before
+        )
+        assert len(calls) == 2
+        return
+    start(session, project_id, tmp_path, scheduler, task_key="resume-review", agents=roles)
+    scheduler.run()
+    assert len(calls) == 4
+    assert calls[-1][0:2] == ("review", "Original review")
+    assert calls[-1][2]["resume_thread_id"] == "thread-review"
+    assert calls[-1][2]["sandbox"] == original_mode
+    session.expire_all()
+    final = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert final["sessions"]["review"] == first["sessions"]["review"]
+    assert final["repair_count"] == first["repair_count"] == 0
+    assert (
+        final["review"]["occurrence"]["selected_source"]
+        != final["review"]["occurrence"]["launched_source"]
+    )
+
+
+def test_reviewer_readiness_queued_guard_preserves_retained_evidence(
+    session, project_id, tmp_path, monkeypatch
+):
+    repo, _prior, sessions = legacy_admission(session, project_id, tmp_path)
+    scheduler = QueuedScheduler()
+    start(session, project_id, tmp_path, scheduler, task_key="legacy")
+    # An older admission can already be queued when the runner is upgraded.
+    # Seed its declared obligation directly; execution must recheck actual authority.
+    state = repo.get(project_id=project_id, task_key="legacy").tasks[0].metadata_json
+    state = deepcopy(state)
+    state["delivery"]["agents"]["review_agent"]["execution_requirements"] = {
+        "filesystem_write": True
+    }
+    repo.update_task(project_id=project_id, task_key="legacy", patch_json={"metadata_json": state})
+    monkeypatch.setattr(task_delivery, "agent_review_sandbox", lambda _: "read-only")
+    calls = []
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **k: calls.append(k))
+    scheduler.run()
+    session.expire_all()
+    task = repo.get(project_id=project_id, task_key="legacy").tasks[0]
+    assert task.metadata_json["delivery"]["status"] == "stopped"
+    evidence = repo.brief(
+        project_id=project_id, ticket_key="existing"
+    ).ticket.completion_evidence_json["automatic_delivery"]
+    assert evidence["sessions"] == sessions
+    assert evidence["repair_count"] == 2
+    assert evidence["execution_requirement_mismatch"]["execution_basis"] == "retained"
+    assert evidence["execution_requirement_mismatch"]["role"] == "review_agent"
+    assert not calls
+
+
+@pytest.mark.parametrize("basis", ["default", "override"])
+def test_reviewer_readiness_current_requirements_survive_legacy_admission(
+    session, project_id, tmp_path, monkeypatch, basis
+):
+    repo, prior, _sessions = legacy_admission(session, project_id, tmp_path)
+    requirement = {"execution_requirements": {"filesystem_write": True}}
+    arguments = {"review_agent": requirement} if basis == "override" else {}
+    if basis == "default":
+        repo.configure_delivery(
+            project_id=project_id, delivery={"agents": {"review_agent": requirement}}
+        )
+    monkeypatch.setattr(task_delivery, "agent_review_sandbox", lambda _: "read-only")
+    scheduler = QueuedScheduler()
+    before = repo.get(project_id=project_id, task_key="legacy").model_dump(mode="json")
+    with pytest.raises(ValidationError, match="filesystem_write") as rejected:
+        start(session, project_id, tmp_path, scheduler, task_key="legacy", **arguments)
+    assert rejected.value.data["code"] == "execution_requirement_mismatch"
+    assert rejected.value.data["execution_basis"] == "retained"
+    assert rejected.value.data["effective_source"]["name"] == prior["review_agent"]["name"]
+    assert repo.get(project_id=project_id, task_key="legacy").model_dump(mode="json") == before
+    assert not scheduler.jobs
+
+
+@pytest.mark.parametrize("sandbox", ["read-only", "workspace-write", "danger-full-access"])
+def test_registered_sibling_role_is_resolved_without_moving_or_rewriting(
+    session, project_id, tmp_path, sandbox
+):
+    ref = source(session, project_id, tmp_path, "writer", settings=f'sandbox_mode="{sandbox}"\n')
+    original = tmp_path / ref["source_path"]
+    target = tmp_path / ".agents/subagents/writer.toml"
+    target.parent.mkdir(parents=True)
+    original.rename(target)
+    ref["source_path"] = ".agents/subagents/writer.toml"
+    config = tmp_path / ".codex/config.toml"
+    config.write_text('[agents.writer]\nconfig_file="../.agents/subagents/writer.toml"\n')
+    before = {path: path.read_bytes() for path in (target, config)}
+    arguments = dict(
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        role_keys={"delivery_agent"},
+        delivery_agent={"source_ref": ref},
+    )
+    if sandbox == "danger-full-access":
+        with pytest.raises(ValidationError, match="unsupported_setting"):
+            task_delivery.resolve_delivery_settings(session, **arguments)
+    else:
+        resolved = task_delivery.resolve_delivery_settings(session, **arguments)["agents"][
+            "delivery_agent"
+        ]
+        assert resolved["source_ref"] == ref
+        assert resolved["native_settings"] == {"sandbox_mode": sandbox}
+    assert {path: path.read_bytes() for path in before} == before
+    assert not original.exists()
+
+
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+@pytest.mark.parametrize("choice", ["inherit", "set", "clear"])
+def test_inline_reasoning_inherits_sets_and_clears_with_capability_validation(
+    session, project_id, tmp_path, argument_form, choice
+):
+    repo = TrackerRepository(session)
+    saved = {
+        "host_key": "claude-code",
+        "delivery_agent": {
+            "name": "writer",
+            "instructions": "Write",
+            "model": "claude-sonnet-5-5",
+            "model_reasoning_effort": "high",
+        },
+    }
+    repo.configure_delivery(project_id=project_id, delivery=saved)
+    override = (
+        {}
+        if choice == "inherit"
+        else {"model_reasoning_effort": "low" if choice == "set" else None}
+    )
+    arguments = (
+        {"delivery_agent": override}
+        if argument_form == "legacy"
+        else {"agents": {"delivery_agent": override}}
+    )
+    resolved = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        role_keys={"delivery_agent"},
+        **arguments,
+    )["agents"]["delivery_agent"]
+    assert (
+        resolved.get("model_reasoning_effort")
+        == {"inherit": "high", "set": "low", "clear": None}[choice]
+    )
+    assert repo.delivery_defaults(project_id=project_id) == saved
+    with pytest.raises(ValidationError, match="reasoning effort"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            role_keys={"delivery_agent"},
+            delivery_agent={"model_reasoning_effort": "unsupported"},
+        )
+
+
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+def test_inline_roles_forward_reasoning_and_resume_frozen_native_selection(
+    session, project_id, tmp_path, monkeypatch, argument_form
+):
+    repo = TrackerRepository(session)
+    roles = {
+        "delivery_agent": {
+            "name": "writer",
+            "instructions": "Write",
+            "host_key": "claude-code",
+            "model": "claude-sonnet-5-5",
+            "model_reasoning_effort": "high",
+        },
+        "review_agent": {
+            "name": "reviewer",
+            "instructions": "Review",
+            "host_key": "grok",
+            "model": "grok-4.6",
+            "model_reasoning_effort": "low",
+        },
+    }
+    repo.configure_delivery(project_id=project_id, delivery={"agents": roles})
+    repo.create_task(project_id=project_id, key="reasoning", title="Reasoning")
+    repo.create_ticket(project_id=project_id, task_key="reasoning", key="work", title="Work")
+    git(tmp_path, "init")
+    commit(tmp_path, "Baseline")
+    calls = []
+
+    def execute(command, directory, prompt, schema, host, parse, **options):
+        phase = "delivery" if host == "Claude Code" else "review"
+        flag = "--effort" if phase == "delivery" else "--reasoning-effort"
+        assert options["process_control"] is not None
+        assert command[command.index("--model") + 1] == roles[f"{phase}_agent"]["model"]
+        calls.append(
+            (
+                phase,
+                command[command.index(flag) + 1],
+                command[command.index("--resume") + 1] if "--resume" in command else None,
+            )
+        )
+        return AgentRunResult(
+            0,
+            thread_id=f"native-{phase}",
+            result=generic_result("blocked" if len(calls) == 2 else "success"),
+        )
+
+    # Real admission, capabilities, native service, registry and adapter argv;
+    # replace only discovery/environment and the final process execution helper.
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fixture/claude")
+    monkeypatch.setattr(claude_code, "subprocess_env_for_cli", lambda _: {})
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _: "/fixture/grok")
+    monkeypatch.setattr(claude_code, "execute_json_agent", execute)
+    monkeypatch.setattr(grok, "execute_json_agent", execute)
+    selections = {
+        role: {"model_reasoning_effort": effort}
+        for role, effort in (("delivery_agent", "medium"), ("review_agent", "high"))
+    }
+    arguments = selections if argument_form == "legacy" else {"agents": selections}
+    scheduler = QueuedScheduler()
+    start(session, project_id, tmp_path, scheduler, task_key="reasoning", **arguments)
+    changed = {role: {**agent, "model_reasoning_effort": "low"} for role, agent in roles.items()}
+    repo.configure_delivery(project_id=project_id, delivery={"agents": changed})
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]["sessions"]
+    assert first["delivery"]["model_reasoning_effort"] == "medium"
+    assert first["review"]["model_reasoning_effort"] == "high"
+    for status in ("in-progress", "not-started"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"status": status, "blocker_reason": None},
+        )
+    start(session, project_id, tmp_path, scheduler, task_key="reasoning")
+    scheduler.run()
+    session.expire_all()
+    final = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert calls == [
+        ("delivery", "medium", None),
+        ("review", "high", None),
+        ("delivery", "medium", "native-delivery"),
+        ("review", "high", "native-review"),
+    ]
+    assert final["sessions"] == first
+    assert final["repair_count"] == 0
+
+
+def test_fresh_codex_inline_requires_explicit_adoption(session, project_id, tmp_path):
+    with pytest.raises(ValidationError, match="adoption_required"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            delivery_agent={"name": "a", "instructions": "old"},
+            review_agent={"name": "b", "instructions": "old"},
+        )
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="fresh", title="Fresh")
+    repo.create_ticket(project_id=project_id, task_key="fresh", key="fresh-child", title="Fresh")
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="adoption_required"):
+        start(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            task_key="fresh",
+            delivery_agent={"name": "a", "instructions": "old"},
+            review_agent={"name": "b", "instructions": "old"},
+        )
+    assert not scheduler.jobs
+
+
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+@pytest.mark.parametrize("partially_mapped", [False, True])
+@pytest.mark.parametrize("task_choice", ["inherit", "set", "clear"])
+def test_selected_source_preserves_role_fallbacks_across_argument_forms(
+    session, project_id, tmp_path, argument_form, partially_mapped, task_choice
+):
+    ref = source(session, project_id, tmp_path, "builder")
+    repo = TrackerRepository(session)
+    review = {
+        "host_key": "claude-code",
+        "name": "independent",
+        "instructions": "Review",
+        "model": "claude-sonnet-5-5",
+    }
+    saved = {
+        "delivery_agent": {
+            "name": "builder",
+            "instructions": "Legacy instructions",
+            "model": "gpt-6-astra",
+            "provider": "custom-provider",
+            "model_reasoning_effort": "high",
+        },
+        "review_agent": review,
+    }
+    if partially_mapped:
+        saved["agents"] = {"delivery_agent": {"source_ref": ref, "model": "gpt-6.1-sol"}}
+    repo.configure_delivery(project_id=project_id, delivery=saved)
+    selection = {} if partially_mapped else {"source_ref": ref}
+    expected = ("gpt-6.1-sol" if partially_mapped else "gpt-6-astra", "custom-provider", "high")
+    expected_origin = "project"
+    if task_choice == "set":
+        selection.update(model="gpt-6.1-sol", model_reasoning_effort="medium")
+        expected = ("gpt-6.1-sol", "custom-provider", "medium")
+        expected_origin = "task"
+    elif task_choice == "clear":
+        selection.update(model=None, provider=None, model_reasoning_effort=None)
+        expected = (None, None, None)
+        expected_origin = "host"
+    arguments = (
+        {"delivery_agent": selection}
+        if argument_form == "legacy"
+        else {"agents": {"delivery_agent": selection}}
+    )
+    resolved = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        role_keys={"delivery_agent", "review_agent"},
+        **arguments,
+    )["agents"]
+    actual = resolved["delivery_agent"]
+    assert (
+        actual.get("model"),
+        actual.get("provider"),
+        actual["native_settings"].get("model_reasoning_effort"),
+    ) == expected
+    assert actual["instructions"] == "builder"
+    assert actual["setting_sources"] == {
+        "model": expected_origin,
+        "model_reasoning_effort": expected_origin,
+    }
+    assert resolved["review_agent"] == review
+    assert repo.delivery_defaults(project_id=project_id) == saved
+
+
+@pytest.mark.parametrize("origin", ["task", "project"])
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+@pytest.mark.parametrize("effort", ["minimal", "high"])
+def test_source_explicit_reasoning_is_validated_before_native_launch(
+    session, project_id, tmp_path, monkeypatch, origin, argument_form, effort
+):
+    import subprocess
+    from pathlib import Path
+
+    from stackos.host_mcp import progress
+    from stackos.host_mcp.adapters import codex
+
+    ref = source(session, project_id, tmp_path, "builder")
+    reviewer = source(session, project_id, tmp_path, "reviewer")
+    pair = {"model": "gpt-6-astra", "model_reasoning_effort": effort}
+    roles = {"delivery_agent": {"source_ref": ref}, "review_agent": {"source_ref": reviewer}}
+    if origin == "project":
+        roles["delivery_agent"].update(pair)
+    repo = TrackerRepository(session)
+    repo.configure_delivery(project_id=project_id, delivery={"agents": roles})
+    repo.create_task(project_id=project_id, key="reasoning", title="Reasoning")
+    repo.create_ticket(project_id=project_id, task_key="reasoning", key="work", title="Work")
+    git(tmp_path, "init")
+    commit(tmp_path, "Baseline")
+    calls = []
+
+    def execute(command, **options):
+        calls.append(command)
+        assert command[command.index("--model") + 1] == "gpt-6-astra"
+        assert 'model_reasoning_effort="high"' in command
+        packet = json.loads(options["input"])
+        assert packet["delivery_result"]["launch"]["native_settings"] == {
+            "model_reasoning_effort": "high"
+        }
+        Path(command[command.index("-o") + 1]).write_text(json.dumps(generic_result("blocked")))
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"native-builder"}', ""
+        )
+
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fixture/codex")
+    monkeypatch.setattr(codex, "subprocess_env_for_cli", lambda _: {})
+    monkeypatch.setattr(progress, "run_codex_process", execute)
+    selection = pair if origin == "task" else {}
+    arguments = (
+        {"delivery_agent": selection}
+        if argument_form == "legacy"
+        else {"agents": {"delivery_agent": selection}}
+    )
+    scheduler = QueuedScheduler()
+    if effort == "minimal":
+        with pytest.raises(ValidationError, match="does not support reasoning effort"):
+            start(session, project_id, tmp_path, scheduler, task_key="reasoning", **arguments)
+        assert not scheduler.jobs and not calls
+        assert repo.get(project_id=project_id, task_key="reasoning").tasks[0].metadata_json is None
+    else:
+        start(session, project_id, tmp_path, scheduler, task_key="reasoning", **arguments)
+        saved = (
+            repo.get(project_id=project_id, task_key="reasoning")
+            .tasks[0]
+            .metadata_json["delivery"]["agents"]["delivery_agent"]
+        )
+        assert saved["setting_sources"] == {"model": origin, "model_reasoning_effort": origin}
+        scheduler.run()
+        assert len(calls) == 1
+    assert repo.delivery_defaults(project_id=project_id)["agents"] == roles
+
+
+def test_ordinary_assignments_select_each_delivery_role_and_reviewer_only(
+    session, project_id, tmp_path, monkeypatch
+):
+    selected = {
+        role: {"source_ref": source(session, project_id, tmp_path, role)}
+        for role in ("writer", "tester", "review_agent")
+    }
+    repo = TrackerRepository(session)
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "agents": {
+                **selected,
+                "unrelated": {
+                    "source_ref": {
+                        "host_key": "codex",
+                        "native_name": "missing",
+                        "source_path": ".codex/agents/missing.toml",
+                    }
+                },
+            },
+        },
+    )
+    repo.create_task(project_id=project_id, key="assigned", title="Assigned")
+    repo.create_ticket(project_id=project_id, task_key="assigned", key="first", title="First")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="assigned",
+        key="second",
+        title="Second",
+        dependency_keys=["first"],
+    )
+    calls = []
+
+    def launch(_host, _dir, instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append((key, instructions.split("\n\n", 1)[0]))
+        return AgentRunResult(0, thread_id=f"{key}-{phase}", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    start(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key="assigned",
+        agent_assignments={"first": "writer", "second": "tester"},
+    )
+    admitted = (
+        repo.get(project_id=project_id, task_key="assigned").tasks[0].metadata_json["delivery"]
+    )
+    assert set(admitted["agents"]) == set(selected)
+    scheduler.run()
+    assert calls == [
+        ("first", "writer"),
+        ("first", "review_agent"),
+        ("second", "tester"),
+        ("second", "review_agent"),
+    ]
+    session.expire_all()
+    assert (
+        repo.get(project_id=project_id, task_key="assigned")
+        .tasks[0]
+        .metadata_json["delivery"]["status"]
+        == "complete"
+    )
+
+
+def test_source_values_still_win_over_explicit_null_fallbacks(session, project_id, tmp_path):
+    ref = source(
+        session,
+        project_id,
+        tmp_path,
+        "builder",
+        settings='model="gpt-6.1-sol"\nmodel_reasoning_effort="high"\n',
+    )
+    repo = TrackerRepository(session)
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "delivery_agent": {"model": "gpt-6-astra", "model_reasoning_effort": "low"},
+        },
+    )
+    actual = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        agents={
+            "delivery_agent": {"source_ref": ref, "model": None, "model_reasoning_effort": None}
+        },
+        role_keys={"delivery_agent"},
+    )["agents"]["delivery_agent"]
+    assert actual["model"] == "gpt-6.1-sol"
+    assert actual["native_settings"]["model_reasoning_effort"] == "high"
+    assert actual["setting_sources"] == {"model": "source", "model_reasoning_effort": "source"}
+
+
+def test_new_map_handoff_retains_saved_mixed_host_reviewer(session, project_id, tmp_path):
+    ref = source(session, project_id, tmp_path, "builder")
+    repo = TrackerRepository(session)
+    review = {"name": "reviewer", "host_key": "claude-code", "instructions": "Review"}
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "delivery_agent": {
+                "instructions": "Old",
+                "model": "gpt-6-astra",
+                "provider": "custom-provider",
+                "model_reasoning_effort": "high",
+            },
+            "review_agent": review,
+        },
+    )
+    repo.create_task(project_id=project_id, key="mixed", title="Mixed")
+    repo.create_ticket(project_id=project_id, task_key="mixed", key="work", title="Work")
+    scheduler = QueuedScheduler()
+    start(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key="mixed",
+        agents={"delivery_agent": {"source_ref": ref}},
+    )
+    agents = (
+        repo.get(project_id=project_id, task_key="mixed")
+        .tasks[0]
+        .metadata_json["delivery"]["agents"]
+    )
+    assert agents["review_agent"] == review
+    assert agents["delivery_agent"]["model"] == "gpt-6-astra"
+    assert agents["delivery_agent"]["provider"] == "custom-provider"
+    assert agents["delivery_agent"]["native_settings"] == {"model_reasoning_effort": "high"}
+    assert len(scheduler.jobs) == 1
+
+
+def test_partial_adoption_preserves_unrelated_unavailable_sources(session, project_id, tmp_path):
+    ref = source(session, project_id, tmp_path, "builder")
+    selected = {
+        "delivery_agent": {
+            "source_ref": ref,
+            "expected_digest": ProjectAgentService(tmp_path).get(ref).digest,
+        }
+    }
+    missing = {
+        "host_key": "codex",
+        "native_name": "elsewhere",
+        "source_path": ".codex/agents/elsewhere.toml",
+    }
+    unrelated = {"source_ref": missing, "provider": None}
+    original = {
+        "agents": {"unrelated": unrelated},
+        "review_agent": None,
+        "delivery_agent": {"name": "builder", "instructions": "Old", "model": None},
+    }
+    repo = TrackerRepository(session)
+    repo.configure_delivery(project_id=project_id, delivery=original)
+    preview = repo.adopt_delivery_sources(
+        project_id=project_id, project_dir=str(tmp_path), sources=selected, preview=True
+    )
+    assert set(preview["adoption"]["agents"]) == {"delivery_agent"}
+    assert repo.delivery_defaults(project_id=project_id) == original
+    result = repo.adopt_delivery_sources(
+        project_id=project_id, project_dir=str(tmp_path), sources=selected, preview=False
+    )
+    saved = repo.delivery_defaults(project_id=project_id)
+    assert saved == preview["adoption"]["delivery"] == result["config_json"]["delivery"]
+    assert saved["agents"]["unrelated"] == unrelated
+    assert saved["review_agent"] is None
+
+
+@pytest.mark.parametrize("problem", ["missing", "ambiguous", "stale"])
+def test_selected_adoption_source_failure_preserves_all_defaults(
+    session, project_id, tmp_path, problem
+):
+    from stackos.repositories.base import ConflictError
+
+    ref = source(session, project_id, tmp_path, "builder")
+    digest = ProjectAgentService(tmp_path).get(ref).digest
+    path = tmp_path / ref["source_path"]
+    if problem == "missing":
+        path.unlink()
+    elif problem == "ambiguous":
+        (path.parent / "duplicate.toml").write_bytes(path.read_bytes())
+    else:
+        path.write_text(path.read_text() + "\n# changed\n")
+    original = {"delivery_agent": None, "review_agent": None}
+    repo = TrackerRepository(session)
+    repo.configure_delivery(project_id=project_id, delivery=original)
+    with pytest.raises((ValidationError, ConflictError)):
+        repo.adopt_delivery_sources(
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            preview=False,
+            sources={"delivery_agent": {"source_ref": ref, "expected_digest": digest}},
+        )
+    assert repo.delivery_defaults(project_id=project_id) == original
+
+
+@pytest.mark.parametrize("role_value", [42, "invalid"])
+def test_invalid_saved_role_adoption_is_a_structured_error(
+    session, project_id, tmp_path, role_value
+):
+    ref = source(session, project_id, tmp_path, "builder")
+    repo = TrackerRepository(session)
+    original = {"delivery_agent": role_value}
+    repo.configure_delivery(project_id=project_id, delivery=original)
+    with pytest.raises(ValidationError, match="must be an object"):
+        repo.adopt_delivery_sources(
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            preview=True,
+            sources={
+                "delivery_agent": {
+                    "source_ref": ref,
+                    "expected_digest": ProjectAgentService(tmp_path).get(ref).digest,
+                }
+            },
+        )
+    assert repo.delivery_defaults(project_id=project_id) == original
+
+
+def test_source_settings_win_and_omissions_inherit(session, project_id, tmp_path):
+    ref = source(
+        session,
+        project_id,
+        tmp_path,
+        "writer",
+        settings=(
+            'model = "gpt-6.1-sol"\nmodel_reasoning_effort = "high"\n[features]\napps = false\n'
+        ),
+    )
+    repo = TrackerRepository(session)
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "agents": {
+                "writer": {
+                    "source_ref": ref,
+                    "model": "gpt-6-astra",
+                    "model_reasoning_effort": "low",
+                }
+            }
+        },
+    )
+    resolved = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        agents={"writer": {"model_reasoning_effort": "medium"}},
+    )["agents"]["writer"]
+    assert resolved["model"] == "gpt-6.1-sol"
+    assert resolved["native_settings"] == {
+        "model_reasoning_effort": "high",
+        "features": {"apps": False},
+    }
+    assert resolved["source_ref"] == ref and len(resolved["source_digest"]) == 64
+    assert resolved["instructions"] == "writer"
+    (tmp_path / ref["source_path"]).write_text(
+        'name="writer"\ndescription="Fixture"\ndeveloper_instructions="new"\n'
+    )
+    changed = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        agents={"writer": {"model_reasoning_effort": "medium"}},
+    )["agents"]["writer"]
+    assert changed["model"] == "gpt-6-astra"
+    assert changed["native_settings"] == {"model_reasoning_effort": "medium"}
+    assert changed["source_digest"] != resolved["source_digest"]
+
+
+@pytest.mark.parametrize("count", [1, 3])
+def test_declared_roles_execute_without_engineering_pair(
+    session, project_id, tmp_path, monkeypatch, count
+):
+    refs = {
+        f"role{i}": {"source_ref": source(session, project_id, tmp_path, f"agent{i}")}
+        for i in range(count)
+    }
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "roles",
+            "title": "Roles",
+            "steps": [
+                {"id": f"step{i}", "title": "Step", "depends_on": [f"step{i - 1}"] if i else []}
+                for i in range(count)
+            ],
+        },
+    ).data
+    # Use the frozen template's declared method; no phase-name inference.
+    from stackos.db.models import RunPlan
+
+    row = session.get(RunPlan, plan.id)
+    row.template_snapshot_json = {
+        "agent_requirements": [
+            {"role": f"role{i}", "requirement": "required", "applies_to_steps": [f"step{i}"]}
+            for i in range(count)
+        ]
+    }
+    session.add(row)
+    session.commit()
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="step0")
+    calls = []
+
+    def launch(_host, _dir, instructions, prompt, _schema, **kwargs):
+        calls.append(instructions.split("\n\n", 1)[0])
+        return AgentRunResult(0, thread_id=f"thread-{len(calls)}", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    TrackerRepository(session).configure_delivery(
+        project_id=project_id,
+        delivery={
+            "agents": {
+                "unrelated": {
+                    "source_ref": {
+                        "host_key": "codex",
+                        "native_name": "missing",
+                        "source_path": ".codex/agents/missing.toml",
+                    }
+                }
+            },
+        },
+    )
+    start(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="step0",
+        agents=refs,
+    )
+    # Editing after admission cannot change the queued invocation.
+    (tmp_path / refs["role0"]["source_ref"]["source_path"]).unlink()
+    scheduler.run()
+    assert calls == [f"agent{i}" for i in range(count)]
+    session.expire_all()
+    state = (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key=f"workflow-{plan.id}")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert state["status"] == "complete", state
+    from stackos.repositories.tracker.agent_stats import query_agent_stats
+
+    stats = query_agent_stats(session, project_id=project_id)
+    assert {row.selected_role for row in stats.rows} == {f"role{i}" for i in range(count)}
+
+
+def test_missing_source_never_falls_back(session, project_id, tmp_path):
+    ref = source(session, project_id, tmp_path, "writer")
+    (tmp_path / ref["source_path"]).unlink()
+    with pytest.raises(ValidationError, match="unavailable"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            agents={"writer": {"source_ref": ref}},
+        )
+
+
+def test_explicit_adoption_preview_readback_preserves_settings_and_history(
+    session, project_id, tmp_path
+):
+    from copy import deepcopy
+
+    ref = source(
+        session,
+        project_id,
+        tmp_path,
+        "builder",
+        instructions="Current source",
+        settings='model="gpt-6.1-sol"\n',
+    )
+    repo = TrackerRepository(session)
+    previous = {
+        "host_key": "codex",
+        "delivery_agent": {
+            "name": "builder",
+            "instructions": "Old copy",
+            "model": "gpt-6-astra",
+            "provider": None,
+        },
+        "review_agent": {
+            "host_key": "claude-code",
+            "name": "review",
+            "instructions": "Keep",
+            "model": None,
+        },
+    }
+    repo.configure_delivery(project_id=project_id, delivery=previous)
+    repo.create_task(
+        project_id=project_id,
+        key="live",
+        title="Live",
+        metadata_json={
+            "delivery": {"status": "running", "delivery_agent": {"instructions": "Frozen"}}
+        },
+    )
+    before = repo.get(project_id=project_id, task_key="live").tasks[0].model_dump()
+    selected = {
+        "delivery_agent": {
+            "source_ref": ref,
+            "expected_digest": ProjectAgentService(tmp_path).get(ref).digest,
+        }
+    }
+    preview = repo.adopt_delivery_sources(
+        project_id=project_id, project_dir=str(tmp_path), sources=selected, preview=True
+    )
+    assert preview["adoption"]["differences"]["delivery_agent"]["instructions"] == {
+        "saved": "Old copy",
+        "source": "Current source",
+    }
+    assert repo.delivery_defaults(project_id=project_id) == previous
+    result = repo.adopt_delivery_sources(
+        project_id=project_id, project_dir=str(tmp_path), sources=selected, preview=False
+    )
+    wanted = deepcopy(previous)
+    migrated = wanted.pop("delivery_agent")
+    migrated.pop("instructions")
+    wanted["agents"] = {"delivery_agent": {**migrated, "source_ref": ref}}
+    assert repo.delivery_defaults(project_id=project_id) == wanted
+    assert result["config_json"]["delivery"] == wanted
+    effective = task_delivery.resolve_delivery_settings(
+        session, project_id=project_id, project_dir=str(tmp_path)
+    )["agents"]
+    assert effective["review_agent"] == {
+        "host_key": "claude-code",
+        "name": "review",
+        "instructions": "Keep",
+    }
+    assert repo.get(project_id=project_id, task_key="live").tasks[0].model_dump() == before
+    (tmp_path / ref["source_path"]).write_text(
+        'name="builder"\ndescription="Changed"\ndeveloper_instructions="Future"\n'
+    )
+    from stackos.repositories.base import ConflictError
+
+    with pytest.raises(ConflictError, match="stale_source"):
+        repo.adopt_delivery_sources(
+            project_id=project_id, project_dir=str(tmp_path), sources=selected, preview=False
+        )
+    assert repo.delivery_defaults(project_id=project_id) == wanted
+
+
+def test_ordinary_review_requires_distinct_selected_native_identity(session, project_id, tmp_path):
+    ref = source(session, project_id, tmp_path, "same")
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="ordinary", title="Ordinary")
+    repo.create_ticket(project_id=project_id, task_key="ordinary", key="work", title="Work")
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="independent review_agent"):
+        start(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            task_key="ordinary",
+            agents={"delivery_agent": {"source_ref": ref}},
+        )
+    with pytest.raises(ValidationError, match="independent"):
+        start(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            task_key="ordinary",
+            agents={role: {"source_ref": ref} for role in ("delivery_agent", "review_agent")},
+        )
+    assert scheduler.jobs == []
+
+
+def aliased_review_workflow(session, project_id, root, host):
+    """One ordinary producer and two explicitly selected workflow mirrors."""
+    from stackos.db.models import RunPlan
+
+    if host == "codex":
+        builder = {
+            "source_ref": source(session, project_id, root, "builder"),
+        }
+        reviewer = {
+            "source_ref": source(
+                session,
+                project_id,
+                root,
+                "reviewer",
+                settings='model="gpt-6.1-sol"\nmodel_reasoning_effort="high"\n',
+            ),
+            "model": "gpt-6-astra",
+        }
+    else:
+        builder = {"host_key": host, "name": "builder", "instructions": "builder"}
+        reviewer = {"host_key": host, "name": "reviewer", "instructions": "reviewer"}
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "aliased-review",
+            "title": "Aliased review",
+            "steps": [
+                {"id": "build", "title": "Build"},
+                {
+                    "id": "inspect",
+                    "title": "Inspect",
+                    "depends_on": ["build"],
+                    "metadata_json": {"agent_assignment": "delivery_agent"},
+                },
+            ],
+        },
+    ).data
+    row = session.get(RunPlan, plan.id)
+    row.template_snapshot_json = {
+        "agent_requirements": [
+            {"role": "delivery_agent", "requirement": "required", "applies_to_steps": ["build"]},
+            {
+                "role": "delivery-reviewer",
+                "requirement": "required",
+                "applies_to_steps": ["inspect"],
+            },
+        ]
+    }
+    session.add(row)
+    session.commit()
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="build")
+    task_key = f"workflow-{plan.id}"
+    TrackerRepository(session).create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        key="work",
+        title="Work",
+        parent_ticket_key=f"{task_key}-build",
+        dependency_keys=[f"{task_key}-build"],
+        run_plan_id=plan.id,
+        run_plan_step_id=plans.get_step(plan.id, "build").id,
+    )
+    return {
+        "task_key": task_key,
+        "run_plan_id": plan.id,
+        "step_id": "build",
+        "agents": {
+            "delivery_agent": builder,
+            "review_agent": reviewer,
+            "delivery-reviewer": reviewer,
+        },
+        "agent_assignments": {f"{task_key}-inspect": "delivery-reviewer"},
+    }
+
+
+@pytest.mark.parametrize("host", ["codex", "claude-code"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_reviewer_alias_is_not_an_ordinary_executor(
+    session, project_id, tmp_path, monkeypatch, host, resume
+):
+    scope = aliased_review_workflow(session, project_id, tmp_path, host)
+    repo = TrackerRepository(session)
+    calls = []
+
+    def launch(selected_host, _dir, instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        agent = kwargs["execution_scope"].agent
+        calls.append((key, phase, agent, kwargs.get("resume_thread_id")))
+        assert selected_host == host
+        fresh_mirror = host == "codex" and resume and packet["workflow_step"] is not None
+        assert instructions.split("\n\n", 1)[0] == (
+            "Future reviewer" if fresh_mirror and agent == "reviewer" else agent
+        )
+        if host == "codex" and agent == "reviewer":
+            assert kwargs["model"] == ("gpt-6-astra" if fresh_mirror else "gpt-6.1-sol")
+            assert kwargs["native_settings"] == {
+                "model_reasoning_effort": "low" if fresh_mirror else "high"
+            }
+        return AgentRunResult(
+            0,
+            thread_id=f"{key}-{phase}",
+            result=generic_result("blocked" if resume and len(calls) == 2 else "success"),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    start(session, project_id, tmp_path, scheduler, **scope)
+    snapshot = (
+        repo.get(project_id=project_id, task_key=scope["task_key"])
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert snapshot["agents"]["review_agent"] == snapshot["agents"]["delivery-reviewer"]
+    # A duplicate queued handoff retains the original snapshot and one scheduled job.
+    start(session, project_id, tmp_path, scheduler, **scope)
+    assert len(scheduler.jobs) == 1
+    scheduler.run()
+    if resume:
+        session.expire_all()
+        retained = repo.brief(
+            project_id=project_id, ticket_key="work"
+        ).ticket.completion_evidence_json["automatic_delivery"]["sessions"]["review"]
+        if host == "codex":
+            source(
+                session,
+                project_id,
+                tmp_path,
+                "reviewer",
+                instructions="Future reviewer",
+                settings='model="gpt-6-astra"\nmodel_reasoning_effort="low"\n',
+            )
+        for status in ("in-progress", "not-started"):
+            repo.update_ticket(
+                project_id=project_id,
+                ticket_key="work",
+                patch_json={"status": status, "blocker_reason": None},
+            )
+        start(session, project_id, tmp_path, scheduler, **scope)
+        scheduler.run()
+        session.expire_all()
+        evidence = repo.brief(
+            project_id=project_id, ticket_key="work"
+        ).ticket.completion_evidence_json["automatic_delivery"]
+        assert evidence["sessions"]["review"] == retained
+        assert evidence["repair_count"] == 0
+    task_key = scope["task_key"]
+    expected = [("work", "delivery", "builder", None), ("work", "review", "reviewer", None)]
+    if resume:
+        expected.extend(
+            [
+                ("work", "delivery", "builder", "work-delivery"),
+                ("work", "review", "reviewer", "work-review"),
+            ]
+        )
+    expected.extend(
+        [
+            (f"{task_key}-build", "delivery", "builder", None),
+            (f"{task_key}-inspect", "delivery", "reviewer", None),
+        ]
+    )
+    assert calls == expected
+    state = repo.get(project_id=project_id, task_key=task_key).tasks[0].metadata_json["delivery"]
+    assert state["status"] == "complete", state
+
+
+@pytest.mark.parametrize("host", ["codex", "claude-code"])
+def test_reviewer_alias_cannot_implement_ordinary_ticket(session, project_id, tmp_path, host):
+    scope = aliased_review_workflow(session, project_id, tmp_path, host)
+    scope["agent_assignments"]["work"] = "delivery-reviewer"
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="identities must be independent"):
+        start(session, project_id, tmp_path, scheduler, **scope)
+    assert not scheduler.jobs
+    task = (
+        TrackerRepository(session).get(project_id=project_id, task_key=scope["task_key"]).tasks[0]
+    )
+    assert "delivery" not in (task.metadata_json or {})
+
+
+def test_ambiguous_source_identity_never_substitutes_a_definition(session, project_id, tmp_path):
+    ref = source(session, project_id, tmp_path, "writer")
+    (tmp_path / ".codex/agents/duplicate.toml").write_bytes(
+        (tmp_path / ref["source_path"]).read_bytes()
+    )
+    with pytest.raises(ValidationError, match="ambiguous_identity"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            agents={"writer": {"source_ref": ref}},
+        )
+
+
+@pytest.mark.parametrize("sandbox", [None, "read-only", "workspace-write"])
+def test_source_edit_refreshes_admission_but_resumes_frozen_session(
+    session, project_id, tmp_path, monkeypatch, sandbox
+):
+    original_settings = {"model_reasoning_effort": "high"}
+    if sandbox:
+        original_settings["sandbox_mode"] = sandbox
+    writer = source(
+        session,
+        project_id,
+        tmp_path,
+        "writer",
+        instructions="Original",
+        settings='model_reasoning_effort="high"\n'
+        + (f'sandbox_mode="{sandbox}"\n' if sandbox else ""),
+    )
+    reviewer = source(session, project_id, tmp_path, "reviewer", instructions="Independent")
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="resume",
+        title="Resume",
+        context_json={
+            "contract_revision": 1,
+            "operator_instruction": "Preparation only; no builds",
+        },
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="resume",
+        key="work",
+        title="Work",
+        context_json={"contract_revision": 1},
+    )
+    git(tmp_path, "init")
+    candidate_a = commit(tmp_path, "A")
+    roles = {"delivery_agent": {"source_ref": writer}, "review_agent": {"source_ref": reviewer}}
+    calls = []
+    packets = []
+    sandboxes = []
+
+    def launch(_host, _dir, instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        packets.append(packet)
+        phase = packet["phase"]
+        sandboxes.append(kwargs["sandbox"])
+        calls.append(
+            (
+                phase,
+                instructions.split("\n\n", 1)[0],
+                kwargs.get("resume_thread_id"),
+                kwargs["native_settings"],
+            )
+        )
+        return AgentRunResult(
+            0,
+            thread_id=f"thread-{phase}",
+            result=generic_result("blocked" if len(calls) == 1 else "success"),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    start(session, project_id, tmp_path, scheduler, task_key="resume", agents=roles)
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    expected_sandbox = sandbox or "workspace-write"
+    assert first["delivery"]["launch"]["sandbox"] == expected_sandbox
+    assert first["sessions"]["delivery"]["agent_snapshot"]["native_settings"] == original_settings
+    source(
+        session,
+        project_id,
+        tmp_path,
+        "writer",
+        instructions="Future",
+        settings='model_reasoning_effort="low"\n',
+    )
+    candidate_b = commit(tmp_path, "B")
+    amendment = {
+        "contract_revision": 2,
+        "operator_instruction": "Delivery authorized; run required builds, tests and UI proof",
+        "supersedes": "Preparation-only no-build hold",
+        "proof_exception": "Only pointer DnD/autoscroll is operator-owned; use StackOS browser",
+        "server_exception": "Separate server OS-return simulation waives no other proof",
+    }
+    repo.update_task(
+        project_id=project_id, task_key="resume", patch_json={"context_json": amendment}
+    )
+    # Resolve the fixture blocker before requeueing its saved session.
+    for status in ("in-progress", "not-started"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"status": status, "blocker_reason": None},
+        )
+    start(session, project_id, tmp_path, scheduler, task_key="resume", agents=roles)
+    current = (
+        repo.get(project_id=project_id, task_key="resume")
+        .tasks[0]
+        .metadata_json["delivery"]["agents"]["delivery_agent"]
+    )
+    assert current["instructions"] == "Future"
+    assert current["native_settings"] == {"model_reasoning_effort": "low"}
+    scheduler.run()
+    assert calls == [
+        ("delivery", "Original", None, original_settings),
+        ("delivery", "Original", "thread-delivery", original_settings),
+        ("review", "Independent", None, {}),
+    ]
+    assert sandboxes == [
+        expected_sandbox,
+        expected_sandbox,
+        task_delivery.agent_review_sandbox("codex"),
+    ]
+    session.expire_all()
+    final = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert final["sessions"]["delivery"] == first["sessions"]["delivery"]
+    assert final["delivery"]["launch"]["sandbox"] == expected_sandbox
+    assert final["repair_count"] == first["repair_count"] == 0
+    fresh, resumed, review = [packet["occurrence"] for packet in packets]
+    assert fresh["attempt"] == 1 and resumed["attempt"] == review["attempt"] == 2
+    assert fresh["candidate"]["base_commit_sha"] == candidate_a
+    assert resumed["candidate"]["base_commit_sha"] == candidate_b
+    assert fresh["task_contract_revision"] == 1
+    assert resumed["task_contract_revision"] == 2
+    assert resumed["ticket_contract_revision"] == 1
+    assert resumed["selected_source"]["source_digest"] == current["source_digest"]
+    assert (
+        resumed["launched_source"]["source_digest"]
+        == first["sessions"]["delivery"]["source_digest"]
+    )
+    assert resumed["selected_source"] != resumed["launched_source"]
+    assert resumed["resume_thread_id"] == "thread-delivery"
+    assert packets[1]["brief"]["task"]["context_json"] == amendment
+    assert final["delivery"]["occurrence"] == resumed
+    assert final["attempts"][0]["delivery"]["occurrence"] == fresh
+
+
+def test_ambiguous_declared_roles_need_explicit_assignment(session, project_id, tmp_path):
+    from stackos.db.models import RunPlan
+
+    ref = source(session, project_id, tmp_path, "writer")
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "ambiguous",
+            "title": "Ambiguous",
+            "steps": [{"id": "work", "title": "Work"}],
+        },
+    ).data
+    row = session.get(RunPlan, plan.id)
+    row.template_snapshot_json = {
+        "agent_requirements": [
+            {"role": role, "requirement": "required", "applies_to_steps": ["work"]}
+            for role in ("one", "two")
+        ]
+    }
+    session.add(row)
+    session.commit()
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="work")
+    scheduler = QueuedScheduler()
+    scope = {
+        "task_key": f"workflow-{plan.id}",
+        "run_plan_id": plan.id,
+        "step_id": "work",
+        "agents": {role: {"source_ref": ref} for role in ("one", "two")},
+    }
+    with pytest.raises(ValidationError, match="Ambiguous"):
+        start(session, project_id, tmp_path, scheduler, **scope)
+    with pytest.raises(ValidationError, match="adoption_required"):
+        start(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            **scope,
+            agent_assignments={f"workflow-{plan.id}-work": "missing"},
+        )
+    assert not scheduler.jobs
+    start(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        **scope,
+        agent_assignments={f"workflow-{plan.id}-work": "two"},
+    )
+    assert len(scheduler.jobs) == 1
+
+
+def legacy_admission(session, project_id, root):
+    """Persist the pre-source-adoption handoff and native identity shape."""
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="legacy", title="Admitted before upgrade")
+    repo.create_ticket(project_id=project_id, task_key="legacy", key="existing", title="Existing")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="legacy",
+        key="pending",
+        title="Pending",
+        dependency_keys=["existing"],
+    )
+    task = repo.get(project_id=project_id, task_key="legacy").tasks[0]
+    roles = {
+        "delivery_agent": {
+            "name": "writer",
+            "instructions": "Original writer",
+            "host_key": "codex",
+            "model": "gpt-6.1-sol",
+        },
+        "review_agent": {
+            "name": "reviewer",
+            "instructions": "Original reviewer",
+            "host_key": "codex",
+            "model": "gpt-6-astra",
+        },
+    }
+    state = {
+        "status": "stopped",
+        "handoff_id": "prior-admission",
+        "job_ref": f"task-delivery:{project_id}:{task.id}:prior-admission",
+        "host_key": "codex",
+        "project_dir": str(root),
+        "agent_assignments": {},
+        **roles,
+    }
+    sessions = {
+        phase: {
+            "agent": agent["name"],
+            "host_key": "codex",
+            "project_dir": str(root),
+            "model": agent["model"],
+            "thread_id": f"original-{phase}",
+        }
+        for phase, agent in (
+            ("delivery", roles["delivery_agent"]),
+            ("review", roles["review_agent"]),
+        )
+    }
+    repo.update_task(
+        project_id=project_id,
+        task_key="legacy",
+        patch_json={"metadata_json": {"keep": "yes", "delivery": state}},
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="existing",
+        patch_json={
+            "completion_evidence_json": {
+                "automatic_delivery": {"sessions": sessions, "repair_count": 2}
+            },
+        },
+    )
+    return repo, state, sessions
+
+
+@pytest.mark.parametrize("mapped_snapshot", [False, True])
+@pytest.mark.parametrize("explicit_same_selection", [False, True])
+def test_upgrade_rehandoff_retains_legacy_task_and_native_sessions(
+    session, project_id, tmp_path, monkeypatch, mapped_snapshot, explicit_same_selection
+):
+    repo, prior, sessions = legacy_admission(session, project_id, tmp_path)
+    if mapped_snapshot:
+        prior["agents"] = {role: prior[role] for role in ("delivery_agent", "review_agent")}
+        repo.update_task(
+            project_id=project_id,
+            task_key="legacy",
+            patch_json={
+                "metadata_json": {"keep": "yes", "delivery": prior},
+            },
+        )
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "host_key": "claude-code",
+            "delivery_agent": {
+                "name": "future",
+                "instructions": "Future defaults",
+                "model": "claude-sonnet-5-5",
+            },
+        },
+    )
+    calls = []
+
+    def launch(host, directory, instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append(
+            (
+                key,
+                phase,
+                host,
+                instructions.split("\n\n", 1)[0],
+                kwargs.get("model"),
+                kwargs.get("resume_thread_id"),
+            )
+        )
+        assert "native_settings" not in kwargs
+        return AgentRunResult(
+            0, thread_id=kwargs.get("resume_thread_id") or f"{key}-{phase}", result=generic_result()
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    selection = (
+        {role: prior[role] for role in ("delivery_agent", "review_agent")}
+        if explicit_same_selection
+        else {}
+    )
+    start(session, project_id, tmp_path, scheduler, task_key="legacy", **selection)
+    admitted = repo.get(project_id=project_id, task_key="legacy").tasks[0].metadata_json
+    assert admitted["keep"] == "yes"
+    assert admitted["delivery"]["agents"] == {
+        role: prior[role] for role in ("delivery_agent", "review_agent")
+    }
+    scheduler.run()
+    assert calls == [
+        ("existing", "delivery", "codex", "Original writer", "gpt-6.1-sol", "original-delivery"),
+        ("existing", "review", "codex", "Original reviewer", "gpt-6-astra", "original-review"),
+        ("pending", "delivery", "codex", "Original writer", "gpt-6.1-sol", None),
+        ("pending", "review", "codex", "Original reviewer", "gpt-6-astra", None),
+    ]
+    session.expire_all()
+    final = repo.brief(
+        project_id=project_id, ticket_key="existing"
+    ).ticket.completion_evidence_json["automatic_delivery"]
+    assert final["sessions"] == sessions
+    assert final["repair_count"] == 2
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"host_key": "claude-code"},
+        {"delivery_agent": {"model": "gpt-6-astra"}},
+        {"delivery_agent": {"instructions": "Changed"}},
+        {"agents": {"extra": {"name": "extra", "instructions": "Extra"}}},
+        {
+            "agents": {"delivery_agent": {"model": "gpt-6-astra"}},
+            "delivery_agent": {"model": "gpt-6.1-sol"},
+        },
+        {"agent_assignments": {"existing": "review_agent"}},
+    ],
+)
+def test_legacy_rehandoff_rejects_changed_selection(session, project_id, tmp_path, changes):
+    legacy_admission(session, project_id, tmp_path)
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="retain"):
+        start(session, project_id, tmp_path, scheduler, task_key="legacy", **changes)
+    assert not scheduler.jobs
+
+
+def test_legacy_rehandoff_still_preflights_host(session, project_id, tmp_path, monkeypatch):
+    legacy_admission(session, project_id, tmp_path)
+    monkeypatch.setattr(
+        task_delivery, "agent_selection_error", lambda *args, **kwargs: "Host unavailable"
+    )
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="Host unavailable"):
+        start(session, project_id, tmp_path, scheduler, task_key="legacy")
+    assert not scheduler.jobs
+
+
+@pytest.mark.parametrize("change", ["directory", "mcp", "job_identity"])
+def test_legacy_rehandoff_preserves_scope_guards(session, project_id, tmp_path, change):
+    repo, prior, _ = legacy_admission(session, project_id, tmp_path)
+    args = {}
+    root = tmp_path
+    if change == "directory":
+        root = tmp_path / "different"
+        root.mkdir()
+    elif change == "mcp":
+        args["mcp_config_ref"] = {"path": str(tmp_path / "different.toml"), "sha256": "a" * 64}
+    else:
+        prior["job_ref"] = "another-task-job"
+        repo.update_task(
+            project_id=project_id,
+            task_key="legacy",
+            patch_json={"metadata_json": {"delivery": prior}},
+        )
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError):
+        start(session, project_id, root, scheduler, task_key="legacy", **args)
+    assert not scheduler.jobs

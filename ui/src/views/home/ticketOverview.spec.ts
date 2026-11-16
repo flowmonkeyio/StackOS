@@ -14,7 +14,7 @@ describe('ticket overview navigation', () => {
       'failed',
       'skipped',
     ])
-    expect(ticketWorkUrl(7, 'deferred')).toBe('/projects/7/tasks?ticket_status=deferred')
+    expect(ticketWorkUrl(7, 'deferred')).toBe('/projects/7/tasks?work_entry=tickets%3Adeferred')
     expect(ticketWorkUrl(7)).toBe('/projects/7/tasks')
   })
 })

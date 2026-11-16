@@ -37,6 +37,7 @@ import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
 
 const props = defineProps<{
   loading: boolean
+  loaded?: boolean
   error?: string | null
   serviceGroups: ServiceGroup[]
   connectionsCount: number
@@ -132,12 +133,12 @@ function statusLabel(connection: ConnectionRow): string {
       as="h3"
     >
       <template #actions>
-        <UiCountBadge :value="connectionsCount" />
+        <UiCountBadge v-if="loaded || connectionsCount" :value="connectionsCount" />
       </template>
     </UiSectionHeader>
 
     <UiFilterBar
-      v-if="!loading && serviceGroups.length > 0"
+      v-if="serviceGroups.length > 0"
       v-model:search="search"
       search-placeholder="Find a service or account…"
       aria-label="Service filters"
@@ -155,7 +156,7 @@ function statusLabel(connection: ConnectionRow): string {
     </UiFilterBar>
 
     <UiCard
-      v-if="loading"
+      v-if="loading && !loaded && !serviceGroups.length"
       role="status"
       aria-label="Loading connections"
     >

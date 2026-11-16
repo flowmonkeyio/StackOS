@@ -287,6 +287,11 @@ class RunPlanLifecycleReconciler:
         """
         if plan.id is None:
             return False
+        # Recovery reactivates the retained run instead of calling Run.start.
+        # It therefore owns the same atomic project admission reservation.
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(plan.project_id, reserve=True)
         if plan.status == RunPlanStatus.COMPLETED:
             raise ConflictError(
                 "completed run plans cannot be recovered",

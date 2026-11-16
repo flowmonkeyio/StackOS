@@ -7,16 +7,61 @@ from stackos.repositories.base import NotFoundError
 from stackos.workflows import validate_workflow_template_obj
 
 
+def test_review_replacement_is_one_scoped_registered_contract():
+    from pydantic import ValidationError
+
+    spec = build_operation_registry().get("tracker.startDelivery")
+    request = {
+        "project_id": 1,
+        "task_key": "prepared",
+        "project_dir": "/candidate",
+        "replace_review": {
+            "ticket_key": "implementation",
+            "expected_attempt": 1,
+            "expected_review_thread_id": "exact-thread",
+            "expected_candidate_commit_sha": "a" * 40,
+            "expected_reviewer_snapshot_digest": "b" * 64,
+            "reason": "Operator authorized recovery",
+        },
+    }
+    assert spec.grant_policy == "direct-tracker-write"
+    assert spec.surfaces.mcp.enabled and spec.surfaces.rest.enabled and spec.surfaces.cli.enabled
+    assert not spec.surfaces.rest.browser_safe
+    assert spec.input_model.model_validate(request).replace_review.expected_attempt == 1
+    for extra in ("agents", "review_agent", "host_key", "agent_assignments"):
+        with pytest.raises(ValidationError):
+            spec.input_model.model_validate(
+                {**request, extra: "codex" if extra == "host_key" else {}}
+            )
+    for extra in ("instructions", "native_settings", "approval_policy", "project_dir"):
+        with pytest.raises(ValidationError):
+            spec.input_model.model_validate(
+                {**request, "replace_review": {**request["replace_review"], extra: "override"}}
+            )
+    for missing in request["replace_review"]:
+        incomplete = dict(request["replace_review"])
+        incomplete.pop(missing)
+        with pytest.raises(ValidationError):
+            spec.input_model.model_validate({**request, "replace_review": incomplete})
+
+
 def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 230
+    assert len(names) == 262
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
     assert {
         "action.execute",
+        "projectSetup.get",
+        "projectSetup.start",
+        "projectSetup.report",
+        "projectSetup.answer",
+        "projectSetup.continue",
+        "projectSetup.cancel",
+        "projectSetup.setReminders",
         "actionCall.cancel",
         "actionCall.get",
         "actionCall.items",
@@ -26,9 +71,19 @@ def test_operation_registry_documents_core_operations() -> None:
         "actionCall.retry",
         "tracker.ticketCounts",
         "tracker.ticketCountsAll",
+        "tracker.agentStats",
+        "tracker.agentStatsAll",
+        "tracker.activeTasks",
+        "tracker.activeTasksAll",
+        "tracker.deliveryCapacity",
+        "tracker.setDeliveryCapacity",
         "tracker.updateTaskContent",
+        "tracker.startDelivery",
+        "tracker.configureDelivery",
         "hostMcp.status",
         "project.portfolio",
+        "project.delete",
+        "project.reconcileFileOwnership",
         "secret.set",
         "schema.get",
         "account.list",
@@ -84,6 +139,10 @@ def test_operation_registry_documents_core_operations() -> None:
         "backup.status",
         "backup.configure",
         "backup.create",
+        "projectAgent.list",
+        "projectAgent.get",
+        "projectAgent.create",
+        "projectAgent.update",
     } <= names
 
     getting_started = registry.get("guide.gettingStarted").describe_out()
@@ -155,6 +214,10 @@ def test_operation_registry_documents_core_operations() -> None:
         "actionCall.query": "direct-read",
         "tracker.ticketCounts": "direct-read",
         "tracker.ticketCountsAll": "local-admin-read",
+        "tracker.agentStats": "direct-read",
+        "tracker.taskActivity": "direct-read",
+        "tracker.taskResults": "direct-read",
+        "tracker.agentStatsAll": "local-admin-read",
         "project.portfolio": "local-admin-read",
     }.items():
         overview = registry.get(name).describe_out()
@@ -533,6 +596,16 @@ def test_operation_registry_surface_filter() -> None:
 
     cli_names = {item.name for item in registry.by_surface("cli")}
     assert cli_names == {item.name for item in registry.all()} - {
+        "projectSetup.start",
+        "projectSetup.report",
+        "projectSetup.answer",
+        "projectSetup.continue",
+        "projectSetup.cancel",
+        "projectAgent.list",
+        "projectAgent.get",
+        "projectAgent.create",
+        "projectAgent.update",
+        "desktop.availability",
         "account.application.status",
         "account.create",
         "account.get",
@@ -542,6 +615,7 @@ def test_operation_registry_surface_filter() -> None:
         "account.authorization.cancel",
         "auth.callback",
         "secret.set",
+        "tracker.configureDelivery",
     }
     assert {
         "workflowTemplate.describe",
@@ -556,6 +630,10 @@ def test_operation_registry_surface_filter() -> None:
     assert registry.get("runPlan.update").surfaces.mcp.enabled is True
     assert registry.get("runPlan.update").grant_policy == "direct-run-audit-write"
     assert registry.list_out(surface="rest").items[0].surfaces["rest"].enabled is True
+    setup_cancel = registry.get("projectSetup.cancel")
+    assert setup_cancel.surfaces.rest.enabled and setup_cancel.surfaces.rest.browser_safe
+    assert not setup_cancel.surfaces.mcp.enabled and not setup_cancel.surfaces.cli.enabled
+    assert setup_cancel.grant_policy == "local-admin-console-write"
 
 
 def test_operation_registry_filters_and_groups_operation_list() -> None:
@@ -599,3 +677,18 @@ def test_agent_communication_operations_include_when_to_use_guidance() -> None:
     assert missing == []
     assert any("dry_run=true" in item for item in registry.get("communication.send").when_to_use)
     assert any("claim token" in item for item in registry.get("agentRequest.claim").when_to_use)
+
+
+def test_pattern_operations_share_surfaces_and_readonly_provenance():
+    registry = build_operation_registry()
+    for verb in ("list", "get", "upsert", "delete"):
+        spec = registry.get(f"pattern.{verb}")
+        assert all(spec.surfaces.is_enabled(s) for s in ("mcp", "rest", "cli"))
+        assert spec.surfaces.rest.browser_safe is True
+        assert "project_id" not in spec.input_model.model_fields
+        assert "source_label" not in spec.input_model.model_fields
+        assert "bundled_id" not in spec.input_model.model_fields
+        assert "ack" not in spec.effective_response_policy.allowed_modes
+        assert spec.examples and spec.when_to_use
+    assert registry.get("pattern.get").effective_response_policy.default_mode == "raw"
+    assert registry.get("pattern.list").effective_response_policy.default_mode == "compact"

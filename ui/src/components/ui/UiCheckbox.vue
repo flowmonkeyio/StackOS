@@ -14,6 +14,8 @@ export interface UiCheckboxProps {
   required?: boolean
   size?: 'sm' | 'md'
   id?: string
+  /** Help or error text associated with the native checkbox. */
+  ariaDescribedby?: string
   /** Inline label text. Use slot for richer content. */
   label?: string
   /** Help / description below label. */
@@ -24,6 +26,7 @@ const props = withDefaults(defineProps<UiCheckboxProps>(), {
   modelValue: null,
   size: 'md',
   id: undefined,
+  ariaDescribedby: undefined,
   label: undefined,
   description: undefined,
 })
@@ -69,6 +72,7 @@ const boxStateClass = computed(() => {
         :disabled="disabled"
         :required="required"
         :aria-invalid="invalid || undefined"
+        :aria-describedby="ariaDescribedby"
         class="peer sr-only"
         @change="onChange"
       >

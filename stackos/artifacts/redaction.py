@@ -22,9 +22,11 @@ _SECRET_KEY_PARTS = (
     "token",
 )
 _SECRET_TEXT_RE = re.compile(
-    r"(?i)((?<![\w-])[\"']?([\w-]*(?:access[_-]?token|api[_-]?key|apikey|authorization|client[_-]?secret|"
-    r"service[_-]?account[_-]?json|assertion|credential|password|private[_-]?key|refresh[_-]?token|secret|token))[\"']?\s*[:=]\s*"
-    r"[\"']?)(?!bearer\b)([^\"'\s,;}&]+)"
+    r"(?i)(?P<prefix>(?<![\w-])(?P<key_quote>[\"']?)(?P<key>[\w-]*(?:"
+    r"access[_-]?token|api[_-]?key|apikey|authorization|client[_-]?secret|"
+    r"service[_-]?account[_-]?json|assertion|credential|password|private[_-]?key|"
+    r"refresh[_-]?token|secret|token))(?P<key_end_quote>[\"']?)\s*(?P<separator>[:=])\s*"
+    r"(?P<value_quote>[\"']?))(?!bearer\b)([^\"'\s,;}&]+)"
 )
 _AUTH_BEARER_TEXT_RE = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;}&]+")
 _BEARER_TEXT_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
@@ -71,17 +73,27 @@ def redact_secrets(value: Any) -> Any:
 
 def redact_secret_text(value: str) -> str:
     """Redact secret-like assignments inside vendor-controlled text."""
+
+    def redact_assignment(match: re.Match[str]) -> str:
+        # Intuit's exact public revision field is not credential material.
+        # Complete-key matching keeps prefixed secret names protected.
+        if match["key"] == "SyncToken":
+            return match[0]
+        if match["separator"] == ":" and not (
+            match["key_quote"] or match["key_end_quote"] or match["value_quote"]
+        ):
+            # Bare inline colons in sentences are ambiguous. Require a line/header
+            # or explicit object/log delimiter; equals, quotes and bearer syntax
+            # remain credential evidence anywhere, even for one-character values.
+            before = match.string[: match.start()].rsplit("\n", 1)[-1].rstrip()
+            if before and before[-1] not in "{[(,;]":
+                return match[0]
+        return f"{match['prefix']}[redacted]"
+
     redacted = _PEM_PRIVATE_KEY_RE.sub("[redacted private key]", value)
     redacted = _AUTH_BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     redacted = _SIGNED_URL_PARAM_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
-    redacted = _SECRET_TEXT_RE.sub(
-        lambda match: (
-            # Intuit's exact public revision field is not credential material.
-            # Complete-key matching keeps prefixed secret names protected.
-            match.group(0) if match.group(2) == "SyncToken" else f"{match.group(1)}[redacted]"
-        ),
-        redacted,
-    )
+    redacted = _SECRET_TEXT_RE.sub(redact_assignment, redacted)
     redacted = _TELEGRAM_BOT_URL_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     return _BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
 

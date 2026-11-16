@@ -49,6 +49,7 @@ from stackos.db.model_core import (
     Plugin,
     Project,
     ProjectPlugin,
+    ProjectSetupReceipt,
     Provider,
 )
 from stackos.db.model_durable_actions import (
@@ -93,6 +94,7 @@ from stackos.db.model_execution_contexts import (
     ExecutionContextArtifact,
     ExecutionContextLink,
 )
+from stackos.db.model_patterns import Pattern, PatternDeletion
 from stackos.db.model_provider_refs import ProviderObjectReference
 from stackos.db.model_resources import (
     Artifact,
@@ -113,9 +115,11 @@ from stackos.db.model_runtime import (
 )
 from stackos.db.model_secrets import PayloadSecret
 from stackos.db.model_tracker import (
+    TaskDeliveryCapacity,
     TaskTracker,
     TaskTrackerLane,
     TaskTrackerPriority,
+    TrackerReceiptProjection,
     TrackerRevision,
     TrackerTask,
     TrackerTicket,
@@ -188,6 +192,8 @@ __all__ = [
     "Learning",
     "MetricSnapshot",
     "OAuthState",
+    "Pattern",
+    "PatternDeletion",
     "PayloadSecret",
     "Plugin",
     "PluginSource",
@@ -195,6 +201,7 @@ __all__ = [
     "ProjectCredential",
     "ProjectEvent",
     "ProjectPlugin",
+    "ProjectSetupReceipt",
     "ProjectWorkflowTemplate",
     "Provider",
     "ProviderObjectReference",
@@ -213,12 +220,14 @@ __all__ = [
     "RunStepCall",
     "RunStepStatus",
     "ScheduledJob",
+    "TaskDeliveryCapacity",
     "TaskTracker",
     "TaskTrackerLane",
     "TaskTrackerPriority",
     "TelegramApplication",
     "TrackerItemStatus",
     "TrackerLinkKind",
+    "TrackerReceiptProjection",
     "TrackerRevision",
     "TrackerSourceKind",
     "TrackerTask",

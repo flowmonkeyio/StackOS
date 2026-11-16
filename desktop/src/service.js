@@ -389,7 +389,7 @@ function readAuthToken() {
   return fs.readFileSync(authTokenPath(), "utf8").trim();
 }
 
-function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
+function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000, json } = {}) {
   return new Promise((resolve, reject) => {
     let url;
     try {
@@ -403,8 +403,13 @@ function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
     if (auth) {
       headers.Authorization = `Bearer ${readAuthToken()}`;
     }
+    const payload = json === undefined ? null : JSON.stringify(json);
+    if (payload !== null) {
+      headers["Content-Type"] = "application/json";
+      headers["Content-Length"] = Buffer.byteLength(payload);
+    }
 
-    const req = http.get(url, { headers }, (res) => {
+    const req = http.request(url, { headers, method: payload === null ? "GET" : "POST" }, (res) => {
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (chunk) => {
@@ -434,11 +439,51 @@ function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
       req.destroy(new Error("StackOS request timed out"));
     });
     req.on("error", reject);
+    req.end(payload);
   });
 }
 
 function authenticatedJsonGet(pathname, options = {}) {
   return daemonJsonGet(pathname, { ...options, auth: true });
+}
+
+function authenticatedJsonPost(pathname, json, options = {}) {
+  return daemonJsonGet(pathname, { ...options, json, auth: true });
+}
+
+function openDesktopAvailability(onDisconnect) {
+  let closed = false;
+  const disconnected = () => {
+    if (closed) return;
+    closed = true;
+    req.destroy();
+    onDisconnect();
+  };
+  const req = http.request(new URL("/api/v1/desktop/availability", DAEMON_URL), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${readAuthToken()}` }
+  }, (res) => {
+    if (res.statusCode !== 200) {
+      res.resume();
+      disconnected();
+      return;
+    }
+    req.setTimeout(0); // A live idle connection is presence; no polling/lease.
+    res.on("error", disconnected);
+    res.on("end", disconnected);
+    res.on("close", disconnected);
+    res.resume();
+  });
+  req.on("error", disconnected);
+  req.on("close", disconnected);
+  req.setTimeout(5000, disconnected); // Header/connect timeout only.
+  req.end();
+  return {
+    close() {
+      closed = true;
+      req.destroy();
+    }
+  };
 }
 
 async function waitForHealth(timeoutMs = 20000) {
@@ -842,6 +887,8 @@ module.exports = {
   DAEMON_URL,
   HEALTH_URL,
   authenticatedJsonGet,
+  authenticatedJsonPost,
+  openDesktopAvailability,
   authTokenPath,
   checkHealth,
   daemonLogPath,

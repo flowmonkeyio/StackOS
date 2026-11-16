@@ -20,6 +20,7 @@ from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.models import AgentSession, Credential, Project, WorkspaceBinding
 from stackos.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
+from tests.helpers.workspaces import same_remote_worktrees
 
 from .conftest import MODERN_PROTOCOL_VERSION, MCPClient
 from .test_mcp_actions import _mock_action_plan_json
@@ -27,6 +28,452 @@ from .test_mcp_actions import _mock_action_plan_json
 _PROTOCOL_VERSION_META_KEY = "io.modelcontextprotocol/protocolVersion"
 _CLIENT_INFO_META_KEY = "io.modelcontextprotocol/clientInfo"
 _CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities"
+
+
+@pytest.mark.parametrize("entry", ["bound", "global", "global-selected"])
+@pytest.mark.parametrize("response_mode", ["compact", "raw"])
+def test_pattern_discovery_pointer_without_startup_catalog_reads(
+    mcp_client: MCPClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entry: str,
+    response_mode: str,
+) -> None:
+    from stackos.repositories.patterns import PatternRepository
+
+    def unexpected_read(*args, **kwargs):
+        pytest.fail("Startup/discovery must not fetch pattern summaries or articles")
+
+    monkeypatch.setattr(PatternRepository, "list", unexpected_read)
+    monkeypatch.setattr(PatternRepository, "get", unexpected_read)
+    if entry == "bound":
+        root = tmp_path / "bound-pattern-discovery"
+        root.mkdir()
+        proxy, client = _scoped_bridge(mcp_client, cwd=str(root))
+        arguments = {}
+    else:
+        proxy, client = _bridge(mcp_client)
+        arguments = {"global_session": True}
+        if entry == "global-selected":
+            arguments["project_id"] = _create_project(mcp_client, "pattern-discovery")
+    _initialize(proxy, client)
+    started = _tool_call(
+        proxy, client, "workspace.startSession", arguments | {"response_mode": response_mode}
+    )
+    assert not started["result"].get("isError"), started
+    data = _operation_data(_structured(started))
+    guidance = data["next_step"]["guidance"]
+    assert len(guidance) == 1
+    assert "pattern.list" in guidance[0] and "pattern.get" in guidance[0]
+    assert "no startup catalog scan" in guidance[0]
+    assert (data["project_id"] is None) == (entry == "global")
+    described = _tool_call(
+        proxy,
+        client,
+        "toolbox.describe",
+        {"tool_names": ["pattern.list", "pattern.get"]},
+    )
+    assert not described["result"].get("isError"), described
+    descriptions = _structured(described)
+    assert {item["name"] for item in descriptions["described_tools"]} == {
+        "pattern.list",
+        "pattern.get",
+    }
+    assert "reusable recommendation" in json.dumps(descriptions).lower()
+    searched = _toolbox_call(
+        proxy,
+        client,
+        "operation.list",
+        {"surface": "mcp", "query": "reusable", "mode": "standard", "response_mode": "raw"},
+    )
+    assert not searched["result"].get("isError"), searched
+    assert {"pattern.list", "pattern.get"} <= {
+        item["name"] for item in _structured(searched)["items"]
+    }
+
+
+@pytest.fixture
+def empty_pattern_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the empty-catalog CRUD scenario independent of shipped content."""
+    import stackos.server as server
+
+    asset = tmp_path / "empty-patterns.json"
+    asset.write_text('{"version":"empty-fixture","entries":[]}')
+    monkeypatch.setattr(server, "bundled_patterns_source", lambda: asset)
+
+
+@pytest.mark.usefixtures("empty_pattern_bundle")
+def test_patterns_global_crud_and_combined_filter_parity(
+    mcp_client: MCPClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real bridge + MCP + REST dispatcher; CLI substitutes transport only."""
+    from typer.testing import CliRunner
+
+    import stackos.cli.operation_commands as cli
+    from stackos.auth import derive_ui_token
+    from stackos.cli import app
+
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+
+    def call(name, arguments=None):
+        result = _toolbox_call(proxy, client, name, arguments)
+        assert not result["result"].get("isError"), result
+        return _structured(result)
+
+    assert call("pattern.list")["catalog_total"] == 0
+    content = dict(
+        key="fixture-a",
+        title="Example",
+        summary="Synthetic guidance",
+        body="needle [reference](https://example.test)\n\nUse `example run`.\n",
+        tags=["free topic", "any technology"],
+    )
+    denied = _toolbox_call(proxy, client, "pattern.upsert", content)
+    assert denied["result"]["isError"] is True
+    started = _tool_call(proxy, client, "workspace.startSession", {"global_session": True})
+    assert not started["result"].get("isError"), started
+    assert proxy.global_session is True and proxy.scoped_project_id is None
+    created = call("pattern.upsert", content)["data"]
+    assert created["source"] == "custom" and created["source_label"] == "Custom"
+    assert "body" not in created
+    assert call("pattern.upsert", content)["data"] == created
+    detail = call("pattern.get", {"pattern_id": created["id"]})
+    assert detail["body"] == content["body"] and detail["id"] == created["id"]
+    assert "body" not in call("pattern.get", {"key": content["key"], "response_mode": "compact"})
+    for key, tags, body in (
+        ("fixture-b", ["alternate"], "needle"),
+        ("fixture-c", ["excluded"], "needle"),
+        ("fixture-d", ["free topic"], "no match"),
+    ):
+        call("pattern.upsert", content | dict(key=key, tags=tags, body=body))
+
+    query = {"query": "needle", "tags": ["free topic", "alternate"], "source": "custom", "limit": 1}
+    page = call("pattern.list", query)
+    assert [item["id"] for item in page["items"]] == [created["id"]]
+    assert page["total_estimate"] == 2 and page["catalog_total"] == 4
+    assert "body" not in json.dumps(page)
+    api = mcp_client.test_client
+    headers = {"Authorization": f"Bearer {mcp_client.auth_token}"}
+
+    def http(name, arguments, request_headers=headers):
+        response = api.post(
+            f"/api/v1/operations/{name}/call",
+            json={"arguments": arguments},
+            headers=request_headers,
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def cli_transport(method, path, *, body=None, **kwargs):
+        response = api.request(method, path, json=body, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+    monkeypatch.setattr(cli, "_api_request", cli_transport)
+    for arguments in (
+        query,
+        query | {"cursor": page["next_cursor"]},
+        query | {"source": "stackos"},
+        query | {"source": "customized"},
+    ):
+        expected = call("pattern.list", arguments)
+        assert http("pattern.list", arguments) == expected
+        result = CliRunner().invoke(
+            app,
+            ["ops", "call", "pattern.list", "--input", "-"],
+            input=json.dumps(arguments),
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == expected
+    assert http("pattern.get", {"key": content["key"]}) == detail
+
+    # Two real bound project bridges see the same installation record. Reads
+    # and writes carry no project_id; the bridge must not inject a fake scope.
+    for name in ("pattern-owner-a", "pattern-owner-b"):
+        root = tmp_path / name
+        root.mkdir()
+        bound, bound_client = _scoped_bridge(mcp_client, cwd=str(root))
+        _initialize(bound, bound_client)
+        result = _tool_call(bound, bound_client, "workspace.startSession", {})
+        assert not result["result"].get("isError"), result
+        assert bound.scoped_project_id is not None
+        result = _toolbox_call(bound, bound_client, "pattern.get", {"key": content["key"]})
+        assert _structured(result) == detail
+
+    # Authentication and strict input reject before mutation. Provenance is
+    # server-owned, even when supplied alongside otherwise legitimate content.
+    for field in ("source", "source_label", "bundled_id", "shipped_version", "shipped_base_hash"):
+        rejected = _toolbox_call(proxy, client, "pattern.upsert", content | {field: "forged"})
+        assert rejected["result"]["isError"] is True
+    for token in ("", "foreign-token"):
+        response = api.post(
+            "/api/v1/operations/pattern.upsert/call",
+            json={"arguments": content | {"key": "unauthorized"}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+    assert call("pattern.list")["catalog_total"] == 4
+    stale = _toolbox_call(proxy, client, "pattern.upsert", content | {"body": "changed"})
+    assert stale["result"]["isError"] is True
+    assert _structured(stale)["data"]["current_etag"] == created["etag"]
+
+    updated = call(
+        "pattern.upsert", content | {"body": "updated once", "expected_etag": created["etag"]}
+    )["data"]
+    assert updated["revision"] == 2
+    assert http("pattern.get", {"pattern_id": created["id"]})["body"] == "updated once"
+    # The browser-safe generic route shares the same owner and etag check.
+    ui_headers = {"Authorization": f"Bearer {derive_ui_token(mcp_client.auth_token)}"}
+    ui_row = http("pattern.upsert", content | {"key": "ui-fixture"}, ui_headers)["data"]
+    http(
+        "pattern.delete", {"pattern_id": ui_row["id"], "expected_etag": ui_row["etag"]}, ui_headers
+    )
+    call("pattern.delete", {"pattern_id": created["id"], "expected_etag": updated["etag"]})
+    missing = _toolbox_call(proxy, client, "pattern.get", {"pattern_id": created["id"]})
+    assert missing["result"]["isError"] is True
+    assert (
+        api.post(
+            "/api/v1/operations/pattern.get/call",
+            json={"arguments": {"pattern_id": created["id"]}},
+            headers=headers,
+        ).status_code
+        == 404
+    )
+
+
+def test_patterns_shipped_content_readback_parity(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Actual startup bundle through bridge/HTTP/CLI; CLI replaces transport only."""
+    from typer.testing import CliRunner
+
+    import stackos.cli.operation_commands as cli
+    from stackos.cli import app
+    from stackos.db.model_patterns import Pattern
+    from stackos.install import bundled_patterns_source
+
+    expected = json.loads(bundled_patterns_source().read_text())
+    assert expected["entries"]
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    api = mcp_client.test_client
+    headers = {"Authorization": f"Bearer {mcp_client.auth_token}"}
+
+    def http(method, path, *, body=None, **kwargs):
+        response = api.request(method, path, json=body, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+    monkeypatch.setattr(cli, "_api_request", http)
+
+    def parity(name, arguments):
+        result = _toolbox_call(proxy, client, name, arguments)
+        assert not result["result"].get("isError"), result
+        data = _structured(result)
+        assert (
+            http("POST", f"/api/v1/operations/{name}/call", body={"arguments": arguments}) == data
+        )
+        result = CliRunner().invoke(
+            app,
+            ["ops", "call", name, "--input", "-"],
+            input=json.dumps(arguments),
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == data
+        return data
+
+    page = parity("pattern.list", {"source": "stackos", "limit": 100})
+    assert page["catalog_total"] == page["total_estimate"] == len(expected["entries"])
+    assert {row["key"] for row in page["items"]} == {item["key"] for item in expected["entries"]}
+    assert all("body" not in row for row in page["items"])
+    for item in expected["entries"]:
+        detail = parity("pattern.get", {"key": item["key"]})
+        assert {key: detail[key] for key in ("key", "title", "summary", "body")} == {
+            key: item[key] for key in ("key", "title", "summary", "body")
+        }
+        assert detail["tags"] == sorted(set(item["tags"]))
+        assert detail["source"] == "stackos" and detail["source_label"] == "StackOS"
+    query = {"query": "safe structured logs", "tags": ["logging"], "source": "stackos"}
+    assert [row["key"] for row in parity("pattern.list", query)["items"]] == [
+        "bounded-logging-and-explicit-context"
+    ]
+    assert parity("pattern.list", query | {"tags": ["testing"]})["items"] == []
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            rows = session.exec(select(Pattern).order_by(Pattern.id)).all()
+            assert [row.bundled_id for row in rows] == [
+                item["bundled_id"] for item in expected["entries"]
+            ]
+            assert all(row.bundled_version == expected["version"] for row in rows)
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("transport", ["http", "global-mcp", "cli"])
+def test_patterns_recreated_key_rejects_old_record_preconditions(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    transport: str,
+) -> None:
+    """A stale draft cannot edit/delete a replacement at the same reusable key."""
+    import io
+    from urllib.error import HTTPError
+    from urllib.parse import urlsplit
+
+    from typer.testing import CliRunner
+
+    import stackos.cli.api_client as cli_api
+    from stackos.cli import app
+
+    api = mcp_client.test_client
+    headers = {"Authorization": f"Bearer {mcp_client.auth_token}"}
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    started = _tool_call(proxy, client, "workspace.startSession", {"global_session": True})
+    assert not started["result"].get("isError"), started
+    assert proxy.scoped_project_id is None
+
+    def urlopen_fixture(request, timeout):
+        # Substitute socket transport only. Real CLI token loading, headers,
+        # HTTPError mapping, parsing and output run against the ASGI daemon.
+        response = api.request(
+            request.method,
+            urlsplit(request.full_url).path,
+            content=request.data,
+            headers=dict(request.header_items()),
+        )
+        body = io.BytesIO(response.content)
+        if response.is_error:
+            raise HTTPError(
+                request.full_url,
+                response.status_code,
+                response.reason_phrase,
+                response.headers,
+                body,
+            )
+        return body
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen_fixture)
+    monkeypatch.setattr(cli_api, "get_settings", lambda: mcp_settings)
+
+    def invoke(name, arguments):
+        if transport == "http":
+            response = api.post(
+                f"/api/v1/operations/{name}/call", json={"arguments": arguments}, headers=headers
+            )
+            return response.status_code, response.json()
+        if transport == "global-mcp":
+            result = _toolbox_call(proxy, client, name, arguments)
+            body = _structured(result)
+            if result["result"].get("isError"):
+                assert body["code"] == -32008, result
+                return 409, body
+            return 200, body
+        result = CliRunner().invoke(
+            app,
+            ["ops", "call", name, "--input", "-"],
+            input=json.dumps(arguments),
+            catch_exceptions=False,
+        )
+        if result.exit_code == 0:
+            return 200, json.loads(result.stdout)
+        assert result.exit_code == 1, result.output
+        prefix = "daemon API error 409: "
+        assert prefix in result.output, result.output
+        return 409, json.loads(result.output.split(prefix, 1)[1].strip())
+
+    original = dict(
+        key="reusable-fixture",
+        title="Original",
+        summary="Applicability",
+        body="Original recommendation",
+        tags=["old"],
+    )
+    status, result = invoke("pattern.upsert", original)
+    assert status == 200, result
+    first = result["data"]
+    assert (
+        invoke("pattern.delete", {"pattern_id": first["id"], "expected_etag": first["etag"]})[0]
+        == 200
+    )
+    replacement = original | dict(title="Replacement", body="Replacement content", tags=["new"])
+    status, result = invoke("pattern.upsert", replacement)
+    assert status == 200, result
+    current = result["data"]
+    assert current["id"] != first["id"] and current["revision"] == first["revision"]
+    snapshot = invoke("pattern.get", {"key": original["key"]})
+
+    for name, arguments in (
+        ("pattern.upsert", original | {"body": "Stale draft", "expected_etag": first["etag"]}),
+        ("pattern.delete", {"pattern_id": current["id"], "expected_etag": first["etag"]}),
+    ):
+        status, rejection = invoke(name, arguments)
+        assert status == 409, rejection
+        assert rejection["data"]["pattern_id"] == current["id"]
+        assert rejection["data"]["current_etag"] == current["etag"]
+        assert invoke("pattern.get", {"key": original["key"]}) == snapshot
+
+    status, saved = invoke(
+        "pattern.upsert",
+        replacement
+        | {
+            "body": "Legitimate save",
+            "expected_etag": current["etag"],
+        },
+    )
+    assert status == 200 and saved["data"]["revision"] == 2, saved
+    assert (
+        invoke(
+            "pattern.delete", {"pattern_id": current["id"], "expected_etag": saved["data"]["etag"]}
+        )[0]
+        == 200
+    )
+
+
+def test_patterns_project_run_token_is_not_global_write_authority(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+) -> None:
+    from stackos.db.models import Run, RunKind, RunStatus
+
+    engine = make_engine(mcp_settings.db_path)
+    before = mcp_client.call_tool_structured("pattern.list", {})
+    project_id = _create_project(mcp_client, "run-fixture")
+    with Session(engine) as session:
+        # A full-grant sentinel deliberately verifies the handler's independent
+        # boundary too: even a project-granted caller cannot mutate this owner.
+        run = Run(
+            project_id=project_id,
+            kind=RunKind.SKILL_RUN,
+            status=RunStatus.RUNNING,
+            client_session_id="pattern-project-run",
+            metadata_json={"skill_name": "__test__"},
+        )
+        session.add(run)
+        session.commit()
+    response = mcp_client.call_tool(
+        "pattern.upsert",
+        {
+            "run_token": "pattern-project-run",
+            "key": "foreign-run",
+            "title": "Denied",
+            "summary": "",
+            "body": "Denied",
+            "tags": [],
+        },
+    )
+    assert response["result"]["isError"] is True
+    assert mcp_client.call_tool_structured("pattern.list", {}) == before
+    engine.dispose()
 
 
 class _BridgeHttpClient:
@@ -184,6 +631,161 @@ def _create_project(mcp: MCPClient, slug: str) -> int:
 def _is_bridge_scope_error(envelope: dict[str, Any]) -> bool:
     result = envelope["result"]
     return result["isError"] is True and result["structuredContent"]["code"] == -32007
+
+
+def test_real_worktree_bridges_bind_actual_roots_and_preserve_scope(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from stackos.cli.daemon_commands import _mcp_bridge_workspace_hints
+
+    first, second, remote = same_remote_worktrees(tmp_path)
+    owner = _create_project(mcp_client, "approved-worktree-project")
+    foreign = _create_project(mcp_client, "foreign-worktree-project")
+
+    def bridge(root: Path) -> tuple[AgentBridgeProxy, _BridgeHttpClient]:
+        base, client = _bridge(mcp_client)
+        hints = _mcp_bridge_workspace_hints(root, workspace_root=root)
+        assert hints["cwd"] == str(root.resolve())
+        proxy = AgentBridgeProxy(url=base.url, headers=base.headers, **hints)
+        _initialize(proxy, client)
+        return proxy, client
+
+    first_proxy, client = bridge(first)
+    assert first_proxy.git_remote_url == remote
+    _tool_call(first_proxy, client, "workspace.startSession", {"auto_bootstrap": False})
+    original = _structured(
+        _toolbox_call(
+            first_proxy, client, "workspace.connect", {"project_id": owner, "response_mode": "raw"}
+        )
+    )["data"]
+    engine = make_engine(mcp_settings.db_path)
+    with Session(engine) as session:
+        project = session.get(Project, owner)
+        project.primary_workspace_binding_id = original["id"]
+        session.add(project)
+        session.commit()
+
+    second_proxy, client = bridge(second)
+    assert second_proxy.git_remote_url == remote
+    assert second_proxy.repo_fingerprint != first_proxy.repo_fingerprint
+    for mode in ("raw", "compact"):
+        unresolved = _operation_data(
+            _structured(
+                _tool_call(second_proxy, client, "workspace.resolve", {"response_mode": mode})
+            )
+        )
+        assert unresolved["binding"] is None and unresolved["project_id"] is None
+        assert unresolved["needs_connect"]
+        assert unresolved["next_step"]["recommended_tool"] == "workspace.connect"
+        assert unresolved["candidate_projects"][0]["id"] == owner
+        assert unresolved["next_step"]["recommended_arguments"] == {
+            "project_id": "<operator-confirmed project id>"
+        }
+    pending = _operation_data(
+        _structured(
+            _tool_call(second_proxy, client, "workspace.startSession", {"response_mode": "raw"})
+        )
+    )
+    assert pending["needs_connect"] and pending["workspace_binding_id"] is None
+    connected = _structured(
+        _toolbox_call(
+            second_proxy, client, "workspace.connect", {"project_id": owner, "response_mode": "raw"}
+        )
+    )["data"]
+    assert connected["id"] != original["id"]
+
+    for proxy, root, binding in (
+        (first_proxy, first, original),
+        (second_proxy, second, connected),
+    ):
+        resolved = _operation_data(
+            _structured(_tool_call(proxy, client, "workspace.resolve", {"response_mode": "raw"}))
+        )
+        assert resolved["binding"]["id"] == binding["id"]
+        assert resolved["binding"]["last_known_root"] == str(root)
+        started = _operation_data(
+            _structured(
+                _tool_call(
+                    proxy,
+                    client,
+                    "workspace.startSession",
+                    {"auto_bootstrap": False, "response_mode": "raw"},
+                )
+            )
+        )
+        assert started["workspace_binding_id"] == binding["id"]
+        assert started["project_id"] == owner
+        assert proxy.scoped_project_id == owner
+        denied = _toolbox_call(proxy, client, "workspace.connect", {"project_id": foreign})
+        assert _is_bridge_scope_error(denied)
+        denied = _tool_call(proxy, client, "workspace.startSession", {"global_session": True})
+        assert _is_bridge_scope_error(denied)
+        forged = _toolbox_call(
+            proxy,
+            client,
+            "workspace.connect",
+            {"project_id": owner, "last_known_root": str(tmp_path)},
+        )
+        assert _is_bridge_scope_error(forged)
+
+    nested = first / "nested"
+    nested.mkdir()
+    nested_proxy, client = bridge(nested)
+    resolved = _operation_data(
+        _structured(_tool_call(nested_proxy, client, "workspace.resolve", {"response_mode": "raw"}))
+    )
+    assert resolved["binding"]["id"] == original["id"]
+    # An explicit root without Git uses the same path-based bridge contract.
+    no_git = tmp_path / "no-git"
+    no_git.mkdir()
+    no_git_proxy, client = bridge(no_git)
+    assert no_git_proxy.git_remote_url is None
+    _tool_call(no_git_proxy, client, "workspace.startSession", {"auto_bootstrap": False})
+    no_git_binding = _structured(
+        _toolbox_call(
+            no_git_proxy,
+            client,
+            "workspace.connect",
+            {"project_id": foreign, "response_mode": "raw"},
+        )
+    )["data"]
+    assert no_git_binding["last_known_root"] == str(no_git)
+    assert no_git_proxy.scoped_project_id == foreign
+    assert _is_bridge_scope_error(
+        _toolbox_call(no_git_proxy, client, "workspace.connect", {"project_id": owner})
+    )
+
+    # No folder and deliberately global ambient work remain unbound.
+    for hints in ({}, _mcp_bridge_workspace_hints(tmp_path / "missing")):
+        base, client = _bridge(mcp_client)
+        global_proxy = AgentBridgeProxy(url=base.url, headers=base.headers, **hints)
+        _initialize(global_proxy, client)
+        selected = _operation_data(
+            _structured(
+                _tool_call(
+                    global_proxy,
+                    client,
+                    "workspace.startSession",
+                    {"global_session": True, "project_id": owner, "response_mode": "raw"},
+                )
+            )
+        )
+        assert selected["global_session"] and selected["workspace_binding_id"] is None
+        assert global_proxy.scoped_project_id is None
+        assert _is_bridge_scope_error(_toolbox_call(global_proxy, client, "tracker.get"))
+
+    with Session(engine) as session:
+        assert len(session.exec(select(Project)).all()) == 2
+        bindings = session.exec(select(WorkspaceBinding)).all()
+        assert {b.id: (b.project_id, b.last_known_root) for b in bindings} == {
+            original["id"]: (owner, str(first)),
+            connected["id"]: (owner, str(second)),
+            no_git_binding["id"]: (foreign, str(no_git)),
+        }
+        assert session.get(Project, owner).primary_workspace_binding_id == original["id"]
+    engine.dispose()
 
 
 @pytest.mark.parametrize("host", ["chatgpt", "claude"])
@@ -795,7 +1397,9 @@ def test_global_scope_saved_id_survives_rename_and_refuses_natural_replacement(
     )
     assert _structured(selected)["project_id"] == saved
     with Session(engine) as session:
-        ProjectRepository(session).delete(saved, hard=True)
+        # Simulate historical absence; public cleanup has separate real-service proof.
+        session.delete(session.get(Project, saved))
+        session.commit()
     replacement = _create_project(mcp_client, replacement_slug)
     assert replacement > saved
     for bridge, http_client in ((proxy, client), _bridge(mcp_client)):
@@ -1538,7 +2142,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
             "project_id": other_project_id,
             "kind": "other-weekly-review",
             "cron_expr": "0 6 * * 1",
-            "enabled": True,
+            "enabled": False,
         },
     )
     other_schedule_id = other_schedule["data"]["id"]
@@ -1885,7 +2489,9 @@ def test_bridge_no_hint_start_session_lists_named_workspace_candidates(
                 "home": f"/projects/{bootstrapped['project_id']}",
                 "connections": f"/projects/{bootstrapped['project_id']}/connections",
                 "tasks": f"/projects/{bootstrapped['project_id']}/tasks",
-                "workflow_templates": f"/projects/{bootstrapped['project_id']}/workflow-templates",
+                "plugins": f"/projects/{bootstrapped['project_id']}/plugins",
+                "library": f"/projects/{bootstrapped['project_id']}/library",
+                "agents": f"/projects/{bootstrapped['project_id']}/agents",
             },
             "ui_urls": {
                 "home": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}",
@@ -1893,10 +2499,9 @@ def test_bridge_no_hint_start_session_lists_named_workspace_candidates(
                     f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/connections"
                 ),
                 "tasks": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/tasks",
-                "workflow_templates": (
-                    "http://127.0.0.1:5180/projects/"
-                    f"{bootstrapped['project_id']}/workflow-templates"
-                ),
+                "plugins": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/plugins",
+                "library": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/library",
+                "agents": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/agents",
             },
         }
     ]
@@ -2045,17 +2650,67 @@ def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown
     payload = _structured(envelope)
 
     assert [tool["name"] for tool in payload["described_tools"]] == [
+        "project.delete",
         "schedule.remove",
         "account.test",
     ]
     assert payload["denied_tool_names"] == [
-        "project.delete",
         "account.start",
         "connection.attach",
         "connection.detach",
     ]
     assert payload["unknown_tool_names"] == ["dataforseo.serp"]
     assert "admin_gated_tool_names" not in payload
+
+
+@pytest.mark.parametrize("global_session", [False, True])
+def test_bridge_confirmed_deletion_preserves_exact_target_scope(
+    mcp_client, mcp_settings, tmp_path, global_session
+):
+    target = _create_project(mcp_client, "disposable-bridge-delete")
+    other = _create_project(mcp_client, "disposable-bridge-survivor")
+    if global_session:
+        proxy, client = _bridge(mcp_client)
+        startup = {"global_session": True, "project_id": target}
+    else:
+        root = tmp_path / "disposable-repository"
+        root.mkdir()
+        (root / "keep").write_text("repository must survive")
+        proxy, client = _scoped_bridge(mcp_client, cwd=str(root))
+        # Bind the disposable directory to the explicit fixture project before startup.
+        _initialize(proxy, client)
+        _tool_call(proxy, client, "workspace.startSession", {"auto_bootstrap": False})
+        connected = _toolbox_call(proxy, client, "workspace.connect", {"project_id": target})
+        assert not connected["result"].get("isError"), connected
+        startup = {"auto_bootstrap": False}
+    _initialize(proxy, client)
+    _tool_call(proxy, client, "workspace.startSession", startup)
+    args = {
+        "confirmation": {
+            "permanent": True,
+            "project_id": target,
+            "project_slug": "disposable-bridge-delete",
+        },
+        "response_mode": "raw",
+    }
+    if global_session:
+        assert _is_bridge_scope_error(_toolbox_call(proxy, client, "project.delete", args))
+        args["project_id"] = target
+    else:
+        denied = _toolbox_call(proxy, client, "project.delete", {**args, "project_id": other})
+        assert _is_bridge_scope_error(denied)
+    deleted = _toolbox_call(proxy, client, "project.delete", args)
+    assert _structured(deleted)["data"]["status"] == "deleted", deleted
+    assert (
+        mcp_client.call_tool_structured("project.get", {"project_id": other})["data"]["id"] == other
+    )
+    repeated = _toolbox_call(proxy, client, "project.delete", args)
+    if global_session:
+        # Global calls retain the existing positive/existing-project admission rule.
+        assert _structured(repeated)["data"]["reason"] == "project_unavailable"
+    else:
+        assert _structured(repeated)["data"]["status"] == "missing"
+        assert (root / "keep").read_text() == "repository must survive"
 
 
 def test_bridge_toolbox_operates_setup_actions(
@@ -2113,7 +2768,7 @@ def test_bridge_toolbox_operates_setup_actions(
                     "project_id": project_id,
                     "kind": "weekly-review",
                     "cron_expr": "0 4 * * *",
-                    "enabled": True,
+                    "enabled": False,
                 },
             },
             request_id="schedule-set",
@@ -2131,7 +2786,17 @@ def test_bridge_toolbox_operates_setup_actions(
             request_id="schedule-remove",
         )
     )
-    assert removed_schedule["data"]["enabled"] is False
+    assert removed_schedule["data"] == {
+        "project_id": project_id,
+        "job_id": schedule["data"]["id"],
+        "removed": True,
+    }
+    runs = _structured(
+        _toolbox_call(
+            proxy, client, "schedule.runs", {"project_id": project_id}, request_id="schedule-runs"
+        )
+    )
+    assert runs["items"] == []
 
     httpx_mock.add_response(
         method="POST",

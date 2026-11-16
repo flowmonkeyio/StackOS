@@ -259,6 +259,60 @@ def test_reenable_adopts_and_reuses_existing_finance_without_reset(
         assert (legacy["root"] / relative).read_bytes() == content
 
 
+def test_console_readiness_uses_explicit_project_enablement_and_preserves_unavailable_store(
+    api, project_id, settings
+):
+    root = settings.data_dir / "projects" / str(project_id) / "finance"
+    plugin_url = f"/api/v1/plugins/finance?project_id={project_id}"
+    assert api.get(plugin_url).json()["enabled_for_project"] is None
+    denied = call(api, "finance.status", {"project_id": project_id})
+    assert denied.status_code == 403
+    assert denied.json()["data"]["finance_code"] == "plugin_not_enabled"
+    assert not root.exists()
+
+    ui = api.get("/api/v1/auth/ui-token").json()["token"]
+    enabled = api.post(
+        "/api/v1/operations/plugin.enable/call",
+        headers={"Authorization": f"Bearer {ui}"},
+        json={"arguments": {"project_id": project_id, "plugin_slug": "finance"}},
+    )
+    assert enabled.status_code == 200
+    assert enabled.json()["data"]["project_id"] == project_id
+    assert api.get(plugin_url).json()["enabled_for_project"] is True
+    assert call(api, "finance.status", {"project_id": project_id}).status_code == 200
+    master = root / "finance.json"
+    original = master.read_bytes()
+    master.unlink()
+    unavailable = call(api, "finance.status", {"project_id": project_id})
+    assert unavailable.status_code == 422
+    assert unavailable.json()["data"]["finance_code"] != "plugin_not_enabled"
+    assert api.get(plugin_url).json()["enabled_for_project"] is True
+    assert not master.exists()  # An enabled but provisioned store is never reset.
+    master.write_bytes(original)
+    assert call(api, "finance.status", {"project_id": project_id}).status_code == 200
+    assert master.read_bytes() == original
+
+    # This setup grant does not admit unrelated browser mutations or unknown projects.
+    assert (
+        api.post(
+            "/api/v1/operations/plugin.disable/call",
+            headers={"Authorization": f"Bearer {ui}"},
+            json={"arguments": {"project_id": project_id, "plugin_slug": "finance"}},
+        ).status_code
+        == 403
+    )
+    missing = api.post(
+        "/api/v1/operations/plugin.enable/call",
+        headers={"Authorization": f"Bearer {ui}"},
+        json={"arguments": {"project_id": project_id + 999, "plugin_slug": "finance"}},
+    )
+    assert missing.status_code == 404
+    api.post(f"/api/v1/projects/{project_id}/plugins/finance/disable")
+    assert api.get(plugin_url).json()["enabled_for_project"] is False
+    assert call(api, "finance.status", {"project_id": project_id}).status_code == 403
+    assert master.read_bytes() == original
+
+
 def test_reads_and_denied_status_do_not_create_a_store(api, project_id, settings):
     api.post(f"/api/v1/projects/{project_id}/plugins/finance/enable")
     arguments = {
@@ -581,7 +635,11 @@ def test_project_rename_and_deletion_cannot_reassign_retained_data(api, project_
     )
     with Session(api.app.state.engine) as session:
         repo = ProjectRepository(session)
-        repo.delete(project_id, hard=True)
+        # Historical orphan fixture; confirmed cleanup would remove these files.
+        from stackos.db.models import Project
+
+        session.delete(session.get(Project, project_id))
+        session.commit()
         replacement = repo.create(
             slug="betsage", name="Replacement", domain="replacement.example"
         ).data.id

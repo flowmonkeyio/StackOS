@@ -6,22 +6,28 @@ from typing import Any
 
 from sqlmodel import select
 
+from stackos import task_delivery
 from stackos.artifacts import redact_secret_text
 from stackos.db.models import RunPlan, RunPlanStatus
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.tracker.schemas import (
+    TrackerConfigureDeliveryInput,
     TrackerCreateTaskInput,
     TrackerCreateTicketInput,
     TrackerLinkRunPlanInput,
     TrackerPatchInput,
     TrackerPickInput,
+    TrackerPlaceTaskInput,
     TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerReopenInput,
+    TrackerReorderTaskInput,
+    TrackerStartDeliveryInput,
     TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
+    TrackerUpdateTaskPriorityInput,
     TrackerUpdateTicketInput,
 )
 from stackos.repositories.base import ConflictError, ValidationError
@@ -30,8 +36,43 @@ from stackos.repositories.tracker import (
     TrackerMutationOut,
     TrackerReopenOut,
     TrackerRepository,
+    TrackerTaskBoardOut,
     TrackerTaskContentOut,
+    TrackerTaskOut,
 )
+
+
+async def tracker_configure_delivery(
+    inp: TrackerConfigureDeliveryInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[dict[str, Any]]:
+    if (
+        ctx.extras.get("surface") != "rest"
+        or ctx.extras.get("client_surface", "rest") != "rest"
+        or ctx.extras.get("trusted_local_admin") is not True
+    ):
+        raise ValidationError("Delivery defaults require authenticated local-admin setup")
+    repo = TrackerRepository(ctx.session)
+    if inp.main_agent is not None:
+        result = repo.configure_main_agent(
+            project_id=inp.project_id,
+            preferences=inp.main_agent.model_dump(exclude_none=True),
+        ).model_dump(mode="json")
+    elif inp.adopt_sources is not None:
+        assert inp.project_dir is not None
+        result = repo.adopt_delivery_sources(
+            project_id=inp.project_id,
+            project_dir=inp.project_dir,
+            sources={role: choice.model_dump() for role, choice in inp.adopt_sources.items()},
+            preview=inp.preview,
+        )
+    else:
+        assert inp.delivery is not None
+        result = repo.configure_delivery(
+            project_id=inp.project_id, delivery=inp.delivery.model_dump(exclude_unset=True)
+        ).model_dump(mode="json")
+    return WriteEnvelope(data=result, run_id=ctx.run_id, project_id=inp.project_id)
 
 
 def _safe_rejection_reason(reason: str) -> str:
@@ -39,6 +80,44 @@ def _safe_rejection_reason(reason: str) -> str:
     if not clean:
         raise ValidationError("reason is required to reject a task")
     return clean
+
+
+async def tracker_start_delivery(
+    inp: TrackerStartDeliveryInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[dict[str, Any]]:
+    scheduler = ctx.extras.get("scheduler")
+    session_factory = ctx.extras.get("session_factory")
+    if scheduler is None or session_factory is None:
+        raise ValidationError("Task delivery requires the running StackOS daemon")
+    result = task_delivery.start_delivery(
+        session=ctx.session,
+        session_factory=session_factory,
+        scheduler=scheduler,
+        project_id=inp.project_id,
+        task_key=inp.task_key,
+        project_dir=inp.project_dir,
+        mcp_config_ref=inp.mcp_config_ref.model_dump() if inp.mcp_config_ref else None,
+        host_key=inp.host_key,
+        delivery_agent=inp.delivery_agent.model_dump(exclude_unset=True)
+        if inp.delivery_agent is not None
+        else None,
+        review_agent=inp.review_agent.model_dump(exclude_unset=True)
+        if inp.review_agent is not None
+        else None,
+        agents={role: choice.model_dump(exclude_unset=True) for role, choice in inp.agents.items()}
+        if inp.agents is not None
+        else None,
+        run_plan_id=inp.run_plan_id,
+        step_id=inp.step_id,
+        agent_assignments=inp.agent_assignments,
+        replace_review=inp.replace_review.model_dump(exclude_none=True)
+        if inp.replace_review
+        else None,
+        controller_run_id=ctx.run_id,
+    )
+    return WriteEnvelope(data=result, run_id=ctx.run_id, project_id=inp.project_id)
 
 
 def _safe_reopen_reason(reason: str) -> str:
@@ -293,6 +372,48 @@ async def tracker_update_task(
     )
 
 
+async def tracker_update_task_priority(
+    inp: TrackerUpdateTaskPriorityInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskBoardOut]:
+    env = TrackerRepository(ctx.session).update_task_board(
+        **inp.model_dump(exclude={"run_token", "expected_etag", "response_mode"}),
+        actor="local-user:operator"
+        if str(ctx.extras.get("auth_scope")).startswith("ui-")
+        else None,
+    )
+    return WriteEnvelope[TrackerTaskBoardOut](data=env.data, project_id=env.project_id)
+
+
+async def tracker_reorder_task(
+    inp: TrackerReorderTaskInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskBoardOut]:
+    env = TrackerRepository(ctx.session).update_task_board(
+        **inp.model_dump(exclude={"run_token", "expected_etag", "response_mode"}),
+        actor="local-user:operator"
+        if str(ctx.extras.get("auth_scope")).startswith("ui-")
+        else None,
+    )
+    return WriteEnvelope[TrackerTaskBoardOut](data=env.data, project_id=env.project_id)
+
+
+async def tracker_place_task(
+    inp: TrackerPlaceTaskInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskBoardOut]:
+    env = TrackerRepository(ctx.session).update_task_board(
+        **inp.model_dump(exclude={"run_token", "expected_etag", "response_mode"}),
+        actor="local-user:operator"
+        if str(ctx.extras.get("auth_scope")).startswith("ui-")
+        else None,
+    )
+    return WriteEnvelope[TrackerTaskBoardOut](data=env.data, project_id=env.project_id)
+
+
 async def tracker_update_task_content(
     inp: TrackerUpdateTaskContentInput,
     ctx: MCPContext,
@@ -332,13 +453,16 @@ async def tracker_reject_task(
     if workflow_run_plan_id is not None:
         plan = ctx.session.get(RunPlan, workflow_run_plan_id)
         if plan is not None and plan.project_id == inp.project_id:
-            if plan.status in {RunPlanStatus.DRAFT, RunPlanStatus.STARTED}:
-                RunPlanRepository(ctx.session).abort(
+            if plan.status in {RunPlanStatus.DRAFT, RunPlanStatus.STARTED, RunPlanStatus.ABORTED}:
+                from stackos.task_delivery import abort_run_plan
+
+                abort_run_plan(
+                    ctx.session,
                     project_id=inp.project_id,
                     run_plan_id=workflow_run_plan_id,
                     reason=reason,
                     actor=inp.actor,
-                    commit=False,
+                    scheduler=ctx.extras.get("scheduler"),
                 )
             elif plan.status in {RunPlanStatus.COMPLETED, RunPlanStatus.FAILED}:
                 raise ConflictError(
@@ -351,10 +475,6 @@ async def tracker_reject_task(
                         "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
                     },
                 )
-            else:
-                # Already-aborted workflow plans can receive a rejection note in tracker
-                # without changing canonical run-plan state.
-                pass
         else:
             raise ValidationError(
                 "workflow task run plan not found in project",
@@ -436,13 +556,13 @@ async def tracker_reopen(
             include_graph=False,
         )
         task = snapshot.tasks[0] if snapshot.tasks else None
+        assert task is None or isinstance(task, TrackerTaskOut)  # This is the default full read.
         out = TrackerReopenOut(
             tracker=snapshot.tracker,
             task=task,
             rev=snapshot.tracker.rev,
             run_plan_id=workflow_run_plan_id,
             run_id=run_env.data.run_id,
-            run_token=run_env.data.run_token,
             reopened_step_id=run_env.data.reopened_step_id,
             reset_step_ids=run_env.data.reset_step_ids,
             next_operations=run_env.data.next_operations,
@@ -577,7 +697,10 @@ __all__ = [
     "tracker_reject_task",
     "tracker_release",
     "tracker_reopen",
+    "tracker_reorder_task",
+    "tracker_start_delivery",
     "tracker_update_task",
     "tracker_update_task_content",
+    "tracker_update_task_priority",
     "tracker_update_ticket",
 ]

@@ -15,10 +15,13 @@ from stackos.api.pagination import PageResponse, page_response, pagination_param
 from stackos.repositories.projects import (
     IntegrationBudgetOut,
     IntegrationBudgetRepository,
+    ProjectName,
     ProjectOut,
     ProjectRepository,
+    ScheduleConfiguration,
     ScheduledJobOut,
     ScheduledJobRepository,
+    ScheduleRemovalOut,
 )
 from stackos.repositories.runs import RunRepository
 
@@ -38,7 +41,7 @@ class ProjectCreateRequest(BaseModel):
     )
 
     slug: str = Field(min_length=1, max_length=80)
-    name: str = Field(min_length=1, max_length=200)
+    name: ProjectName
     domain: str = Field(min_length=1, max_length=255)
     niche: str | None = Field(default=None, max_length=200)
     locale: str = Field(default="en-US", max_length=16)
@@ -48,18 +51,17 @@ class ProjectCreateRequest(BaseModel):
 class ProjectUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = Field(default=None, max_length=200)
+    name: ProjectName | None = None
     domain: str | None = Field(default=None, max_length=255)
     niche: str | None = Field(default=None, max_length=200)
     locale: str | None = Field(default=None, max_length=16)
     schedule_json: dict[str, Any] | None = None
     is_active: bool | None = None
+    primary_workspace_binding_id: int | None = Field(default=None, gt=0, strict=True)
 
 
-class ScheduleUpsertRequest(BaseModel):
-    kind: str = Field(min_length=1, max_length=120)
-    cron_expr: str = Field(min_length=1, max_length=120)
-    enabled: bool = True
+class ScheduleUpsertRequest(ScheduleConfiguration):
+    pass
 
 
 class BudgetUpsertRequest(BaseModel):
@@ -129,15 +131,6 @@ async def update_project(
     return write_response(ProjectRepository(session).update(project_id, **patch))
 
 
-@router.delete("/{project_id}", response_model=WriteResponse[ProjectOut])
-async def delete_project(
-    project_id: int,
-    hard: bool = Query(default=False),
-    session: Session = Depends(get_session),
-) -> WriteResponse[ProjectOut]:
-    return write_response(ProjectRepository(session).delete(project_id, hard=hard))
-
-
 @router.get("/{project_id}/schedules", response_model=list[ScheduledJobOut])
 async def list_schedules(
     project_id: int,
@@ -158,6 +151,14 @@ async def upsert_schedule(
             kind=body.kind,
             cron_expr=body.cron_expr,
             enabled=body.enabled,
+            name=body.name,
+            timezone=body.timezone,
+            template_key=body.template_key,
+            goal=body.goal,
+            inputs_json=body.inputs_json,
+            execution_json=body.execution_json.model_dump(exclude_unset=True)
+            if body.execution_json
+            else None,
         )
     )
 
@@ -169,18 +170,18 @@ async def toggle_schedule(
     enabled: bool,
     session: Session = Depends(get_session),
 ) -> WriteResponse[ScheduledJobOut]:
-    _ = project_id
-    return write_response(ScheduledJobRepository(session).toggle(job_id, enabled=enabled))
+    return write_response(
+        ScheduledJobRepository(session).toggle(job_id, project_id=project_id, enabled=enabled)
+    )
 
 
-@router.delete("/{project_id}/schedules/{job_id}", response_model=WriteResponse[ScheduledJobOut])
+@router.delete("/{project_id}/schedules/{job_id}", response_model=WriteResponse[ScheduleRemovalOut])
 async def delete_schedule(
     project_id: int,
     job_id: int,
     session: Session = Depends(get_session),
-) -> WriteResponse[ScheduledJobOut]:
-    _ = project_id
-    return write_response(ScheduledJobRepository(session).toggle(job_id, enabled=False))
+) -> WriteResponse[ScheduleRemovalOut]:
+    return write_response(ScheduledJobRepository(session).remove(job_id, project_id=project_id))
 
 
 @router.get("/{project_id}/budgets", response_model=list[IntegrationBudgetOut])

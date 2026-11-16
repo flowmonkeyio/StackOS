@@ -9,17 +9,24 @@ import {
   UiMetadataStrip,
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
+import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
+import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
-import type { TrackerTicket } from '@/lib/task-tracker/types'
+import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
+import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
 import { hasJsonObject } from './detailUtils'
 
 const props = defineProps<{
   ticket: TrackerTicket | null
+  parentTask?: TrackerTask | null
   loading?: boolean
   error?: string | null
 }>()
+
+const delivery = computed(() => props.parentTask?.key === props.ticket?.task_key ? taskDeliveryState(props.parentTask) : null)
 
 const ticketFacts = computed(() => {
   const ticket = props.ticket
@@ -45,7 +52,6 @@ const ticketTraceFacts = computed(() => {
     { label: 'Parent', value: ticket.parent_ticket_key ?? '-' },
     { label: 'Created', value: formatDateTime(ticket.created_at) },
     { label: 'Claimed', value: ticket.claimed_at ? formatDateTime(ticket.claimed_at) : '-' },
-    { label: 'Started', value: ticket.started_at ? formatDateTime(ticket.started_at) : '-' },
     { label: 'Completed', value: ticket.completed_at ? formatDateTime(ticket.completed_at) : '-' },
   ]
 })
@@ -120,6 +126,26 @@ function relationSummary(ticket: TrackerTicket): string {
           </p>
         </div>
       </div>
+      <TaskDeliveryStop
+        v-if="delivery?.ticketKey === ticket.key"
+        :delivery="delivery"
+        :tickets="[ticket]"
+        detailed
+      />
+      <AgentUsageSummary
+        v-if="parentTask?.key === ticket.task_key && isAutomaticDeliveryTask(parentTask)"
+        :metrics="ticket.agent_stats"
+        :active="!!ticket.active_execution"
+        compact
+        aria-label="Ticket total usage"
+        title="Ticket total usage"
+      />
+      <ActiveExecutionLine
+        :item="ticket"
+        :execution="ticket.active_execution"
+        detailed
+        focusable
+      />
       <UiMetadataStrip
         :items="ticketFacts"
         aria-label="Ticket core metadata"

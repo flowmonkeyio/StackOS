@@ -1,5 +1,6 @@
 import { trackerStatus } from '@/design/status'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
+import { boardTicketEntry } from '@/views/task-tracker/boardFilters'
 
 export const ticketStatuses = Object.keys(trackerStatus) as TrackerStatus[]
 export type TicketCounts = Record<TrackerStatus, number>
@@ -48,7 +49,7 @@ export interface ConfiguredWorkflow {
 
 export function ticketWorkUrl(projectId: number, status?: TrackerStatus): string {
   const params = new URLSearchParams()
-  if (status) params.set('ticket_status', status)
+  if (status) params.set('work_entry', boardTicketEntry(status))
   return `/projects/${projectId}/tasks${params.size ? `?${params.toString()}` : ''}`
 }
 

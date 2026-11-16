@@ -3,8 +3,89 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session, select
 
+from stackos.db.models import Action
+from stackos.repositories.plugins import ActionOut, PluginRepository
 from tests.helpers.plugin_catalog import assert_builtin_plugin_catalog
+
+
+def test_directory_metadata_operations_are_complete_and_keep_detailed_schema_search(
+    api: TestClient, project_id: int, monkeypatch
+) -> None:
+    # A real route/dispatcher/repository call, not a mocked action-array envelope.
+    with Session(api.app.state.engine) as session:
+        repo = PluginRepository(session)
+        expected = repo.list_actions(project_id=project_id)
+        action = session.exec(select(Action).where(Action.key == "mock.echo")).one()
+        action.input_schema_json = {
+            "type": "object",
+            "properties": {
+                "uniquedirectoryschemaneedle": {"type": "string", "description": "x" * 20000},
+            },
+        }
+        session.add(action)
+        session.commit()
+
+    def forbid_full_projection(*_args, **_kwargs):
+        raise AssertionError("directory summaries must not construct ActionOut")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ActionOut, "__init__", forbid_full_projection)
+        listed = api.post(
+            "/api/v1/operations/action.list/call",
+            json={
+                "arguments": {
+                    "project_id": project_id,
+                    "include_unavailable_integrations": True,
+                    "response_mode": "raw",
+                }
+            },
+        )
+        inventory = api.post(
+            "/api/v1/operations/integration.list/call",
+            json={
+                "arguments": {
+                    "project_id": project_id,
+                    "include_unavailable": True,
+                    "include_actions": True,
+                    "response_mode": "raw",
+                }
+            },
+        )
+    assert listed.status_code == inventory.status_code == 200
+    data = listed.json()
+    assert data["count"] == len(data["items"]) == len(expected) > 25
+    assert [row["action_ref"] for row in data["items"]] == [row.action_ref for row in expected]
+    assert all("input_schema_json" not in row and "config_json" not in row for row in data["items"])
+    assert any(not row["exposure"]["visible_by_default"] for row in data["items"])
+    provider_counts: dict[tuple[str, str], int] = {}
+    for row in expected:
+        key = (row.plugin_slug, row.provider_key)
+        provider_counts[key] = provider_counts.get(key, 0) + 1
+    for item in inventory.json()["items"]:
+        key = (item["plugin_slug"], item["provider_key"])
+        assert item["total_action_count"] == provider_counts.get(key, 0)
+        assert len(item["actions"]) == item["total_action_count"]
+
+    searched = api.post(
+        "/api/v1/operations/action.list/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "query": "uniquedirectoryschemaneedle",
+                "include_unavailable_integrations": True,
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert searched.status_code == 200
+    assert [row["action_ref"] for row in searched.json()["items"]] == ["utils.mock.echo"]
+    detail = api.get(
+        "/api/v1/actions/mock.echo", params={"project_id": project_id, "plugin_slug": "utils"}
+    )
+    assert detail.status_code == 200
+    assert "uniquedirectoryschemaneedle" in detail.json()["input_schema_json"]["properties"]
 
 
 def test_plugin_catalog_routes(api: TestClient) -> None:
@@ -20,6 +101,10 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         for plugin in compact_plugins.json()
     )
     assert len(compact_plugins.content) < len(plugins.content)
+    for response in (plugins, compact_plugins):
+        by_slug = {plugin["slug"]: plugin for plugin in response.json()}
+        for slug in ("trackbooth", "shopify", "linear", "publishing"):
+            assert by_slug[slug]["manifest_json"]["ui"] is None
 
     catalog = api.get("/api/v1/catalog/utils")
     assert catalog.status_code == 200
@@ -142,9 +227,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
 
     trackbooth_catalog = api.get("/api/v1/catalog/trackbooth")
     assert trackbooth_catalog.status_code == 200
-    assert trackbooth_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
-        "Trackbooth"
-    )
+    assert trackbooth_catalog.json()["plugin"]["manifest_json"]["ui"] is None
     assert {p["key"] for p in trackbooth_catalog.json()["providers"]} == {"trackbooth"}
     trackbooth_action_keys = {a["key"] for a in trackbooth_catalog.json()["actions"]}
     assert len(trackbooth_action_keys) == 3
@@ -169,9 +252,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
 
     publishing_catalog = api.get("/api/v1/catalog/publishing")
     assert publishing_catalog.status_code == 200
-    assert publishing_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
-        "Publishing"
-    )
+    assert publishing_catalog.json()["plugin"]["manifest_json"]["ui"] is None
     assert {p["key"] for p in publishing_catalog.json()["providers"]} >= {
         "wordpress",
         "ghost",

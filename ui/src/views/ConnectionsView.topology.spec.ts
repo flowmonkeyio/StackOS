@@ -25,6 +25,65 @@ describe('ConnectionsView ingress and topology', () => {
     vi.restoreAllMocks()
   })
 
+  it('does not turn unavailable topology and ingress reads into zero or setup conclusions', async () => {
+    globalThis.fetch = vi.fn(async input => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url.includes('/connections/accounts') || url === '/api/v1/auth/accounts')
+        return json({ project_id: url.includes('/projects/') ? 1 : null, providers: [], accounts: [] })
+      return json({ detail: 'Fixture read unavailable' }, 503)
+    }) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/projects/:id/connections', component: ConnectionsView },
+    ] })
+    await router.push('/projects/1/connections')
+    const wrapper = mountConnections(router)
+    try {
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Unavailable'))
+      expect(wrapper.text()).not.toContain('0 configured')
+      expect(wrapper.text()).not.toContain('0 visible')
+      expect(wrapper.text()).not.toContain('Needs setup')
+      expect(wrapper.text()).toContain('0 services connected')
+      for (const name of ['BotsPanel', 'ChannelsPanel', 'DestinationsPanel', 'HandoffRulesPanel']) {
+        expect(wrapper.findComponent({ name }).findComponent({ name: 'UiCountBadge' }).exists()).toBe(false)
+      }
+      expect(wrapper.find('[aria-label="Channel list"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
+  it('keeps successful summary and panel counts known when only Destinations fails', async () => {
+    globalThis.fetch = vi.fn(async input => {
+      const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+      if (url.includes('/connections/accounts') || url === '/api/v1/auth/accounts')
+        return json({ project_id: url.includes('/projects/') ? 1 : null, providers: [], accounts: [] })
+      if (url.includes('communicationTarget.list')) return json({ detail: 'Destinations unavailable' }, 503)
+      if (url.includes('communicationProfile.list')) return json({ items: [{
+        record_id: 1, project_id: 1, profile_ref: 'communication-profile:fixture', key: 'fixture', enabled: true,
+        identity: { display_name: 'Fixture bot' }, provider_facets: {}, access_policy: {}, trigger_policy: {},
+        response_policy: {}, metadata_json: {}, agent_guidance: {}, binding_status: 'ready', binding_issues: [],
+      }] })
+      if (url.includes('ingressEndpoint.status')) return json({ configured: false, ready: false, endpoint: null, routes: [], notes: [] })
+      return json({ items: [] })
+    }) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/projects/:id/connections', component: ConnectionsView },
+    ] })
+    await router.push('/projects/1/connections?section=channels')
+    const wrapper = mountConnections(router)
+    try {
+      await vi.waitFor(() => expect(wrapper.text()).toContain('1 configured'))
+      expect(wrapper.text()).toContain('0 visible')
+      expect(wrapper.findComponent({ name: 'BotsPanel' }).findComponent({ name: 'UiCountBadge' }).text()).toBe('1')
+      expect(wrapper.findComponent({ name: 'ChannelsPanel' }).findComponent({ name: 'UiCountBadge' }).text()).toBe('0')
+      expect(wrapper.findComponent({ name: 'DestinationsPanel' }).findComponent({ name: 'UiCountBadge' }).exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'ChannelsPanel' }).text()).not.toContain('Destinations unavailable')
+      expect(wrapper.findComponent({ name: 'DestinationsPanel' }).text()).toContain('Destinations unavailable')
+    } finally { wrapper.unmount() }
+  })
+
   it('renders bots, channels, destinations, and connectivity in plain language', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)

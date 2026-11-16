@@ -396,6 +396,22 @@ bounded prior opportunity set without loading unrelated project records.
 
 ## Steps
 
+For optional automatic task execution, step `extensions.agent_assignment` selects
+one existing `delivery_agent` or `review_agent`. A task-level `agent_assignments`
+map may explicitly override it at handoff; unassigned mirrors use delivery_agent.
+This is frozen role selection, with models/instructions in project/task settings.
+Native source settings take precedence over task and project fallbacks; omission
+retains inheritance and explicit null clears only the fallback. Setup/Update and
+scheduled main-agent launches use the separate saved `delivery.main_agent`
+preferences and shared host capabilities. Neither template updates nor picker
+catalog refreshes rewrite saved selections or admitted native snapshots.
+It does not introduce phase roles or runtime branches on workflow/step names.
+The generic runner traverses dependencies, then asks the selected agent to execute
+the remaining frozen mirror contract once after accepted descendants. Only the
+run-plan owner records lifecycle and validates declared outputs. Source template
+changes apply to future plans; use an explicit task map for an older frozen plan
+without rewriting its snapshot. See [task automation](task-tracker.md#automated-task-delivery).
+
 Steps are defaults, not a prison. A good step defines:
 
 - `id`
@@ -533,6 +549,26 @@ same definitions live in
 [`stackos/workflows/authoring_guide.py`](../stackos/workflows/authoring_guide.py).
 The phase summaries below are navigation, not another copy of that procedure.
 
+The guide's `project_setup_method` authors the shared setup/update agent prompt,
+bounded input contract, mode instructions, session notices and concrete question/
+result wording for both existing-session and managed entrypoints. Consumers load
+it with `response_mode=raw`; they do not keep separate prompt text. Inspect repository
+intent and current setup before inferring workflows from ordinary goals and the
+catalog's outcome/use boundaries. Ask only for missing intent or material conflicts.
+Harmless questions need no workflow run; a newly relevant goal can set up the
+appropriate method within current authority. The public getting-started guide
+remains the human walkthrough.
+
+The shared method also applies the
+[internal handoff rules](agent-operating-model.md#internal-handoffs-and-complete-deliverables):
+keep scope/status, identities, decisive outcomes, missing obligations and next
+action inline; retain detailed source-to-target mappings and checks once in the
+existing setup receipt. Both entrypoints preserve complete adapted guidance,
+required reports, partial/reused evidence and activation obligations. Continuation
+uses current amendments and remaining work with retained identities, not a replay
+of unchanged history. A concise report does not prove native consumption or
+authorize adoption; missing/stale detail remains an explicit gap.
+
 ### 1. Workflow Infrastructure Setup
 
 Bind the intended workspace, describe the effective workflow, inspect its
@@ -548,6 +584,212 @@ Prove readiness with structural and strict read-only `runPlan.validate` calls;
 return the guide's complete setup proof, including deferred inputs and exact
 preset mappings. Do not create a run plan, workflow tracker work or business
 output as setup proof.
+
+Ordinary Setup and Update request `ready_to_use`, including adaptation, canonical
+configuration and verified activation. Only explicit `infrastructure_only` stops
+at preparation; that invocation creates no execution state and gains no execution
+authority. Missing local-admin capability remains an actionable gap for the
+authorized owner, never a silent scope downgrade. Resolve the safe activation
+method from the effective workflow/presets. Engineering's method lives in the
+`setup_activation_method` policy of `engineering.tracked-delivery` and its presets.
+Inspect saved defaults, exact role bindings and local lifecycle rules at their
+existing owners; use canonical reviewed adoption/readback. Task overrides cannot
+prove missing project defaults. Preserve compatible customization, supported host
+preferences and frozen queued/running sessions.
+
+First reuse actual completed delivery, independent review and closeout evidence
+only for claims covered at the current project/source/default/native/environment
+basis. Record covered and missing claims, then execute only missing or invalidated
+small harmless native/configuration/behavior checks within the existing owning
+setup/task. Use existing setup/native continuation when fresh loading is needed.
+Do not automatically create a separate full verification task/workflow, tracker
+parent or review workflow merely to establish readiness, or nested queue/wait/drain
+machinery solely for proof. Existing product/adaptation tasks retain independent
+review; standalone setup follows its effective method and genuine current evidence.
+Aborted, incomplete, simulated or another project's evidence cannot become completed
+activation. Distinguish prepared files, saved readback, actual native consumption,
+reused evidence and newly executed checks in the existing receipt. Missing required
+proof leaves `ready_to_use` unfinished; `activation_pending` is not success.
+
+Engineering's effective `setup_activation_method.config_json.required_role_claims`
+declares `reviewer_verification` with `role: review_agent` and
+`when_execution_requirements: {filesystem_write: true}`. Applicability comes from
+canonical saved role requirements, never a task override or command parsing.
+Setup declares `execution_requirements.filesystem_write=true` for test/scratch-running
+reviewers through the canonical defaults owner. Managed role proposals carry this
+same typed requirement; adoption preserves omission and saves explicit values
+atomically with source adoption, rejecting incompatible execution before commit.
+Explicit false retains inspection-only behavior.
+When applicable, its reviewer executes a bounded,
+project-selected representative tool/scratch/isolated-fixture check using the
+selected native settings and normal approvals. A successful generic conversation
+or a setup coordinator's `verification_status` cannot establish that capability.
+Keep the observation in the existing setup receipt and native result; do not add a
+separate proof task, receipt store, full workflow canary or all-host launch matrix.
+An inspection-only project adaptation must explicitly select its applicable method
+and claim coverage; core never infers capability requirements from shell commands.
+
+`SetupActivationCheck.execution` binds role, agent, host, workspace binding, source
+ref/digest when source-backed, and the digest of resolved execution settings.
+The execution binding names the actual approved source/task tree, which may be a
+secondary same-project worktree; the setup basis retains the primary folder and
+canonical saved-default selection. A different or foreign binding cannot relabel
+the tree actually launched.
+Inline hosts use their actual frozen snapshot without invented source refs. A
+`task_phase` reference identifies `task_id`, `ticket_id`, `attempt`, `phase`,
+`invocation_id`, and the canonical native result's `outcome_digest`. It resolves
+current and retained historical `automatic_delivery` receipts at their existing
+ticket owner. Completion, actual native session/snapshot, role/settings, current
+saved selection and project/environment must match. Existing `native_request` and
+`workflow_step` references still cover their original claims; a generic coordinator
+or workflow result does not acquire reviewer identity by assertion. A role-bearing
+`native_request` is accepted only with the actual specialist's frozen source,
+settings, instructions, native session, invocation and retired logical outcome.
+
+Fresh managed setup needs no prior reviewer task. Its verification coordinator
+returns one `role_verification_request` containing `role`, exact missing `claims`,
+project-selected bounded `instructions`, `environment_ref` and `evidence_ref`.
+The existing setup owner resolves and freezes that selected specialist, then uses
+its finite request continuation for a `role_verification` turn in a distinct
+native session. The native request records the real role snapshot and observations.
+After retirement the original coordinator session resumes with
+`completed_role_verifications`, including the canonical reference and execution
+binding. Completion combines this evidence with covered generic verification in
+the existing workflow receipt. Matching completed evidence is reused instead.
+Failed/cancelled/stale/wrong-role checks cannot complete setup; explicit recovery
+resumes the same frozen specialist and returns to the retained coordinator.
+This adds no proof task, workflow, evidence store or replacement runner.
+
+The reviewer records an observation in its JSON-encoded `outputs`:
+
+```json
+{"setup_activation_checks":[{"claims":["reviewer_verification"],"status":"passed","environment_ref":"<actual environment identity>","evidence_ref":"<command, exit status and observed results>"}]}
+```
+
+The setup check names the same environment and evidence ref. A generic success,
+missing observation, foreign project, failed/cancelled/simulated execution or
+mismatched snapshot cannot cover the role claim. Reuse completed matching evidence;
+when relevant source, settings, required capability or environment changes, retain
+the prior observation and execute only the affected missing checks. Refreshing
+saved readback cannot relabel an old native source as newly loaded. A denial stops
+that write and dependent proof; continue authorized alternatives and unaffected
+work while leaving unavailable required proof unfinished. Explicit review-only
+replacement (`replace_review`) belongs to the authorized recovery owner for a
+quiescent stopped review, preserving candidate, completed delivery, failed reviewer
+history and consumed repair allowance. Source preparation, saved defaults, native
+consumption and installed activation remain distinct.
+
+For other domains use their own safe method conditionally. Technical setup never
+authorizes unrelated finance transactions, publication, communications or trading.
+An unavailable safe method/capability remains explicit; genuine per-run business
+inputs may remain deferred separately from operational setup. No all-role launch
+matrix or replacement runner is needed.
+
+### Applied setup evidence
+
+`ProjectSetupRepository` owns one current receipt per project/workflow key.
+`projectSetup.get` is the shared Home/agent read. Template selection, an active
+version pointer, a source hash, or a reminder dismissal never establishes applied
+setup. Legacy setup without verified provenance remains unknown and can be
+inspected/adopted by the setup agent.
+
+A successful repository result records the effective template origin/version,
+main-agent and specialist sources, meaningful extension provenance, bounded source
+snapshots, local adaptation/file provenance, role decisions, source-obligation
+coverage, host syntax/registration/reference and behavior checks, activation
+evidence, the separate readiness tuple, deferred input keys, time and attempt/result
+refs. Snapshot digests cover canonical JSON. Snapshots are receipt-owned comparison
+evidence, so the prior applied base remains available after a source disappears;
+live overrides remain under their existing owners. There is no second source
+version registry or empty extension for bookkeeping.
+
+Report each source's exact inspected `kind`, `key`, `origin`, `ref`, `version`
+and `digest`; omit its `content` body to avoid echoing large workflow and role
+documents through the agent tool call. The receipt owner compares the complete
+source set against current authoritative sources, restores omitted bodies and
+revalidates the full result before storing it. Supplied bodies still require a
+matching digest. Unknown, duplicate or changed sources reject without advancing
+the receipt. Stored snapshots stay complete; this does not waive source reading,
+obligation coverage, host proof or ownership and revision checks.
+
+An update compares previous applied snapshots, current local choices and new
+effective template/main-agent/specialist sources. Verified legacy setup can be
+adopted without forced rewrites; unknown historical versions remain unknown.
+Map the full applicable source obligations to exact adapted targets and proof,
+preserving compatible overrides and declared resilience rules with their original
+conditions and owners. Adaptations and source-permitted omissions need reasons;
+material unresolved loss cannot complete the affected workflow. Finish independent
+workflows and ask a concrete question for the incompatible choice. This is agent
+judgment with receipt evidence, not a runtime semantic policy engine.
+
+Agents judge compatible adaptations and source-policy exceptions. Explicit
+unresolved obligations, missing required role mappings, failed checks and
+unjustified required omissions prevent success. This structural validation does
+not judge semantic completeness or prove actual host loading; the executing agent
+and independent review must check the underlying evidence. A known reload need
+or unknown activation stays visible as `activation_pending`.
+
+Results advance each workflow independently using its expected receipt revision.
+An already-running user agent admits one project-scoped attempt through
+`projectSetup.start`, then reports checked results through `projectSetup.report`.
+The request-owned, versioned setup namespace retains session/request lineage,
+receipt revisions, progress, concrete questions and result refs. Concurrent entries
+attach to the same owner without receiving writer authority; stale/foreign reports
+cannot change receipts. Attempt success rechecks source and receipt freshness.
+Existing-session questions and answers stay in that session. The shared
+`projectSetup.get` state is also consumed by Home; no external conversation navigation,
+business run or tracker delivery task is invented for infrastructure setup. See the
+[operation contract](operations.md#project-setup-receipts-and-reminders) for admission,
+ownership and response details.
+
+If that bridge disappears, the operator first stops its setup work in the agent
+app. Console cancellation then requires explicit stopped-work acknowledgement and
+the revision captured when confirmation opened. It revokes only that request's
+claim, retains successful receipts and history, and records possible file changes
+without claiming rollback or observed process exit. A conflict requires a fresh
+confirmation. The cancelled record remains visible; **Set up again** is a separate
+deliberate launch, with normal source and receipt validation. No session takeover,
+rebinding or automatic replacement occurs.
+
+Home's managed entry invokes one request-native coordinator with the same
+`workflowTemplate.authoringGuide` setup-method reference. It freezes the supported
+project agent selection and folder association, queues through shared task capacity,
+and records native session/usage alongside setup reports. Closing Home does not
+cancel work. Cancellation fences the owning invocation and preserves successful
+workflow receipts and partial reports; unknown native retirement stays explicit.
+Managed launch does not create a business workflow run or delivery task.
+
+Managed questions are answered through revision-checked `projectSetup.answer` in
+the console. The answer links a successor request under the same attempt and
+resumes the exact native session only after the previous invocation retires.
+`projectSetup.continue` recovers remaining partial, failed, interrupted or cancelled
+work with the same frozen selection. Confirmed never-started cancelled/missed
+launches use an explicit Start again/Retry setup action: the same owner links one
+first-launch successor only when no callback, native evidence, resume identity or
+possible edits exist. Unknown or possibly started work still requires confirmed
+retirement and the exact native session; missing identity never permits fallback.
+Prior execution/usage and successful workflow
+receipts remain intact; changed source/receipt evidence requires revalidation.
+Recovery reports possible partial edits and never invents rollback or launches a
+competing session. Existing-session questions continue in their original agent.
+
+Failed/unfinished results retain the previous successful sources and separately
+record possible partial edits. They can still be recorded when the selected folder
+becomes unavailable. Available updates compare the receipt with current effective
+template/preset/extension sources, including same-version content and origin
+changes. Missing sources remain diagnostic uncertainty rather than fabricated
+success. Writes reserve project availability against canonical cleanup.
+
+Malformed or unreadable sources return bounded repair diagnostics while retaining
+applied evidence and partial-result/reminder write responses. Comparison follows
+current declarations when previously selected optional presets become required or
+are removed; new success reports still require valid current optional selections.
+
+The two permanent project reminder timestamps control unsolicited presentation
+only. Directoryless projects are ineligible; an unavailable selected folder keeps
+receipts and preferences and exposes folder repair. Receipt rows cascade through
+the existing project cleanup, while encrypted whole-database backup/restore includes
+the rows and preferences. Repository folders and existing backups are preserved.
 
 ### 2. Workflow Prerequisite Setup
 

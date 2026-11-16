@@ -5,20 +5,33 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
 
+from stackos.host_mcp.agent_execution import InvocationCancelled, ManagedProcessControl
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     command_from_output_row,
     command_line_mentions,
+    command_matches,
     is_stackos_bridge_command,
     output_row_matches_server,
     resolve_bridge_command,
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bins, subprocess_env_for_cli
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
+    HostMcpResult,
+    looks_secretish,
+    usage_snapshot,
+    validate_agent_result,
+)
+from stackos.host_mcp.toml_config import read_mcp_config_ref
 
 HOST_KEY = "codex"
 SURFACE = "shared-config"
@@ -44,6 +57,350 @@ MACOS_CODEX_APP_BUNDLE_CANDIDATES = (
     "/Applications/Codex.app/Contents/Resources/codex",
     "~/Applications/Codex.app/Contents/Resources/codex",
 )
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+    resume_thread_id: str | None = None,
+    on_session: Callable[[str], None] | None = None,
+    mcp_config_ref: dict[str, str] | None = None,
+    native_settings: dict[str, Any] | None = None,
+    process_control: ManagedProcessControl | None = None,
+) -> AgentRunResult:
+    """Run supplied instructions in a new or explicitly selected native thread."""
+    if not instructions.strip():
+        return AgentRunResult(None, error="Project-agent instructions must not be empty.")
+
+    codex_bin = _select_codex_bin()
+    if codex_bin is None:
+        return AgentRunResult(None, error="No usable Codex CLI was found by host discovery.")
+    try:
+        overrides = (
+            task_mcp_overrides(project_dir, mcp_config_ref, codex_bin=codex_bin)[1]
+            if mcp_config_ref is not None
+            else []
+        )
+        overrides += native_agent_overrides(native_settings or {})
+        sandbox = native_agent_sandbox(sandbox, native_settings or {})
+    except ValueError as error:
+        return AgentRunResult(None, error=str(error))
+    with TemporaryDirectory(prefix="stackos-agent-") as temporary:
+        schema_path = Path(temporary) / "schema.json"
+        result_path = Path(temporary) / "result.json"
+        schema_path.write_text(json.dumps(output_schema), encoding="utf-8")
+        command = [
+            codex_bin,
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
+            "--cd",
+            str(project_dir),
+            *overrides,
+            *(["--model", model] if model is not None else []),
+            *(["-c", f"model_provider={json.dumps(provider)}"] if provider is not None else []),
+            *(
+                ["--approve-for-me"]
+                if sandbox == "workspace-write"
+                else ["--sandbox", "read-only", "-c", 'approval_policy="never"']
+            ),
+            "--output-schema",
+            str(schema_path),
+            "-o",
+            str(result_path),
+            "-c",
+            f"developer_instructions={json.dumps(instructions, ensure_ascii=False)}",
+            *(["resume", resume_thread_id] if resume_thread_id is not None else []),
+            "-",
+        ]
+        from stackos.host_mcp.progress import CodexStreamError, run_codex_process
+
+        process = None
+        thread_id = None
+        execution_error = None
+        routed_execution_error = None
+        managed_cancellation = False
+
+        def record_session(session_id: str) -> None:
+            nonlocal thread_id
+            thread_id = session_id
+            if on_session is not None:
+                on_session(session_id)
+
+        try:
+            if on_session is not None or process_control is not None:
+                process = run_codex_process(
+                    command,
+                    input=prompt,
+                    cwd=project_dir,
+                    env=subprocess_env_for_cli(codex_bin),
+                    on_session=record_session,
+                    **({"process_control": process_control} if process_control else {}),
+                )
+            else:
+                process = subprocess.run(
+                    command,
+                    input=prompt,
+                    cwd=project_dir,
+                    env=subprocess_env_for_cli(codex_bin),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+        except CodexStreamError as exc:
+            process = exc.process
+            execution_error = str(exc)
+            routed_execution_error = (
+                "Codex task-routed stream failed; inspect native host diagnostics."
+            )
+        except InvocationCancelled as exc:
+            managed_cancellation = True
+            execution_error = f"Codex process failed (InvocationCancelled): {exc}"
+            routed_execution_error = "Codex task-routed invocation cancelled before launch."
+        except (OSError, UnicodeError) as exc:
+            execution_error = f"Codex process failed ({type(exc).__name__}): {exc}"
+            routed_execution_error = (
+                "Codex task-routed process failed; inspect native host diagnostics."
+            )
+        exit_code = process.returncode if process is not None else None
+        stdout = process.stdout if process is not None else ""
+        stderr = process.stderr if process is not None else ""
+        native_error = None
+        terminal_error = None
+        usage = None
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict) and event.get("type") == "thread.started":
+                thread_id = event.get("thread_id")
+            if isinstance(event, dict) and event.get("type") == "turn.completed":
+                # Codex reports recoverable stream interruptions as error events.
+                # A later completion clears those, but never a terminal turn failure.
+                native_error = None
+                counters = event.get("usage")
+                # Native exec emits the thread's cumulative total (verified in
+                # 0.167.0 usage_from_last_total), including on resume. Cached
+                # input and reasoning output are already included subsets.
+                usage = (
+                    usage_snapshot(
+                        "codex.turn",
+                        "session",
+                        counters.get("input_tokens"),
+                        counters.get("output_tokens"),
+                        cache_read=counters.get("cached_input_tokens"),
+                        cache_write=counters.get("cache_write_input_tokens"),
+                        reasoning=counters.get("reasoning_output_tokens"),
+                    )
+                    if isinstance(counters, dict)
+                    else None
+                )
+            if isinstance(event, dict) and event.get("type") == "error":
+                native_error = str(event.get("error") or event.get("message") or "Codex failed.")
+            if isinstance(event, dict) and event.get("type") == "turn.failed":
+                terminal_error = str(event.get("error") or event.get("message") or "Codex failed.")
+        # A signal or missing final alone is not cancellation. Stream/process/turn
+        # failures remain primary even if their cleanup stopped the process.
+        managed_cancellation = managed_cancellation or (
+            execution_error is None
+            and terminal_error is None
+            and native_error is None
+            and process_control is not None
+            and process_control.cancelled.is_set()
+        )
+        execution_error = (
+            execution_error
+            or terminal_error
+            or native_error
+            or (
+                stderr.strip() or stdout.strip() or "Codex exited unsuccessfully."
+                if exit_code != 0
+                else None
+            )
+        )
+        if managed_cancellation and routed_execution_error is None:
+            execution_error = "Codex invocation cancelled by managed process control."
+        if mcp_config_ref is not None:
+            if routed_execution_error is not None:
+                # Stream failure cleanup may set cancelled; retain the initiating failure.
+                execution_error = routed_execution_error
+            elif managed_cancellation:
+                execution_error = (
+                    "Codex task-routed invocation cancelled by managed process control."
+                )
+            elif execution_error:
+                execution_error = (
+                    "Codex task-routed execution failed; inspect native host diagnostics."
+                )
+        routed_result_error = "Invalid Codex task-routed result; inspect native host diagnostics."
+        # The primary final can still contain useful facts after native failure.
+        # Retaining it never overrides the process/transport success boundary.
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if not isinstance(result, dict):
+                raise ValueError("expected a JSON object")
+        except (OSError, ValueError) as exc:
+            if managed_cancellation and isinstance(exc, FileNotFoundError):
+                # No final is expected after a positively identified cancellation.
+                # Keep the native cause/exit/usage; this remains an unsuccessful call.
+                return AgentRunResult(
+                    exit_code, thread_id=thread_id, usage=usage, error=execution_error
+                )
+            if mcp_config_ref is not None:
+                return AgentRunResult(
+                    exit_code,
+                    thread_id=thread_id,
+                    usage=usage,
+                    error=(
+                        f"{execution_error}\n{routed_result_error}"
+                        if execution_error
+                        else routed_result_error
+                    ),
+                )
+            detail = f"Invalid Codex result: {exc}"
+            native_detail = execution_error or stderr.strip() or stdout.strip()
+            return AgentRunResult(
+                exit_code,
+                thread_id=thread_id,
+                usage=usage,
+                error=f"{native_detail}\n{detail}" if native_detail else detail,
+            )
+        validated = validate_agent_result(
+            AgentRunResult(
+                exit_code,
+                thread_id=thread_id,
+                result=result,
+                usage=usage,
+                error=execution_error,
+            ),
+            output_schema,
+            "Codex",
+        )
+        if mcp_config_ref is not None and validated.result is None:
+            # Schema errors can echo private final values just like JSON-read errors.
+            return replace(
+                validated,
+                error=(
+                    f"{execution_error}\n{routed_result_error}"
+                    if execution_error
+                    else routed_result_error
+                ),
+            )
+        return validated
+
+
+def native_agent_sandbox(sandbox: AgentSandbox, settings: dict[str, Any]) -> AgentSandbox:
+    """A validated source pin can narrow the caller's sandbox, never broaden it."""
+    return "read-only" if settings.get("sandbox_mode") == "read-only" else sandbox
+
+
+def native_agent_overrides(settings: dict[str, Any]) -> list[str]:
+    """Map only the supported definition options; authority stays with the host."""
+    import tomlkit
+
+    from stackos.host_mcp.adapters.codex_definition import AgentFields, unsupported_settings
+
+    try:
+        fields = AgentFields.model_validate(
+            {
+                "name": "selection",
+                "description": "selection",
+                "developer_instructions": "selection",
+                **settings,
+            }
+        )
+        unsupported = unsupported_settings(fields, settings)
+        allowed = {
+            "model_reasoning_effort",
+            "model_reasoning_summary",
+            "model_verbosity",
+            "sandbox_mode",
+            "features",
+            "skills",
+        }
+        if set(settings) - allowed or unsupported:
+            raise ValueError("unsupported native project settings")
+    except (ValueError, TypeError):
+        raise ValueError(
+            "Unsupported native project settings; use supported reduction-only options"
+        ) from None
+
+    overrides = []
+
+    def literal(value):
+        if isinstance(value, dict):
+            table = tomlkit.inline_table()
+            for key, item in value.items():
+                table[key] = item
+            return table.as_string()
+        if isinstance(value, list):
+            return "[" + ", ".join(literal(item) for item in value) + "]"
+        return tomlkit.item(value).as_string()
+
+    def append(key, value):
+        if isinstance(value, dict):
+            for child, item in value.items():
+                append(f"{key}.{child}", item)
+        else:
+            overrides.extend(["-c", f"{key}={literal(value)}"])
+
+    for key, value in settings.items():
+        if value is None:
+            raise ValueError("Native project settings cannot contain explicit null")
+        # Sandbox is applied through the effective command mode, not an earlier
+        # -c override that --approve-for-me could overwrite with workspace-write.
+        if key != "sandbox_mode":
+            append(key, value)
+    return overrides
+
+
+def task_mcp_overrides(
+    project_dir: Path, reference: dict[str, str], *, codex_bin: str | None = None
+) -> tuple[dict[str, str], list[str]]:
+    """Serialize only route leaves over the selected host's effective servers."""
+    import tomlkit
+
+    identity, routes = read_mcp_config_ref(reference)
+    binary = codex_bin or _select_codex_bin()
+    if binary is None:
+        raise ValueError("No usable Codex CLI was found by host discovery.")
+    result = _run_codex(
+        binary, ["--cd", str(project_dir), "mcp", "list", "--json"], cwd=project_dir
+    )
+    try:
+        rows = json.loads(result.stdout)
+        if result.returncode or not isinstance(rows, list):
+            raise ValueError
+        existing = {row["name"]: row["transport"] for row in rows}
+        if any(
+            name not in existing
+            or existing[name].get("type") != "stdio"
+            or not existing[name].get("command")
+            for name in routes
+        ):
+            raise ValueError
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise ValueError("Task MCP routes require existing native stdio servers") from None
+    overrides = []
+    for name, route in sorted(routes.items()):
+        for field, value in sorted(route.items()):
+            leaves = value.items() if field == "env" else [(None, value)]
+            for key, leaf in leaves:
+                # Native -c splits the key on dots; quotes become literal key
+                # characters. Names/env keys were validated as bare identifiers.
+                suffix = f".{key}" if key is not None else ""
+                overrides.extend(
+                    ["-c", f"mcp_servers.{name}.{field}{suffix}={tomlkit.item(leaf).as_string()}"]
+                )
+    return identity, overrides
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
@@ -314,10 +671,13 @@ def _select_codex_bin() -> str | None:
     return None
 
 
-def _run_codex(codex_bin: str, args: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def _run_codex(
+    codex_bin: str, args: Sequence[str], *, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             [codex_bin, *args],
+            cwd=cwd,
             capture_output=True,
             text=True,
             check=False,
@@ -402,7 +762,8 @@ def _json_details_result(
     if (
         payload.get("enabled") is True
         and transport.get("type") == "stdio"
-        and actual_command == list(command)
+        and actual_command is not None
+        and command_matches(command, actual_command)
     ):
         return HostMcpResult(
             host_key=HOST_KEY,

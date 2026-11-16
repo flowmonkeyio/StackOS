@@ -38,19 +38,21 @@ import {
   text,
 } from '@/lib/finance'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
   projectId: number
   access: SchemaFinanceAccessOut
+  authorityCurrent?: boolean
   snapshot: SchemaFinanceSnapshotOut
   recordRef: string | null
   reporting?: Record<string, unknown>
   exponent?: number | null
-}>()
+}>(), { authorityCurrent: true })
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   (e: 'saved', value: SchemaFinanceCommitOut): void
   (e: 'refresh'): void
+  (e: 'access-denied', cause: ApiError): void
 }>()
 const detail = ref<SchemaFinanceRecordOut | null>(null)
 const loading = ref(false),
@@ -185,7 +187,7 @@ function close(value: boolean) {
   emit('update:modelValue', value)
 }
 function beginEdit() {
-  if (!canEdit.value) return
+  if (!canEdit.value || props.authorityCurrent === false) return
   editSequence++
   notice.value = ''
   error.value = ''
@@ -226,7 +228,18 @@ function invalidateDraft() {
   uncertain.value = false
 }
 let inspectedScope = ''
+let hadAuthority = props.authorityCurrent !== false
 function synchronizeScope() {
+  const authority = props.authorityCurrent !== false
+  const regained = authority && !hadAuthority
+  if (!authority && hadAuthority) {
+    loadSequence++; evidenceSequence++
+    loading.value = false
+    if (!saving.value && !uncertain.value) {
+      editSequence++; preview.value = null; heldIntent.value = null; previewing.value = false
+    }
+  }
+  hadAuthority = authority
   const scope = JSON.stringify([
     props.modelValue,
     props.projectId,
@@ -236,7 +249,10 @@ function synchronizeScope() {
     props.snapshot.revision,
     props.snapshot.sha256,
   ])
-  if (scope === inspectedScope) return
+  if (scope === inspectedScope) {
+    if (regained && props.modelValue && props.recordRef && !detail.value && !editing.value) void inspectRecord(props.recordRef)
+    return
+  }
   inspectedScope = scope
   loadSequence++
   cancelEdit()
@@ -252,7 +268,7 @@ synchronizeScope()
 onBeforeUpdate(synchronizeScope)
 
 async function inspectRecord(recordRef: string, inspectionEvent?: Event) {
-  if (!active || !props.modelValue || saving.value || uncertain.value) return
+  if (!active || !props.modelValue || props.authorityCurrent === false || saving.value || uncertain.value) return
   const origin = inspectionEvent?.currentTarget
   if (origin instanceof HTMLElement && document.activeElement === origin) {
     // Preserve keyboard position before replacing the focused history control.
@@ -273,10 +289,12 @@ async function inspectRecord(recordRef: string, inspectionEvent?: Event) {
     })
     if (!active || sequence !== loadSequence) return
     detail.value = result.data
-  } catch {
-    if (active && sequence === loadSequence)
+  } catch (cause) {
+    if (active && sequence === loadSequence) {
+      denied(cause)
       error.value =
         'Record unavailable or source changed. Refresh project Finance data before editing.'
+    }
   } finally {
     if (active && sequence === loadSequence) loading.value = false
   }
@@ -378,6 +396,7 @@ function buildIntent(): Record<string, unknown> {
   }
 }
 async function requestPreview() {
+  if (!canEdit.value || props.authorityCurrent === false) return
   error.value = ''
   preview.value = null
   heldIntent.value = null
@@ -395,7 +414,7 @@ async function requestPreview() {
       'finance.record.preview',
       { ...intent, response_mode: 'compact' },
     )
-    if (!active || sequence !== editSequence || !editing.value) return
+    if (!active || sequence !== editSequence || !editing.value || !props.authorityCurrent) return
     if (
       result.data.state !== 'valid' ||
       result.data.source_snapshot.sha256 !== props.snapshot.sha256
@@ -403,16 +422,18 @@ async function requestPreview() {
       throw new Error('Source changed. Refresh before previewing again.')
     preview.value = result.data
     heldIntent.value = intent
-  } catch {
-    if (active && sequence === editSequence)
+  } catch (cause) {
+    if (active && sequence === editSequence) {
+      denied(cause)
       error.value =
         'Preview failed or facts are unsupported. Check the sources and refresh if the snapshot changed.'
+    }
   } finally {
     if (active && sequence === editSequence) previewing.value = false
   }
 }
 async function save() {
-  if (!preview.value || !heldIntent.value || stale.value || saving.value) return
+  if (!canEdit.value || props.authorityCurrent === false || !preview.value || !heldIntent.value || stale.value || saving.value) return
   const sequence = editSequence
   const intent = heldIntent.value,
     digest = preview.value.preview_digest
@@ -431,6 +452,7 @@ async function save() {
     emit('saved', result.data)
   } catch (e) {
     if (!active || sequence !== editSequence) return
+    denied(e)
     const code = e instanceof ApiError ? text(object(e.data).finance_code) : 'outcome_unknown'
     uncertain.value = code === 'outcome_unknown'
     stale.value = !uncertain.value
@@ -442,7 +464,7 @@ async function save() {
   }
 }
 async function showOriginal(document: Record<string, unknown>) {
-  if (!active || !props.modelValue || !canReadDocument(document)) return
+  if (!active || !props.modelValue || props.authorityCurrent === false || !canReadDocument(document)) return
   clearOriginal()
   const sequence = evidenceSequence
   const identity = JSON.stringify([base(), props.recordRef, snapshotRef(props.snapshot)])
@@ -476,12 +498,16 @@ async function showOriginal(document: Record<string, unknown>) {
       contentBlob(value.content_base64, value.content_type || 'application/octet-stream'),
     )
     evidenceState.value = `Opened ${selectedOriginalName.value} · verified original`
-  } catch {
+  } catch (cause) {
     if (current()) {
+      denied(cause)
       originalReadFailed.value = true
       evidenceState.value = `${selectedOriginalName.value} cannot be opened. The original is unavailable or the source or access changed. Refresh to inspect current custody.`
     }
   }
+}
+function denied(cause: unknown) {
+  if (cause instanceof ApiError && ([401, 403, 404].includes(cause.status) || text(object(cause.data).finance_code))) emit('access-denied', cause)
 }
 onBeforeUnmount(() => {
   active = false
@@ -502,7 +528,7 @@ onBeforeUnmount(() => {
     :static-backdrop="saving || uncertain"
     @update:model-value="close"
   >
-    <p v-if="loading" role="status">Loading current source…</p>
+    <p class="min-h-6 text-sm text-fg-muted" role="status">{{ loading ? 'Loading current source…' : authorityCurrent === false ? 'Last-known record · current source validation required' : '' }}</p>
     <UiCallout v-if="error" variant="danger" role="alert">{{ error }}</UiCallout>
     <UiCallout v-if="notice" variant="success" role="status">{{ notice }}</UiCallout>
     <template v-if="detail">
@@ -548,7 +574,7 @@ onBeforeUnmount(() => {
               </p>
               <UiButton
                 size="sm"
-                :disabled="!canReadDocument(evidence)"
+                :disabled="authorityCurrent === false || !canReadDocument(evidence)"
                 :aria-label="`${evidence.availability === 'available' ? 'Open' : 'Verify and open'} ${documentName(evidence)}`"
                 :data-document-ref="text(evidence.attachment_ref)"
                 @click="showOriginal(evidence)"
@@ -611,7 +637,7 @@ onBeforeUnmount(() => {
           >Refresh original availability</UiButton
         >
         <template v-if="evidenceURL">
-          <a :href="evidenceURL" :download="evidenceName" class="focus-ring text-fg-link"
+          <a :href="authorityCurrent === false ? undefined : evidenceURL" :aria-disabled="authorityCurrent === false" :download="evidenceName" class="focus-ring text-fg-link"
             >Download {{ selectedOriginalName }}</a
           >
           <img
@@ -683,7 +709,7 @@ onBeforeUnmount(() => {
           {{ text(item.reason) }}
         </p>
       </details>
-      <UiButton v-if="canEdit && !editing" data-test="edit-record" class="mt-5" @click="beginEdit"
+      <UiButton v-if="canEdit && !editing" data-test="edit-record" class="mt-5" :disabled="authorityCurrent === false" @click="beginEdit"
         >Edit sourced facts</UiButton
       >
       <p v-if="!canEdit" class="mt-3 text-sm text-fg-muted">
@@ -850,7 +876,7 @@ onBeforeUnmount(() => {
           data-test="preview-edit"
           type="submit"
           :loading="previewing"
-          :disabled="saving || stale"
+          :disabled="authorityCurrent === false || !canEdit || saving || stale"
           variant="primary"
           >Preview changes</UiButton
         >
@@ -858,7 +884,7 @@ onBeforeUnmount(() => {
           v-else
           data-test="save-edit"
           :loading="saving"
-          :disabled="stale"
+          :disabled="authorityCurrent === false || !canEdit || stale"
           variant="primary"
           @click="save"
           >{{ uncertain ? 'Recheck same save' : 'Save reviewed changes' }}</UiButton

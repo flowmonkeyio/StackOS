@@ -93,6 +93,22 @@ def test_display_convention_only_for_unreviewed_usd(monkeypatch):
     assert reviewed == {"minor": "1234", "currency": "USD", "exponent": 3}
 
 
+def test_report_exports_preserve_unreviewed_display_precision(monkeypatch):
+    import csv
+    import io
+
+    module = management()
+    monkeypatch.setattr(module, "_precision", lambda *args: (None, None))
+    amount, _ = module._display_amount(None, {}, {"amount": money(1234)}, None)
+    projection = module.query(snapshot(fixture_document()), QUERY)
+    projection["rows"][0]["amount"] = amount
+    rows = list(csv.DictReader(io.StringIO(module.render_report(projection, "csv").decode())))
+    assert rows[0]["precision_basis"] == "currency-convention"
+    assert "not been reviewed" in rows[0]["precision_warning"]
+    report = module.render_report(projection, "markdown").decode()
+    assert "USD 12.34 (display units only; precision not reviewed)" in report
+
+
 def test_undated_label_uses_safe_original_filename_without_inferred_type():
     row = {
         "counterparty": "MongoDB",

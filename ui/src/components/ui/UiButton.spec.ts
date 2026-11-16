@@ -6,6 +6,18 @@ import UiIcon from './UiIcon.vue'
 import { h } from 'vue'
 
 describe('UiButton', () => {
+  it('uses one alignment choice while keeping ordinary and icon-only buttons centered', async () => {
+    const wrapper = mount(UiButton, { slots: { default: 'Status' } })
+    expect(wrapper.classes()).toContain('justify-center')
+    await wrapper.setProps({ align: 'start' })
+    expect(wrapper.classes()).toContain('justify-start')
+    expect(wrapper.classes()).not.toContain('justify-center')
+    await wrapper.setProps({ iconOnly: true })
+    expect(wrapper.classes()).toContain('justify-center')
+    expect(wrapper.classes()).not.toContain('justify-start')
+    wrapper.unmount()
+  })
+
   it('renders supported button icons as inline SVGs', () => {
     const wrapper = mount(UiButton, {
       props: { iconLeft: 'plug-zap', iconRight: 'ban' },

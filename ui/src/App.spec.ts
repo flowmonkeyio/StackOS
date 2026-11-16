@@ -4,7 +4,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, nextTick, onMounted } from 'vue'
 import { createMemoryHistory, createRouter, useRoute } from 'vue-router'
 
+import { PatternSummarySource, type SchemaPatternPage } from '@/api'
 import App from './App.vue'
+import PatternsView from './views/PatternsView.vue'
 import { useProjectsStore, type Project } from '@/stores/projects'
 
 const ORIG_FETCH = globalThis.fetch
@@ -136,11 +138,45 @@ describe('App', () => {
     expect(wrapper.get('h1').text()).toBe('Connections 2')
   })
 
+  it('retains the same global Patterns collection and filters when the selected project changes', async () => {
+    const projects = useProjectsStore()
+    projects.items = [projectFixture(1, 'Alpha'), projectFixture(2, 'Beta')]
+    projects.activeProjectId = 1
+    const patterns: SchemaPatternPage = {
+      items: [{ id: 1, pattern_ref: 'pattern:1', key: 'synthetic', title: 'Shared example', summary: 'All projects', source: PatternSummarySource.custom, source_label: 'Custom', tags: [], revision: 1, etag: '1:1', created_at: '2026-11-12T00:00:00Z', updated_at: '2026-11-12T00:00:00Z' }],
+      next_cursor: null, total_estimate: 1, catalog_total: 1,
+    }
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => String(url).includes('/operations/pattern.list/')
+      ? json(patterns)
+      : json([])) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/patterns/:patternId?', component: PatternsView }] })
+    await router.push('/patterns')
+    const wrapper = mount(App, { global: { plugins: [router], stubs: {
+      DesktopUpdatePrompt: true,
+      PluginNavRenderer: { template: '<nav />' },
+      ProjectSwitcher: { emits: ['select'], template: '<button data-test="switch-project" @click="$emit(\'select\', 2)">Beta</button>' },
+    } } })
+    await flushPromises()
+    await wrapper.get('input[type="search"]').setValue('specific')
+    await flushPromises()
+    await wrapper.get('[data-test="switch-project"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/patterns')
+    expect(projects.activeProjectId).toBe(2)
+    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('specific')
+    expect(wrapper.text()).toContain('Shared example')
+    const patternCalls = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url).includes('/operations/pattern.list/'))
+    expect(patternCalls).toHaveLength(2)
+    expect(JSON.parse(String(patternCalls[1][1]?.body)).arguments).toEqual({ response_mode: 'raw', query: 'specific', source: 'all', tags: [], limit: 25, cursor: null })
+    wrapper.unmount()
+  })
+
 })
 
 function projectFixture(id: number, name: string): Project {
   return {
     id,
+    order_index: id,
     name,
     slug: name.toLowerCase(),
     domain: `${name.toLowerCase()}.test`,

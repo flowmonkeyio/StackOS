@@ -9,7 +9,7 @@ import re
 import uuid
 from pathlib import Path
 
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from stackos.backups.filesystem import overlap
 from stackos.db.models import WorkspaceBinding
@@ -33,7 +33,7 @@ class FinanceRecovery:
         self.settings = settings
 
     def _inspect(self, project_id, source):
-        project = ProjectRepository(self.session).get(project_id)
+        project = ProjectRepository(self.session).require_available(project_id)
         source = _canonical_root(source)
         if overlap(source, self.settings.data_dir) or overlap(source, self.settings.state_dir):
             _error("recovery_source_overlap")
@@ -155,7 +155,13 @@ class FinanceRecovery:
             if confirmation != _digest(facts):
                 _error("recovery_preview_changed", conflict=True)
             parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            with self.console._lock(parent / ".writer.lock", create=True):
+            with (
+                self.console._lock(parent / ".writer.lock", create=True),
+                Session(self.session.get_bind()) as fence,
+            ):
+                # Hold the existing project admission fence through publication so
+                # cleanup cannot begin between validation and the file writes.
+                ProjectRepository(fence).require_available(project_id, reserve=True)
                 state = self.console._state(metadata, project)
                 if state is not None:
                     expected = {**facts, "confirmation_sha256": confirmation}

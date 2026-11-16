@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, toRef } from 'vue'
+import { computed, nextTick, onBeforeUpdate, reactive, ref, toRef } from 'vue'
+import TaskPriorityBadge from './TaskPriorityBadge.vue'
 
 import {
   UiBadge,
@@ -12,14 +13,29 @@ import {
   UiMetadataStrip,
   UiLoadingState,
   UiFormField,
+  UiSectionHeader,
   UiTextarea,
 } from '@/components/ui'
+import MarkdownView from '@/components/MarkdownView.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
+import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
+import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+import { taskRunAbortTarget } from '@/composables/useRunAbort'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import { isGraphBlockedTicket } from './viewModel'
 import { useTrackerTaskContent } from './useTrackerTaskContent'
 import TrackerTicketDetailContent from './TrackerTicketDetailContent.vue'
+import TrackerTaskResults from './TrackerTaskResults.vue'
+import TrackerTaskHistory from './TrackerTaskHistory.vue'
+import SourceDetailRenderer from '@/components/renderers/SourceDetailRenderer.vue'
+import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
+import type { SchemaResourceOut, SchemaTaskActivityItem, SchemaTaskResultItem } from '@/api'
+import type { LibrarySource } from '@/lib/librarySources'
+import type { TaskInspectionPageState } from './useTaskInspectionPage'
 
 import type {
   TaskExecutionContext,
@@ -45,7 +61,13 @@ const props = withDefaults(
     contextPageInfo?: TaskExecutionContextPageInfo | null
     contextArtifactPageInfo?: TaskExecutionContextArtifactPageInfo
     contextLoading?: boolean
+    contextArtifactsLoading?: boolean
     contextError?: string | null
+    activity?: TaskInspectionPageState<SchemaTaskActivityItem>
+    results?: TaskInspectionPageState<SchemaTaskResultItem>
+    resultResources?: SchemaResourceOut[]
+    resultSchemaLoading?: boolean
+    resultSchemaError?: string | null
   }>(),
   {
     contexts: () => [],
@@ -61,16 +83,28 @@ const props = withDefaults(
     contextPageInfo: null,
     contextArtifactPageInfo: () => ({}),
     contextLoading: false,
+    contextArtifactsLoading: false,
     contextError: null,
+    activity: undefined,
+    results: undefined,
+    resultResources: () => [],
+    resultSchemaError: null,
+    resultSchemaLoading: false,
   },
 )
 
 defineEmits<{
+  (e: 'contextDemand', open: boolean): void
   (e: 'update:modelValue', value: boolean): void
   (e: 'viewDependencies', taskKey: string): void
   (e: 'openTicket', ticket: TrackerTicket): void
   (e: 'retry'): void
   (e: 'backToTask'): void
+  (e: 'moreResults'): void
+  (e: 'retryResults'): void
+  (e: 'moreHistory'): void
+  (e: 'retryHistory'): void
+  (e: 'inspectResult', source: LibrarySource): void
 }>()
 
 const content = reactive(useTrackerTaskContent({
@@ -83,25 +117,52 @@ const content = reactive(useTrackerTaskContent({
 const frame = ref<{ body: HTMLElement | null; focusTitle: () => void } | null>(null)
 const taskPane = ref<HTMLElement | null>(null)
 const feedback = ref<HTMLElement | null>(null)
+const selectedResult = ref<LibrarySource | null>(null)
+const resultResource = computed(() => {
+  const source = selectedResult.value
+  return source?.source_kind === 'resource_record'
+    ? props.resultResources.find(resource => resource.id === source.payload.resource_id) ?? null : null
+})
 let taskScroll = 0
 let returnFocus: HTMLElement | null = null
-let currentTaskKey = props.task?.key ?? ''
+let currentTaskKey = props.task ? `${props.task.project_id}:${props.task.key}` : ''
+let renderedTask = props.task
 
 function syncTask(task: TrackerTask | null): void {
-  if ((task?.key ?? '') !== currentTaskKey) {
-    currentTaskKey = task?.key ?? ''
+  renderedTask = task
+  const identity = task ? `${task.project_id}:${task.key}` : ''
+  if (identity !== currentTaskKey) {
+    currentTaskKey = identity
+    selectedResult.value = null
     taskScroll = 0
     returnFocus = null
     if (frame.value?.body) frame.value.body.scrollTop = 0
   }
   content.syncTask(task)
 }
+onBeforeUpdate(() => {
+  if (props.task !== renderedTask) syncTask(props.task)
+})
 
 function prepareInspection(nextTicketKey: string): void {
   if (!props.ticketKey && nextTicketKey) {
     taskScroll = frame.value?.body?.scrollTop ?? 0
     returnFocus = taskPane.value?.contains(document.activeElement) ? document.activeElement as HTMLElement : null
   }
+}
+
+async function openResult(source: LibrarySource): Promise<void> {
+  taskScroll = frame.value?.body?.scrollTop ?? 0
+  returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  selectedResult.value = source
+  await nextTick()
+  if (frame.value?.body) frame.value.body.scrollTop = 0
+  frame.value?.focusTitle()
+}
+
+async function closeResult(): Promise<void> {
+  selectedResult.value = null
+  await returnToTask()
 }
 
 async function enterTicket(): Promise<void> {
@@ -169,14 +230,21 @@ const operatorInputs = computed(() => {
     && typeof item.text === 'string' && typeof item.created_at === 'string',
   )
 })
+const followups = computed(() => {
+  const items = props.task?.context_json?.followups
+  if (!Array.isArray(items)) return []
+  return items.filter((item): item is { text: string; source_ticket_key: string; source_attempt: number; created_at: string } =>
+    item && typeof item === 'object' && typeof item.text === 'string' && item.text.trim().length > 0
+    && typeof item.source_ticket_key === 'string' && item.source_ticket_key.length > 0
+    && Number.isInteger(item.source_attempt) && item.source_attempt > 0 && typeof item.created_at === 'string',
+  ).map((item) => ({ ...item, ticket: props.tickets.find((ticket) => ticket.key === item.source_ticket_key) }))
+})
 const completedCount = computed(() => props.tickets.filter((ticket) => ticket.status === 'complete').length)
 
 const taskFacts = computed(() => {
   const task = props.task
   if (!task) return []
   return [
-    { label: 'Owner', value: task.owner ?? '-' },
-    { label: 'Priority', value: task.priority_key, mono: true },
     { label: 'Lane', value: task.lane_key, mono: true },
     { label: 'Type', value: task.task_type, mono: true },
     { label: 'Source', value: task.source_kind, mono: true },
@@ -189,7 +257,6 @@ const taskTraceFacts = computed(() => {
   if (!task) return []
   return [
     { label: 'Created', value: formatDateTime(task.created_at) },
-    { label: 'Started', value: task.started_at ? formatDateTime(task.started_at) : '-' },
     { label: 'Completed', value: task.completed_at ? formatDateTime(task.completed_at) : '-' },
   ]
 })
@@ -265,7 +332,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
   <UiDialog
     ref="frame"
     :model-value="modelValue"
-    :title="ticketKey ? ticket?.title ?? 'Ticket details' : task?.title ?? 'Task detail'"
+    :title="ticketKey ? ticket?.title ?? 'Ticket details' : selectedResult?.title ?? task?.title ?? 'Task detail'"
     :description="ticketKey ? ticketKey : task ? `Task #${task.id}` : undefined"
     size="lg"
     layout="detail"
@@ -275,8 +342,8 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
     <div
       :key="task?.key ?? 'loading'"
       ref="taskPane"
-      :hidden="Boolean(ticketKey)"
-      :inert="Boolean(ticketKey)"
+      :hidden="Boolean(ticketKey || selectedResult)"
+      :inert="ticketKey || selectedResult ? true : undefined"
       class="tracker-task-detail min-w-0"
     >
       <UiLoadingState
@@ -302,12 +369,64 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
       >
         <div class="flex flex-wrap items-center gap-3 text-sm text-fg-muted">
           <StatusBadge
-            domain="tracker"
-            :status="task.status"
+            :domain="taskDeliveryState(task)?.status === 'stopped' ? 'delivery' : 'tracker'"
+            :status="taskDeliveryState(task)?.status === 'stopped' ? 'stopped' : task.status"
           />
-          <span>Owner <span class="text-fg-default">{{ task.owner ?? 'Unassigned' }}</span></span>
+          <UiBadge
+            v-if="isAutomaticDeliveryTask(task)"
+            tone="info"
+          >
+            Automated
+          </UiBadge>
+          <!-- With no execution, ActiveExecutionLine already shows the owner as the assignment. -->
+          <span
+            v-if="task.active_execution || task.agent_stats?.last_execution || !task.owner"
+            aria-label="Task owner"
+          >Owner <span class="text-fg-default">{{ task.owner ?? 'Unassigned' }}</span></span>
           <span>{{ completedCount }} of {{ tickets.length }} tickets complete</span>
         </div>
+        <AgentUsageSummary
+          v-if="isAutomaticDeliveryTask(task)"
+          :metrics="task.agent_stats"
+          :active="!!task.active_execution"
+          compact
+          aria-label="Task total usage"
+          title="Task total usage"
+        />
+        <ActiveExecutionLine
+          :item="task"
+          :execution="task.active_execution"
+          :last-execution="task.agent_stats?.last_execution"
+          :owner="task.owner"
+          detailed
+          focusable
+        />
+        <UiCallout
+          v-if="taskDeliveryState(task)?.status === 'stopped'"
+          tone="warning"
+          density="compact"
+        >
+          <details class="text-sm">
+            <summary class="focus-ring flex cursor-pointer items-center gap-3 rounded-xs">
+              <span class="min-w-0 flex-1 line-clamp-2 break-words text-fg-default">{{ taskDeliveryState(task)?.reason || 'No reason was recorded.' }}</span>
+              <span class="shrink-0 text-fg-link">View details</span>
+            </summary>
+            <TaskDeliveryStop
+              class="mt-3"
+              :delivery="taskDeliveryState(task)"
+              :tickets="tickets"
+              detailed
+            />
+            <UiButton
+              v-if="tickets.find(row => row.key === taskDeliveryState(task)?.ticketKey)"
+              size="sm"
+              variant="ghost"
+              @click="$emit('openTicket', tickets.find(row => row.key === taskDeliveryState(task)?.ticketKey)!)"
+            >
+              View ticket
+            </UiButton>
+          </details>
+        </UiCallout>
         <section class="space-y-2 border-t border-subtle pt-4">
           <div class="flex items-center justify-between gap-3">
             <h3 class="t-h3 text-fg-strong">
@@ -464,7 +583,54 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             />
           </UiFormField>
         </section>
-        <details class="border-t border-subtle pt-4">
+        <section
+          v-if="followups.length"
+          class="space-y-3 border-t border-subtle pt-4"
+        >
+          <UiSectionHeader
+            as="h3"
+            title="Followups"
+            description="Notes outside current work. They do not block completion or start new work."
+          />
+          <ol
+            class="space-y-3"
+            aria-label="Task followups"
+          >
+            <li
+              v-for="(note, index) in followups"
+              :key="index"
+              class="min-w-0 rounded-lg border border-subtle bg-bg-surface-alt px-3 py-2"
+            >
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+                <UiButton
+                  v-if="note.ticket"
+                  variant="ghost"
+                  size="sm"
+                  class="max-w-full font-mono"
+                  @click="$emit('openTicket', note.ticket)"
+                >
+                  <span class="truncate">{{ note.source_ticket_key }}</span>
+                </UiButton>
+                <span
+                  v-else
+                  class="min-w-0 break-words"
+                >
+                  <span class="font-mono">{{ note.source_ticket_key }}</span> · Source ticket unavailable
+                </span>
+                <span>Attempt {{ note.source_attempt }}</span>
+                <time :datetime="note.created_at">{{ formatDateTime(note.created_at) }}</time>
+              </div>
+              <MarkdownView
+                class="mt-1 break-words [overflow-wrap:anywhere]"
+                :source="note.text"
+              />
+            </li>
+          </ol>
+        </section>
+        <details
+          class="border-t border-subtle pt-4"
+          @toggle="$emit('contextDemand', ($event.target as HTMLDetailsElement).open)"
+        >
           <summary class="focus-ring cursor-pointer rounded-xs text-sm font-medium text-fg-muted">
             More details
           </summary>
@@ -480,6 +646,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
                       domain="tracker"
                       :status="task.status"
                     />
+                    <TaskPriorityBadge :priority="task.priority_key" />
                     <UiBadge
                       v-if="workflowManaged"
                       tone="accent"
@@ -600,6 +767,13 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
               >
                 {{ contextError }}
               </UiCallout>
+              <p
+                v-if="contextArtifactsLoading"
+                class="text-xs text-fg-muted"
+                role="status"
+              >
+                Loading file previews…
+              </p>
 
               <p
                 v-if="contextLoading"
@@ -778,12 +952,57 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             </details>
           </div>
         </details>
+        <TrackerTaskResults
+          :state="results"
+          @open="openResult($event); $emit('inspectResult', $event)"
+          @more="$emit('moreResults')"
+          @retry="$emit('retryResults')"
+        />
+        <TrackerTaskHistory
+          :key="`${task.project_id}:${task.key}`"
+          :state="activity"
+          @more="$emit('moreHistory')"
+          @retry="$emit('retryHistory')"
+        />
       </div>
+    </div>
+    <div
+      v-if="selectedResult && !ticketKey"
+      class="min-w-0 space-y-3"
+      data-task-result-detail
+    >
+      <ArtifactRenderer
+        v-if="selectedResult.source_kind === 'artifact'"
+        :artifact="selectedResult.payload"
+        embedded
+      />
+      <template v-else>
+        <p
+          v-if="resultSchemaLoading"
+          role="status"
+          class="text-xs text-fg-muted"
+        >
+          Loading field descriptions…
+        </p>
+        <p
+          v-if="resultSchemaError"
+          role="alert"
+          class="text-xs text-warning-fg"
+        >
+          {{ resultSchemaError }}. The saved source remains available in Details.
+        </p>
+        <SourceDetailRenderer
+          :source="selectedResult"
+          :resource="resultResource"
+          reading
+        />
+      </template>
     </div>
     <TrackerTicketDetailContent
       v-if="ticketKey"
       :key="ticketKey"
       :ticket="ticket"
+      :parent-task="task"
       :loading="loading"
       :error="ticketError"
       @vue:mounted="enterTicket"
@@ -822,6 +1041,15 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
         </p>
       </div>
       <UiButton
+        v-if="selectedResult && !ticketKey"
+        variant="ghost"
+        size="sm"
+        class="mr-auto"
+        @click="closeResult"
+      >
+        Back to task
+      </UiButton>
+      <UiButton
         v-if="ticketKey && canGoBack"
         variant="ghost"
         size="sm"
@@ -831,11 +1059,17 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
         Back to task
       </UiButton>
       <p
-        v-if="!ticketKey"
+        v-if="!ticketKey && !selectedResult"
         class="mr-auto text-xs text-fg-muted"
       >
         Status is managed by agents.
       </p>
+      <RunAbortAction
+        v-if="!ticketKey && !selectedResult && !content.locked"
+        :target="taskRunAbortTarget(task)"
+        placement="top-end"
+        @refresh="$emit('retry')"
+      />
       <UiButton
         variant="secondary"
         size="sm"
@@ -844,7 +1078,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
         Close
       </UiButton>
       <UiButton
-        v-if="!ticketKey && task && refreshContent"
+        v-if="!ticketKey && !selectedResult && task && refreshContent"
         size="sm"
         :disabled="!content.canSave"
         :loading="content.saving"
