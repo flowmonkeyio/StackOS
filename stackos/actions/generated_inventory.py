@@ -62,11 +62,17 @@ def _logical_scope(
     return values
 
 
-def _retire_action(row: Action, *, identity: GeneratedInventoryIdentity, now: datetime) -> None:
+def _retire_action(
+    row: Action,
+    *,
+    identity: GeneratedInventoryIdentity,
+    now: datetime,
+    reason: str | None = None,
+) -> None:
     config = dict(row.config_json or {})
     config.pop("connector", None)
     config["execution_mode"] = "deferred.retired"
-    config["deferred_reason"] = (
+    config["deferred_reason"] = reason or (
         f"Generated {identity.provider_key.title()} action was not returned by the latest catalog "
         "sync for this inventory scope."
     )
@@ -74,6 +80,50 @@ def _retire_action(row: Action, *, identity: GeneratedInventoryIdentity, now: da
     config["inventory_retired_at"] = now.isoformat()
     row.config_json = config
     row.updated_at = now
+
+
+def retire_generated_credential_inventory(
+    session: Session,
+    *,
+    provider_key: str,
+    credential_ref: str,
+    now: datetime,
+    project_id: int | None = None,
+) -> int:
+    """Invalidate an Account's generated actions; retain IDs, versions and audit.
+
+    Account lifecycle owns the transaction. Other Accounts/projects/providers
+    remain untouched, and a later explicit sync can reactivate matching rows.
+    """
+    rows = session.exec(
+        select(Action, Plugin)
+        .join(Plugin, col(Action.plugin_id) == col(Plugin.id))
+        .join(Provider, col(Action.provider_id) == col(Provider.id))
+        .where(col(Provider.key) == provider_key)
+    ).all()
+    retired = 0
+    for row, plugin in rows:
+        config = row.config_json or {}
+        if (
+            config.get("inventory_credential_ref") != credential_ref
+            or config.get("inventory_state") != "active"
+            or not isinstance(config.get("inventory_source"), str)
+            or (project_id is not None and config.get("inventory_project_id") != project_id)
+        ):
+            continue
+        _retire_action(
+            row,
+            identity=GeneratedInventoryIdentity(
+                plugin_slug=plugin.slug,
+                provider_key=provider_key,
+                inventory_source=config["inventory_source"],
+            ),
+            now=now,
+            reason="Account scope changed or was disconnected; verify and sync again.",
+        )
+        session.add(row)
+        retired += 1
+    return retired
 
 
 def _inventory_rows(

@@ -423,6 +423,7 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
       )
       return null
     }
+    clearProviderMessage(provider.key)
     return { fields, displayName }
   }
 
@@ -459,10 +460,26 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
           onNativeSaved?.()
           return credentialRef
         }
+        if (provider.key === 'cfobooth') {
+          clearAccountMessage(credentialRef)
+          try {
+            const tested = await catalogStore.testCredential(credentialRef)
+            setAccountMessage(
+              credentialRef,
+              tested.data.ok ? 'success' : 'danger',
+              credentialVerificationMessage(tested.data) ||
+                (tested.data.ok ? 'Account verified.' : 'Replace the API key and test again.'),
+            )
+          } catch (testError) {
+            setAccountMessage(credentialRef, 'danger',
+              formatApiError(testError, 'Account updated. Test the current API key again.'))
+          }
+        } else {
+          setAccountMessage(credentialRef, 'success', 'Account updated.')
+        }
         clearForm(provider.key, method.key)
         editingCredentialRef.value = null
         editingSecretPresent.value = {}
-        setAccountMessage(credentialRef, 'success', 'Account updated.')
         panelOpen.value = false
         return credentialRef
       }

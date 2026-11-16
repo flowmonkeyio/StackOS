@@ -135,6 +135,8 @@ class CredentialStatusMixin:
 
     def _last_test_for_credential(self, credential: Credential) -> AuthTestOut | None:
         """Project the existing test audit, never use it as an execution grant."""
+        if credential.provider_key == "cfobooth" and credential.last_tested_at is None:
+            return None
         event = self._s.exec(
             select(CredentialUsageEvent)
             .where(

@@ -474,7 +474,7 @@ onMounted(load)
                       "
                       @click="requestRevoke(account)"
                     >
-                      Revoke
+                      {{ account.provider_key === 'cfobooth' ? 'Disconnect' : 'Revoke' }}
                     </UiButton>
                   </div>
                 </div>
@@ -640,13 +640,15 @@ onMounted(load)
 
     <UiConfirmDialog
       :model-value="Boolean(pendingRevoke)"
-      title="Revoke this Account?"
+      :title="pendingRevoke?.provider_key === 'cfobooth' ? 'Disconnect local Account?' : 'Revoke this Account?'"
       :description="
         pendingRevoke
-          ? `${pendingRevoke.display_name} will stop working everywhere. This cannot be undone.`
+          ? pendingRevoke.provider_key === 'cfobooth'
+            ? `Remove ${pendingRevoke.display_name} and its key from this StackOS installation. This does not revoke the remote key. Use API key management in your CFOBooth organization to revoke it remotely.`
+            : `${pendingRevoke.display_name} will stop working everywhere. This cannot be undone.`
           : undefined
       "
-      confirm-label="Revoke Account"
+      :confirm-label="pendingRevoke?.provider_key === 'cfobooth' ? 'Disconnect' : 'Revoke Account'"
       cancel-label="Keep Account"
       tone="danger"
       :loading="
