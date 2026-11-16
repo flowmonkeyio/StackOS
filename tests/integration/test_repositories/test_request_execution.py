@@ -99,6 +99,168 @@ def test_upgrade_fence_denies_request_native_admission(session, project_id, tmp_
     )
 
 
+def test_unknown_persisted_native_request_prevents_quiescence(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos.task_delivery import prepare_managed_upgrade
+    from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+    repo, request, _claim, execution = owner(session, project_id)
+
+    def runner(*_args, on_session, **_kwargs):
+        on_session("fixture-retirement-write-failed")
+        return AgentRunResult(
+            0, thread_id="fixture-retirement-write-failed", result={"status": "success"}
+        )
+
+    def failed_retirement(*_args, **_kwargs):
+        raise RuntimeError("fixture terminal persistence failure")
+
+    monkeypatch.setattr(AgentRequestRepository, "_finish_execution", failed_retirement)
+    with pytest.raises(RuntimeError, match="terminal persistence failure"):
+        launch(monkeypatch, tmp_path, execution, runner)
+    session.expire_all()
+    assert (
+        repo.get(project_id=project_id, request_id=request.id).metadata_json["native_execution"][
+            "finished_at"
+        ]
+        is None
+    )
+    assert service.active_request_execution(project_id, request.id) is None
+    with pytest.raises(ConflictError) as held:
+        prepare_managed_upgrade(
+            session_factory=lambda: Session(session.get_bind()),
+            scheduler=QueuedScheduler(),
+            upgrade_id="unknown-exit",
+            source_identity="source",
+            target_identity="target",
+            expected_revision=0,
+        )
+    assert held.value.data["code"] == "native_request_quiescence_unconfirmed"
+    assert held.value.data["requests"][0]["request_id"] == request.id
+
+
+def test_native_exception_retires_owned_child_and_unknown_outcome_holds(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos.task_delivery import prepare_managed_upgrade
+    from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+    repo, request, _claim, execution = owner(session, project_id)
+    controls, children = [], []
+
+    def runner(*_args, on_session, process_control, **_kwargs):
+        controls.append(process_control)
+        children.append(
+            process_control.spawn(
+                [sys.executable, "-c", "import time; time.sleep(30)"], stdout=subprocess.DEVNULL
+            )
+        )
+        on_session("fixture-exception-child")
+        raise RuntimeError("fixture adapter failed after native spawn")
+
+    try:
+        with pytest.raises(RuntimeError, match="adapter failed after native spawn"):
+            launch(monkeypatch, tmp_path, execution, runner)
+        assert children[0].poll() is not None
+        assert service.active_request_execution(project_id, request.id) is None
+        session.expire_all()
+        evidence = repo.get(project_id=project_id, request_id=request.id).metadata_json[
+            "native_execution"
+        ]
+        assert evidence["exit_code"] is None
+        assert evidence["process_retirement"]["outcome"] == "stopped"
+        with pytest.raises(ConflictError) as held:
+            prepare_managed_upgrade(
+                session_factory=lambda: Session(session.get_bind()),
+                scheduler=QueuedScheduler(),
+                upgrade_id="adapter-exception",
+                source_identity="source",
+                target_identity="target",
+                expected_revision=0,
+            )
+        assert held.value.data["requests"][0]["request_id"] == request.id
+    finally:
+        for control in controls:
+            control.stop()
+        for child in children:
+            child.wait(timeout=3)
+
+
+def test_unconfirmed_exception_retirement_preserves_exact_request_handle(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos.task_delivery import prepare_managed_upgrade
+    from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+    _repo, request, _claim, execution = owner(session, project_id)
+    controls, children = [], []
+
+    def runner(*_args, process_control, **_kwargs):
+        controls.append((process_control, process_control.stop))
+        children.append(
+            process_control.spawn(
+                [sys.executable, "-c", "import time; time.sleep(30)"], stdout=subprocess.DEVNULL
+            )
+        )
+        monkeypatch.setattr(process_control, "stop", lambda *_a, **_kw: "unconfirmed")
+        raise RuntimeError("fixture unconfirmed native cleanup")
+
+    try:
+        with pytest.raises(RuntimeError, match="unconfirmed native cleanup"):
+            launch(monkeypatch, tmp_path, execution, runner)
+        assert children[0].poll() is None
+        calls = service.cancel_request_invocations(project_id, request.id)
+        assert len(calls) == 1 and not calls[0].retired.is_set()
+        assert calls[0].cleanup_complete and calls[0].reader is None
+        assert (
+            service.uncheckpointed_invocations(set())[0]["invocation_id"] == calls[0].invocation_id
+        )
+        with pytest.raises(ConflictError) as held:
+            prepare_managed_upgrade(
+                session_factory=lambda: Session(session.get_bind()),
+                scheduler=QueuedScheduler(),
+                upgrade_id="unknown-retirement",
+                source_identity="source",
+                target_identity="target",
+                expected_revision=0,
+            )
+        assert "native_retirement_unconfirmed" in held.value.data["requests"][0]["issues"]
+    finally:
+        for control, stop in controls:
+            monkeypatch.setattr(control, "stop", stop)
+        for call in service.cancel_request_invocations(project_id, request.id):
+            assert service.retire_invocation(call) == "stopped"
+            assert call.retired.is_set()
+        for child in children:
+            child.wait(timeout=3)
+    assert service.uncheckpointed_invocations(set()) == []
+
+
+def test_known_terminal_request_does_not_block_upgrade(session, project_id, tmp_path, monkeypatch):
+    from stackos.task_delivery import prepare_managed_upgrade
+    from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+    _repo, _request, _claim, execution = owner(session, project_id)
+
+    def runner(*_args, on_session, **_kwargs):
+        on_session("known-terminal")
+        return AgentRunResult(0, thread_id="known-terminal", result={"status": "success"})
+
+    assert launch(monkeypatch, tmp_path, execution, runner).ok
+    assert (
+        prepare_managed_upgrade(
+            session_factory=lambda: Session(session.get_bind()),
+            scheduler=QueuedScheduler(),
+            upgrade_id="known-terminal",
+            source_identity="source",
+            target_identity="target",
+            expected_revision=0,
+        )["status"]
+        == "quiesced"
+    )
+
+
 def test_request_identity_lease_usage_and_terminal_handoff(
     session, project_id, monkeypatch, tmp_path
 ):

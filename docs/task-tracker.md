@@ -112,6 +112,17 @@ successful request returns the same receipt; held retries require the current
 revision and never infer retirement from a missing handle. Delayed callback
 registration acknowledges the original fence before its slot can retire.
 
+Preparation also checks persisted native request ownership, including failed
+terminal persistence and unobserved exits after registry cleanup. A missing
+registry entry or terminal request status never proves retirement. Such requests
+refuse preparation before interruption with request/invocation refs and repair
+context. Exceptional native cleanup stops only its owned process group; an
+unconfirmed group retains its exact handle in the existing registry after readers
+retire. Existing cancellation/shutdown owners can retry that handle, but observed
+process termination never fabricates a missing native outcome. Pre-existing
+deferred/skipped work is terminal under the canonical tracker rules and is not
+captured; terminal winners during preparation are `settled`, never resumable.
+
 Preparation is independently usable for inspection and quiescence. It neither
 installs a target nor resumes work. The continuation owner must verify target,
 health/doctor, current authority, exact frozen settings/session/candidate/source

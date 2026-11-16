@@ -685,7 +685,7 @@ def schedule_setup(*, project_id, state, session_factory, scheduler):
             _save(session, row, attempt)
             calls = service.cancel_request_invocations(project_id, state["request_id"])
         for call in calls:
-            call.process_control.stop()
+            service.retire_invocation(call)
         raise
 
 
@@ -1285,6 +1285,8 @@ def cancel_managed(project_id, request_id, *, session_factory, scheduler):
         if (
             attempt.status in {"success", "partial", "failed", "cancelled"}
             and not attempt.managed.slot_reserved
+            and service.active_request_execution(project_id, request_id, include_handoff=True)
+            is None
         ):
             return attempt
         attempt.managed.cancel_requested = True
@@ -1309,7 +1311,7 @@ def cancel_managed(project_id, request_id, *, session_factory, scheduler):
             )
         _save(session, row, attempt)
     for call in calls:
-        call.process_control.stop()
+        service.retire_invocation(call)
     # Scheduler availability must not prevent native cancellation. Keep scheduler
     # I/O outside the launch lock; persisted cancellation already fences callbacks.
     try:

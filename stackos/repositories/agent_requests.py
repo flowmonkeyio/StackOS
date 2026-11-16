@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import func, or_
+from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from stackos.artifacts import redact_secret_text, redact_secrets
@@ -243,6 +244,67 @@ class AgentRequestRepository:
             if not evidence.get("finished_at"):
                 evidence.update(execution=observed, usage=usage)
         return {"native_execution": redact_secrets(evidence), "active_execution": active}
+
+    def require_native_quiescence(self) -> None:
+        """Installation preparation checks persisted ownership after registry retirement.
+
+        A terminal request status or missing in-memory handle cannot certify a
+        failed native exit handoff. Read only ownership scalars, never copy
+        prompts, results or the request queue into maintenance evidence.
+        """
+        metadata = col(AgentRequest.metadata_json)
+        path = "$.native_execution"
+        rows = self._s.execute(
+            sa_select(
+                col(AgentRequest.project_id),
+                col(AgentRequest.id),
+                func.json_type(metadata, path),
+                func.json_extract(metadata, path + ".execution.invocation_id"),
+                func.json_extract(metadata, path + ".finished_at"),
+                func.json_type(metadata, path + ".exit_code"),
+                func.json_extract(metadata, path + ".process_retirement.outcome"),
+                func.json_extract(metadata, path + ".stop_error"),
+            ).where(func.json_type(metadata, path).is_not(None))
+        ).all()
+        unresolved = []
+        for (
+            project_id,
+            request_id,
+            kind,
+            invocation_id,
+            finished_at,
+            exit_kind,
+            retirement,
+            stop_error,
+        ) in rows:
+            issues = []
+            if kind != "object" or not invocation_id:
+                issues.append("native_ownership_invalid")
+            if not finished_at:
+                issues.append("native_terminal_persistence_unconfirmed")
+            if exit_kind != "integer" and retirement != "prevented":
+                issues.append("native_outcome_unobserved")
+            if stop_error or retirement not in {None, "stopped", "prevented"}:
+                issues.append("native_retirement_unconfirmed")
+            if issues:
+                unresolved.append(
+                    {
+                        "project_id": project_id,
+                        "request_id": request_id,
+                        "invocation_id": invocation_id,
+                        "issues": issues,
+                    }
+                )
+        if unresolved:
+            raise ConflictError(
+                "Persisted native request ownership is unconfirmed; upgrade preparation is unsafe",
+                data={
+                    "code": "native_request_quiescence_unconfirmed",
+                    "requests": unresolved,
+                    "next_operations": ["agentRequest.get"],
+                    "next_action": "inspect_request_native_exit",
+                },
+            )
 
     def list(
         self,
@@ -888,6 +950,11 @@ class AgentRequestRepository:
                     else "Native exit was not successfully observed",
                     "cancelled": call.cancelled.is_set() or call.process_control.cancelled.is_set(),
                     "stop_error": call.process_control.stop_error,
+                    **(
+                        {"process_retirement": call.process_retirement}
+                        if call.process_retirement is not None
+                        else {}
+                    ),
                 }
             )
         )

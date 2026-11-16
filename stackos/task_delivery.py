@@ -43,6 +43,7 @@ from stackos.host_mcp.service import (
     cancel_task_invocations,
     effective_agent_sandbox,
     quiesce_task_invocations,
+    retire_invocation,
     run_agent,
     uncheckpointed_invocations,
 )
@@ -60,6 +61,7 @@ from stackos.repositories.tracker.schema import (
     TrackerTicketOut,
 )
 from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
+from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
 
@@ -155,7 +157,7 @@ def abort_run_plan(
                 status="stopped",
                 reason=reason or "Run aborted.",
             )
-    outcomes = [call.process_control.stop() for call in calls]
+    outcomes = [retire_invocation(call) for call in calls]
     retired = all(
         outcome == "prevented" or call.retired.wait(2)
         for call, outcome in zip(calls, outcomes, strict=True)
@@ -230,10 +232,13 @@ def abort_audit_run(session, run_id, *, cascade=False, project_id=None, schedule
     return runs.abort(run_id, cascade=cascade, project_id=project_id)
 
 
-def _delivery_active(task, handoff_id):
+def _delivery_active(task, handoff_id, *, allow_completion=False):
     state = (task.metadata_json or {}).get("delivery", {})
     return (
-        task.status != TrackerItemStatus.ABORTED
+        (
+            task.status not in TERMINAL_TRACKER_STATUSES
+            or (allow_completion and task.status == TrackerItemStatus.COMPLETE)
+        )
         and state.get("handoff_id") == handoff_id
         and state.get("status") in {"queued", "running"}
         and not _upgrade_checkpoint(task, handoff_id)
@@ -287,6 +292,7 @@ def prepare_managed_upgrade(
     missing native handle leaves a durable hold, never inferred quiescence.
     """
     from stackos.db.models import ManagedUpgrade, Project
+    from stackos.repositories.agent_requests import AgentRequestRepository
     from stackos.repositories.project_setup import ProjectSetupRepository
 
     calls = {}
@@ -327,18 +333,13 @@ def prepare_managed_upgrade(
                     "Managed setup must retire before upgrade preparation",
                     data={"code": "managed_setup_active", "next_action": "inspect_setup"},
                 )
+            AgentRequestRepository(session).require_native_quiescence()
             tasks = session.exec(
                 select(TrackerTask).where(
                     func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
                         ("queued", "running")
                     ),
-                    TrackerTask.status.notin_(
-                        (
-                            TrackerItemStatus.ABORTED,
-                            TrackerItemStatus.COMPLETE,
-                            TrackerItemStatus.FAILED,
-                        )
-                    ),
+                    TrackerTask.status.notin_(TERMINAL_TRACKER_STATUSES),
                 )
             ).all()
             if unknown := uncheckpointed_invocations(
@@ -489,7 +490,7 @@ def prepare_managed_upgrade(
         for call in calls[ref["task_id"]]:
             stop_error = None
             try:
-                outcome = call.process_control.stop()
+                outcome = retire_invocation(call)
             except Exception as error:
                 outcome, stop_error = "unconfirmed", type(error).__name__
             retired = call.retired.wait(2)
@@ -580,12 +581,7 @@ def prepare_managed_upgrade(
                 if issues
                 else (
                     "settled"
-                    if task.status
-                    in {
-                        TrackerItemStatus.ABORTED,
-                        TrackerItemStatus.COMPLETE,
-                        TrackerItemStatus.FAILED,
-                    }
+                    if task.status in TERMINAL_TRACKER_STATUSES
                     or task.metadata_json["delivery"].get("status") not in {"queued", "running"}
                     else "quiesced"
                 )
@@ -2811,7 +2807,9 @@ def run_delivery(
             with managed_launch_lock, session_factory() as session:
                 repo = TrackerRepository(session)
                 task = _task(repo, project_id, task_key)
-                if invocation_cancelled() or not _delivery_active(task, handoff_id):
+                if invocation_cancelled() or not _delivery_active(
+                    task, handoff_id, allow_completion=True
+                ):
                     return
                 state = (task.metadata_json or {})["delivery"]
                 snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
@@ -2824,6 +2822,8 @@ def run_delivery(
                         repo, project_id, task_key, status="complete", ticket_key=None, reason=None
                     )
                     return
+                if task.status == TrackerItemStatus.COMPLETE:
+                    return  # Completion permits controller closeout only, never native dispatch.
                 _workflow_scope(
                     repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                 )

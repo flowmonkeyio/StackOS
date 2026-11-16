@@ -92,6 +92,9 @@ class ActiveInvocation:
     # Explicit invocation cancellation is separate from native I/O cleanup stops.
     cancelled: Event = field(default_factory=Event)
     retired: Event = field(default_factory=Event)
+    # Exceptional cleanup keeps exact handles until group retirement is confirmed.
+    process_retirement: dict[str, Any] | None = None
+    cleanup_complete: bool = False
     # An early ownership rejection must also fence the terminal identity.
     session_error: str | None = None
 
@@ -140,7 +143,7 @@ def cancel_task_invocations(project_id: int, task_key: str) -> list[ActiveInvoca
             for call in _active_invocations.values()
             if call.scope.project_id == project_id
             and call.scope.task_key == task_key
-            and not call.finished
+            and (not call.finished or call.cleanup_complete)
         ]
         for call in calls:
             call.cancelled.set()
@@ -188,7 +191,7 @@ def cancel_request_invocations(project_id: int, request_id: int) -> list[ActiveI
             for call in _active_invocations.values()
             if call.scope.project_id == project_id
             and call.scope.request_id == request_id
-            and not call.finished
+            and (not call.finished or call.cleanup_complete)
         ]
         for call in calls:
             call.cancelled.set()
@@ -257,7 +260,7 @@ def _sample_invocations(now: datetime | None = None) -> None:
                 logging.getLogger(__name__).exception("Could not renew native request ownership")
         if stop:
             # Native I/O must not hold the launch or registry lock.
-            call.process_control.stop()
+            retire_invocation(call)
     cutoff = (now or datetime.now(UTC)).timestamp() - 600
     with _active_invocations_lock:
         for call in _active_invocations.values():
@@ -341,7 +344,7 @@ def _register(call: ActiveInvocation) -> None:
 
 def _unregister(call: ActiveInvocation) -> None:
     with _active_invocations_lock:
-        _active_invocations.pop(call.invocation_id, None)
+        call.cleanup_complete = True
         if call.reader:
             call.reader.close()
             call.reader = None
@@ -351,9 +354,32 @@ def _unregister(call: ActiveInvocation) -> None:
         call.previous_usage = None
         call.request_execution = None
         call.session_id = None
+        if call.process_retirement and call.process_retirement["outcome"] not in {
+            "stopped",
+            "prevented",
+        }:
+            return  # Retain only the exact handle/scope; no reader or usage collection.
+        _active_invocations.pop(call.invocation_id, None)
         if not _active_invocations:
             _collector_wake.set()
         call.retired.set()
+
+
+def retire_invocation(call: ActiveInvocation) -> str:
+    """Stop the registered handle and release an exceptional retirement hold only on proof."""
+    try:
+        outcome = call.process_control.stop()
+    except Exception as error:
+        outcome = "unconfirmed"
+        call.process_control.stop_error = f"Native retirement failed: {type(error).__name__}"
+    with _active_invocations_lock:
+        if call.process_retirement is not None:
+            call.process_retirement = {"outcome": outcome}
+            if call.process_control.stop_error:
+                call.process_retirement["error"] = call.process_control.stop_error
+            if call.cleanup_complete:
+                _unregister(call)
+    return outcome
 
 
 def _finish(
@@ -408,13 +434,13 @@ def shutdown_usage() -> None:
         requests = [
             call
             for call in _active_invocations.values()
-            if call.scope.request_id is not None and not call.finished
+            if call.scope.request_id is not None and not call.retired.is_set()
         ]
         for call in requests:
             call.cancelled.set()
             call.process_control.cancelled.set()
     for call in requests:
-        call.process_control.stop()
+        retire_invocation(call)
     with _active_invocations_lock:
         for call in list(_active_invocations.values()):
             if call.scope.request_id is None or call.retired.is_set():
@@ -741,6 +767,11 @@ def run_agent(
             )
     finally:
         if call is not None and registered:
+            if result is None:
+                # A raised adapter/notification error does not prove its child
+                # exited. Stop the exact group before dropping native ownership.
+                call.process_retirement = {"outcome": "pending"}
+                retire_invocation(call)
             finished_at = datetime.now(UTC).isoformat()
             try:
                 _sample_invocations()
@@ -760,6 +791,11 @@ def run_agent(
                 # short handoff reads still have the snapshot, never a live
                 # identity/reader. Cleanup also runs if the callback fails.
                 _notify_execution(on_execution_change, call, False)
+            except BaseException:
+                if call.process_retirement is None:
+                    call.process_retirement = {"outcome": "pending"}
+                    retire_invocation(call)
+                raise
             finally:
                 _unregister(call)
     assert result is not None
@@ -823,7 +859,7 @@ def _attach_session(
     except Exception:
         # Durability failures propagate. Native cleanup must release the launch
         # lock first: stop() owns its process lock before taking the launch lock.
-        call.process_control.stop()
+        retire_invocation(call)
         raise
 
 

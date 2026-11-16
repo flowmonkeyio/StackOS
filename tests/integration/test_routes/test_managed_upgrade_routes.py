@@ -144,3 +144,51 @@ def test_fence_survives_real_app_restart(settings):
                 receipt = saved.json()["data"]
             assert call(client, "upgradeStatus").json() == receipt
             assert call(client, "prepareUpgrade", payload).json()["data"] == receipt
+
+
+def test_persisted_unknown_request_returns_admin_repair_context_without_preparation(
+    api, project_id, tmp_path, monkeypatch
+):
+    from stackos.host_mcp.result import AgentRunResult
+    from stackos.repositories.agent_requests import AgentRequestRepository
+    from tests.integration.test_repositories.test_request_execution import launch, owner
+
+    def runner(*_args, on_session, **_kwargs):
+        on_session("unobserved-terminal-write")
+        return AgentRunResult(
+            0, thread_id="unobserved-terminal-write", result={"status": "success"}
+        )
+
+    def failed_terminal_write(*_args, **_kwargs):
+        raise RuntimeError("fixture terminal write failed")
+
+    monkeypatch.setattr(AgentRequestRepository, "_finish_execution", failed_terminal_write)
+    with Session(api.app.state.engine) as session:
+        repo, request, _claim, execution = owner(session, project_id)
+        with pytest.raises(RuntimeError, match="terminal write failed"):
+            launch(monkeypatch, tmp_path, execution, runner)
+        before = repo.get(project_id=project_id, request_id=request.id).metadata_json
+    response = call(
+        api,
+        "prepareUpgrade",
+        {
+            "upgrade_id": "unknown-request",
+            "source_identity": "source",
+            "target_identity": "target",
+            "expected_revision": 0,
+        },
+    )
+    assert response.status_code == 409, response.text
+    repair = response.json()["data"]
+    assert repair["code"] == "native_request_quiescence_unconfirmed"
+    assert repair["requests"][0]["request_id"] == request.id
+    assert repair["next_operations"] == ["agentRequest.get"]
+    assert "snapshot" not in repair["requests"][0]
+    with Session(api.app.state.engine) as session:
+        assert session.exec(select(ManagedUpgrade)).all() == []
+        assert (
+            AgentRequestRepository(session)
+            .get(project_id=project_id, request_id=request.id)
+            .metadata_json
+            == before
+        )

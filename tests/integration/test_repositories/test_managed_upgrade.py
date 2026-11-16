@@ -425,3 +425,61 @@ def test_preparation_prevents_first_spawn_without_inventing_native_session(
         receipt = repo.brief(project_id=project_id, ticket_key="first").ticket
         assert not receipt.completion_evidence_json["automatic_delivery"].get("sessions")
         assert receipt.status == "in-progress"
+
+
+@pytest.mark.parametrize("status", ["deferred", "skipped"])
+def test_terminal_queued_work_is_not_checkpointed(
+    session, project_id, tmp_path, monkeypatch, status
+):
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    callback, options = scheduler.jobs[0]
+    repo = TrackerRepository(session)
+    for key in ("first", "second"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key=key,
+            patch_json={"status": status, "blocker_reason": "Explicit fixture decision"},
+        )
+    assert repo.get(project_id=project_id, task_key="deliver").tasks[0].status == status
+    before = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert prepare(session, scheduler)["checkpoint_refs"] == []
+    monkeypatch.setattr(
+        task_delivery, "run_agent", lambda *_a, **_kw: pytest.fail("terminal callback launched")
+    )
+    callback(**options["kwargs"])
+    session.expire_all()
+    assert repo.brief(project_id=project_id, ticket_key="first").ticket == before
+
+
+@pytest.mark.parametrize("status", ["deferred", "skipped"])
+def test_terminal_race_is_settled_not_resumable(session, project_id, tmp_path, monkeypatch, status):
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    checkpoint_task = task_delivery._checkpoint_task
+    changed = False
+
+    def terminal_winner(session, task, checkpoint):
+        nonlocal changed
+        checkpoint_task(session, task, checkpoint)
+        if "invocations" in checkpoint and not changed:
+            changed = True
+            repo = TrackerRepository(session)
+            for key in ("first", "second"):
+                repo.update_ticket(
+                    project_id=project_id,
+                    ticket_key=key,
+                    patch_json={"status": status, "blocker_reason": "Explicit fixture decision"},
+                    commit=False,
+                )
+
+    monkeypatch.setattr(task_delivery, "_checkpoint_task", terminal_winner)
+    result = prepare(session, scheduler)
+    assert result["checkpoints"][0]["status"] == "settled"
+    session.expire_all()
+    assert (
+        TrackerRepository(session).get(project_id=project_id, task_key="deliver").tasks[0].status
+        == status
+    )
