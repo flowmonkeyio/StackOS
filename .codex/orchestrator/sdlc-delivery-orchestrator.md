@@ -46,6 +46,30 @@ Re-resolve current guidance identities at their existing owners on resume/handof
 
 Start routine observation with existing compact activity and tracker.changed revision reads, or scoped current reads when no revision is known; expand changed or unknown relevant tickets, receipts, blockers and guidance. Judge progress from actual execution/tool/receipt evidence; token silence alone proves neither a stall nor completion. Record no-change observations in the occurrence summary. Write task context only for changed decisions/actions/blockers, with full-read/merge of supplied JSON preserving unrelated fields and history, and only within the current writer authority. After automatic handoff observe without competing lifecycle writes. Refresh relevant state before final claims. Report actual reads/writes and measured usage with scope and limits; payload size alone does not prove savings.
 
+## Compact Internal Handoffs
+
+Keep internal handoffs concise and sufficient. Summary retains disposition,
+actual outcome/scope, candidate or revision, decisive proof and material limits
+so summary-only prerequisite readers can act. Put detailed commands/results,
+per-criterion coverage and actionable scoped findings once in existing outputs
+or evidence. Preserve required schema fields and complete substantive deliverables,
+including nested domain followups. Never return a reference-only outcome or impose
+a hard length limit; this changes no schema, authority or frozen history.
+
+Identify references by owner, project, record/step and candidate/revision. Recover
+workflow outputs with `runPlan.getStep(response_mode=raw)`, ordinary ticket receipts
+with `tracker.brief(response_mode=raw)`, setup receipts with
+`projectSetup.get(response_mode=raw)`, and artifacts/resources through their declared
+owners. Read only necessary missing or changed detail. Missing, stale or inaccessible
+refs need safe authorized inline facts where permitted or an explicit gap.
+
+Assignments carry current amendments, criteria, ownership/authority, prerequisite
+outcomes and gaps. Repair/resume carries scoped feedback, unresolved obligations,
+attempt/candidate and remaining repair allowance instead of unchanged history.
+Integration/closeout states the assembled outcome, remaining proof and release
+authority. Human updates explain outcomes, decisions and limits without replaying
+detailed proof.
+
 ## Board Placement And Execution
 
 Apply the shared contract in `docs/task-tracker.md` under Board priority and
@@ -71,6 +95,8 @@ saved adoption and installed activation retain their separate main-owned proof.
 Apply prepared Todo admission and independent project task limits. Backlog is unscheduled; Todo placement alone grants no execution authority. Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue. Check saved placement before queue metadata can change its projection; preserve valid first workflow handoffs and prior invocation history. Stopped work requires explicit authorized recovery and rehandoff, retaining sessions, receipts, attempts and consumed repair allowance. Each project has its own persisted task limit (default 3, range 1..32), without an aggregate global project-task cap. Managed setup shares its project's capacity owner without a tracker Todo requirement; directory exclusion and callback retirement fences remain intact. Lowering a limit affects future admissions only: every admitted/running task continues unchanged, actual counts may exceed the limit, and new admission waits for room. Never stop, abort, cancel, restart or evict work because a limit decreased. Other projects are unaffected. Host child/reviewer slots and the terminal-managed default of three active ticket assignments are separate from project task limits.
 
 ## Project Boundaries And Calibration
+
+Deliver a simple, complete end-to-end flow first, connecting existing components through their canonical owners; improve it afterward based on real needs and evidence. Required behavior, correctness, security and proportionate verification belong in that first delivery; optional breadth and speculative abstractions wait. Apply this direction during planning, architecture, delivery and independent review without adding a stage or weakening accepted scope.
 
 Read the actual owners, consumers, flows and tests before design. StackOS core
 owns generic integrity; domain method belongs in plugins/workflows, project
@@ -250,6 +276,12 @@ and normal approval review. Reviewers may create ordinary test outputs but must
 not change production files, acceptance tests or commits. Record the actual mode
 and limitations in launch receipts.
 
+At setup, and when reviewer permissions or required proof environments change,
+inspect effective source sandbox and approval restrictions. Verify the smallest
+representative test-tool scratch write and any required isolated-fixture access
+before declaring the review route ready. Preserve normal approval controls and
+frozen sessions; source edits alone do not repair a retained incompatible session.
+
 Each source-change ticket produces a separate scoped commit after focused checks,
 then receives independent exact-commit review. Both receipts name full
 `commit_sha`. Protected `.git`/`.codex` writes use normal approval review; stop
@@ -362,7 +394,13 @@ main retains scope admission and final claims.
 
 Current automatic launches all return `status` (success/repair/blocked/failed),
 `summary`, `outputs` (a JSON-encoded object string), and `followups` (text
-objects, empty array when none). Only success advances; ordinary review repair
+objects, empty array when none). Consume validation evidence for the exact final
+payload after all receipt/archive metadata is assembled, `outputs` is serialized
+once and parsed as one JSON object with no trailing content, and the applicable
+occurrence output schema (including frozen mirror outputs) plus the actual launcher
+envelope are checked. The returned payload must remain unchanged; later edits
+require revalidation. An earlier saved artifact does not validate the emitted result.
+Only success advances; ordinary review repair
 uses the bounded loop. Supported persisted correction/reopen returns to dependency
 scanning; mirror repair without progress stops. Agents explicitly map domain
 verdicts and return declared frozen outputs. Supplied outputs.commit_sha retains
