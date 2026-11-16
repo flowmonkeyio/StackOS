@@ -112,7 +112,10 @@ function clearFilters(): void {
 
 const enablement = usePluginEnablement(projectId, {
   enable: catalogStore.enablePlugin,
-  refresh: (id) => Promise.all([catalogStore.refresh(id), inventory.refresh(id)]),
+  refresh: (id) => {
+    const freshPlugins = catalogStore.refreshPlugins(id, { silent: true, force: true })
+    return Promise.all([freshPlugins, catalogStore.refresh(id), inventory.refresh(id)])
+  },
 })
 const { pendingSlug, error: enableError, message: enableMessage } = enablement
 
