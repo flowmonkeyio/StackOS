@@ -115,6 +115,7 @@ from stackos.db.model_runtime import (
 )
 from stackos.db.model_secrets import PayloadSecret
 from stackos.db.model_tracker import (
+    ManagedUpgrade,
     TaskDeliveryCapacity,
     TaskTracker,
     TaskTrackerLane,
@@ -190,6 +191,7 @@ __all__ = [
     "IntegrationBudget",
     "IntegrationCredential",
     "Learning",
+    "ManagedUpgrade",
     "MetricSnapshot",
     "OAuthState",
     "Pattern",

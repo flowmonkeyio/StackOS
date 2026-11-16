@@ -147,6 +147,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "task_tracker_priorities",
         "task_trackers",
         "task_delivery_capacity",
+        "managed_upgrades",
         "telegram_application",
         "tracker_revisions",
         "tracker_tasks",
@@ -684,7 +685,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0049_project_task_capacity",
+            "0050_managed_upgrades",
         )
     finally:
         conn.close()
@@ -1797,7 +1798,7 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
     assert not (tables & LEGACY_TABLES)
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0049_project_task_capacity",)
+            ("0050_managed_upgrades",)
         ]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert {"order_index", "cleanup_json", "primary_workspace_binding_id"} <= _table_columns(
@@ -2473,6 +2474,7 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
     with sqlite3.connect(isolated_alembic) as conn:
         assert _list_tables(isolated_alembic) == tables_before | {
             "task_delivery_capacity",
+            "managed_upgrades",
             "patterns",
             "pattern_deletions",
             "project_setup_receipts",

@@ -364,6 +364,18 @@ providers should not return credentials.
 
 ## REST vs agent execution
 
+Managed-upgrade administration uses the exact registered
+`maintenance.prepareUpgrade` and `maintenance.upgradeStatus` REST/CLI operations
+with the daemon administrator token. MCP, the derived browser console token,
+project selection and workflow run grants confer no installation authority.
+Preparation fences admission across projects and stops only exact registered
+native handles of eligible task deliveries; external sessions are never killed
+by PID inference. Its minimal installation row stores build identities and task
+refs; original settings, sessions and redaction-safe source fingerprints remain
+with existing task/ticket evidence. An uncertain owner or retirement leaves a
+durable hold. Preparation does not establish installed activation or authorize
+runtime replacement. See [managed upgrade preparation](task-tracker.md#managed-upgrade-preparation).
+
 REST mutation routes are local-admin surfaces behind the daemon bearer token.
 The browser UI receives only a derived REST-only console token. That token can
 read REST state, call operation-registry entries whose specs are read-only,

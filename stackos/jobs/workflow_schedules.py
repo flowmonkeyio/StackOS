@@ -202,6 +202,10 @@ class WorkflowScheduleRuntime:
         claim_token = None
         try:
             with self.session_factory() as session:
+                from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
+
+                if ManagedUpgradeRepository(session).active():
+                    return
                 current = session.get(ScheduledJob, row.id)
                 if (
                     current is None
@@ -273,6 +277,10 @@ class WorkflowScheduleRuntime:
                 from stackos.repositories.projects import ProjectRepository
 
                 with self.session_factory() as check:
+                    from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
+
+                    if ManagedUpgradeRepository(check).active():
+                        return False
                     project = ProjectRepository(check).get(row.project_id)
                     return project.project_dir == settings["project_dir"]
 

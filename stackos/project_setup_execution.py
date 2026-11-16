@@ -202,6 +202,10 @@ def start_managed(
     from stackos.task_delivery import _admission_id, drain_delivery
 
     with managed_launch_lock, session_factory() as session:
+        from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
+
+        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        ManagedUpgradeRepository(session).require_unfenced()
         ProjectRepository(session).require_available(project_id, reserve=True)
         repo = ProjectSetupRepository(session)
         state = repo.get(project_id)
@@ -291,6 +295,10 @@ def continue_managed(
 
     with managed_launch_lock, session_factory() as session:
         # Acquire the same database reservation as start/report, before reading state.
+        from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
+
+        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        ManagedUpgradeRepository(session).require_unfenced()
         ProjectRepository(session).require_available(project_id, reserve=True)
         project = ProjectRepository(session).get(project_id)
         row, current = _load(session, project_id, request_id)

@@ -76,6 +76,29 @@ def launch(monkeypatch, tmp_path, execution, runner, observer=None, *, output_sc
     )
 
 
+def test_upgrade_fence_denies_request_native_admission(session, project_id, tmp_path, monkeypatch):
+    from stackos.task_delivery import prepare_managed_upgrade
+    from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+    repo, request, _claim, execution = owner(session, project_id)
+    prepare_managed_upgrade(
+        session_factory=lambda: Session(session.get_bind()),
+        scheduler=QueuedScheduler(),
+        upgrade_id="request-fence",
+        source_identity="source",
+        target_identity="target",
+        expected_revision=0,
+    )
+    calls = []
+    with pytest.raises(ConflictError, match="fenced"):
+        launch(monkeypatch, tmp_path, execution, lambda *_a, **_kw: calls.append(True))
+    assert calls == []
+    retained = repo.get(project_id=project_id, request_id=request.id)
+    assert retained.status == "claimed" and not (retained.metadata_json or {}).get(
+        "native_execution"
+    )
+
+
 def test_request_identity_lease_usage_and_terminal_handoff(
     session, project_id, monkeypatch, tmp_path
 ):

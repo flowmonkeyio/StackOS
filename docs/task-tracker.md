@@ -58,6 +58,66 @@ for placement and the existing explicit handoff/requeue owners for execution.
 
 ## Automated Task Delivery
 
+### Managed upgrade preparation
+
+`maintenance.prepareUpgrade` is an installation administrator boundary exposed
+through REST and CLI, unavailable to project MCP agents, workflow grants and the
+browser console token. It takes `upgrade_id`, declared `source_identity` and
+`target_identity` build references, and `expected_revision` (0 for a new
+transaction). These references identify the intended transition; preparation
+does not attest an installed build or authorize replacement by itself.
+`maintenance.upgradeStatus` reads the active transaction, or one `upgrade_id`.
+Both compact and raw responses retain build identity, revision, fence status,
+checkpoint refs and per-checkpoint repair context.
+
+The minimal `managed_upgrades` row owns one durable installation-wide fence and
+task references, separate from tracker/workflow lifecycle. In one SQLite writer
+transaction preparation fences admission/dispatch and checkpoints eligible
+authorized queued/running delivery handoffs across projects. Stopped, failed,
+aborted, complete and manual work is not captured. Invalid/foreign-generation
+ownership refuses preparation before interruption. Active managed setup or native
+owners outside the eligible delivery scopes must retire first; they are not
+implicitly checkpointed. The same fence guards shared-capacity setup admissions,
+native request admission and scheduled main-agent dispatch. It adds no queue or
+new tracker status and startup does not clear it or launch work.
+
+Each task retains `metadata_json.delivery.upgrade_checkpoint`, version 1:
+
+- Upgrade, original handoff/admission/job, run/controller/step and prior delivery
+  status; digest of frozen settings, project directory and task-only MCP route.
+- Ticket/attempt/phase and candidate references into existing ticket evidence.
+  Original native session snapshots, launch settings, selected/launched sources,
+  repair counts and attempts remain with that evidence, without a copied queue.
+- Exact invocation refs and observed process/reader retirement, callback slot
+  acknowledgment, plus the post-retirement source fingerprint using the existing
+  redaction-safe format. A non-Git/unborn source has no Git fingerprint.
+  `launch_baseline_clean` records actual launch evidence for later dirty-work
+  attribution; a missing legacy value never grants implicit adoption.
+  `native_never_spawned` records exact handle prevention; a first native launch
+  prevented before spawn has no session to preserve. It never permits replacing
+  a missing historical/resumed session.
+- `status` and `issues`: `quiesced` is confirmed retirement, `held` is uncertain,
+  and `settled` preserves an intervening terminal lifecycle winner. A null phase
+  means no interrupted native invocation; continuation must resolve the existing
+  evidence cursor rather than invent a delivery phase.
+
+Preparation fences process spawn and late native acceptance without aborting or
+reopening anything. Already-accepted terminal results win. Returns after the
+fence retain observations with `upgrade_interruption`, not cancellation or a new
+validated outcome. Only exact registered process handles are stopped; native
+exit alone is insufficient while the controller callback retains its slot.
+Unknown native outcomes, missing sessions, unconfirmed retirement or changed
+frozen settings produce a 409 with durable held state and repair refs. A repeated
+successful request returns the same receipt; held retries require the current
+revision and never infer retirement from a missing handle. Delayed callback
+registration acknowledges the original fence before its slot can retire.
+
+Preparation is independently usable for inspection and quiescence. It neither
+installs a target nor resumes work. The continuation owner must verify target,
+health/doctor, current authority, exact frozen settings/session/candidate/source
+and the original checkpoint before rejoining the existing queue. A new daemon
+generation or an arbitrary restart is not upgrade authorization.
+
 Explicit workflow abort uses `runPlan.abort` and the shared delivery/native launch
 boundary described in [run plans](./run-plans.md#explicit-run-abort). Canonical
 aborted task state and the stopped delivery handoff fence queued callbacks, spawn

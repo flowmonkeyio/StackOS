@@ -27,6 +27,25 @@ from stackos.db.model_enums import (
 )
 
 
+class ManagedUpgrade(SQLModel, table=True):
+    """Installation fence and references only; task owners retain checkpoint evidence."""
+
+    __tablename__ = "managed_upgrades"
+    __table_args__ = (
+        CheckConstraint("active IS NULL OR active = 1", name="ck_managed_upgrade_active"),
+    )
+
+    upgrade_id: str = Field(primary_key=True, max_length=160)
+    active: int | None = Field(default=1, unique=True)
+    source_identity: str = Field(max_length=240)
+    target_identity: str = Field(max_length=240)
+    revision: int = Field(default=1, nullable=False)
+    status: str = Field(default="preparing", max_length=40)
+    checkpoint_refs_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
 class TaskDeliveryCapacity(SQLModel, table=True):
     """A project's admission preference in the existing backed-up database."""
 

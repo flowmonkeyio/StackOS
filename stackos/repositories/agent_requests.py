@@ -808,9 +808,11 @@ class AgentRequestRepository:
         call: ActiveInvocation,
         launch_snapshot: dict[str, Any],
     ) -> None:
+        from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
         from stackos.repositories.projects import ProjectRepository
 
         ProjectRepository(self._s).require_available(owner.project_id, reserve=True)
+        ManagedUpgradeRepository(self._s).require_unfenced()
         row = self._execution_row(owner, call)
         self._verify_claim(row, owner.claim_token, _setup_owner=owner.setup_owner)
         if row.status != AgentRequestStatus.CLAIMED or (row.metadata_json or {}).get(

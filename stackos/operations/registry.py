@@ -138,6 +138,7 @@ def build_operation_registry() -> OperationRegistry:
         finance,
         guides,
         integrations,
+        maintenance,
         patterns,
         project_agents,
         project_bootstrap,
@@ -160,6 +161,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in patterns.operation_specs():
         registry.register(spec)
     for spec in desktop.operation_specs():
+        registry.register(spec)
+    for spec in maintenance.operation_specs():
         registry.register(spec)
     for spec in finance.operation_specs():
         registry.register(spec)

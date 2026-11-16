@@ -148,6 +148,38 @@ def cancel_task_invocations(project_id: int, task_key: str) -> list[ActiveInvoca
         return calls
 
 
+def quiesce_task_invocations(project_id: int, task_key: str) -> list[ActiveInvocation]:
+    """Fence exact upgrade-owned handles without turning maintenance into cancellation.
+
+    Include the bounded native-exit handoff: a finished native call whose result
+    has not crossed the controller acceptance boundary is still an uncertain owner.
+    """
+    with managed_launch_lock, _active_invocations_lock:
+        calls = [
+            call
+            for call in _active_invocations.values()
+            if call.scope.project_id == project_id and call.scope.task_key == task_key
+        ]
+        for call in calls:
+            call.process_control.cancelled.set()
+        return calls
+
+
+def uncheckpointed_invocations(scopes: set[tuple[int, str]]) -> list[dict[str, Any]]:
+    """An installation replacement cannot certify owners outside its selected tasks."""
+    with managed_launch_lock, _active_invocations_lock:
+        return [
+            {
+                "invocation_id": call.invocation_id,
+                "project_id": call.scope.project_id,
+                "task_key": call.scope.task_key,
+                "request_id": call.scope.request_id,
+            }
+            for call in _active_invocations.values()
+            if (call.scope.project_id, call.scope.task_key) not in scopes
+        ]
+
+
 def cancel_request_invocations(project_id: int, request_id: int) -> list[ActiveInvocation]:
     """Fence only the exact request owner; callers stop the returned managed handles."""
     with managed_launch_lock, _active_invocations_lock:

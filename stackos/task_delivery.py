@@ -14,6 +14,7 @@ from functools import partial
 from hashlib import sha256
 from pathlib import Path
 from threading import Event
+from time import monotonic, sleep
 from typing import Any
 from uuid import uuid4
 
@@ -41,10 +42,13 @@ from stackos.host_mcp.service import (
     agent_selection_error,
     cancel_task_invocations,
     effective_agent_sandbox,
+    quiesce_task_invocations,
     run_agent,
+    uncheckpointed_invocations,
 )
 from stackos.operations.tracker.schemas import TaskDeliveryAgent, TaskDeliveryAgentOverride
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
+from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
 from stackos.repositories.run_plans import RunPlanRepository, RunPlanSecretValidationError
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.board import task_column
@@ -232,7 +236,386 @@ def _delivery_active(task, handoff_id):
         task.status != TrackerItemStatus.ABORTED
         and state.get("handoff_id") == handoff_id
         and state.get("status") in {"queued", "running"}
+        and not _upgrade_checkpoint(task, handoff_id)
     )
+
+
+def _upgrade_checkpoint(task, handoff_id):
+    checkpoint = (task.metadata_json or {}).get("delivery", {}).get("upgrade_checkpoint")
+    return checkpoint if checkpoint and checkpoint.get("handoff_id") == handoff_id else None
+
+
+def _checkpoint_task(session, task, checkpoint):
+    """Use tracker revisions, in the caller's transaction, without lifecycle changes."""
+    metadata = deepcopy(task.metadata_json or {})
+    metadata["delivery"]["upgrade_checkpoint"] = checkpoint
+    TrackerRepository(session).update_task(
+        project_id=task.project_id,
+        task_key=task.key,
+        patch_json={"metadata_json": metadata},
+        actor="maintenance.managed-upgrade",
+        commit=False,
+    )
+
+
+def _upgrade_settings_digest(state):
+    fields = (
+        "project_dir",
+        "mcp_config_ref",
+        "host_key",
+        "agents",
+        "delivery_agent",
+        "review_agent",
+        "agent_assignments",
+        "run_plan_id",
+        "controller_run_id",
+        "step_id",
+        "handoff_id",
+        "admission_id",
+    )
+    return sha256(
+        json.dumps({key: state.get(key) for key in fields}, sort_keys=True).encode()
+    ).hexdigest()
+
+
+def prepare_managed_upgrade(
+    *, session_factory, scheduler, upgrade_id, source_identity, target_identity, expected_revision
+):
+    """Fence atomically, then retire exact native and scheduler owners outside SQL.
+
+    This boundary never changes task, ticket or workflow lifecycle. A crash or
+    missing native handle leaves a durable hold, never inferred quiescence.
+    """
+    from stackos.db.models import ManagedUpgrade, Project
+    from stackos.repositories.project_setup import ProjectSetupRepository
+
+    calls = {}
+    with managed_launch_lock, session_factory() as session:
+        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        upgrades = ManagedUpgradeRepository(session)
+        row = session.get(ManagedUpgrade, upgrade_id)
+        if row:
+            if (row.source_identity, row.target_identity) != (source_identity, target_identity):
+                raise ConflictError(
+                    "Upgrade identity differs from its durable preparation",
+                    data={
+                        **upgrades.status(upgrade_id),
+                        "code": "upgrade_identity_changed",
+                        "next_operations": ["maintenance.upgradeStatus"],
+                    },
+                )
+            if row.status == "quiesced":
+                return upgrades.status(upgrade_id)
+            if row.active != 1 or row.revision != expected_revision:
+                raise ConflictError("Upgrade revision changed", data=upgrades.status(upgrade_id))
+        else:
+            upgrades.require_unfenced()
+            if expected_revision != 0:
+                raise ConflictError(
+                    "New preparation requires expected_revision=0",
+                    data={
+                        "code": "upgrade_revision_changed",
+                        "revision": 0,
+                        "upgrade_id": upgrade_id,
+                        "next_operations": ["maintenance.upgradeStatus"],
+                    },
+                )
+            # This ticket checkpoints deliveries only. An active setup has its
+            # own request continuation owner and cannot be silently interrupted.
+            if ProjectSetupRepository(session).managed_admissions():
+                raise ConflictError(
+                    "Managed setup must retire before upgrade preparation",
+                    data={"code": "managed_setup_active", "next_action": "inspect_setup"},
+                )
+            tasks = session.exec(
+                select(TrackerTask).where(
+                    func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
+                        ("queued", "running")
+                    ),
+                    TrackerTask.status.notin_(
+                        (
+                            TrackerItemStatus.ABORTED,
+                            TrackerItemStatus.COMPLETE,
+                            TrackerItemStatus.FAILED,
+                        )
+                    ),
+                )
+            ).all()
+            if unknown := uncheckpointed_invocations(
+                {(task.project_id, task.key) for task in tasks}
+            ):
+                raise ConflictError(
+                    "Native owners outside eligible delivery must retire first",
+                    data={"code": "uncheckpointed_native_owner", "invocations": unknown},
+                )
+            row = ManagedUpgrade(
+                upgrade_id=upgrade_id,
+                source_identity=source_identity,
+                target_identity=target_identity,
+            )
+            refs = []
+            for task in tasks:
+                state = (task.metadata_json or {})["delivery"]
+                project = session.get(Project, task.project_id)
+                if (
+                    project is None
+                    or project.cleanup_json is not None
+                    or state.get("admission_id") != _admission_id(scheduler)
+                    or not all(state.get(key) for key in ("handoff_id", "job_ref", "project_dir"))
+                ):
+                    raise ConflictError(
+                        "Active delivery ownership is not checkpointable",
+                        data={"project_id": task.project_id, "task_key": task.key},
+                    )
+                _workflow_scope(
+                    TrackerRepository(session),
+                    task.project_id,
+                    task,
+                    state.get("run_plan_id"),
+                    state.get("step_id"),
+                )
+                ref = {
+                    "project_id": task.project_id,
+                    "task_id": task.id,
+                    "task_key": task.key,
+                    "handoff_id": state["handoff_id"],
+                }
+                refs.append(ref)
+                checkpoint = {
+                    "schema_version": 1,
+                    "upgrade_id": upgrade_id,
+                    "handoff_id": state["handoff_id"],
+                    "admission_id": state["admission_id"],
+                    "job_ref": state["job_ref"],
+                    "prior_status": state["status"],
+                    "run_plan_id": state.get("run_plan_id"),
+                    "controller_run_id": state.get("controller_run_id"),
+                    "step_id": state.get("step_id"),
+                    "ticket_key": state.get("ticket_key"),
+                    "phase": None,
+                    "attempt": None,
+                    "status": "preparing",
+                    "issues": [],
+                    "settings_digest": _upgrade_settings_digest(state),
+                    "capture_issues": [],
+                }
+                _checkpoint_task(session, task, checkpoint)
+            row.checkpoint_refs_json = refs
+            session.add(row)
+        # Every reference is captured in the same commit as the installation
+        # fence. No process has been interrupted yet.
+        session.commit()
+        refs = deepcopy(row.checkpoint_refs_json)
+        revision = row.revision
+        for ref in refs:
+            task = session.get(TrackerTask, ref["task_id"])
+            checkpoint = deepcopy(_upgrade_checkpoint(task, ref["handoff_id"]))
+            if not checkpoint or checkpoint["upgrade_id"] != upgrade_id:
+                raise ConflictError(
+                    "Checkpoint identity changed; fence remains active",
+                    data=upgrades.status(upgrade_id),
+                )
+            owned = quiesce_task_invocations(ref["project_id"], ref["task_key"])
+            calls[ref["task_id"]] = owned
+            if "invocations" not in checkpoint:
+                checkpoint["invocations"] = [
+                    {
+                        "invocation_id": call.invocation_id,
+                        "ticket_key": call.scope.ticket_key,
+                        "attempt": call.scope.attempt,
+                        "phase": call.scope.phase,
+                    }
+                    for call in owned
+                ]
+                if owned:
+                    checkpoint.update(
+                        phase=owned[0].scope.phase,
+                        attempt=owned[0].scope.attempt,
+                        ticket_key=owned[0].scope.ticket_key,
+                    )
+                    if len(owned) != 1 or owned[0].finished:
+                        checkpoint["capture_issues"].append("unsettled_native_outcome")
+                elif checkpoint.get("ticket_key"):
+                    ticket = (
+                        TrackerRepository(session)
+                        .brief(project_id=task.project_id, ticket_key=checkpoint["ticket_key"])
+                        .ticket
+                    )
+                    evidence = (ticket.completion_evidence_json or {}).get("automatic_delivery", {})
+                    if any(
+                        isinstance(evidence.get(phase), dict)
+                        and evidence[phase].get("launch")
+                        and not evidence[phase].get("validated_outcome")
+                        for phase in ("delivery", "review")
+                    ):
+                        checkpoint["capture_issues"].append("unknown_native_owner")
+                if checkpoint.get("ticket_key"):
+                    ticket = (
+                        TrackerRepository(session)
+                        .brief(project_id=task.project_id, ticket_key=checkpoint["ticket_key"])
+                        .ticket
+                    )
+                    evidence = (ticket.completion_evidence_json or {}).get("automatic_delivery", {})
+                    checkpoint["candidate"] = deepcopy(evidence.get("candidate", {}))
+                    checkpoint["launch_baseline_clean"] = evidence.get("launch_baseline_clean")
+                    checkpoint["evidence_ref"] = {
+                        "ticket_id": ticket.id,
+                        "ticket_key": ticket.key,
+                        "attempt": checkpoint["attempt"],
+                        "phase": checkpoint["phase"],
+                    }
+                checkpoint["issues"] = list(checkpoint["capture_issues"])
+                _checkpoint_task(session, task, checkpoint)
+        session.commit()
+
+    # Scheduler removal can race delayed registration or an already-dequeued
+    # callback. The durable checkpoint fences both; its slot is the retirement
+    # acknowledgment, not native process exit alone.
+    for ref in refs:
+        with managed_launch_lock, session_factory() as session:
+            task = session.get(TrackerTask, ref["task_id"])
+            checkpoint = _upgrade_checkpoint(task, ref["handoff_id"])
+            try:
+                scheduler.remove_job(checkpoint["job_ref"], jobstore="memory")
+            except JobLookupError:
+                pass
+            else:
+                _release_delivery_slot(
+                    session_factory=session_factory,
+                    project_id=task.project_id,
+                    task_key=task.key,
+                    handoff_id=ref["handoff_id"],
+                )
+        for call in calls[ref["task_id"]]:
+            stop_error = None
+            try:
+                outcome = call.process_control.stop()
+            except Exception as error:
+                outcome, stop_error = "unconfirmed", type(error).__name__
+            retired = call.retired.wait(2)
+            with managed_launch_lock, session_factory() as session:
+                task = session.get(TrackerTask, ref["task_id"])
+                checkpoint = deepcopy(_upgrade_checkpoint(task, ref["handoff_id"]))
+                checkpoint.setdefault("retirement", {})[call.invocation_id] = {
+                    "outcome": outcome,
+                    "retired": retired,
+                    **({"error_type": stop_error} if stop_error else {}),
+                }
+                _checkpoint_task(session, task, checkpoint)
+                session.commit()
+    deadline = monotonic() + 2
+    while True:
+        with session_factory() as session:
+            pending = any(
+                (session.get(TrackerTask, ref["task_id"]).metadata_json or {})
+                .get("delivery", {})
+                .get("slot_reserved")
+                for ref in refs
+            )
+        if not pending or monotonic() >= deadline:
+            break
+        sleep(0.02)  # Bounded observation of the existing callback retirement acknowledgment.
+
+    with managed_launch_lock, session_factory() as session:
+        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        row = session.get(ManagedUpgrade, upgrade_id)
+        if row.revision != revision or row.active != 1:
+            raise ConflictError(
+                "Upgrade revision changed during retirement",
+                data=ManagedUpgradeRepository(session).status(upgrade_id),
+            )
+        held = False
+        for ref in refs:
+            task = session.get(TrackerTask, ref["task_id"])
+            checkpoint = deepcopy(_upgrade_checkpoint(task, ref["handoff_id"]))
+            issues = list(checkpoint["capture_issues"])
+            if (
+                _upgrade_settings_digest(task.metadata_json["delivery"])
+                != checkpoint["settings_digest"]
+            ):
+                issues.append("frozen_settings_changed")
+            if task.metadata_json["delivery"].get("slot_reserved"):
+                issues.append("callback_retirement_unconfirmed")
+            for invocation in checkpoint.get("invocations", []):
+                retired = checkpoint.get("retirement", {}).get(invocation["invocation_id"], {})
+                if retired.get("outcome") not in {"stopped", "prevented"} or not retired.get(
+                    "retired"
+                ):
+                    issues.append("native_retirement_unconfirmed")
+            if checkpoint.get("phase"):
+                ticket = (
+                    TrackerRepository(session)
+                    .brief(project_id=task.project_id, ticket_key=checkpoint["ticket_key"])
+                    .ticket
+                )
+                evidence = (ticket.completion_evidence_json or {}).get("automatic_delivery", {})
+                phase = checkpoint["phase"]
+                never_spawned = bool(checkpoint.get("invocations")) and all(
+                    checkpoint.get("retirement", {}).get(item["invocation_id"], {}).get("outcome")
+                    == "prevented"
+                    for item in checkpoint["invocations"]
+                )
+                checkpoint["native_never_spawned"] = never_spawned
+                first_launch_prevented = (
+                    never_spawned
+                    and not evidence.get(phase, {}).get("launch", {}).get("resume_thread_id")
+                    and not any(phase in attempt for attempt in evidence.get("attempts", []))
+                )
+                if evidence.get("attempt") != checkpoint["attempt"] or (
+                    not evidence.get("sessions", {}).get(phase, {}).get("thread_id")
+                    and not first_launch_prevented
+                ):
+                    issues.append("native_session_unconfirmed")
+            if not issues:
+                try:
+                    directory = task.metadata_json["delivery"]["project_dir"]
+                    checkpoint["worktree_snapshot"] = (
+                        _worktree_snapshot(directory) if _baseline(directory) else None
+                    )
+                except (ValidationError, OSError) as error:
+                    issues.append(f"source_checkpoint_unavailable: {error}")
+            checkpoint["issues"] = sorted(set(issues))
+            checkpoint["status"] = (
+                "held"
+                if issues
+                else (
+                    "settled"
+                    if task.status
+                    in {
+                        TrackerItemStatus.ABORTED,
+                        TrackerItemStatus.COMPLETE,
+                        TrackerItemStatus.FAILED,
+                    }
+                    or task.metadata_json["delivery"].get("status") not in {"queued", "running"}
+                    else "quiesced"
+                )
+            )
+            held |= bool(issues)
+            _checkpoint_task(session, task, checkpoint)
+        row.status = "held" if held else "quiesced"
+        row.revision += 1
+        row.updated_at = datetime.now(UTC).replace(tzinfo=None)
+        session.add(row)
+        session.commit()
+        result = ManagedUpgradeRepository(session).status(upgrade_id)
+        if held:
+            raise ConflictError(
+                "Upgrade quiescence is unconfirmed; replacement remains unsafe",
+                data={
+                    **result,
+                    "next_operations": ["maintenance.upgradeStatus"],
+                    "checkpoint_issues": [
+                        {
+                            **ref,
+                            "issues": _upgrade_checkpoint(
+                                session.get(TrackerTask, ref["task_id"]), ref["handoff_id"]
+                            )["issues"],
+                        }
+                        for ref in refs
+                    ],
+                },
+            )
+        return result
 
 
 def _workflow_scope(repo, project_id, task, run_plan_id, step_id, *, starting=False):
@@ -858,6 +1241,7 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         # Serialize only admission, never execution. Reading and saving the queued
         # snapshot in one SQLite writer transaction also protects concurrent calls.
         session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        ManagedUpgradeRepository(session).require_unfenced()
         ProjectRepository(session).require_available(project_id)
         session.expire_all()
         task = _task(repo, project_id, task_key)
@@ -1722,6 +2106,9 @@ def _reserve_delivery(session_factory, scheduler):
     from stackos.repositories.projects import ProjectRepository
 
     with managed_launch_lock, session_factory() as session:
+        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        if ManagedUpgradeRepository(session).active():
+            return None
         identity = _admission_id(scheduler)
         capacities = {
             row["project_id"]: row for row in delivery_capacity(session, scheduler)["projects"]
@@ -2629,6 +3016,7 @@ def run_delivery(
                         )
                     )
                     baseline_pending = False
+                    evidence.setdefault("launch_baseline_clean", baseline_clean)
                 if (
                     workflow_step is None
                     and phase == "delivery"
@@ -3038,7 +3426,10 @@ def run_delivery(
                     task = _task(repo, project_id, task_key)
                     if invocation_cancelled() or not _delivery_active(task, handoff_id):
                         evidence[phase]["validated_outcome"] = None
-                        evidence[phase]["cancelled"] = True
+                        if checkpoint := _upgrade_checkpoint(task, handoff_id):
+                            evidence[phase]["upgrade_interruption"] = checkpoint["upgrade_id"]
+                        else:
+                            evidence[phase]["cancelled"] = True
                         # A fresh handoff owns current evidence. Retired returns
                         # may retain observations only in their original handoff.
                         if (task.metadata_json or {}).get("delivery", {}).get(
@@ -3220,7 +3611,13 @@ def run_delivery(
                     and (task.metadata_json or {}).get("delivery", {}).get("handoff_id")
                     == handoff_id
                 ):
-                    evidence["cancellation"] = {"status": "aborted", "error": str(error)}
+                    if checkpoint := _upgrade_checkpoint(task, handoff_id):
+                        evidence["upgrade_interruption"] = {
+                            "upgrade_id": checkpoint["upgrade_id"],
+                            "error": str(error),
+                        }
+                    else:
+                        evidence["cancellation"] = {"status": "aborted", "error": str(error)}
                     _save_evidence(repo, project_id, ticket_key, evidence)
                 return
             if ticket_key is not None:

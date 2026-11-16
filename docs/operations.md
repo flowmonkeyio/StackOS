@@ -617,6 +617,35 @@ projected Board column. Neither grants delivery execution authority. All retain
 strict snapshots, intent-bound idempotency and raw save receipts. See
 [Board membership and order writes](task-tracker.md#board-priority-and-order-writes).
 
+## Managed upgrade preparation
+
+`maintenance.prepareUpgrade` and `maintenance.upgradeStatus` share the registered
+installation-administrator REST/CLI contract. They are disabled through MCP and
+for the browser console, reject run tokens and project arguments, and do not
+grant upgrade replacement or workflow execution authority. CLI uses the same
+authenticated operation route:
+
+```bash
+stackos ops call maintenance.prepareUpgrade --input prepare-upgrade.json
+stackos ops call maintenance.upgradeStatus
+```
+
+The input file contains the explicit transition identity and CAS revision:
+
+```json
+{"upgrade_id":"upgrade-123","source_identity":"source-build","target_identity":"target-build","expected_revision":0}
+```
+
+Preparation atomically saves one durable installation fence and references to
+task-owned checkpoints, then retires exact managed process and callback owners.
+`quiesced` means the selected preparation succeeded; it does not claim target
+installation or continuation. Unknown native outcomes or unconfirmed retirement
+return structured 409 repair context with the fence retained. Status exposes
+the current revision and per-checkpoint issues. Successful retries are
+idempotent; a held retry pins the current revision and original build identities.
+Compact/raw preserve the complete bounded preparation receipt; ack is disabled.
+See [checkpoint ownership and interface](task-tracker.md#managed-upgrade-preparation).
+
 ## Local task admission capacity
 
 `tracker.deliveryCapacity` and `tracker.setDeliveryCapacity` use the same

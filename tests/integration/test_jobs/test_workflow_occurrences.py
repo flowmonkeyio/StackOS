@@ -86,6 +86,27 @@ async def fire(occurrence):
 
 
 @pytest.mark.asyncio
+async def test_upgrade_fence_prevents_scheduled_native_admission(occurrence):
+    from stackos.task_delivery import prepare_managed_upgrade
+
+    row_id, _project_id, runtime, _clock, database, calls = occurrence
+    receipt = prepare_managed_upgrade(
+        session_factory=lambda: Session(database),
+        scheduler=runtime.scheduler,
+        upgrade_id="scheduled-fence",
+        source_identity="source",
+        target_identity="target",
+        expected_revision=0,
+    )
+    assert receipt["status"] == "quiesced"
+    await fire(occurrence)
+    assert calls == []
+    with Session(database) as session:
+        assert session.exec(select(AgentRequest)).all() == []
+        assert session.get(ScheduledJob, row_id).last_request_id is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("host", ["codex", "hermes"])
 async def test_saved_main_selection_is_frozen_per_occurrence_and_fresh_on_next_tick(
     occurrence, monkeypatch, host
