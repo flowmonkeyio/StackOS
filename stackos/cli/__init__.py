@@ -102,6 +102,7 @@ from .local_commands import (
     uninstall,
 )
 from .operation_commands import _operation_call
+from .upgrade_commands import finish_upgrade, prepare_upgrade, upgrade_identity
 
 # Import command modules for their Typer decorators. The imported symbols above
 # keep legacy private tests and smoke scripts working during the package split.

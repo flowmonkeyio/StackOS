@@ -684,8 +684,8 @@ function createMenu() {
     onDownloadUpdate: async () => {
       await showUpdateResult("download", await updateController.downloadUpdate());
     },
-    onInstallUpdate: () => {
-      const result = updateController.quitAndInstall();
+    onInstallUpdate: async () => {
+      const result = await updateController.quitAndInstall();
       if (!result.ok) {
         showUpdateResult("install", result);
       }

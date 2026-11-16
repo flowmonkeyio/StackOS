@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0049_project_task_capacity"
+HEAD_REVISION = "0052_upgrade_receipts"
 
 
 @pytest.fixture

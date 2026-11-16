@@ -599,6 +599,15 @@ release system.
 
 ## Verification
 
+Managed updates prepare through the packaged CLI before calling Electron's
+installer. The controller retains MacUpdater's `update-downloaded.downloadedFile`
+ZIP ref even when `downloadUpdate()` resolves an empty array, and disables
+installation on ordinary app quit. The CLI reads the exact staged build-info
+bytes; subsequent install/restart uses the shared maintenance transaction and
+requires target identity, health and doctor. Keep actual signed app
+install/relaunch proof separate from these source/fixture checks. See
+[upgrade continuity and bootstrap](upgrade.md#what-happens-during-upgrade).
+
 Dependency-light scaffold inspection needs Node.js and the source checkout,
 without installed desktop packages or a running Electron app:
 

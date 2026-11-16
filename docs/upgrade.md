@@ -9,10 +9,17 @@ end state after ten.
 For a StackOS installation sourced from PyPI:
 
 ```bash
+# Stage the intended wheel in a separate environment first. Use that staged
+# CLI, with the source installation's STACKOS_HOST/PORT/DATA_DIR/STATE_DIR.
+/path/to/staged/stackos upgrade-identity
+/path/to/staged/stackos prepare-upgrade
 pipx upgrade stackos
 stackos install
+stackos restart
 ```
 
+Preparation must precede the wheel swap. Install the same staged version/artifact;
+if resolution selects a different target, postflight holds rather than adopting it.
 `pipx upgrade` swaps the wheel; `stackos install` then re-mirrors the
 Codex and Claude Code skill mirrors from bundled `_assets/skills`, hydrates the
 StackOS plugin from bundled `_assets/plugins`, refreshes any existing Codex
@@ -31,14 +38,22 @@ the pinned connector release from PyPI; no sibling checkout needs updating.
 For a wheel installation, follow [package setup](setup.md#package-or-operator-setup).
 
 ```bash
+# From a separately staged copy of the intended revision, before git pull:
+/path/to/staged/.venv/bin/python -m stackos prepare-upgrade
 git pull
 make install
+stackos restart
 ```
 
 `make install` re-syncs Python deps, runs migrations to head, verifies the
 committed UI bundle (building only if it is missing), mirrors the Codex and
 Claude Code skills, hydrates the plugin, refreshes any existing Codex runtime
 cache copy, repairs MCP registrations, and runs `doctor`.
+An existing clone environment prepares before dependency sync; full CLI install
+prepares before migrations/assets/launchd changes. The install command owns
+migration ordering. A first clone may prepare only after its separate target
+dependencies exist. Direct environment replacement outside this sequence is not
+a managed continuation boundary.
 
 ## macOS desktop mode
 
@@ -82,6 +97,32 @@ updates, still bump `pyproject.toml`, `stackos/__init__.py`, and
 
 ## What happens during upgrade
 
+Desktop updates disable installation on ordinary app quit. After download, the
+controller passes the actual staged ZIP to `stackos prepare-upgrade`; its unique
+packaged `build-info.json` supplies the intended identity. Only successful
+preparation allows Electron installation. Next launch runs normal install/repair
+and restart. Full CLI install and `autostart install` also prepare before their
+disruptive changes; `stackos restart` consumes the same transaction, waits for
+target health, and runs the target doctor before finish. Registration-only and
+skill-only repairs do not interrupt the daemon.
+
+`stackos prepare-upgrade` defaults to the staged CLI's own runtime identity;
+`--target-identity` selects an explicitly read staged identity and
+`--target-archive` reads the downloaded desktop ZIP without extracting it.
+For non-default installations, retain the same `STACKOS_HOST`, `STACKOS_PORT`,
+`STACKOS_DATA_DIR`, and `STACKOS_STATE_DIR` throughout staging and postflight.
+Desktop daemon host/port overrides are passed to its CLI subprocesses as well.
+
+The pre-handshake 2.1.44 daemon cannot checkpoint active work. A staged new CLI
+probes its capability before interruption and reads existing ownership scalars
+without rewriting history. Admitted tasks, managed setup, unknown native owners
+or unreadable state refuse bootstrap with exact owner/repair context. Let those
+owners finish or use their separately authorized recovery, keep the source intact,
+then coordinate a quiescent manual installation of the feature. There is no
+abort/reopen workaround or retroactive automatic continuity for 2.1.44. Quiescent
+bootstrap has no source admission fence; keep new work out until installation
+finishes. Authentication or policy denial never falls back to bootstrap.
+
 Supported managed delivery continuation uses the installation-admin
 `maintenance.prepareUpgrade`, `maintenance.upgradeStatus` and
 `maintenance.finishUpgrade` operations. Preparation checkpoints only authorized
@@ -102,6 +143,16 @@ An ordinary restart, source edit or wheel swap alone supplies no continuation
 authority. These operations do not attest a signed desktop update or make an older
 source daemon support the handshake; caller capability probing and actual package
 installation remain separate lifecycle obligations.
+
+Failed install/restart/doctor leaves the transaction and checkpoints fenced.
+Repair the same intended target and retry `stackos restart`, or run
+`stackos finish-upgrade` after it is healthy. Finish records the actual doctor
+command, exit status and output in a private uniquely named state-directory
+receipt and sends that ref with the current daemon generation/revision. Even
+`install --skip-doctor` cannot skip this required continuation doctor. A held
+checkpoint remains a required repair, with details from
+`stackos ops call maintenance.upgradeStatus`. Pre-existing stopped, failed,
+aborted, deferred and manual work is never resumed by this flow.
 
 | Step | Behaviour |
 |---|---|

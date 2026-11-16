@@ -209,6 +209,8 @@ function runStackos(args, options = {}) {
   }
   const env = {
     ...process.env,
+    STACKOS_HOST: DAEMON_HOST,
+    STACKOS_PORT: String(DAEMON_PORT),
     PYTHONDONTWRITEBYTECODE: "1",
     PYTHONNOUSERSITE: "1",
     PYTHONUNBUFFERED: "1"
@@ -519,7 +521,7 @@ async function restartDaemon(options = 20) {
   const timeoutSeconds = lifecycle.timeoutSeconds;
   await reportProgress(lifecycle, "Restarting local service...", 62);
   const result = await runStackos(["restart", "--timeout", String(timeoutSeconds)], {
-    timeoutMs: (timeoutSeconds + 10) * 1000
+    timeoutMs: (timeoutSeconds + 120) * 1000
   });
   if (!result.ok) {
     return result;
@@ -529,6 +531,22 @@ async function restartDaemon(options = 20) {
   return {
     ...result,
     health
+  };
+}
+
+async function prepareUpdate(archivePath) {
+  if (typeof archivePath !== "string" || !archivePath.endsWith(".zip")) {
+    return { ok: false, reason: "The downloaded ZIP target is unavailable. Download the update again before installing." };
+  }
+  const result = await runStackos(["prepare-upgrade", "--target-archive", archivePath], {
+    timeoutMs: 120000
+  });
+  const maintenance = parseJsonResult(result);
+  return {
+    ...result,
+    ok: result.ok && (maintenance?.status === "quiesced" || maintenance?.status === "quiescent-bootstrap"),
+    reason: result.ok ? null : result.stderr?.trim().split(/\r?\n/)[0] || "Managed upgrade preparation failed; inspect maintenance.upgradeStatus before retrying.",
+    maintenance
   };
 }
 
@@ -900,6 +918,7 @@ module.exports = {
   installStatePath,
   inspectMcpHosts,
   prepareInstalledVersion,
+  prepareUpdate,
   parseDoctorPayload,
   parseMcpHostStatusPayload,
   readinessFromDoctor,

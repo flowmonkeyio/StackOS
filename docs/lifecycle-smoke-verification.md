@@ -13,6 +13,7 @@ Run the checks that match the changed surface:
 
 ```bash
 .venv/bin/python -m pytest tests/unit/test_cli_install.py -q
+.venv/bin/python -m pytest tests/integration/test_routes/test_upgrade_callers.py tests/integration/test_routes/test_managed_upgrade_routes.py -q
 .venv/bin/python -m pytest tests/integration/test_install_scripts -q
 pnpm --dir desktop check
 git diff --check
@@ -61,6 +62,20 @@ Expected evidence:
 - skipped/current result
 - payload-change repair result
 - failed-upgrade preservation result
+
+For managed continuation, also exercise the actual caller/operation envelopes:
+source capability probe and preparation precede replacement; the staged ZIP/CLI
+identity matches the running target; target health and successful doctor precede
+finish. Preserve install/restart/doctor failures and prove retry keeps the same
+upgrade/checkpoint identity. Test a pre-handshake source with admitted synthetic
+work: refusal names its owners, leaves the service running and changes no work.
+Only a coordinated quiescent bootstrap may install the feature there.
+
+Use disposable HOME/data/state, unique ports and exact owned processes. A
+same-user alternate app path or port does not isolate launchd. Full packaged
+install/repair and signed installed desktop update/relaunch require an isolated
+macOS user/VM or explicitly coordinated maintenance; mocked lifecycle tests and
+detached CLI fixtures do not satisfy that installed-app gate.
 
 ### Uninstall
 

@@ -151,6 +151,15 @@ does not store provider secrets and does not rotate `seed.bin` or `auth.token`
 on install or update. After install or repair, the desktop service consumes the
 same `stackos doctor --json` readiness envelope used by the CLI.
 
+When a source installation already exists, full install/repair prepares managed
+upgrade maintenance before changing migrations, shared assets or launchd. Restart
+then verifies the intended running target and doctor before continuing its selected
+deliveries. A skipped install doctor does not waive continuation postflight.
+For staged upgrades and the initial quiescent bootstrap from pre-handshake
+2.1.44, follow [managed upgrade ordering](upgrade.md#what-happens-during-upgrade).
+Registration-only repairs remain lightweight. Automatic continuation does not
+resume unrelated stopped or failed work.
+
 When the app version and packaged payload are already prepared, desktop launch
 still runs a lightweight MCP registration reconciliation before the UI becomes
 ready. This covers late host installs, reset MCP config, and drag-and-drop app

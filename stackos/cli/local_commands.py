@@ -170,6 +170,24 @@ def install(
     typer.echo(f"==> Install mode: {mode}")
 
     settings = get_settings()
+    if not any(selectors) or launchd:
+        from stackos.operations.maintenance import runtime_identity
+
+        from .upgrade_commands import prepare_for_upgrade
+
+        if launchd and (
+            issue := launchd_service._launchd_install_context_error(
+                settings, home=_doctor_home(), host=settings.host, port=settings.port
+            )
+        ):
+            typer.echo(f"install: {issue}", err=True)
+            raise typer.Exit(code=1)
+        maintenance = prepare_for_upgrade(settings, runtime_identity())
+        if maintenance:
+            typer.echo(
+                f"==> Managed upgrade: {maintenance['status']}; run `stackos restart` after "
+                "install, then inspect maintenance.upgradeStatus if held."
+            )
     settings.ensure_dirs()
     from stackos.auth import ensure_token
     from stackos.crypto.seed import ensure_seed_file

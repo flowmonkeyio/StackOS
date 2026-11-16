@@ -26,12 +26,12 @@ help: ## Show this help with all targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 install: ## Full dev install — deps + migrate + UI bundle + plugin + MCP + doctor
+	@echo "==> Preparing existing runtime before dependency replacement"
+	@if [ -x .venv/bin/python ]; then .venv/bin/python -m stackos prepare-upgrade; fi
 	@echo "==> Installing Python deps"
 	$(UV) sync --all-extras
 	@echo "==> Bootstrapping daemon state (creates seed + auth.token if absent)"
 	$(PYTHON) -m stackos init
-	@echo "==> Running migrations"
-	$(PYTHON) -m stackos migrate
 	@echo "==> Installing native gstack browser runtime"
 	$(PYTHON) -m stackos install --skip-doctor
 	@echo "==> Verifying committed UI bundle (stackos/ui_dist/ is committed)"

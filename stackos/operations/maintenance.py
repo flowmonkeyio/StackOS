@@ -19,7 +19,6 @@ from stackos.operations.spec import (
 )
 from stackos.repositories.base import ValidationError
 from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
-from stackos.task_delivery import _admission_id, finish_managed_upgrade, prepare_managed_upgrade
 
 
 class UpgradeStatusInput(MCPInput):
@@ -44,25 +43,32 @@ class FinishUpgradeInput(UpgradeStatusInput):
     doctor_evidence_ref: str = Field(min_length=1, max_length=500)
 
 
-def upgrade_runtime(scheduler):
-    """Freeze the actual target package/source identity once per daemon generation."""
+def runtime_identity():
+    """Identify staged CLI inputs using the same contract as the running daemon."""
     import stackos
     from stackos.mcp.bridge.diagnostics import _build_identity
 
+    build = _build_identity()
+    digest = build["build_info_sha256"]
+    kind = "build-info"
+    if digest is None:
+        kind = "python-source"
+        fingerprint = sha256()
+        root = Path(stackos.__file__).parent
+        for path in sorted(root.rglob("*.py")):
+            fingerprint.update(json.dumps(str(path.relative_to(root))).encode())
+            fingerprint.update(sha256(path.read_bytes()).digest())
+        digest = fingerprint.hexdigest()
+    return f"{build['version']}:{kind}:sha256:{digest}"
+
+
+def upgrade_runtime(scheduler):
+    """Freeze the actual target package/source identity once per daemon generation."""
+    from stackos.task_delivery import _admission_id
+
     identity = getattr(scheduler, "managed_upgrade_identity", None)
     if identity is None:
-        build = _build_identity()
-        digest = build["build_info_sha256"]
-        kind = "build-info"
-        if digest is None:
-            kind = "python-source"
-            fingerprint = sha256()
-            root = Path(stackos.__file__).parent
-            for path in sorted(root.rglob("*.py")):
-                fingerprint.update(json.dumps(str(path.relative_to(root))).encode())
-                fingerprint.update(sha256(path.read_bytes()).digest())
-            digest = fingerprint.hexdigest()
-        identity = f"{build['version']}:{kind}:sha256:{digest}"
+        identity = runtime_identity()
         scheduler.managed_upgrade_identity = identity
     return {"running_identity": identity, "daemon_generation": _admission_id(scheduler)}
 
@@ -90,6 +96,8 @@ async def upgrade_status(inp, ctx, _emitter):
 
 
 async def prepare_upgrade(inp, ctx, _emitter):
+    from stackos.task_delivery import prepare_managed_upgrade
+
     _authorize(inp, ctx)
     scheduler = ctx.extras.get("scheduler")
     factory = ctx.extras.get("session_factory")
@@ -108,6 +116,8 @@ async def prepare_upgrade(inp, ctx, _emitter):
 
 
 async def finish_upgrade(inp, ctx, _emitter):
+    from stackos.task_delivery import finish_managed_upgrade
+
     _authorize(inp, ctx)
     from stackos.api.health import _check_db
 

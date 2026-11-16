@@ -440,6 +440,18 @@ def restart(
         )
         raise typer.Exit(code=1)
 
+    from stackos.operations.maintenance import runtime_identity
+
+    from .upgrade_commands import finish_pending_upgrade, prepare_for_upgrade
+
+    requested_settings = settings.model_copy(update={"host": daemon_host, "port": daemon_port})
+    maintenance = prepare_for_upgrade(requested_settings, runtime_identity(), only_if_changed=True)
+    if maintenance:
+        typer.echo(
+            f"restart: managed upgrade {maintenance.get('upgrade_id', maintenance['status'])}; "
+            "failed restart leaves checkpoints fenced for repair/retry."
+        )
+
     if launchd_plist is not None and launchd_loaded:
         ok, message = launchd._launchd_bootout(launchd_plist, wait_timeout=timeout)
         if not ok:
@@ -501,6 +513,8 @@ def restart(
             )
             raise typer.Exit(code=1)
         typer.echo(f"restart: {message}; url=http://{daemon_host}:{daemon_port}")
+        if maintenance and maintenance.get("fenced"):
+            finish_pending_upgrade(requested_settings)
         return
 
     ok, message = daemon_processes._spawn_detached_daemon(
@@ -516,6 +530,8 @@ def restart(
         typer.echo(f"restart: {message}", err=True)
         raise typer.Exit(code=1)
     typer.echo(f"restart: {message}")
+    if maintenance and maintenance.get("fenced"):
+        finish_pending_upgrade(requested_settings)
 
 
 @autostart_app.command(name="install")
@@ -550,6 +566,17 @@ def autostart_install(
             err=True,
         )
         raise typer.Exit(code=1)
+    from stackos.operations.maintenance import runtime_identity
+
+    from .upgrade_commands import prepare_for_upgrade
+
+    if issue := launchd._launchd_install_context_error(
+        settings, home=home, host=daemon_host, port=daemon_port
+    ):
+        typer.echo(f"autostart: {issue}", err=True)
+        raise typer.Exit(code=1)
+    requested_settings = settings.model_copy(update={"host": daemon_host, "port": daemon_port})
+    maintenance = prepare_for_upgrade(requested_settings, runtime_identity())
     ok, message = launchd._install_launchd_autostart(
         settings,
         home=home,
@@ -562,6 +589,10 @@ def autostart_install(
         typer.echo(f"autostart: {message}", err=True)
         raise typer.Exit(code=1)
     typer.echo(f"autostart: {message}")
+    if maintenance and maintenance.get("fenced"):
+        typer.echo(
+            "autostart: managed upgrade prepared; run `stackos restart` for target postflight."
+        )
 
 
 @autostart_app.command(name="uninstall")

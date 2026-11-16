@@ -88,7 +88,10 @@ class FakeUpdater extends EventEmitter {
 
   async downloadUpdate() {
     this.emit("download-progress", { percent: 50 });
-    this.emit("update-downloaded", { version: "1.0.1" });
+    // MacUpdater emits the artifact ref, then resolves [] when automatic
+    // installation on quit is disabled.
+    this.emit("update-downloaded", { version: "1.0.1", downloadedFile: "/tmp/downloaded-stackos.zip" });
+    return [];
   }
 
   quitAndInstall() {
@@ -101,11 +104,17 @@ class FakeUpdater extends EventEmitter {
   const controller = createUpdateController({
     env: { STACKOS_UPDATE_URL: "https://stackos.flowmonkey.io/StackOS/" },
     platform: "darwin",
-    updater
+    updater,
+    prepareUpdate: async (archive) => {
+      assert.equal(archive, "/tmp/downloaded-stackos.zip");
+      assert.equal(updater.quitArgs, null);
+      return { ok: true, maintenance: { upgrade_id: "fixture" } };
+    }
   });
 
   assert.equal(controller.state.enabled, true);
   assert.equal(updater.autoDownload, false);
+  assert.equal(updater.autoInstallOnAppQuit, false);
   assert.equal((await controller.quitAndInstall()).ok, false);
   const earlyDownload = await controller.downloadUpdate();
   assert.equal(earlyDownload.ok, false);
@@ -121,9 +130,29 @@ class FakeUpdater extends EventEmitter {
   assert.equal(controller.state.status, "downloaded");
   assert.deepEqual(controller.state.progress, { percent: 50 });
 
-  assert.equal(controller.quitAndInstall().ok, true);
+  assert.equal((await controller.quitAndInstall()).ok, true);
   assert.equal(controller.state.status, "installing");
   assert.deepEqual(updater.quitArgs, {});
+
+  const refusedUpdater = new FakeUpdater();
+  let attempts = 0;
+  const refused = createUpdateController({
+    env: { STACKOS_UPDATE_URL: "https://stackos.flowmonkey.io/StackOS/" },
+    platform: "darwin",
+    updater: refusedUpdater,
+    prepareUpdate: async () => {
+      attempts += 1;
+      return { ok: attempts > 1, reason: "Source handshake unavailable: project 7 task active. Controlled bootstrap required." };
+    }
+  });
+  await refused.checkForUpdates();
+  await refused.downloadUpdate();
+  const deniedInstall = await refused.quitAndInstall();
+  assert.equal(deniedInstall.ok, false);
+  assert.match(deniedInstall.reason, /Controlled bootstrap/);
+  assert.equal(refusedUpdater.quitArgs, null);
+  assert.equal(refused.state.status, "downloaded");
+  assert.equal((await refused.quitAndInstall()).ok, true);
 
   class ThrowingUpdater extends EventEmitter {
     async checkForUpdates() {
