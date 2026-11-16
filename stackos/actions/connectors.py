@@ -56,6 +56,9 @@ class ActionConnectorRequest:
         repr=False,
         compare=False,
     )
+    # Authoritative persisted manifest schema, supplied by the action repository.
+    # Adapters may pass it to native validation without storing a second copy.
+    input_schema_json: Mapping[str, Any] | None = field(default=None, repr=False)
 
 
 class ActionConnectorResult(BaseModel):

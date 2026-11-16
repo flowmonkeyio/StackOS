@@ -65,6 +65,10 @@ prepared data and `ConnectorAuth` containing only the selected method's resolved
 execution fields and configuration. Provider declarations fix the operation,
 route and schemas; input data cannot replace them. The package receives no
 StackOS ORM objects, credential references, grant state or workflow context.
+For generated actions, the repository also supplies the persisted manifest's
+input schema on the in-process connector request. An adapter can bind that
+schema to the native declaration without duplicating it in route configuration;
+callers cannot override it through action inputs.
 
 The package returns provider facts and plain file descriptors. Host adapters
 resolve and project account-bound references, apply admission and budget rules,
