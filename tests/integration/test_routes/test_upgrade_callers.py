@@ -6,11 +6,17 @@ from zipfile import ZipFile
 
 import pytest
 import typer
-from sqlmodel import Session
+from sqlmodel import Session, select
 from typer.testing import CliRunner
 
 from stackos.cli import app
 from stackos.db.models import TrackerTask
+from tests.integration.test_repositories.test_task_delivery import (
+    git,
+    native_source_fixtures,  # noqa: F401
+    prepared_task,
+    submit,
+)
 
 
 def maintenance_request(api, method, path, *, body=None, **kwargs):
@@ -188,7 +194,12 @@ def test_install_and_restart_use_maintenance_before_side_effects(tmp_path, monke
     monkeypatch.setattr(caller, "prepare_for_upgrade", prepare)
     monkeypatch.setattr(processes, "_terminate_daemon_processes", terminate)
     monkeypatch.setattr(processes, "_spawn_detached_daemon", spawn)
-    monkeypatch.setattr(caller, "finish_pending_upgrade", lambda *a: events.append("finish"))
+
+    def finish(context, *, upgrade_id):
+        assert context.port == 29685 and upgrade_id == "fixture"
+        events.append("finish")
+
+    monkeypatch.setattr(caller, "finish_pending_upgrade", finish)
     result = CliRunner().invoke(app, ["restart", "--port", "29685"])
     assert result.exit_code == 0, result.output
     assert events == ["prepare", "terminate", "target-ready", "finish"]
@@ -294,3 +305,119 @@ def test_launchd_install_preserves_other_context(tmp_path, monkeypatch):
     assert not ok and "different data/state/host/port context" in error
     assert plist.read_bytes() == original
     assert not plist.with_suffix(".plist.bak").exists()
+
+
+@pytest.fixture(params=["finish-upgrade", "restart"])
+def partial_continuation(api, settings, project_id, tmp_path, monkeypatch, request):
+    """Real queue/REST checkpoints: one safe task and one held by source drift."""
+    from stackos.cli import daemon_commands as daemon
+    from stackos.cli import daemon_processes as processes
+    from stackos.cli import upgrade_commands as caller
+    from stackos.repositories.tracker import TrackerRepository
+
+    command = request.param
+    scheduler = api.app.state.scheduler
+    scheduler.pause()
+    roots = [tmp_path / name for name in ("held-source", "safe-source")]
+    for root in roots:
+        root.mkdir()
+        git(root, "init")
+        git(root, "config", "user.name", "Continuation fixture")
+        git(root, "config", "user.email", "fixture@example.test")
+        git(root, "commit", "--allow-empty", "-m", "baseline")
+    with Session(api.app.state.engine) as session:
+        prepared_task(session, project_id)
+        repo = TrackerRepository(session)
+        repo.create_task(project_id=project_id, key="safe", title="Safe continuation")
+        repo.create_ticket(project_id=project_id, task_key="safe", key="safe-first", title="Safe")
+        submit(session, project_id, roots[0], scheduler)
+        submit(session, project_id, roots[1], scheduler, task_key="safe")
+
+    calls = []
+
+    def operation_request(method, path, *, body=None, **kwargs):
+        calls.append({"path": path, "body": body})
+        return maintenance_request(api, method, path, body=body)
+
+    monkeypatch.setattr(caller, "_api_request", operation_request)
+    monkeypatch.setattr(caller, "get_settings", lambda: settings)
+    monkeypatch.setattr(caller, "_tcp_can_connect", lambda *a: True)
+    monkeypatch.setattr(caller, "_daemon_health_ok", lambda *a: True)
+    monkeypatch.setattr(caller, "run_target_doctor", lambda *a: "fixture:doctor:exit-0")
+    target = operation_request(
+        "POST", "/api/v1/operations/maintenance.upgradeStatus/call", body={}
+    )["runtime"]["running_identity"]
+    prepared = caller.prepare_for_upgrade(settings, target)
+    scheduler.task_delivery_admission_id = "repair-target-generation"
+    drift = roots[0] / "foreign.txt"
+    drift.write_text("unaccepted source drift")
+    if command == "restart":
+        monkeypatch.setattr(daemon, "get_settings", lambda: settings)
+        monkeypatch.setattr(daemon, "_launchd_plist_for_requested_context", lambda *a, **k: None)
+        monkeypatch.setattr(processes, "_discover_daemon_processes", lambda *a: ([], []))
+        monkeypatch.setattr(processes, "_tcp_can_connect", lambda *a, **k: False)
+        monkeypatch.setattr(
+            processes, "_spawn_detached_daemon", lambda *a, **k: (True, "target ready")
+        )
+    first = CliRunner().invoke(app, [command])
+    partial = json.loads(first.stdout[first.stdout.index("{") :])
+    assert partial["upgrade_id"] == prepared["upgrade_id"]
+    assert partial["status"] == "partial" and partial["fenced"] is False
+    assert {item["task_key"]: item["status"] for item in partial["checkpoints"]} == {
+        "deliver": "held",
+        "safe": "consumed",
+    }
+    return first, partial, drift, calls, operation_request
+
+
+def test_partial_finish_fails_with_original_upgrade_and_checkpoint_refs(partial_continuation):
+    first, partial, _, _, request = partial_continuation
+    assert first.exit_code == 1, first.output
+    assert partial["upgrade_id"] in first.stderr
+    held = next(item for item in partial["checkpoints"] if item["status"] == "held")
+    assert held["task_key"] in first.stderr and held["handoff_id"] in first.stderr
+    assert f"finish-upgrade --upgrade-id {partial['upgrade_id']}" in first.stderr
+    # The global fence is gone; this must not be mistaken for the held upgrade.
+    assert (
+        request("POST", "/api/v1/operations/maintenance.upgradeStatus/call", body={})["status"]
+        == "idle"
+    )
+
+
+def test_partial_finish_explicit_retry_preserves_safe_and_unrelated_work(
+    partial_continuation, api, project_id
+):
+    _, partial, drift, calls, _request = partial_continuation
+
+    def metadata():
+        with Session(api.app.state.engine) as session:
+            return {
+                row.key: row.metadata_json
+                for row in session.exec(
+                    select(TrackerTask).where(TrackerTask.project_id == project_id)
+                ).all()
+            }
+
+    before = metadata()
+    drift.unlink()
+    calls.clear()
+    retry = CliRunner().invoke(app, ["finish-upgrade", "--upgrade-id", partial["upgrade_id"]])
+    assert retry.exit_code == 0, retry.output
+    continued = json.loads(retry.stdout)
+    assert continued["status"] == "continued" and continued["upgrade_id"] == partial["upgrade_id"]
+    assert continued["revision"] == partial["revision"] + 1
+    assert calls[0]["body"]["arguments"] == {"upgrade_id": partial["upgrade_id"]}
+    assert not any("prepareUpgrade" in call["path"] for call in calls)
+    finish = next(call["body"]["arguments"] for call in calls if "finishUpgrade" in call["path"])
+    assert finish["upgrade_id"] == partial["upgrade_id"]
+    assert finish["expected_revision"] == partial["revision"]
+    after = metadata()
+    assert after["safe"] == before["safe"]
+    assert after["unrelated"] == before["unrelated"]
+    assert after["deliver"]["delivery"]["upgrade_checkpoint"]["status"] == "consumed"
+    calls.clear()
+    repeated = CliRunner().invoke(app, ["finish-upgrade", "--upgrade-id", partial["upgrade_id"]])
+    assert repeated.exit_code == 0, repeated.output
+    assert json.loads(repeated.stdout) == continued
+    assert metadata() == after
+    assert not any("finishUpgrade" in call["path"] for call in calls)

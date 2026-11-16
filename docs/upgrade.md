@@ -144,14 +144,29 @@ authority. These operations do not attest a signed desktop update or make an old
 source daemon support the handshake; caller capability probing and actual package
 installation remain separate lifecycle obligations.
 
-Failed install/restart/doctor leaves the transaction and checkpoints fenced.
+Failed install/restart/doctor never completes unresolved checkpoints. While
+preparation is active, its installation-wide fence remains.
 Repair the same intended target and retry `stackos restart`, or run
-`stackos finish-upgrade` after it is healthy. Finish records the actual doctor
+`stackos finish-upgrade --upgrade-id <original-upgrade-id>` after it is healthy.
+Finish records the actual doctor
 command, exit status and output in a private uniquely named state-directory
 receipt and sends that ref with the current daemon generation/revision. Even
 `install --skip-doctor` cannot skip this required continuation doctor. A held
-checkpoint remains a required repair, with details from
-`stackos ops call maintenance.upgradeStatus`. Pre-existing stopped, failed,
+checkpoint remains a required repair. A `partial` result releases the global
+fence for safe and unrelated work while keeping individual checkpoints held;
+CLI restart and desktop install/repair report failure and preserve the last good
+install state. The failed CLI command retains the structured result on stdout
+and names the original upgrade, held tasks and retry command on stderr.
+
+After repairing the reported cause, retry that exact upgrade with
+`stackos finish-upgrade --upgrade-id <original-upgrade-id>`. It reads the current
+revision and reaches the existing continuation owner for the remaining checkpoints;
+already consumed work stays unchanged. Repeating a completed named finish only
+acknowledges its retained completion. Without `--upgrade-id`, finish selects only
+the currently active global fence, so an idle result does not establish that
+earlier partial upgrades completed. To inspect a retained transaction, call
+`stackos ops call maintenance.upgradeStatus --input status.json`, where the file
+contains `{"upgrade_id":"<original-upgrade-id>"}`. Pre-existing stopped, failed,
 aborted, deferred and manual work is never resumed by this flow.
 
 | Step | Behaviour |

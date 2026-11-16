@@ -514,7 +514,7 @@ def restart(
             raise typer.Exit(code=1)
         typer.echo(f"restart: {message}; url=http://{daemon_host}:{daemon_port}")
         if maintenance and maintenance.get("fenced"):
-            finish_pending_upgrade(requested_settings)
+            finish_pending_upgrade(requested_settings, upgrade_id=maintenance["upgrade_id"])
         return
 
     ok, message = daemon_processes._spawn_detached_daemon(
@@ -531,7 +531,7 @@ def restart(
         raise typer.Exit(code=1)
     typer.echo(f"restart: {message}")
     if maintenance and maintenance.get("fenced"):
-        finish_pending_upgrade(requested_settings)
+        finish_pending_upgrade(requested_settings, upgrade_id=maintenance["upgrade_id"])
 
 
 @autostart_app.command(name="install")

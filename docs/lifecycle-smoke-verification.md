@@ -67,7 +67,13 @@ For managed continuation, also exercise the actual caller/operation envelopes:
 source capability probe and preparation precede replacement; the staged ZIP/CLI
 identity matches the running target; target health and successful doctor precede
 finish. Preserve install/restart/doctor failures and prove retry keeps the same
-upgrade/checkpoint identity. Test a pre-handshake source with admitted synthetic
+upgrade/checkpoint identity. Include a mixed safe/held continuation: `partial`
+must fail the caller even when `fenced=false`, preserve the desktop's last good
+install state, and name the original upgrade/checkpoints. Repair the cause and
+retry with `finish-upgrade --upgrade-id <original-upgrade-id>`; confirm only the
+remaining checkpoint is consumed, safe/unrelated work stays unchanged, and
+repeated named finish creates no duplicate continuation.
+Test a pre-handshake source with admitted synthetic
 work: refusal names its owners, leaves the service running and changes no work.
 Only a coordinated quiescent bootstrap may install the feature there.
 

@@ -200,8 +200,8 @@ def run_target_doctor(settings: Settings) -> str:
         )
     if result is None:
         _fail(
-            f"target doctor did not complete ({failure}); checkpoints remain fenced. "
-            f"See {receipt}; retry `stackos finish-upgrade` after repair."
+            f"target doctor did not complete ({failure}); continuation remains incomplete. "
+            f"See {receipt}; repair the target before retrying the original upgrade."
         )
     try:
         doctor = json.loads(result.stdout)
@@ -214,36 +214,48 @@ def run_target_doctor(settings: Settings) -> str:
         or doctor.get("code") != 0
     ):
         _fail(
-            f"target doctor failed (exit {result.returncode}); checkpoints remain fenced. "
-            f"See {receipt}; repair the target and retry `stackos finish-upgrade`."
+            f"target doctor failed (exit {result.returncode}); continuation remains incomplete. "
+            f"See {receipt}; repair the target before retrying the original upgrade."
         )
     return str(receipt)
 
 
-def finish_pending_upgrade(settings: Settings):
+def finish_pending_upgrade(settings: Settings, upgrade_id: str | None = None):
     from stackos.operations.maintenance import runtime_identity
 
-    status = _call(settings, "upgradeStatus")
-    if not status.get("fenced"):
+    status = _call(
+        settings, "upgradeStatus", {"upgrade_id": upgrade_id} if upgrade_id is not None else None
+    )
+    if status["status"] == "idle" and upgrade_id is None:
         return None
     upgrade_id = status["upgrade_id"]
+    # A named completed transaction is a read-only acknowledgment, not another
+    # doctor/finish attempt or authority to continue any other work.
+    if status["status"] == "continued":
+        return status
+    retry = f"stackos finish-upgrade --upgrade-id {upgrade_id}"
     if (
         status["status"] not in {"quiesced", "partial"}
         or status["target_identity"] != runtime_identity()
     ):
         _fail(
-            f"upgrade {upgrade_id} target/preparation differs; checkpoints remain fenced. "
-            "Inspect maintenance.upgradeStatus."
+            f"upgrade {upgrade_id} target/preparation differs; continuation remains incomplete. "
+            f"Inspect maintenance.upgradeStatus for this upgrade; after repair use `{retry}`."
         )
     runtime = status["runtime"]
     if runtime["running_identity"] != status["target_identity"] or not _daemon_health_ok(
         settings.host, settings.port
     ):
         _fail(
-            f"upgrade {upgrade_id} intended target is not healthy; checkpoints remain fenced. "
-            "Repair/start the intended target, then retry `stackos finish-upgrade`."
+            f"upgrade {upgrade_id} intended target is not healthy; "
+            "continuation remains incomplete. "
+            f"Repair/start the intended target, then use `{retry}`."
         )
-    evidence = run_target_doctor(settings)
+    try:
+        evidence = run_target_doctor(settings)
+    except typer.Exit:
+        typer.echo(f"Retry upgrade {upgrade_id} with `{retry}` after repair.", err=True)
+        raise
     result = _call(
         settings,
         "finishUpgrade",
@@ -256,10 +268,20 @@ def finish_pending_upgrade(settings: Settings):
             "doctor_evidence_ref": evidence,
         },
     )["data"]
-    if result.get("fenced"):
+    if result.get("status") != "continued" or result.get("fenced"):
+        # Partial finish releases the global fence while preserving task holds.
+        # Keep the actual owner envelope available even though this command fails.
+        _echo_json(result)
+        held = "; ".join(
+            f"project {item['project_id']} task {item['task_key']} handoff {item['handoff_id']}"
+            + (": " + ", ".join(item["issues"]) if item.get("issues") else "")
+            for item in result.get("checkpoints", [])
+            if item.get("status") not in {"consumed", "settled"}
+        )
         _fail(
-            f"upgrade {upgrade_id} has held checkpoints; "
-            "inspect maintenance.upgradeStatus for exact repair context."
+            f"upgrade {upgrade_id} continuation remains {result.get('status')}; "
+            f"held checkpoints: {held or 'inspect the retained upgrade receipt'}. "
+            f"After repairing these original checkpoints, use `{retry}`."
         )
     return result
 
@@ -314,6 +336,13 @@ def prepare_upgrade(
 
 
 @app.command()
-def finish_upgrade():
-    """Verify the running target/doctor and finish an existing prepared upgrade."""
-    _echo_json(finish_pending_upgrade(get_settings()))
+def finish_upgrade(
+    upgrade_id: Annotated[
+        str | None,
+        typer.Option(
+            "--upgrade-id", help="Select the original upgrade, including partial recovery."
+        ),
+    ] = None,
+):
+    """Finish a prepared upgrade, or acknowledge its retained completion."""
+    _echo_json(finish_pending_upgrade(get_settings(), upgrade_id=upgrade_id))
