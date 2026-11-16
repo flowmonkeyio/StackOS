@@ -1,6 +1,7 @@
 """Lifecycle adapters consume real maintenance envelopes, never assert postflight."""
 
 import json
+import socket
 import subprocess
 from zipfile import ZipFile
 
@@ -82,6 +83,24 @@ def test_missing_source_database_never_authorizes_occupied_port(settings, monkey
     with pytest.raises(typer.Exit):
         caller.prepare_for_upgrade(settings, "target:python-source:sha256:" + "a" * 64)
     assert "source ownership is unproven" in capsys.readouterr().err
+
+
+def test_real_occupied_port_with_missing_source_refuses_without_mutation(settings, monkeypatch):
+    from stackos.cli import upgrade_commands as caller
+
+    # Unlike unit lifecycle fixtures, this exercises the real reachability and
+    # preparation boundary against an exact owned listener, never default 5180.
+    with socket.socket() as source:
+        source.bind(("127.0.0.1", 0))
+        source.listen()
+        selected = settings.model_copy(update={"port": source.getsockname()[1]})
+        monkeypatch.setattr(caller, "get_settings", lambda: selected)
+        monkeypatch.setattr(caller, "_api_request", lambda *a, **k: pytest.fail("foreign auth/API"))
+        result = CliRunner().invoke(app, ["prepare-upgrade"])
+        assert result.exit_code == 1
+        assert "source ownership is unproven" in result.stderr
+        assert not selected.data_dir.exists() and not selected.state_dir.exists()
+        assert source.fileno() != -1
 
 
 def test_postflight_failure_preserves_fence_then_retry(api, settings, monkeypatch):

@@ -29,6 +29,7 @@ import stackos.cli.daemon_processes as daemon_processes
 import stackos.cli.doctor_commands as doctor_cli
 import stackos.cli.launchd as launchd_cli
 import stackos.cli.local_commands as local_cli
+import stackos.cli.upgrade_commands as upgrade_cli
 import stackos.db.migrate as migrate_module
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
 import stackos.host_mcp as host_mcp
@@ -56,7 +57,7 @@ HEAD_REVISION = "0052_upgrade_receipts"
 
 @pytest.fixture
 def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Sandbox HOME with a token in place."""
+    """Sandbox assets/state and model the install unit cases' quiescent source."""
     home = tmp_path / "home"
     home.mkdir()
     state = home / ".local" / "state" / "stackos"
@@ -69,6 +70,13 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("STACKOS_HOME", str(home))
     monkeypatch.setenv("STACKOS_DATA_DIR", str(home / ".local" / "share" / "stackos"))
     monkeypatch.setenv("STACKOS_STATE_DIR", str(state))
+    # Install/doctor primitives are mocked in these unit cases; their preparation
+    # prerequisite must not depend on network permissions or a live default port.
+    monkeypatch.setattr(
+        upgrade_cli,
+        "prepare_for_upgrade",
+        lambda _settings, _target, **_kwargs: {"status": "quiescent-bootstrap", "fenced": False},
+    )
     return home
 
 

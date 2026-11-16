@@ -13,6 +13,7 @@ must:
 from __future__ import annotations
 
 import os
+import plistlib
 import stat
 import subprocess
 from pathlib import Path
@@ -67,6 +68,11 @@ def test_writes_plist_with_substitutions(
     plist = sandbox_home / "Library" / "LaunchAgents" / "com.stackos.daemon.plist"
     assert plist.is_file()
     content = plist.read_text(encoding="utf-8")
+    context = plistlib.loads(plist.read_bytes())["EnvironmentVariables"]
+    assert context["STACKOS_HOST"] == os.environ["STACKOS_HOST"]
+    assert context["STACKOS_PORT"] == os.environ["STACKOS_PORT"]
+    assert context["STACKOS_DATA_DIR"] == str(sandbox_home / ".local/share/stackos")
+    assert context["STACKOS_STATE_DIR"] == str(sandbox_home / ".local/state/stackos")
     # The CLI owns the plist and runs the package module directly.
     assert "<string>-m</string>" in content
     assert "<string>stackos</string>" in content

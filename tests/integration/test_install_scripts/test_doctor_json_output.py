@@ -28,8 +28,7 @@ def test_doctor_json_emits_documented_schema(
         # doctor refuses to start if it sees a token with the wrong mode,
         # but the conftest already wrote 0600 — so just give it dirs.
     }
-    # Remove env vars that might shadow our overrides during a test run.
-    env.pop("STACKOS_PORT", None)
+    # Retain the isolated host/port supplied by the owning sandbox fixture.
 
     result = subprocess.run(
         ["bash", str(scripts_dir / "doctor.sh"), "--json"],

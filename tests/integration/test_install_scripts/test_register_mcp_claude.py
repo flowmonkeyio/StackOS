@@ -121,7 +121,6 @@ def _run(
         env["PATH"] = f"{bin_dir}{os.pathsep}/usr/bin:/bin:/usr/sbin:/sbin"
     if extra_env:
         env.update(extra_env)
-    env.pop("STACKOS_PORT", None)
     env.pop("STACKOS_MCP_TARGET", None)
     return subprocess.run(
         ["/bin/bash", str(scripts_dir / "register-mcp-claude.sh"), *args],
