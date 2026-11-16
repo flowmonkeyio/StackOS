@@ -337,6 +337,7 @@ def query_delivery_trends(
                 col(TrackerTicket.key),
                 col(table.attempt),
                 col(table.phase),
+                col(table.observation_key),
                 col(table.current),
                 col(table.receipt_json),
                 valid_closed.label("counted"),
@@ -393,6 +394,7 @@ def query_delivery_trends(
         key,
         attempt,
         phase,
+        observation,
         current,
         source,
         counted,
@@ -415,7 +417,11 @@ def query_delivery_trends(
         ]
         # Equal cached values must not alias current/archive object identity.
         receipt = dict(decode_receipt(source))
-        if current:
+        if observation:
+            automatic.setdefault("upgrade_interruptions", []).append(
+                {"attempt": attempt or None, "phase": phase, "receipt": receipt}
+            )
+        elif current:
             automatic["attempt"] = attempt or None
             automatic[phase] = receipt
         else:

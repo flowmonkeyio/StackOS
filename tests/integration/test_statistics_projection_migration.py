@@ -86,7 +86,7 @@ def test_existing_receipts_backfill_atomically(settings):
 def test_product_merge_rebuilds_cancelled_inputs_without_rewriting_sources(settings, prior_head):
     config = alembic_config(settings)
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0049_project_task_capacity"]
+    assert script.get_heads() == ["0052_upgrade_receipts"]
     assert script.get_revision("0048_product_receipts_merge").down_revision == (
         "0046_receipt_trend_bounds",
         "0047_patterns_setup_merge",
@@ -117,7 +117,7 @@ def test_product_merge_rebuilds_cancelled_inputs_without_rewriting_sources(setti
     upgrade_to_head(settings)
     with engine.connect() as connection:
         assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").all() == [
-            ("0049_project_task_capacity",)
+            ("0052_upgrade_receipts",)
         ]
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
     if prior_head != "base":
@@ -198,4 +198,52 @@ def test_lost_schema_stamp_rebuilds_inputs_before_marking_head(settings):
             TrackerRepository(session).agent_stats(project_id=pid).totals.reported_usage.total == 33
         )
     assert not upgrade_to_head(settings).stamped_existing_schema
+    engine.dispose()
+
+
+def test_upgrade_interruption_index_rebuild_preserves_canonical_evidence(settings):
+    from tests.integration.test_repositories.test_work_duration import receipt
+
+    config = alembic_config(settings)
+    command.upgrade(config, "head")
+    engine = make_engine(settings.db_path)
+    with Session(engine) as session:
+        pid = (
+            ProjectRepository(session)
+            .create(slug="upgrade-history", name="Upgrade history", domain="test.invalid")
+            .data.id
+        )
+        _store(session, pid, "upgraded", {"attempt": 1, "delivery": receipt(20, 30)})
+        before = session.execute(select(TrackerTicket)).scalar_one()
+        tid = before.id
+        evidence = before.completion_evidence_json
+    # Recreate the real preceding PK, which cannot hold two observations for
+    # the same attempt/phase. Insert raw evidence without a new-writer ORM hook.
+    command.downgrade(config, "0051_upgrade_postflight")
+    interrupted = receipt(0, 10)
+    interrupted.update(
+        execution={"invocation_id": "retired-upgrade-call"}, upgrade_interruption="fixture-upgrade"
+    )
+    evidence["automatic_delivery"]["upgrade_interruptions"] = [
+        {"attempt": 1, "phase": "delivery", "receipt": interrupted}
+    ]
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "UPDATE tracker_tickets SET completion_evidence_json=? WHERE id=?",
+            (json.dumps(evidence), tid),
+        )
+    command.upgrade(config, "head")
+    command.stamp(config, "0051_upgrade_postflight")
+    command.upgrade(config, "head")
+    with Session(engine) as session:
+        saved = session.get(TrackerTicket, tid)
+        assert saved.completion_evidence_json == evidence
+        assert saved.status == before.status and saved.updated_at == before.updated_at
+        rows = session.execute(select(TrackerReceiptProjection)).scalars().all()
+        assert len(rows) == 2 and len({row.observation_key for row in rows}) == 2
+        brief = TrackerRepository(session).brief(project_id=pid, ticket_key="upgraded")
+        assert brief.ticket.work_duration.recorded_intervals == 2
+        assert brief.ticket.work_duration.total_seconds == 20
+    with pytest.raises(RuntimeError, match="Retained invocation observations"):
+        command.downgrade(config, "0051_upgrade_postflight")
     engine.dispose()

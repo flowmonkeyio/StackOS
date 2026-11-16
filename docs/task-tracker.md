@@ -947,6 +947,26 @@ no separate ledger or historical rewrite is involved. A receipt occurrence is
 identified by ticket, attempt number and phase; tracker-history copies are not
 additional invocations.
 
+Managed upgrade continuation also retains `automatic_delivery.upgrade_interruptions`
+observations. Those invocations keep their original attempt and phase. The shared
+receipt inventory includes each distinct interrupted invocation once alongside
+the resumed invocation; duplicate copies of an already current/archived invocation
+do not add work. The existing derived statistics index uses `observation_key` to
+distinguish these records, using the actual invocation ID when available and a
+source-list locator for incomplete observations. A locator never supplies a native
+ID, missing time or usage. Ordinary current/archive precedence remains unchanged.
+The additive index migration rebuilds derived rows from canonical ticket evidence
+without rewriting attempts, sessions, candidates, usage or repair allowance. A
+downgrade refuses while distinct retained observations require the newer reader.
+
+Duration, task/ticket statistics, dated reports and delivery trends consume that
+same inventory. Interrupted outcomes remain unclassified rather than becoming a
+quality decision. Resumed usage uses the immediately preceding receipt of the
+phase, including its latest interrupted observation. The shared usage normalizer
+still requires the same native session/unit/scope/basis; an intervening missing
+snapshot blocks subtraction from an older attempt. Repeating continuation or
+projection rebuild adds neither another invocation nor its measured usage twice.
+
 The optional detail fields are `cache_read`, `cache_write`, and `reasoning` in
 both `snapshot` and `measured`. New snapshots always include these keys with
 nonnegative integers or `null`; older three-counter maps remain valid. Raw input

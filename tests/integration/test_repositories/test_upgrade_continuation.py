@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from threading import Event
@@ -465,7 +466,7 @@ def test_original_phase_session_and_attempt_resume(
             ready.set()
             process.wait(timeout=10)
             return AgentRunResult(1, thread_id=thread, error="upgrade interruption")
-        if current == "delivery" and (root / "owned.txt").exists():
+        if current == "delivery" and git(root, "status", "--porcelain", "--", "owned.txt"):
             git(root, "add", "owned.txt")
             git(root, "commit", "-m", "finish original work")
         return AgentRunResult(
@@ -532,3 +533,83 @@ def test_original_phase_session_and_attempt_resume(
             assert evidence["delivery"] == old_evidence["delivery"]
             assert sum(p == "delivery" for p, _, _ in launches) == 2  # first and second tickets
         assert evidence["upgrade_interruptions"][-1]["phase"] == resumed_phase
+
+
+@pytest.mark.parametrize("phase", ["delivery", "review", "repair"])
+def test_interrupted_history_and_cumulative_usage_reach_existing_projections(
+    delivery_engine, project_id, tmp_path, monkeypatch, phase
+):
+    from stackos.host_mcp.result import usage_snapshot
+    from stackos.repositories.tracker.agent_stats import invocation_receipts
+
+    native_result = AgentRunResult
+    calls = defaultdict(int)
+
+    def measured_result(*args, **kwargs):
+        thread = kwargs["thread_id"]
+        calls[thread] += 1
+        kwargs["usage"] = usage_snapshot(
+            "fixture-native", "session", 10 * calls[thread], 5 * calls[thread]
+        )
+        return native_result(*args, **kwargs)
+
+    monkeypatch.setattr(sys.modules[__name__], "AgentRunResult", measured_result)
+    test_original_phase_session_and_attempt_resume(
+        delivery_engine, project_id, tmp_path, monkeypatch, phase
+    )
+    with Session(delivery_engine) as session:
+        repo = TrackerRepository(session)
+        brief = repo.brief(project_id=project_id, ticket_key="first")
+        evidence = brief.ticket.completion_evidence_json
+        automatic = evidence["automatic_delivery"]
+        interrupted = automatic["upgrade_interruptions"][-1]
+        receipts = invocation_receipts(evidence)
+        assert interrupted["receipt"]["execution"]["invocation_id"] in {
+            r["execution"]["invocation_id"] for r in receipts
+        }
+        expected = 5 if phase == "repair" else 3
+        assert len(receipts) == brief.ticket.agent_stats.launch_attempts == expected
+        assert brief.ticket.work_duration.recorded_intervals == expected
+        assert brief.ticket.work_duration.coverage == "complete"
+        usage = automatic[interrupted["phase"]]["usage"]
+        assert usage["status"] == "measured" and usage["measured"]["total"] == 15
+        assert brief.ticket.agent_stats.reported_usage.total == expected * 15
+        assert brief.task.agent_stats.launch_attempts == expected + 2
+        assert brief.task.status == "complete"
+        report = repo.agent_stats(project_id=project_id)
+        assert report.totals.launch_attempts == expected + 2
+        assert report.delivery_trends.totals.work_time.total_seconds == pytest.approx(
+            brief.task.work_duration.total_seconds
+        )
+
+
+def test_missing_interruption_usage_cannot_bridge_an_older_repair_baseline(
+    delivery_engine, project_id, tmp_path, monkeypatch
+):
+    from stackos.host_mcp.result import usage_snapshot
+
+    native_result = AgentRunResult
+    calls = defaultdict(int)
+
+    def measured_result(*args, **kwargs):
+        thread = kwargs["thread_id"]
+        calls[thread] += 1
+        if thread != "original-delivery" or calls[thread] != 2:
+            kwargs["usage"] = usage_snapshot(
+                "fixture-native", "session", 10 * calls[thread], 5 * calls[thread]
+            )
+        return native_result(*args, **kwargs)
+
+    monkeypatch.setattr(sys.modules[__name__], "AgentRunResult", measured_result)
+    test_original_phase_session_and_attempt_resume(
+        delivery_engine, project_id, tmp_path, monkeypatch, "repair"
+    )
+    with Session(delivery_engine) as session:
+        evidence = (
+            TrackerRepository(session)
+            .brief(project_id=project_id, ticket_key="first")
+            .ticket.completion_evidence_json["automatic_delivery"]
+        )
+        usage = evidence["delivery"]["usage"]
+        assert usage["status"] == "unavailable" and usage["reason"] == "missing_baseline"
+        assert usage["snapshot"]["total"] == 45 and usage["measured"] is None

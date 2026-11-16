@@ -78,6 +78,72 @@ def test_union_repairs_dedup_and_all_work_outputs(session, project_id):
     assert refreshed["tickets"][0]["work_duration"]["total_seconds"] == 35
 
 
+def test_repeated_upgrade_observations_are_counted_once_in_all_work_views(session, project_id):
+    from stackos.repositories.tracker.agent_stats import invocation_receipts
+    from stackos.repositories.tracker.receipt_projection import sync_sqlite_receipt_projection
+
+    observations = []
+    for start, invocation in ((0, "interrupted-one"), (20, "interrupted-two"), (40, "current")):
+        value = receipt(start, start + 10)
+        value["execution"] = {"invocation_id": invocation}
+        value["selected_role"] = "delivery_agent"
+        value["validated_outcome"] = None if start < 40 else "success"
+        value["usage"] = {
+            "unit": "tokens",
+            "status": "measured",
+            "measured": {"input": 10, "output": 5, "total": 15},
+        }
+        if start < 40:
+            value["upgrade_interruption"] = f"upgrade-{start}"
+        observations.append(value)
+    first, second, current = observations
+    interruptions = [
+        {"attempt": 1, "phase": "delivery", "receipt": r} for r in (first, second, deepcopy(first))
+    ]
+    automatic = {
+        "attempt": 1,
+        "delivery": current,
+        "attempts": [{"attempt": 1, "delivery": deepcopy(current)}],
+        "upgrade_interruptions": interruptions,
+    }
+    row = store(session, project_id, "upgraded", automatic)
+    before = deepcopy(row.completion_evidence_json)
+    assert len(invocation_receipts(before)) == 3
+    # The narrowly authorized historical writer uses this same calculator.
+    sync_sqlite_receipt_projection(
+        session.connection().connection.driver_connection, row.id, before, before
+    )
+    session.commit()
+    repo = TrackerRepository(session)
+    for packet in (repo.brief(project_id=project_id, ticket_key="upgraded"),):
+        assert packet.ticket.agent_stats.launch_attempts == 3
+        assert packet.ticket.agent_stats.reported_usage.total == 45
+        assert packet.ticket.agent_stats.coverage.classification_unknown_attempts == 2
+        for duration in (packet.ticket.work_duration, packet.task.work_duration):
+            assert duration.total_seconds == 30 and duration.recorded_intervals == 3
+            assert duration.coverage == "complete"
+    full = repo.get(project_id=project_id)
+    index = repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+    refreshed = usage_refresh(session, project_id, None)
+    assert (
+        full.tasks[0].work_duration.total_seconds
+        == index.tasks[0].work_duration.total_seconds
+        == 30
+    )
+    assert {n.id: n.data for n in full.graph.nodes}["ticket:upgraded"]["work_duration"][
+        "recorded_intervals"
+    ] == 3
+    assert refreshed["tickets"][0]["work_duration"]["recorded_intervals"] == 3
+    assert (
+        repo.agent_stats(project_id=project_id).delivery_trends.totals.work_time.total_seconds == 30
+    )
+    assert repo.agent_stats_all().totals.reported_usage.total == 45
+    assert (
+        repo.brief(project_id=project_id, ticket_key="upgraded").ticket.completion_evidence_json
+        == before
+    )
+
+
 @pytest.mark.parametrize(
     "intervals,expected",
     [([(20, 30), (0, 10)], 20), ([(0, 10), (5, 15)], 15), ([(0, 0)], 0)],

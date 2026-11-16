@@ -310,6 +310,9 @@ class TrackerReceiptProjection(SQLModel, table=True):
     attempt: int = Field(primary_key=True)  # zero is the canonical unknown identity
     phase: str = Field(primary_key=True)
     inventory: str = Field(primary_key=True)  # usage, or a distinct timing-only observation
+    observation_key: str = Field(
+        default="", primary_key=True
+    )  # retained interruption discriminator
     timing: bool
     current: bool
     position: int

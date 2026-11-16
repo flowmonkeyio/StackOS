@@ -3535,11 +3535,17 @@ def run_delivery(
                 # context is authoritative when an agent reopens accepted work.
                 if prior_review and prior_review.get("validated_outcome") != "repair":
                     prior_review = None
+                from stackos.repositories.tracker.agent_stats import _receipt_items
+
                 previous = next(
                     (
-                        attempt[phase].get("usage")
-                        for attempt in reversed(evidence["attempts"])
-                        if phase in attempt
+                        receipt.get("usage")
+                        for (_, receipt_phase, _), receipt in reversed(
+                            _receipt_items(
+                                {"automatic_delivery": evidence}, require_launch=False
+                            ).items()
+                        )
+                        if receipt_phase == phase and receipt is not evidence[phase]
                     ),
                     None,
                 )

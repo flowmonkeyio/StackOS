@@ -44,6 +44,7 @@ def receipt_input(receipt: dict[str, Any]) -> dict[str, Any]:
             "selected_role",
             "validated_outcome",
             "cancelled",
+            "upgrade_interruption",
             "launch",
             "execution",
             "finished_at",
@@ -127,12 +128,12 @@ def _projection_changes(
         for position, (identity, receipt) in enumerate(timing.items())
         if usage.get(identity) is not receipt
     ]
-    for position, (attempt, phase), receipt, inventory, for_timing in inputs:
-        key = (attempt or 0, phase, inventory)
-        current = receipt is automatic.get(phase)
+    for position, (attempt, phase, observation), receipt, inventory, for_timing in inputs:
+        key = (attempt or 0, phase, inventory, observation)
+        current = not observation and receipt is automatic.get(phase)
         previous = old.pop(key, None)
         prior_receipt = (prior_usage if inventory == "usage" else prior_timing).get(
-            (attempt, phase)
+            (attempt, phase, observation)
         )
         finish = _instant(receipt.get("finished_at"))
         finish = finish.replace(tzinfo=None) if finish else None
@@ -185,6 +186,7 @@ def _projection_changes(
             attempt=key[0],
             phase=phase,
             inventory=inventory,
+            observation_key=observation,
             timing=for_timing,
             current=current,
             launch_at=at.replace(tzinfo=None) if at else None,
@@ -207,7 +209,7 @@ def sync_receipt_projection(
     """Upsert only changed contributions; removal and rollback share the source transaction."""
     table = TrackerReceiptProjection.__table__  # type: ignore[attr-defined]
     old = {
-        (row["attempt"], row["phase"], row["inventory"]): row
+        (row["attempt"], row["phase"], row["inventory"], row["observation_key"]): row
         for row in connection.execute(
             select(table).where(table.c.ticket_id == ticket_id)
         ).mappings()
@@ -222,17 +224,19 @@ def sync_receipt_projection(
                     table.c.attempt,
                     table.c.phase,
                     table.c.inventory,
+                    table.c.observation_key,
                 ],
                 set_=values,
             )
         )
-    for attempt, phase, inventory in removed:
+    for attempt, phase, inventory, observation in removed:
         connection.execute(
             delete(table).where(
                 table.c.ticket_id == ticket_id,
                 table.c.attempt == attempt,
                 table.c.phase == phase,
                 table.c.inventory == inventory,
+                table.c.observation_key == observation,
             )
         )
 
@@ -243,6 +247,12 @@ def initialize_receipt_projection(connection: Connection) -> None:
     table.create(connection, checkfirst=True)
     # Also serves explicit lost-stamp recovery of an older derived index.
     columns = {column["name"] for column in inspect(connection).get_columns(table.name)}
+    if "observation_key" not in columns:
+        # The old key cannot represent two invocations in one attempt/phase.
+        # Rebuild this disposable index only; canonical evidence is untouched.
+        table.drop(connection)
+        table.create(connection)
+        columns = {column["name"] for column in inspect(connection).get_columns(table.name)}
     for name, ddl in (
         ("finished_at", "DATETIME"),
         ("closed", "BOOLEAN NOT NULL DEFAULT 0"),
@@ -282,9 +292,11 @@ def sync_sqlite_receipt_projection(
     old = {}
     for record in cursor:
         row = dict(zip(columns, record, strict=True))
-        old[row["attempt"], row["phase"], row["inventory"]] = row
+        old[row["attempt"], row["phase"], row["inventory"], row.get("observation_key", "")] = row
     changes, removed = _projection_changes(ticket_id, evidence, previous_evidence, old)
     for values in changes:
+        if "observation_key" not in columns and values["observation_key"]:
+            raise ValueError("Interrupted receipt projection requires its schema migration")
         for name in ("launch_at", "finished_at"):
             if values[name] is not None:
                 values[name] = values[name].isoformat(" ", timespec="microseconds")
@@ -292,18 +304,23 @@ def sync_sqlite_receipt_projection(
         values = {name: value for name, value in values.items() if name in columns}
         names = list(values)
         # All identifiers come from the canonical calculator, never operator input.
+        conflict_columns = "ticket_id,attempt,phase,inventory" + (
+            ",observation_key" if "observation_key" in columns else ""
+        )
         connection.execute(
             f"INSERT INTO tracker_receipt_projections ({','.join(names)}) "
             f"VALUES ({','.join('?' for _ in names)}) "
-            "ON CONFLICT(ticket_id,attempt,phase,inventory) DO UPDATE SET "
+            f"ON CONFLICT({conflict_columns}) DO UPDATE SET "
             + ",".join(f"{name}=excluded.{name}" for name in names),
             tuple(values[name] for name in names),
         )
-    for attempt, phase, inventory in removed:
+    for attempt, phase, inventory, observation in removed:
         connection.execute(
             "DELETE FROM tracker_receipt_projections "
-            "WHERE ticket_id=? AND attempt=? AND phase=? AND inventory=?",
-            (ticket_id, attempt, phase, inventory),
+            "WHERE ticket_id=? AND attempt=? AND phase=? AND inventory=?"
+            + (" AND observation_key=?" if "observation_key" in columns else ""),
+            (ticket_id, attempt, phase, inventory)
+            + ((observation,) if "observation_key" in columns else ()),
         )
 
 

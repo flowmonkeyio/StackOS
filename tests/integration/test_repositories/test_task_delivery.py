@@ -2380,7 +2380,7 @@ def test_review_replacement_fences_retired_session_callbacks_and_preserves_metri
     assert after == current
     receipts = _receipt_items(after)
     assert len(receipts) == 2
-    assert sum(phase == "delivery" for _, phase in receipts) == 1
+    assert sum(phase == "delivery" for _, phase, _ in receipts) == 1
 
 
 def test_announced_session_is_durable_before_exit_and_controller_loss_resumes_it(

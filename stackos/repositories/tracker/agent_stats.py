@@ -86,7 +86,7 @@ def usage_read_token(session: Session, project_id: int | None) -> str | None:
 
 
 def invocation_receipts(evidence: Any, *, require_launch: bool = True) -> list[dict[str, Any]]:
-    """Deduplicate current/archive by attempt and phase within one ticket.
+    """Deduplicate canonical receipts and retain distinct interrupted invocations.
 
     Read only the canonical receipt locations, never tracker history, sessions,
     configuration or nested result packets. Current receipts take precedence.
@@ -97,7 +97,7 @@ def invocation_receipts(evidence: Any, *, require_launch: bool = True) -> list[d
 
 def _receipt_items(
     evidence: Any, *, require_launch: bool = True
-) -> dict[tuple[int | None, str], dict[str, Any]]:
+) -> dict[tuple[int | None, str, str], dict[str, Any]]:
     if not isinstance(evidence, dict):
         return {}
     automatic = evidence.get("automatic_delivery")
@@ -105,7 +105,7 @@ def _receipt_items(
         return {}
     archive = automatic.get("attempts")
     occurrences = [*(archive if isinstance(archive, list) else []), automatic]
-    unique = {}
+    normal = {}
     for occurrence in occurrences:
         if not isinstance(occurrence, dict):
             continue
@@ -123,11 +123,51 @@ def _receipt_items(
                     if phase == "delivery"
                     else attempt
                 )
-                unique[receipt_attempt, phase] = receipt
+                normal[receipt_attempt, phase] = receipt
+    # Normal current/archive precedence remains unchanged, including legacy
+    # copies without invocation IDs. Upgrade observations have an explicit
+    # source location and may share that attempt/phase with a resumed call.
+    interruptions = automatic.get("upgrade_interruptions")
+    retained: dict[tuple[int | None, str], dict[str, dict[str, Any]]] = defaultdict(dict)
+    normal_ids = set()
+    for (attempt, phase), receipt in normal.items():
+        execution = receipt.get("execution")
+        if isinstance(execution, dict) and isinstance(execution.get("invocation_id"), str):
+            normal_ids.add((attempt, phase, execution["invocation_id"]))
+    for position, item in enumerate(interruptions if isinstance(interruptions, list) else []):
+        if not isinstance(item, dict) or item.get("phase") not in {"delivery", "review"}:
+            continue
+        receipt = item.get("receipt")
+        if not isinstance(receipt, dict) or (
+            require_launch and not isinstance(receipt.get("launch"), dict)
+        ):
+            continue
+        attempt = item.get("attempt")
+        attempt = attempt if type(attempt) is int and attempt > 0 else None
+        phase = item["phase"]
+        execution = receipt.get("execution")
+        invocation = execution.get("invocation_id") if isinstance(execution, dict) else None
+        if isinstance(invocation, str) and invocation:
+            if (attempt, phase, invocation) in normal_ids:
+                continue  # Still-current/archive copies are the same invocation.
+            observation = f"invocation:{invocation}"
+        else:
+            # A source locator distinguishes an incomplete observation without
+            # inventing a native invocation identity, timestamp or usage.
+            observation = f"upgrade_interruptions:{position}"
+        retained[attempt, phase][observation] = receipt
+    unique = {}
+    for (attempt, phase), receipt in normal.items():
+        for observation, interrupted in retained.pop((attempt, phase), {}).items():
+            unique[attempt, phase, observation] = interrupted
+        unique[attempt, phase, ""] = receipt
+    for (attempt, phase), receipts in retained.items():
+        for observation, receipt in receipts.items():
+            unique[attempt, phase, observation] = receipt
     return unique
 
 
-def invocation_timing_facts(evidence: Any) -> dict[tuple[int | None, str], tuple[Any, ...]]:
+def invocation_timing_facts(evidence: Any) -> dict[tuple[int | None, str, str], tuple[Any, ...]]:
     """Durable duration inputs for stream invalidation, without a moving clock or usage."""
     facts = {}
     for identity, receipt in _receipt_items(evidence, require_launch=False).items():
@@ -170,7 +210,7 @@ def work_intervals(
             # Preserve this included ticket's unknown history in a task union.
             # It contributes no invented interval and is never evidence of zero.
             issues.add("no_recorded_invocations")
-        for (attempt, phase), receipt in receipts.items():
+        for (attempt, phase, _observation), receipt in receipts.items():
             launch = receipt.get("launch")
             start = _instant(launch.get("started_at")) if isinstance(launch, dict) else None
             end = _instant(receipt.get("finished_at"))
@@ -334,7 +374,9 @@ def _eligible(receipt: dict[str, Any]) -> bool:
 def classification_known(receipt: dict[str, Any]) -> bool:
     # A positively fenced invocation has no validated decision. Other explicit
     # nulls still mean failed validation, not an inferred cancellation.
-    if receipt.get("validated_outcome") is None and receipt.get("cancelled") is True:
+    if receipt.get("validated_outcome") is None and (
+        receipt.get("cancelled") is True or receipt.get("upgrade_interruption")
+    ):
         return False
     role = receipt.get("selected_role")
     return (
@@ -721,6 +763,7 @@ class ReceiptProjection:
                 TrackerTask.key,
                 table.attempt,
                 table.phase,
+                table.observation_key,
                 table.current,
                 table.receipt_json,
                 table.inventory,
@@ -756,6 +799,7 @@ class ReceiptProjection:
                 _task_key,
                 attempt,
                 phase,
+                observation,
                 current,
                 source,
                 inventory,
@@ -788,7 +832,11 @@ class ReceiptProjection:
                 if not timing:
                     continue
                 automatic = evidence[tid]["automatic_delivery"]
-                if current:
+                if observation:
+                    automatic.setdefault("upgrade_interruptions", []).append(
+                        {"attempt": attempt or None, "phase": phase, "receipt": receipt}
+                    )
+                elif current:
                     automatic["attempt"] = attempt or None
                     automatic[phase] = receipt
                 else:
