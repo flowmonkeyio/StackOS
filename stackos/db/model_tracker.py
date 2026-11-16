@@ -42,6 +42,7 @@ class ManagedUpgrade(SQLModel, table=True):
     revision: int = Field(default=1, nullable=False)
     status: str = Field(default="preparing", max_length=40)
     checkpoint_refs_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    postflight_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 

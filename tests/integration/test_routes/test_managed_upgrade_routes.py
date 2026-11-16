@@ -14,6 +14,7 @@ from stackos.mcp.errors import ToolNotGrantedError
 from stackos.operations.maintenance import PrepareUpgradeInput, prepare_upgrade
 from stackos.operations.registry import build_operation_registry
 from stackos.repositories.base import NotFoundError
+from tests.integration.test_repositories.test_task_delivery import native_source_fixtures  # noqa: F401
 
 
 def call(api, name, arguments=None, headers=None):
@@ -38,7 +39,19 @@ def test_admin_prepare_status_and_denied_authority(api, settings, project_id):
     ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
     _plan, token, _run, _step = _start_mock_run_plan(api, project_id)
     mcp = MCPClient(api, settings.token_path.read_text().strip())
-    for name, arguments in (("prepareUpgrade", payload), ("upgradeStatus", {})):
+    finish_payload = {
+        "upgrade_id": payload["upgrade_id"],
+        "target_identity": "target",
+        "expected_revision": 2,
+        "daemon_generation": "target-generation",
+        "doctor_exit_code": 0,
+        "doctor_evidence_ref": "fixture:doctor:exit-0",
+    }
+    for name, arguments in (
+        ("prepareUpgrade", payload),
+        ("upgradeStatus", {}),
+        ("finishUpgrade", finish_payload),
+    ):
         for headers, body in (
             (ui, arguments),
             ({"Authorization": ""}, arguments),
@@ -142,8 +155,131 @@ def test_fence_survives_real_app_restart(settings):
                 saved = call(client, "prepareUpgrade", payload)
                 assert saved.status_code == 200, saved.text
                 receipt = saved.json()["data"]
-            assert call(client, "upgradeStatus").json() == receipt
-            assert call(client, "prepareUpgrade", payload).json()["data"] == receipt
+            current = call(client, "upgradeStatus").json()
+            assert {k: v for k, v in current.items() if k != "runtime"} == {
+                k: v for k, v in receipt.items() if k != "runtime"
+            }
+            assert current["runtime"]["running_identity"] == receipt["runtime"]["running_identity"]
+            assert (
+                current["runtime"]["daemon_generation"] == receipt["runtime"]["daemon_generation"]
+            ) == (generation == 0)
+            assert call(client, "prepareUpgrade", payload).json()["data"] == current
+
+
+def test_target_postflight_finish_and_queue_across_actual_app_lifespans(
+    settings,
+    project_id,
+    tmp_path,
+    monkeypatch,
+):
+    from threading import Event
+    from time import monotonic, sleep
+
+    from fastapi.testclient import TestClient
+
+    from stackos.host_mcp.result import AgentRunResult
+    from stackos.repositories.tracker import TrackerRepository
+    from stackos.server import create_app
+    from tests.integration.test_repositories.test_task_delivery import (
+        generic_result,
+        git,
+        prepared_task,
+        submit,
+        use_codex_native,
+    )
+
+    root = tmp_path / "source"
+    root.mkdir()
+    git(root, "init")
+    git(root, "config", "user.name", "Fixture")
+    git(root, "config", "user.email", "fixture@example.test")
+    git(root, "commit", "--allow-empty", "-m", "baseline")
+    head = git(root, "rev-parse", "HEAD")
+    done, launches = Event(), []
+
+    def native(_directory, _instructions, prompt, _schema, *, on_session, **_kwargs):
+        packet = json.loads(prompt)
+        identity = f"{packet['brief']['ticket']['key']}-{packet['phase']}"
+        launches.append(identity)
+        on_session(identity)
+        if identity == "second-review":
+            done.set()
+        return AgentRunResult(
+            0, thread_id=identity, result=generic_result(outputs={"commit_sha": head})
+        )
+
+    use_codex_native(monkeypatch, native)
+    payload = {"upgrade_id": "target-fixture", "source_identity": "source", "expected_revision": 0}
+    for generation in range(2):
+        with TestClient(create_app(settings), base_url="http://127.0.0.1:5180") as client:
+            client.headers.update(
+                {"Authorization": f"Bearer {settings.token_path.read_text().strip()}"}
+            )
+            scheduler = client.app.state.scheduler
+            scheduler.pause()
+            status = call(
+                client, "upgradeStatus", {"upgrade_id": "target-fixture"} if generation else {}
+            ).json()
+            runtime = status["runtime"]
+            if generation == 0:
+                with Session(client.app.state.engine) as session:
+                    prepared_task(session, project_id)
+                    submit(session, project_id, root, scheduler)
+                payload["target_identity"] = runtime["running_identity"]
+                receipt = call(client, "prepareUpgrade", payload)
+                assert receipt.status_code == 200, receipt.text
+                old_generation = runtime["daemon_generation"]
+                continue
+            assert not launches and status["status"] == "quiesced" and status["fenced"]
+            assert runtime["daemon_generation"] != old_generation
+            finish = {
+                "upgrade_id": "target-fixture",
+                "target_identity": runtime["running_identity"],
+                "expected_revision": status["revision"],
+                "daemon_generation": runtime["daemon_generation"],
+                "doctor_exit_code": 0,
+                "doctor_evidence_ref": "fixture:controlled-doctor:exit-0",
+            }
+            for invalid in (
+                {"target_identity": "wrong-target"},
+                {"doctor_exit_code": 9},
+                {"daemon_generation": old_generation},
+            ):
+                rejected = call(client, "finishUpgrade", finish | invalid)
+                assert rejected.status_code == 409, rejected.text
+                assert rejected.json()["data"]["code"] == "upgrade_postflight_failed"
+                assert (
+                    call(client, "upgradeStatus", {"upgrade_id": "target-fixture"}).json() == status
+                )
+            result = call(client, "finishUpgrade", finish)
+            assert result.status_code == 200, result.text
+            assert result.json()["data"]["status"] == "continued"
+            assert call(client, "finishUpgrade", finish).json() == result.json()
+            assert not launches
+            scheduler.resume()
+            assert done.wait(5)
+            deadline = monotonic() + 5
+            with Session(client.app.state.engine) as session:
+                while True:
+                    session.expire_all()
+                    task = (
+                        TrackerRepository(session)
+                        .get(project_id=project_id, task_key="deliver")
+                        .tasks[0]
+                    )
+                    if (
+                        task.metadata_json["delivery"]["status"] == "complete"
+                        or monotonic() >= deadline
+                    ):
+                        break
+                    sleep(0.02)
+                assert task.metadata_json["delivery"]["status"] == "complete"
+            assert launches == [
+                "first-delivery",
+                "first-review",
+                "second-delivery",
+                "second-review",
+            ]
 
 
 def test_persisted_unknown_request_returns_admin_repair_context_without_preparation(

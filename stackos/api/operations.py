@@ -107,7 +107,12 @@ async def call_operation(
             }
             or console_contract
             or (
-                spec.name in {"maintenance.upgradeStatus", "maintenance.prepareUpgrade"}
+                spec.name
+                in {
+                    "maintenance.upgradeStatus",
+                    "maintenance.prepareUpgrade",
+                    "maintenance.finishUpgrade",
+                }
                 and spec.grant_policy == "local-admin-maintenance"
                 and not spec.surfaces.mcp.enabled
                 and not spec.surfaces.rest.browser_safe

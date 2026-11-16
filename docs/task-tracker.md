@@ -131,6 +131,61 @@ health/doctor, current authority, exact frozen settings/session/candidate/source
 and the original checkpoint before rejoining the existing queue. A new daemon
 generation or an arbitrary restart is not upgrade authorization.
 
+### Managed upgrade continuation
+
+`maintenance.finishUpgrade` is the same installation-admin REST/CLI boundary as
+preparation. It is unavailable to project MCP agents, console tokens and workflow
+grants. Supply `upgrade_id`, the declared `target_identity`, `expected_revision`,
+the target's `daemon_generation` from `maintenance.upgradeStatus.runtime`, and
+`doctor_exit_code` plus `doctor_evidence_ref` from the installer/operator's actual
+target doctor command. The daemon checks its own database and running scheduler;
+the caller cannot assert health. A nonzero doctor exit, wrong target or stale
+generation returns structured 409 repair context without releasing the fence.
+The doctor receipt is a local-admin attestation; it is not a daemon-executed doctor.
+
+`runtime.running_identity` is frozen at daemon startup. Packaged identity is
+`<version>:build-info:sha256:<build-info digest>` using the existing package
+identity reader. Clone/unbundled identity is
+`<version>:python-source:sha256:<digest>` over sorted package-relative Python
+paths and their content hashes. Select the intended target identity from the
+staged target before preparation; an arbitrary build label cannot pass finish.
+These identities describe runtime inputs, not signing, publication or installed
+desktop activation. Startup identifies the generation and leaves all checkpoints
+fenced. The upgrade row retains successful postflight even when it has no tasks.
+
+Finish compares each original handoff, project/workspace, retirement, frozen
+settings and task-only route bytes, current contract/grants/approvals, native
+evidence and source fingerprint. It atomically consumes safe checkpoints into
+the existing metadata queue with a new callback identity and the target daemon's
+admission identity. The old callback cannot launch, accept results or release the
+new slot. The existing project capacity and directory owners still decide when
+queued work runs. Unsafe checkpoints remain held with per-checkpoint issues;
+`partial` releases the installation-wide fence for safe/unrelated work while
+retaining those holds. Retrying partial finish requires its current revision and
+rechecks only unconsumed checkpoints. Terminal lifecycle winners are settled.
+No stopped/failed/aborted/deferred/manual work is implicitly admitted.
+
+An interrupted invocation resumes its exact delivery, repair, review or workflow
+mirror phase with the original native session, candidate, attempt and repair
+count. Its interrupted observation is retained in `upgrade_interruptions` before
+the current receipt is replaced. Accepted delivery is retained during review
+resume. A null phase resolves accepted delivery to its first review, or lets the
+normal selector choose work if no invocation began. A proven first spawn that
+was prevented can launch its original selection; missing historical sessions
+cannot. Dirty Git work needs the unchanged retirement fingerprint, an original
+delivery session and a proven clean launch baseline. Its existing owned-work
+receipt uses `source=upgrade_checkpoint`; review requires its clean candidate.
+Non-Git/unborn work retains the existing absence of an optional Git fingerprint.
+
+The runner rechecks a queued continuation before native launch. Drift holds the
+checkpoint and stops that handoff with repair context, preserving ticket and
+native evidence. Repeated finish does not consume a checkpoint twice; retry
+after commit but before scheduling asks the same queue to drain. Transaction
+failure rolls back admission. A later arbitrary daemon restart does not re-admit
+already-consumed work or replace native sessions; explicit reconciliation remains
+required for that runtime stop. Desktop/CLI update callers must explicitly run
+the prepare/target-postflight/finish protocol; this operation adds no installer.
+
 Explicit workflow abort uses `runPlan.abort` and the shared delivery/native launch
 boundary described in [run plans](./run-plans.md#explicit-run-abort). Canonical
 aborted task state and the stopped delivery handoff fence queued callbacks, spawn

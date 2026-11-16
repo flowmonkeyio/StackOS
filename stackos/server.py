@@ -316,6 +316,9 @@ def _build_lifespan(
         # The sweep's effects are idempotent (rows that aren't stale are
         # skipped) so re-running on every boot is fine.
         scheduler = build_scheduler(settings, engine)
+        from stackos.operations.maintenance import upgrade_runtime
+
+        upgrade_runtime(scheduler)  # Identify loaded target generation; never continue at startup.
         app.state.scheduler = scheduler
         workflow_schedules = WorkflowScheduleRuntime(scheduler, lambda: Session(engine))
         app.state.workflow_schedules = workflow_schedules

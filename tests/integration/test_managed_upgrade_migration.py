@@ -18,7 +18,8 @@ def test_upgrade_migration_preserves_prior_schema_and_checkpoint_refs(tmp_path):
     with sqlite3.connect(settings.db_path) as connection:
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         connection.execute(
-            "INSERT INTO managed_upgrades VALUES "
+            "INSERT INTO managed_upgrades (upgrade_id,active,source_identity,target_identity,"
+            "revision,status,checkpoint_refs_json,created_at,updated_at) VALUES "
             "('fixture',1,'source','target',2,'quiesced','[]',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
         )
     command.stamp(config, "0049_project_task_capacity")
@@ -32,7 +33,8 @@ def test_upgrade_migration_preserves_prior_schema_and_checkpoint_refs(tmp_path):
             connection.execute(
                 "INSERT INTO managed_upgrades SELECT 'other',active,"
                 "source_identity,target_identity,"
-                "revision,status,checkpoint_refs_json,created_at,updated_at FROM managed_upgrades"
+                "revision,status,checkpoint_refs_json,created_at,updated_at,postflight_json "
+                "FROM managed_upgrades"
             )
     with pytest.raises(RuntimeError, match="evidence must be retained"):
         command.downgrade(config, "0049_project_task_capacity")

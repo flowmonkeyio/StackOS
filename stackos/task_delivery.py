@@ -253,6 +253,11 @@ def _upgrade_checkpoint(task, handoff_id):
 def _checkpoint_task(session, task, checkpoint):
     """Use tracker revisions, in the caller's transaction, without lifecycle changes."""
     metadata = deepcopy(task.metadata_json or {})
+    previous = metadata["delivery"].get("upgrade_checkpoint")
+    if previous and previous["upgrade_id"] != checkpoint["upgrade_id"]:
+        if previous["status"] not in {"consumed", "settled"}:
+            raise ConflictError("A prior upgrade checkpoint remains unresolved")
+        metadata["delivery"].setdefault("upgrade_checkpoint_history", []).append(previous)
     metadata["delivery"]["upgrade_checkpoint"] = checkpoint
     TrackerRepository(session).update_task(
         project_id=task.project_id,
@@ -281,6 +286,84 @@ def _upgrade_settings_digest(state):
     return sha256(
         json.dumps({key: state.get(key) for key in fields}, sort_keys=True).encode()
     ).hexdigest()
+
+
+def _upgrade_authority_digest(session, task, state):
+    """Current project/workflow authority, separate from frozen native settings."""
+    from stackos.db.models import ApprovalRequest
+
+    value = {"task_context": task.context_json, "task_contract": task.definition_of_done_json}
+    if state.get("run_plan_id"):
+        plans = RunPlanRepository(session)
+        plans.validate_delivery_controller(
+            run_plan_id=state["run_plan_id"],
+            project_id=task.project_id,
+            run_id=state["controller_run_id"],
+        )
+        plan = session.get(RunPlan, state["run_plan_id"])
+        value["grants"] = plan.grant_snapshot_json
+        value["entry_status"] = plans.get_step(
+            plan.id, state["step_id"], project_id=task.project_id
+        ).status
+        value["approvals"] = [
+            row.model_dump(mode="json")
+            for row in session.exec(
+                select(ApprovalRequest)
+                .where(ApprovalRequest.run_plan_id == plan.id)
+                .order_by(ApprovalRequest.id)
+            ).all()
+        ]
+    if state.get("ticket_key"):
+        ticket = (
+            TrackerRepository(session)
+            .brief(project_id=task.project_id, ticket_key=state["ticket_key"])
+            .ticket
+        )
+        value["ticket_context"] = ticket.context_json
+        value["ticket_contract"] = ticket.definition_of_done_json
+        if ticket.run_plan_step_id is not None:
+            plan = RunPlanRepository(session).get(ticket.run_plan_id, project_id=task.project_id)
+            step = next(s for s in plan.steps if s.id == ticket.run_plan_step_id)
+            if (
+                ticket.status != TrackerItemStatus.COMPLETE
+                and step.status != RunPlanStepStatus.RUNNING
+            ):
+                raise ValidationError("Checkpoint attachment step is no longer running")
+            value["step"] = {
+                key: getattr(step, key)
+                for key in (
+                    "status",
+                    "instructions_json",
+                    "expected_outputs_json",
+                    "approval_refs_json",
+                    "action_refs_json",
+                    "resource_refs_json",
+                    "depends_on_json",
+                )
+            }
+    return sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _upgrade_evidence(session, task, checkpoint):
+    if not checkpoint.get("ticket_key"):
+        return {}
+    ticket = (
+        TrackerRepository(session)
+        .brief(project_id=task.project_id, ticket_key=checkpoint["ticket_key"])
+        .ticket
+    )
+    return deepcopy((ticket.completion_evidence_json or {}).get("automatic_delivery", {}))
+
+
+def _upgrade_evidence_digest(evidence):
+    return sha256(json.dumps(evidence, sort_keys=True).encode()).hexdigest()
+
+
+def _ticket_agents(state, evidence):
+    agents = state.get("agents", state)
+    if evidence.get("review_replacements"):
+        return {**agents, "review_agent": evidence["review_replacements"][-1]["replacement_agent"]}
+    return agents
 
 
 def prepare_managed_upgrade(
@@ -573,6 +656,12 @@ def prepare_managed_upgrade(
                     checkpoint["worktree_snapshot"] = (
                         _worktree_snapshot(directory) if _baseline(directory) else None
                     )
+                    checkpoint["authority_digest"] = _upgrade_authority_digest(
+                        session, task, task.metadata_json["delivery"]
+                    )
+                    checkpoint["evidence_digest"] = _upgrade_evidence_digest(
+                        _upgrade_evidence(session, task, checkpoint)
+                    )
                 except (ValidationError, OSError) as error:
                     issues.append(f"source_checkpoint_unavailable: {error}")
             checkpoint["issues"] = sorted(set(issues))
@@ -612,6 +701,286 @@ def prepare_managed_upgrade(
                 },
             )
         return result
+
+
+def _validate_upgrade_checkpoint(session, task, state, checkpoint, *, consumed=False):
+    """Validate a retained cursor without re-resolving or replacing its agents."""
+    from stackos.host_mcp.toml_config import read_mcp_config_ref
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.workspaces import WorkspaceRepository
+
+    ProjectRepository(session).require_available(task.project_id)
+    if checkpoint.get("schema_version") != 1 or checkpoint.get("capture_issues"):
+        raise ValidationError("Checkpoint capture is incomplete")
+    if state.get("status") not in {"queued", "running"} or (
+        state.get("slot_reserved") and not consumed
+    ):
+        raise ValidationError("Original delivery authority or callback retirement changed")
+    settings_key = "continuation_settings_digest" if consumed else "settings_digest"
+    if _upgrade_settings_digest(state) != checkpoint.get(settings_key):
+        raise ValidationError("Frozen settings changed")
+    for invocation in checkpoint.get("invocations", []):
+        retired = checkpoint.get("retirement", {}).get(invocation["invocation_id"], {})
+        if retired.get("outcome") not in {"stopped", "prevented"} or not retired.get("retired"):
+            raise ValidationError("Native retirement remains unconfirmed")
+    directory = Path(state["project_dir"]).resolve(strict=True)
+    if not directory.is_dir():
+        raise ValidationError("Checkpoint directory is unavailable")
+    agents = state.get("agents", state)
+    if any(agent.get("source_ref") for agent in agents.values() if isinstance(agent, dict)):
+        matching = {
+            b.project_id
+            for b in WorkspaceRepository(session).list_bindings()
+            if b.last_known_root and Path(b.last_known_root).resolve() == directory
+        }
+        if matching != {task.project_id}:
+            raise ValidationError("Checkpoint workspace project binding changed")
+    if state.get("mcp_config_ref"):
+        try:
+            read_mcp_config_ref(state["mcp_config_ref"])
+        except ValueError as error:
+            raise ValidationError(str(error)) from None
+    _workflow_scope(
+        TrackerRepository(session),
+        task.project_id,
+        task,
+        state.get("run_plan_id"),
+        state.get("step_id"),
+    )
+    if _upgrade_authority_digest(session, task, state) != checkpoint.get("authority_digest"):
+        raise ValidationError("Current authorization, grants, approvals or contract changed")
+    evidence = _upgrade_evidence(session, task, checkpoint)
+    evidence_key = "continuation_evidence_digest" if consumed else "evidence_digest"
+    if _upgrade_evidence_digest(evidence) != checkpoint.get(evidence_key):
+        raise ValidationError("Checkpoint candidate, session or attempt evidence changed")
+    snapshot = _worktree_snapshot(str(directory)) if _baseline(str(directory)) else None
+    original = checkpoint.get("worktree_snapshot")
+    if (snapshot is None) != (original is None) or (
+        snapshot is not None and _snapshot_integrity(snapshot) != _snapshot_integrity(original)
+    ):
+        raise ValidationError("Checkpoint source fingerprint changed")
+    phase = checkpoint.get("phase")
+    ticket = (
+        TrackerRepository(session)
+        .brief(project_id=task.project_id, ticket_key=checkpoint["ticket_key"])
+        .ticket
+        if checkpoint.get("ticket_key")
+        else None
+    )
+    completed_between_calls = (
+        phase is None and ticket and ticket.status == TrackerItemStatus.COMPLETE
+    )
+    # A callback can retire between accepted delivery and review. Resolve its
+    # persisted cursor rather than replaying the successful delivery.
+    if (
+        not completed_between_calls
+        and phase is None
+        and evidence.get("delivery", {}).get("validated_outcome") == "success"
+    ):
+        phase = "review"
+    if phase:
+        agents = _ticket_agents(state, evidence)
+        native = evidence.get("sessions", {}).get(phase)
+        historical_phase = (
+            checkpoint.get("phase") == phase
+            or evidence.get(phase)
+            or any(phase in attempt for attempt in evidence.get("attempts", []))
+        )
+        if not native and historical_phase and not checkpoint.get("native_never_spawned"):
+            raise ValidationError("Original native session is missing")
+        if (
+            checkpoint.get("attempt") is not None
+            and evidence.get("attempt") != checkpoint["attempt"]
+        ):
+            raise ValidationError("Original native attempt changed")
+        if phase == "review" and evidence.get("candidate", {}).get("commit_sha"):
+            _candidate_commit(
+                str(directory),
+                evidence["candidate"]["commit_sha"],
+                evidence["candidate"].get("base_commit_sha"),
+            )
+        role = state.get("agent_assignments", {}).get(checkpoint["ticket_key"], "delivery_agent")
+        if ticket.status != TrackerItemStatus.IN_PROGRESS or ticket.blocked_by:
+            raise ValidationError("Checkpoint ticket prerequisites or lifecycle changed")
+        mirror = _workflow_step(RunPlanRepository(session), state, ticket) is not None
+        selected_role = role if mirror or phase == "delivery" else "review_agent"
+        agent = _phase_agent(agents[selected_role], native)
+        _validate_execution_requirements(selected_role, agent, phase=phase, native_session=native)
+        if native:
+            expected = {
+                "agent": agent["name"],
+                "host_key": agent.get("host_key") or state["host_key"],
+                "project_dir": state["project_dir"],
+                **{
+                    key: agent[key]
+                    for key in ("model", "model_reasoning_effort", "provider", "profile")
+                    if agent.get(key) is not None
+                },
+                **(
+                    {key: agent[key] for key in ("source_ref", "source_digest", "native_settings")}
+                    if agent.get("source_ref")
+                    else {}
+                ),
+                **(
+                    {"mcp_config_ref": state["mcp_config_ref"]}
+                    if state.get("mcp_config_ref")
+                    else {}
+                ),
+            }
+            if {
+                k: v for k, v in native.items() if k not in {"thread_id", "agent_snapshot"}
+            } != expected:
+                raise ValidationError("Original native session settings or route changed")
+    if snapshot and snapshot["path_digests"]:
+        if phase != "delivery" or checkpoint.get("launch_baseline_clean") is not True:
+            raise ValidationError("Dirty checkpoint has no attributable delivery baseline")
+        receipt = _owned_work_receipt(
+            str(directory), checkpoint["ticket_key"], evidence, baseline_clean=True
+        )
+        if not receipt:
+            raise ValidationError("Dirty checkpoint has no original delivery session")
+        receipt["source"] = "upgrade_checkpoint"
+        evidence["owned_work"] = receipt
+    _require_delivery_directory(session, task, directory, state["admission_id"])
+    return phase, evidence
+
+
+def finish_managed_upgrade(
+    *, session_factory, scheduler, upgrade_id, target_identity, expected_revision, postflight
+):
+    """Consume safe checkpoints atomically, then ask the existing queue to drain.
+
+    The local-admin adapter owns target/doctor observations. This owner also pins
+    them to the new daemon generation; startup itself grants no continuation.
+    """
+    from stackos.db.models import ManagedUpgrade
+
+    identity = _admission_id(scheduler)
+    if (
+        postflight.get("target_identity") != target_identity
+        or postflight.get("daemon_generation") != identity
+        or postflight.get("health_ok") is not True
+        or type(postflight.get("doctor_exit_code")) is not int
+        or postflight["doctor_exit_code"] != 0
+        or not postflight.get("doctor_evidence_ref")
+    ):
+        raise ConflictError(
+            "Target postflight failed; checkpoints remain fenced",
+            data={
+                "code": "upgrade_postflight_failed",
+                "upgrade_id": upgrade_id,
+                "next_operations": ["maintenance.upgradeStatus"],
+            },
+        )
+    with managed_launch_lock, session_factory() as session:
+        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        upgrades = ManagedUpgradeRepository(session)
+        row = session.get(ManagedUpgrade, upgrade_id)
+        if row is None:
+            raise NotFoundError("Managed upgrade not found", data={"upgrade_id": upgrade_id})
+        if row.target_identity != target_identity:
+            raise ConflictError("Upgrade target identity changed", data=upgrades.status(upgrade_id))
+        if row.status != "continued":
+            if row.revision != expected_revision or row.status not in {"quiesced", "partial"}:
+                raise ConflictError(
+                    "Upgrade is not ready to continue", data=upgrades.status(upgrade_id)
+                )
+            held = False
+            for ref in row.checkpoint_refs_json:
+                task = session.get(TrackerTask, ref["task_id"])
+                state = (task.metadata_json or {}).get("delivery", {}) if task else {}
+                checkpoint = deepcopy(state.get("upgrade_checkpoint", {}))
+                if (
+                    not task
+                    or task.project_id != ref["project_id"]
+                    or task.key != ref["task_key"]
+                    or not isinstance(checkpoint, dict)
+                    or checkpoint.get("upgrade_id") != upgrade_id
+                    or checkpoint.get("handoff_id") != ref["handoff_id"]
+                ):
+                    # Foreign state is never repaired by this transaction.
+                    held = True
+                    continue
+                if checkpoint.get("status") == "consumed":
+                    held |= state.get("handoff_id") != checkpoint.get("continuation_handoff_id")
+                    continue
+                if checkpoint.get("status") == "settled":
+                    continue
+                if state.get("handoff_id") != ref["handoff_id"]:
+                    held = True
+                    continue
+                if task.status in TERMINAL_TRACKER_STATUSES:
+                    checkpoint.update(status="settled", issues=[])
+                    _checkpoint_task(session, task, checkpoint)
+                    continue
+                try:
+                    if not checkpoint.get("admission_id") or checkpoint["admission_id"] == identity:
+                        raise ValidationError("Continuation requires the target daemon generation")
+                    phase, evidence = _validate_upgrade_checkpoint(session, task, state, checkpoint)
+                except (ValidationError, NotFoundError, ConflictError, OSError) as error:
+                    checkpoint.update(status="held", issues=[str(error)])
+                    held = True
+                else:
+                    handoff = uuid4().hex
+                    checkpoint.update(
+                        status="consumed",
+                        issues=[],
+                        continuation_handoff_id=handoff,
+                        postflight=deepcopy(postflight),
+                    )
+                    metadata = deepcopy(task.metadata_json)
+                    metadata["delivery"].update(
+                        status="queued",
+                        slot_reserved=False,
+                        admission_id=identity,
+                        handoff_id=handoff,
+                        job_ref=f"task-delivery:{task.project_id}:{task.id}:{handoff}",
+                        upgrade_continuation={
+                            "upgrade_id": upgrade_id,
+                            "handoff_id": handoff,
+                            "ticket_key": checkpoint.get("ticket_key"),
+                            "phase": phase,
+                        },
+                    )
+                    metadata["delivery"]["upgrade_checkpoint"] = checkpoint
+                    checkpoint["continuation_settings_digest"] = _upgrade_settings_digest(
+                        metadata["delivery"]
+                    )
+                    checkpoint["continuation_evidence_digest"] = _upgrade_evidence_digest(evidence)
+                    TrackerRepository(session).update_task(
+                        project_id=task.project_id,
+                        task_key=task.key,
+                        patch_json={"metadata_json": metadata},
+                        actor="maintenance.managed-upgrade",
+                        commit=False,
+                    )
+                    if evidence.get("owned_work"):
+                        ticket = (
+                            TrackerRepository(session)
+                            .brief(project_id=task.project_id, ticket_key=checkpoint["ticket_key"])
+                            .ticket
+                        )
+                        completion = deepcopy(ticket.completion_evidence_json)
+                        completion["automatic_delivery"] = evidence
+                        TrackerRepository(session).update_ticket(
+                            project_id=task.project_id,
+                            ticket_key=ticket.key,
+                            patch_json={"completion_evidence_json": completion},
+                            actor="maintenance.managed-upgrade",
+                            commit=False,
+                        )
+                    continue
+                _checkpoint_task(session, task, checkpoint)
+            row.status = "partial" if held else "continued"
+            row.postflight_json = deepcopy(postflight)
+            row.active = None  # Only held checkpoints stay fenced; unrelated admission can proceed.
+            row.revision += 1
+            row.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            session.add(row)
+            session.commit()
+        result = upgrades.status(upgrade_id)
+    _request_delivery_drain(session_factory, scheduler)
+    return result
 
 
 def _workflow_scope(repo, project_id, task, run_plan_id, step_id, *, starting=False):
@@ -859,7 +1228,8 @@ def _launch_baseline(project_dir, ticket_key, evidence, phase, native_session):
             and isinstance(base, str)
             and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", base)
             and base == evidence.get("candidate", {}).get("base_commit_sha")
-            and receipt.get("source") in {"delivery_return", "operator_recovery"}
+            and receipt.get("source")
+            in {"delivery_return", "operator_recovery", "upgrade_checkpoint"}
             and _snapshot_integrity(receipt.get("snapshot"))
             == _snapshot_integrity(_worktree_snapshot(project_dir))
         ):
@@ -923,6 +1293,28 @@ def _select_work(repo, plans, project_id, task_key, state):
     """Activate containers through their owner; dispatch only executable work."""
     tickets = repo.get(project_id=project_id, task_key=task_key, include_graph=False).tickets
     tickets_by_key = {ticket.key: ticket for ticket in tickets}
+    cursor = state.get("upgrade_continuation") or {}
+    target = tickets_by_key.get(cursor.get("ticket_key"))
+    if cursor.get("handoff_id") == state.get("handoff_id") and target and cursor.get("phase"):
+        if target.status != TrackerItemStatus.IN_PROGRESS or target.blocked_by:
+            raise ValidationError("Upgrade continuation prerequisites changed")
+        step = _workflow_step(plans, state, target)
+        if target.run_plan_step_id is not None:
+            plan = plans.get(target.run_plan_id, project_id=project_id)
+            bound = next(s for s in plan.steps if s.id == target.run_plan_step_id)
+            if bound.status != RunPlanStepStatus.RUNNING:
+                raise ValidationError("Upgrade continuation attachment is no longer running")
+        return (
+            target,
+            (
+                plans.get_step(
+                    state["run_plan_id"], step.step_id, project_id=project_id, full_context=True
+                )
+                if step
+                else None
+            ),
+            False,
+        )
     recovery = state.get("review_replacement", {})
     target = tickets_by_key.get(recovery.get("target", {}).get("ticket_key"))
     if target and (target.completion_evidence_json or {}).get("automatic_delivery", {}).get(
@@ -1227,6 +1619,36 @@ def _prepare_review_replacement(session, repo, project_id, task, previous, reque
     }
 
 
+def _require_delivery_directory(session, task, directory, admission_id):
+    """Shared directory exclusion for ordinary and checkpoint admission."""
+    active_directories = session.exec(
+        select(func.json_extract(TrackerTask.metadata_json, "$.delivery.project_dir")).where(
+            TrackerTask.id != task.id,
+            or_(
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
+                    ("queued", "running")
+                ),
+                and_(
+                    func.json_extract(TrackerTask.metadata_json, "$.delivery.slot_reserved") == 1,
+                    func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id")
+                    == admission_id,
+                ),
+            ),
+        )
+    ).all()
+    from stackos.project_setup_execution import setup_directories
+
+    active_directories = [*active_directories, *setup_directories(session)]
+    if any(
+        path and _same_directory(directory, Path(path).expanduser().resolve())
+        for path in active_directories
+    ):
+        raise ValidationError(
+            "The working directory is already owned by an active task",
+            data={"project_dir": str(directory), "next_operations": ["tracker.get"]},
+        )
+
+
 def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_key, **changes):
     """Reserve a directory in the existing snapshot before scheduling its task job."""
     from stackos.repositories.projects import ProjectRepository
@@ -1276,33 +1698,7 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
             _validate_start_placement(task, workflow=changes.get("run_plan_id") is not None)
         # Directory ownership spans this daemon's task jobs. Git metadata is
         # deliberately absent from this identity; non-Git directories work too.
-        active_directories = session.exec(
-            select(func.json_extract(TrackerTask.metadata_json, "$.delivery.project_dir")).where(
-                TrackerTask.id != task.id,
-                or_(
-                    func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
-                        ("queued", "running")
-                    ),
-                    and_(
-                        func.json_extract(TrackerTask.metadata_json, "$.delivery.slot_reserved")
-                        == 1,
-                        func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id")
-                        == changes["admission_id"],
-                    ),
-                ),
-            )
-        ).all()
-        from stackos.project_setup_execution import setup_directories
-
-        active_directories = [*active_directories, *setup_directories(session)]
-        if any(
-            path and _same_directory(directory, Path(path).expanduser().resolve())
-            for path in active_directories
-        ):
-            raise ValidationError(
-                "The working directory is already owned by an active task",
-                data={"project_dir": str(directory), "next_operations": ["tracker.get"]},
-            )
+        _require_delivery_directory(session, task, directory, changes["admission_id"])
         if replacement is not None:
             changes.update(
                 _prepare_review_replacement(session, repo, project_id, task, previous, replacement)
@@ -2123,6 +2519,8 @@ def _reserve_delivery(session_factory, scheduler):
             if capacity["running_count"] >= capacity["configured_limit"]:
                 continue
             state = (task.metadata_json or {})["delivery"]
+            if not _delivery_active(task, state.get("handoff_id")):
+                continue
             if state.get("slot_reserved"):
                 continue
             try:
@@ -2812,6 +3210,21 @@ def run_delivery(
                 ):
                     return
                 state = (task.metadata_json or {})["delivery"]
+                cursor = state.get("upgrade_continuation") or {}
+                if cursor.get("handoff_id") == handoff_id:
+                    checkpoint = deepcopy(state["upgrade_checkpoint"])
+                    try:
+                        _validate_upgrade_checkpoint(
+                            session, task, state, checkpoint, consumed=True
+                        )
+                    except (ValidationError, NotFoundError, ConflictError, OSError) as error:
+                        checkpoint.update(status="held", issues=[str(error)])
+                        _checkpoint_task(session, task, checkpoint)
+                        session.commit()
+                        _update_delivery(
+                            repo, project_id, task_key, status="stopped", reason=str(error)
+                        )
+                        return
                 snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
                 tickets_by_key = {t.key: t for t in snapshot.tickets}
                 if snapshot.tickets and all(
@@ -2854,14 +3267,7 @@ def run_delivery(
                     (selected.completion_evidence_json or {}).get("automatic_delivery", {})
                 )
                 role = state["agent_assignments"].get(ticket_key, "delivery_agent")
-                selected_agents = state.get("agents", state)
-                if evidence.get("review_replacements"):
-                    # Explicit replacement is ticket-local. Untouched tickets keep
-                    # the original task-wide admitted selection.
-                    selected_agents = {
-                        **selected_agents,
-                        "review_agent": evidence["review_replacements"][-1]["replacement_agent"],
-                    }
+                selected_agents = _ticket_agents(state, evidence)
                 _validate_ticket_execution(
                     selected_agents, role, evidence, workflow=workflow_step is not None
                 )
@@ -2870,7 +3276,24 @@ def run_delivery(
                 replacement = evidence.get("review_replacement_pending")
                 continuation = evidence.get("review_replacement_active")
                 review_only = replacement or continuation
-                if review_only:
+                cursor = state.get("upgrade_continuation") or {}
+                upgrading = cursor.get("handoff_id") == handoff_id
+                upgrade_phase = (
+                    cursor.get("phase")
+                    if cursor.get("handoff_id") == handoff_id
+                    and cursor.get("ticket_key") == ticket_key
+                    else None
+                )
+                if upgrade_phase:
+                    evidence.setdefault("upgrade_interruptions", []).append(
+                        {
+                            "upgrade_id": cursor["upgrade_id"],
+                            "attempt": evidence["attempt"],
+                            "phase": upgrade_phase,
+                            "receipt": deepcopy(evidence.get(upgrade_phase)),
+                        }
+                    )
+                elif review_only:
                     recovery = state.get("review_replacement", {})
                     if (
                         workflow_step is not None
@@ -2919,7 +3342,7 @@ def run_delivery(
                     repo, project_id, task_key, status="running", ticket_key=ticket_key
                 )
 
-            phase = (
+            phase = upgrade_phase or (
                 "review"
                 if review_only or (workflow_step is not None and role == "review_agent")
                 else "delivery"
@@ -2999,7 +3422,14 @@ def run_delivery(
                             )
                         )
                     )
-                    if review_only:
+                    if upgrade_phase:
+                        # The checkpoint validated the exact source and candidate.
+                        # Do not replace the original delivery base or replay review.
+                        if evidence.get("owned_work"):
+                            _launch_baseline(
+                                state["project_dir"], ticket_key, evidence, phase, native_session
+                            )
+                    elif review_only:
                         _candidate_commit(
                             state["project_dir"],
                             evidence["candidate"]["commit_sha"],
@@ -3020,6 +3450,7 @@ def run_delivery(
                 if (
                     workflow_step is None
                     and phase == "delivery"
+                    and not upgrade_phase
                     and evidence["attempts"]
                     and evidence["attempts"][-1].get("review", {}).get("validated_outcome")
                     == "repair"
@@ -3057,6 +3488,10 @@ def run_delivery(
                             "attempt"
                         ]
                         replacement = None
+                    if upgrading:
+                        _update_delivery(repo, project_id, task_key, upgrade_continuation=None)
+                        upgrade_phase = None
+                        upgrading = False
                     review_only = None
                     _save_evidence(repo, project_id, ticket_key, evidence)
                     brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(

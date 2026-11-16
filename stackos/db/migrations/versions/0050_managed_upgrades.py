@@ -12,7 +12,9 @@ depends_on = None
 def upgrade() -> None:
     inspector = sa.inspect(op.get_bind())
     if inspector.has_table("managed_upgrades"):
-        if {item["name"] for item in inspector.get_columns("managed_upgrades")} != {
+        # A lost stamp may be replayed after the additive postflight migration.
+        columns = {item["name"] for item in inspector.get_columns("managed_upgrades")}
+        if columns - {"postflight_json"} != {
             "upgrade_id",
             "active",
             "source_identity",

@@ -82,6 +82,27 @@ updates, still bump `pyproject.toml`, `stackos/__init__.py`, and
 
 ## What happens during upgrade
 
+Supported managed delivery continuation uses the installation-admin
+`maintenance.prepareUpgrade`, `maintenance.upgradeStatus` and
+`maintenance.finishUpgrade` operations. Preparation checkpoints only authorized
+queued/running delivery work and retires its exact native/callback owners.
+After replacement, startup leaves those checkpoints fenced. The lifecycle caller
+must compare the intended staged target with the target daemon's runtime
+identity, observe health, run the target doctor, and explicitly finish with its
+current generation, revision and doctor command evidence. Failed postflight does
+not resume anything. See the [continuation contract](task-tracker.md#managed-upgrade-continuation)
+for the input fields and identity format.
+
+Safe checkpoints rejoin the existing queue under project capacity and directory
+exclusion. Delivery, repair, independent review and workflow mirrors retain their
+original phase/session/settings; resuming review never replays accepted delivery.
+Unsafe checkpoints return held repair context while unrelated stops, failures,
+aborts, deferred work and manual work remain untouched. Repeating finish is safe.
+An ordinary restart, source edit or wheel swap alone supplies no continuation
+authority. These operations do not attest a signed desktop update or make an older
+source daemon support the handshake; caller capability probing and actual package
+installation remain separate lifecycle obligations.
+
 | Step | Behaviour |
 |---|---|
 | Schema | `alembic upgrade head` runs at every daemon start. Down-migrations exist but are discouraged. |

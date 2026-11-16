@@ -39,16 +39,28 @@ class ManagedUpgradeRepository:
             "revision": row.revision,
             "status": row.status,
             "fenced": row.active == 1,
+            "postflight": row.postflight_json,
             "checkpoint_refs": row.checkpoint_refs_json,
-            "checkpoints": [self._checkpoint(ref) for ref in row.checkpoint_refs_json],
+            "checkpoints": [
+                self._checkpoint(ref, row.upgrade_id) for ref in row.checkpoint_refs_json
+            ],
         }
 
-    def _checkpoint(self, ref):
+    def _checkpoint(self, ref, upgrade_id):
         task = self.session.get(TrackerTask, ref["task_id"])
-        checkpoint = (
-            (task.metadata_json or {}).get("delivery", {}).get("upgrade_checkpoint", {})
-            if task
-            else {}
+        state = (task.metadata_json or {}).get("delivery", {}) if task else {}
+        checkpoint = next(
+            (
+                item
+                for item in [
+                    state.get("upgrade_checkpoint", {}),
+                    *state.get("upgrade_checkpoint_history", []),
+                ]
+                if isinstance(item, dict)
+                and item.get("handoff_id") == ref["handoff_id"]
+                and item.get("upgrade_id") == upgrade_id
+            ),
+            {},
         )
         if checkpoint.get("handoff_id") != ref["handoff_id"]:
             return {**ref, "status": "unavailable", "issues": ["checkpoint_identity_changed"]}
