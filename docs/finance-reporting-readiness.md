@@ -43,6 +43,28 @@ verified build inputs. See [Finance operations](../plugins/finance/README.md),
 permission does not grant agent/MCP mutation authority or permission to supply
 plugin config.
 
+## Open Finance work
+
+The following is a **dated local assessment from 2026-11-16**, not bundled
+project data or a claim that all sources have been collected. Re-read the
+current master, project guidance and original evidence before acting. A current
+export or a passing software test does not establish financial completeness.
+
+| Open work | Evidence gap and next step |
+| --- | --- |
+| Invoice dates | Eight MongoDB invoices do not state an invoice issue date in their retained originals. Obtain authoritative issue-date evidence for each invoice, or explicitly adopt a different supported reporting basis. Do not substitute payment dates, billing-period ends or filenames. |
+| Payment matching | Identify the paying accounts and obtain their transaction exports or statements, including relevant dates and balances. Match transactions to original evidence without treating a vendor's paid status as a bank match or duplicating an invoice and its payment. |
+| Source coverage | Assemble the account register and assess each account's opening and closing balances, source windows and missing periods. Include later retained sources in an updated coverage assessment and leave unsupported periods as gaps. |
+| Categories and posting | Review and adopt appropriate category, allocation and basis decisions from the available evidence. All active bookkeeping entries at the assessment were `prepared/unposted`; actual posting requires an authorized ledger destination and a supported posting contract. Changing a status label does not post books. |
+| Revenue and profit | Obtain relevant revenue, settlement and customer source evidence and adopt an appropriate recognition basis. Calculate profit only when compatible revenue and expense evidence supports it; an empty collection does not prove zero revenue. |
+| Historical persistence evidence | Reconcile available approval occurrences, write and readback receipts, and one-writer evidence for changes since the last retained write proof. Approval-target digests in the master alone do not establish every historical write's execution. Preserve existing approvals within their actual scope. |
+
+On 2026-11-16, the four existing derived CSV views were regenerated from master
+revision 43 and independently checked as current. The master hash and 46 retained
+originals were verified unchanged. This closes the stale-export maintenance
+item for that snapshot only; it does not close the evidence gaps above. The
+current revision and export manifest must be checked again before later use.
+
 ## Latest installed checkpoint (before this cleanup)
 
 Development build `2.1.44 / 20261110T214635Z` was installed and verified on the
@@ -71,7 +93,7 @@ focused Finance Python tests, UI tests and a rebuilt UI bundle. Independent
 cleanup review found no actionable regression and confirmed that retained-script
 changes preserve behavior.
 
-The complete `make signoff` passed on native ARM64 Python 3.12.16 using an
+At the pre-merge checkpoint, `make signoff` passed on native ARM64 Python 3.12.16 using an
 isolated environment synchronized from the frozen lockfile. This gate includes
 lint/formatting, typecheck, the complete Python suite, UI unit tests and UI build.
 External network access was denied by a process sandbox; localhost remained
@@ -82,10 +104,10 @@ was used. An intermediate offline run under x86_64 Python passed 5,628 tests but
 failed five ARM64-specific installer tests; rerunning on the supported native
 interpreter resolved all five without changing production guards or test fixtures.
 
-The final source cleanup and generated bundle have not been installed. No live
-ledger mutation is part of this cleanup. PR-description synchronization remains
-blocked by the GitHub connector's `403 Resource not accessible by integration`;
-these repository docs contain the current scope and verification record.
+The final reconciled source and generated bundle have not been installed or
+validated against live Finance data. No live ledger mutation is part of this
+cleanup. The current PR description records the reconciled checks and the
+independent baseline failures separately from the historical signoff above.
 
 Finish the UI build **before** desktop packaging: the wheel captures `ui_dist` at
 packaging start. Compare packaged `ui_dist/index.html` and its referenced JS asset
