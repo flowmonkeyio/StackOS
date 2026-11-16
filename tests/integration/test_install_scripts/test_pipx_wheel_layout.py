@@ -69,6 +69,9 @@ def test_wheel_includes_stackos_plugin(built_wheel: Path) -> None:
     assert "stackos/_assets/plugins/stackos/.claude-plugin/plugin.json" in names
     assert "stackos/_assets/plugins/stackos/.mcp.json" in names
     assert "stackos/_assets/plugins/engineering/skill-presets/sdlc.yaml" in names
+    assert "stackos/_assets/plugins/cfobooth/plugin.yaml" in names
+    assert "stackos/actions/cfobooth.py" in names
+    assert "stackos/integrations/cfobooth.py" in names
 
 
 @pytest.mark.parametrize("layout", ["wheel", "desktop"])

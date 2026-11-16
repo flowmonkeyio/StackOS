@@ -21,6 +21,107 @@ from stackos.repositories.run_plans import RunPlanRepository
 from tests.integration.account_test_support import seed_test_account
 
 
+@pytest.mark.fresh_catalog
+def test_cfobooth_capability_controls_setup_and_dispatch(session, project_id, httpx_mock):
+    from stackos_connectors import get_default_client
+
+    from stackos.actions import DEFAULT_ACTION_CONNECTORS
+    from stackos.db.models import IntegrationCredential
+    from stackos.repositories.base import ConflictError
+
+    available = "cfobooth" in get_default_client().registry.connector_metadata
+    repo = AuthRepository(session)
+    provider = repo.list_providers(provider_key="cfobooth")[0]
+    described = ActionRepository(session).describe(
+        project_id=project_id, action_ref="cfobooth.catalog.sync"
+    )
+    assert ("cfobooth" in DEFAULT_ACTION_CONNECTORS.list_keys()) is available
+    if available:
+        assert [m.key for m in provider.auth_methods] == ["api_key"]
+        assert provider.auth_methods[0].permission_verification is None
+    else:
+        assert provider.auth_methods == []
+        assert provider.config_json["enabled"] is False
+        assert described.availability.status == "provider_disabled"
+        assert not described.execution_available
+        before = session.exec(select(IntegrationCredential)).all()
+        with pytest.raises(ConflictError, match="unavailable"):
+            repo.store_credential(
+                provider_key="cfobooth",
+                display_name="Unavailable",
+                fields={"api_key": "synthetic-only"},
+            )
+        with pytest.raises(ConflictError, match="unavailable"):
+            from stackos.config import Settings
+
+            repo.start(provider_key="cfobooth", attach_project_id=project_id, settings=Settings())
+        import asyncio
+
+        with pytest.raises(ValidationError) as denied:
+            asyncio.run(
+                ActionRepository(session).execute(
+                    project_id=project_id,
+                    action_ref="cfobooth.catalog.sync",
+                    input_json={},
+                )
+            )
+        assert denied.value.data["status"] == "provider_disabled"
+        assert session.exec(select(IntegrationCredential)).all() == before
+        # Recreate custody retained from a newer package, without going through
+        # the now-disabled setup path. Neither probe nor dispatch may use it.
+        seed_test_account(
+            session,
+            project_id=project_id,
+            provider_key="cfobooth",
+            secret_payload=b'{"api_key":"stale-synthetic"}',
+            config_json={"auth_method_key": "api_key"},
+        )
+        stale = session.exec(select(Credential).where(Credential.provider_key == "cfobooth")).one()
+        with pytest.raises(ConflictError, match="unavailable"):
+            asyncio.run(repo.test(project_id=project_id, credential_ref=stale.credential_ref))
+        with pytest.raises(ValidationError) as stale_denied:
+            asyncio.run(
+                ActionRepository(session).execute(
+                    project_id=project_id,
+                    action_ref="cfobooth.catalog.sync",
+                    input_json={},
+                    credential_ref=stale.credential_ref,
+                )
+            )
+        assert stale_denied.value.data["status"] == "provider_disabled"
+    assert repo.list_providers(provider_key="trackbooth")[0].auth_methods
+    assert httpx_mock.get_requests() == []
+
+
+def test_missing_optional_metadata_is_distinct_from_malformed_metadata(monkeypatch):
+    from types import SimpleNamespace
+
+    from pydantic import ValidationError as ModelValidationError
+
+    from stackos.plugins.manifest import ProviderManifest
+
+    for metadata in (
+        {},
+        {"cfobooth": None},
+        {"cfobooth": {}},
+        {"cfobooth": {"auth_methods": "bad"}},
+    ):
+        client = SimpleNamespace(registry=SimpleNamespace(connector_metadata=metadata))
+        monkeypatch.setattr(
+            "stackos.plugins.manifest.get_default_client", lambda client=client: client
+        )
+        values = {"key": "cfobooth", "name": "CFOBooth", "auth_catalog_ref": "cfobooth"}
+        if not metadata:
+            assert ProviderManifest.model_validate(values).config["enabled"] is False
+        else:
+            with pytest.raises(ModelValidationError):
+                ProviderManifest.model_validate(values)
+    with pytest.raises(ModelValidationError):
+        ProviderManifest.model_validate(
+            {"key": "typo", "name": "Invalid", "auth_catalog_ref": "typo"}
+        )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
 async def test_missing_credential_has_one_host_issue_and_never_dispatches(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from stackos_connectors import get_default_client as _native_client
+
 from stackos.action_availability import (
     ActionAvailabilityOut,
     ActionExposureOut,
@@ -14,6 +16,7 @@ from stackos.actions.alibaba_wan import AlibabaWanVideoActionConnector
 from stackos.actions.branding import BrandingActionConnector
 from stackos.actions.byteplus_seedance import BytePlusSeedanceVideoActionConnector
 from stackos.actions.byteplus_seedream import BytePlusSeedreamImageActionConnector
+from stackos.actions.cfobooth import CFOBoothActionConnector
 from stackos.actions.connectors import (
     DEFAULT_ACTION_CONNECTORS,
     ActionConnector,
@@ -74,6 +77,8 @@ DEFAULT_ACTION_CONNECTORS.register(HubSpotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(BrandingActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TelegramActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TrackboothActionConnector())
+if "cfobooth" in _native_client().registry.connector_metadata:
+    DEFAULT_ACTION_CONNECTORS.register(CFOBoothActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ShopifyActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SlackBotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())

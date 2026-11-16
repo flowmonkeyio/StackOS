@@ -135,6 +135,8 @@ class ProviderMetadataMixin:
         return row
 
     def _auth_methods(self, provider: AuthProvider) -> list[AuthMethodOut]:
+        if (provider.config_json or {}).get("enabled") is False:
+            return []
         raw_methods = (provider.config_json or {}).get("auth_methods")
         methods: list[AuthMethodOut] = []
         if isinstance(raw_methods, list):
@@ -195,6 +197,8 @@ class ProviderMetadataMixin:
         *,
         required: bool = True,
     ) -> AuthMethodOut | None:
+        if (provider.config_json or {}).get("enabled") is False:
+            raise ConflictError("provider is unavailable", data={"provider_key": provider.key})
         methods = self._auth_methods(provider)
         if auth_method_key is None:
             return methods[0] if methods else None

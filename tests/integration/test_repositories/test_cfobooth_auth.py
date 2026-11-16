@@ -24,6 +24,7 @@ from stackos.db.models import (
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 from tests.integration.account_test_support import install_cfobooth_contract
+from tests.integration.test_repositories import cfobooth_test_support as native
 
 ORG = "73837d14-fbd6-40ca-81f4-19e2ce031fc9"
 USER = "576bb550-1dcc-430b-bbf2-c3327f603027"
@@ -411,3 +412,228 @@ def test_real_local_admin_api_custody_failure_recovery_and_disconnect(
         [e.model_dump(mode="json") for e in session.exec(select(CredentialUsageEvent)).all()]
     )
     assert CANARY not in caplog.text
+
+
+# s12: actual accepted native declaration/probe/HTTP handlers; no r8 handler stub.
+
+
+@native.native_cfo
+@pytest.mark.fresh_catalog
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    ["denied", "revoked", "expired", "wrong-org", "malformed-email", "malformed-identity"],
+)
+async def test_native_account_failure_never_establishes_identity(
+    session, project_id, httpx_mock, failure, caplog
+):
+    repo = AuthRepository(session)
+    saved = repo.store_credential(
+        provider_key="cfobooth",
+        display_name="Native failure",
+        fields={
+            "api_key": native.CANARY,
+            "api_base_url": native.BASE,
+            "organization_id": native.ORG,
+        },
+        attach_project_id=project_id,
+    ).data
+    raw = native.identity()
+    status = 200
+    if failure in {"denied", "revoked"}:
+        status = 403 if failure == "denied" else 401
+        raw = {"requestId": "denied", "error": {"code": "forbidden", "message": native.CANARY}}
+    elif failure == "expired":
+        raw["data"]["expiresAt"] = "2020-01-01T00:00:00Z"
+    elif failure == "wrong-org":
+        raw["data"]["organizationId"] = "b6ed0649-65a3-4ec1-bcf5-233bd5049817"
+    elif failure == "malformed-email":
+        raw["data"]["user"]["email"] = "not-an-email"
+    else:
+        raw["data"]["user"]["id"] = {"unsafe": "shape"}
+    httpx_mock.add_response(
+        method="GET",
+        url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current",
+        status_code=status,
+        json=raw,
+    )
+    tested = (await repo.test(project_id=project_id, credential_ref=saved.credential_ref)).data
+    assert not tested.ok
+    account = repo.get_account(credential_ref=saved.credential_ref)
+    assert account.status == "repair-required" and account.account is None
+    assert session.exec(select(CredentialScope)).all() == []
+    assert native.CANARY not in tested.model_dump_json() + caplog.text
+    with pytest.raises(ConflictError):
+        await repo.resolve_for_execution(
+            project_id=project_id,
+            provider_key="cfobooth",
+            credential_ref=saved.credential_ref,
+            operation="action.run",
+        )
+    assert len(httpx_mock.get_requests()) == 1
+
+
+@native.native_cfo
+@pytest.mark.fresh_catalog
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cfobooth.com",
+        "https://CFOBOOTH.COM.:443",
+        "http://remote.example.test",
+        "",
+        "http://localhost:31837?override=true",
+    ],
+)
+async def test_native_canonical_host_and_unsafe_url_reject_before_probe(
+    session, project_id, httpx_mock, url
+):
+    repo = AuthRepository(session)
+    values = {"api_key": native.CANARY, "api_base_url": url, "organization_id": native.ORG}
+    if not url:
+        with pytest.raises(ValidationError):
+            repo.store_credential(provider_key="cfobooth", display_name="Invalid", fields=values)
+    else:
+        saved = repo.store_credential(
+            provider_key="cfobooth",
+            display_name="Invalid",
+            fields=values,
+            attach_project_id=project_id,
+        ).data
+        result = (await repo.test(project_id=project_id, credential_ref=saved.credential_ref)).data
+        assert not result.ok
+    assert httpx_mock.get_requests() == []
+
+
+@native.native_cfo
+@pytest.mark.fresh_catalog
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["api_key", "api_base_url", "organization_id"])
+async def test_native_replacement_and_held_probe_fence(session, project_id, httpx_mock, field):
+    repo = AuthRepository(session)
+    ref = await native.verified_account(session, project_id, httpx_mock)
+    synced = await native.sync(
+        session, project_id, ref, httpx_mock, native.catalog(native.descriptor())
+    )
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def held(request):
+        import httpx
+
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, json=native.identity())
+
+    httpx_mock.add_callback(
+        held, method="GET", url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current"
+    )
+    old = asyncio.create_task(repo.test(project_id=project_id, credential_ref=ref))
+    await asyncio.wait_for(entered.wait(), 5)
+    values = {
+        "api_key": "s12-replacement-key",
+        "api_base_url": "http://localhost:31838/new;prefix",
+        "organization_id": "b6ed0649-65a3-4ec1-bcf5-233bd5049817",
+    }
+    changed = repo.update_credential(
+        credential_ref=ref, fields={field: values[field]}, display_name=None
+    ).data
+    assert changed.status == "pending" and changed.account is None
+    current_org = values[field] if field == "organization_id" else native.ORG
+    current_base = values[field] if field == "api_base_url" else native.BASE
+    replacement = native.identity(
+        organizationId=current_org, keyId="a80e7020-3854-4f26-bf33-458b27139f20"
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=current_base + f"/api/organizations/{current_org}/api-keys/current",
+        json=replacement,
+    )
+    assert (await repo.test(project_id=project_id, credential_ref=ref)).data.ok
+    release.set()
+    with pytest.raises(ConflictError, match="changed during"):
+        await old
+    current = repo.get_account(credential_ref=ref)
+    assert current.account["metadata_json"]["key_id"] == replacement["data"]["keyId"]
+    from stackos.actions import ActionRepository
+    from stackos.repositories.base import RepositoryError
+
+    with pytest.raises(RepositoryError):
+        await ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref=synced["action_refs"][0],
+            credential_ref=ref,
+            input_json={},
+        )
+    assert len(httpx_mock.get_requests()) == 4
+
+
+@native.native_cfo
+@pytest.mark.fresh_catalog
+def test_native_local_admin_account_custody_api_and_disconnect(app, auth_token, httpx_mock, caplog):
+    with TestClient(
+        app, base_url="http://127.0.0.1:5180", headers={"Authorization": f"Bearer {auth_token}"}
+    ) as api:
+        provider = next(
+            p for p in api.get("/api/v1/auth/providers").json() if p["key"] == "cfobooth"
+        )
+        method = provider["auth_methods"][0]
+        assert method["key"] == "api_key" and method["permission_verification"] is None
+        secret = next(f for f in method["fields"] if f["key"] == "api_key")
+        assert secret["secret"] is True
+        project_id = api.post(
+            "/api/v1/projects",
+            json={
+                "slug": "native-account",
+                "name": "Native",
+                "domain": "example.test",
+                "locale": "en-US",
+            },
+        ).json()["data"]["id"]
+        created = api.post(
+            "/api/v1/auth/accounts/cfobooth",
+            json={
+                "display_name": "Native API",
+                "fields": {
+                    "api_key": native.CANARY,
+                    "api_base_url": native.BASE + "/",
+                    "organization_id": native.ORG,
+                },
+                "attach_project_id": project_id,
+            },
+        )
+        assert created.status_code == 201, created.text
+        ref = created.json()["data"]["credential_ref"]
+        path = f"/api/v1/auth/accounts/{ref}"
+        httpx_mock.add_response(
+            method="GET",
+            url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current",
+            json=native.identity(),
+        )
+        tested = api.post(path + "/test")
+        assert tested.json()["data"]["ok"] is True, tested.text
+        account = api.get(path).json()
+        assert native.CANARY not in json.dumps([created.json(), tested.json(), account])
+        with Session(app.state.engine) as database:
+            credential = database.exec(
+                select(Credential).where(Credential.credential_ref == ref)
+            ).one()
+            backing = database.get(IntegrationCredential, credential.integration_credential_id)
+            assert native.CANARY.encode() not in backing.encrypted_payload
+            assert json.loads(
+                IntegrationCredentialRepository(database).get_decrypted(backing.id)
+            ) == {"api_key": native.CANARY}
+            assert credential.config_json["api_base_url"] == native.BASE
+            from pathlib import Path
+
+            db_path = Path(database.get_bind().url.database)
+            for file in (db_path, Path(str(db_path) + "-wal")):
+                if file.exists():
+                    assert native.CANARY.encode() not in file.read_bytes()
+        assert (
+            api.delete(f"/api/v1/projects/{project_id}/connections/accounts/{ref}").status_code
+            == 200
+        )
+        assert api.post(path + "/revoke").status_code == 200
+        assert len(httpx_mock.get_requests()) == 1  # No remote revoke/refresh/session calls.
+        assert native.CANARY not in caplog.text

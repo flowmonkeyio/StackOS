@@ -164,11 +164,32 @@ class ProviderManifest(BaseModel):
         ref = result["auth_catalog_ref"]
         if not isinstance(ref, str) or ref != result.get("key"):
             raise ValueError("auth_catalog_ref must match the provider key")
-        catalog = get_default_client().registry.connector_metadata.get(ref)
-        if catalog is None:
+        catalogs = get_default_client().registry.connector_metadata
+        if ref not in catalogs:
+            if ref == "cfobooth":
+                # The public 0.2.8 pin predates this optional companion provider.
+                # Only absent metadata qualifies; malformed existing metadata fails.
+                result["auth_type"] = "api_key"
+                result["auth_methods"] = []
+                result["config"] = {
+                    "enabled": False,
+                    "unavailable_reason": (
+                        "CFOBooth requires the companion native connector package"
+                    ),
+                    "setup": {
+                        "credential_label": "CFOBooth API key",
+                        "setup_note": "The installed connector package does not provide CFOBooth.",
+                        "verified_at": "2026-11-15",
+                    },
+                }
+                return result
             raise ValueError("auth_catalog_ref does not name a packaged connector")
-        metadata = thaw(catalog)
+        metadata = thaw(catalogs[ref])
+        if not isinstance(metadata, dict):
+            raise ValueError("auth_catalog_ref must name valid native metadata")
         methods = metadata.get("auth_methods", [])
+        if not isinstance(methods, list) or not methods:
+            raise ValueError("auth_catalog_ref must declare native auth methods")
         method_keys = {method["key"] for method in methods}
         overlays: dict[str, dict[str, Any]] = {}
         raw_overlays = result.get("auth_methods", [])

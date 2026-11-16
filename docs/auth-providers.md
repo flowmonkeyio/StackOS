@@ -349,6 +349,13 @@ together:
 
 ### Rotation, Repair, And Revocation
 
+The CFOBooth provider expands its native `auth_catalog_ref`. With the public
+`stackos-connectors==0.2.8` dependency it is disabled, exposes no setup methods,
+and rejects Account setup/storage and dispatch. The separately qualified
+companion package supplies the native declaration, probe and catalog transport.
+Malformed existing native metadata remains an error; it never becomes an
+anonymous or copied-schema fallback.
+
 CFOBooth uses an explicit API-key Account with `api_base_url` and
 `organization_id`. Enter the key in the local masked field. The editable
 `https://cfobooth.com` placeholder is an example, not a verified deployment or
