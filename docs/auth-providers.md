@@ -384,6 +384,11 @@ Disconnect is local removal. Detach the Account from its projects, then choose
 generated actions. Use API key management in your CFOBooth organization for
 remote revocation; StackOS does not claim that local removal revokes that key.
 
+An in-flight project probe must retain its original Connection through result
+persistence. Detach, including detach followed by reattachment, discards that
+probe without changing a shared Account. Explicit global-admin tests and probes
+from other still-attached projects retain their authority.
+
 - Editing an Account may rotate secret material only within its saved method.
   Leaving an existing secret field blank preserves it. Supplying replacement
   material clears stale grant evidence when the method requires local grants,

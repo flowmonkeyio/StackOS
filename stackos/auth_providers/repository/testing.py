@@ -15,7 +15,7 @@ from sqlmodel import col, select
 from stackos_connectors.shared.google.probe import diagnostic_facts
 
 from stackos.artifacts import redact_secret_text, redact_secrets
-from stackos.db.models import Credential, CredentialAccount, CredentialScope
+from stackos.db.models import Credential, CredentialAccount, CredentialScope, ProjectCredential
 from stackos.integrations import integration_class_for
 from stackos.repositories.base import ConflictError, Envelope, RepositoryError, ValidationError
 
@@ -175,6 +175,18 @@ class CredentialTestingMixin:
             credential = resolved.credential
         probe_revision = credential.updated_at
         probe_backing_id = credential.integration_credential_id
+        probe_attachment = None
+        if credential.provider_key == "cfobooth" and project_id is not None:
+            # Scalar values remain tied to the admitted Connection even when
+            # another session detaches/recreates it and SQLite reuses its ID.
+            probe_attachment = self._s.exec(
+                select(ProjectCredential.id, ProjectCredential.attached_at).where(
+                    col(ProjectCredential.project_id) == project_id,
+                    col(ProjectCredential.credential_id) == credential.id,
+                )
+            ).first()
+            if probe_attachment is None:
+                raise ConflictError("Account Connection changed during credential test")
         integration_cls = integration_class_for(credential.provider_key)
         acquisition_only = (
             credential.auth_method_key == "service-account"
@@ -323,8 +335,9 @@ class CredentialTestingMixin:
                     ),
                 )
             # Claim this revision atomically before persisting any result or
-            # identity. Replacement/revoke and another completed test fence it.
-            claimed = self._s.execute(
+            # identity. The original Connection must still authorize a project
+            # probe; global-admin probes do not depend on project attachments.
+            claim = (
                 update(Credential)
                 .where(
                     col(Credential.id) == credential.id,
@@ -335,6 +348,19 @@ class CredentialTestingMixin:
                 .values(updated_at=now)
                 .execution_options(synchronize_session=False)
             )
+            if probe_attachment is not None:
+                attachment_id, attached_at = probe_attachment
+                claim = claim.where(
+                    select(ProjectCredential.id)
+                    .where(
+                        col(ProjectCredential.id) == attachment_id,
+                        col(ProjectCredential.attached_at) == attached_at,
+                        col(ProjectCredential.project_id) == project_id,
+                        col(ProjectCredential.credential_id) == credential.id,
+                    )
+                    .exists()
+                )
+            claimed = self._s.execute(claim)
             if claimed.rowcount != 1:
                 self._s.rollback()
                 raise ConflictError(
