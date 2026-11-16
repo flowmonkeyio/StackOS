@@ -17,7 +17,7 @@ def test_patterns_and_setup_histories_converge_preserving_data(tmp_path, prior_h
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
     config = alembic_config(settings)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0049_project_task_capacity"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0052_upgrade_receipts"]
     command.upgrade(config, prior_head)
     snapshots = {}
     with sqlite3.connect(settings.db_path) as db:
@@ -62,7 +62,7 @@ def test_patterns_and_setup_histories_converge_preserving_data(tmp_path, prior_h
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0049_project_task_capacity",)
+            ("0052_upgrade_receipts",)
         ]
         assert {
             table: db.execute(f"SELECT * FROM {table}").fetchall() for table in snapshots

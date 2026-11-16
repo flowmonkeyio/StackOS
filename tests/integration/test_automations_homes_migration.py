@@ -27,7 +27,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     settings.ensure_dirs()
     config = alembic_config(settings)
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0049_project_task_capacity"]
+    assert script.get_heads() == ["0052_upgrade_receipts"]
     assert script.get_revision("0043_automations_homes_merge").down_revision == (
         "0042_schedule_main_thread",
         "0042_task_delivery_capacity",
@@ -99,7 +99,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0049_project_task_capacity",)
+            ("0052_upgrade_receipts",)
         ]
         assert {
             table: db.execute(f"SELECT {names} FROM {table} ORDER BY id").fetchall()
