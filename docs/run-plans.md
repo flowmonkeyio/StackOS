@@ -59,7 +59,10 @@ validation and transaction path.
 
 Automatic delivery may use complete trusted key-only diagnostics for one
 [report-only continuation](task-tracker.md#automated-task-delivery) in the same
-retained session. It persists the allowance before resuming, preserves the
+retained session. It prepares the comparison basis using the runner's admitted
+workspace semantics before consuming the allowance: committed Git work retains
+its fingerprints; non-Git and unborn work need no invented commit or directory
+snapshot. It persists the allowance before resuming, preserves the
 candidate, proof and work state, and omits rejected bodies from receipts. Missing
 proof, unsettled actions, incomplete classification or any value finding is
 ineligible. Corrected results still enter `recordStep` through all original

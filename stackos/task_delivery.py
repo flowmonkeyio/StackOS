@@ -166,7 +166,9 @@ def _report_labels_only(original: Any, corrected: Any) -> bool:
     return bool(original == corrected)
 
 
-def _reporting_basis(repo, plans, project_id, ticket_key, state, workflow_step) -> str:
+def _reporting_basis(
+    repo, plans, project_id, ticket_key, state, workflow_step, *, reporting_receipt=None
+) -> str:
     """Bind reporting to current work and authority, excluding receipt bookkeeping."""
     brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(mode="json")
     ignored = {
@@ -177,7 +179,7 @@ def _reporting_basis(repo, plans, project_id, ticket_key, state, workflow_step) 
         "active_execution",
         "work_duration",
     }
-    basis = {
+    basis: dict[str, Any] = {
         kind: {key: value for key, value in brief[kind].items() if key not in ignored}
         for kind in ("task", "ticket")
     }
@@ -188,10 +190,17 @@ def _reporting_basis(repo, plans, project_id, ticket_key, state, workflow_step) 
         key: automatic.get(key)
         for key in ("attempt", "candidate", "repair_count", "sessions", "reporting_corrections")
     }
+    if reporting_receipt is not None:
+        # Prepare the post-consumption basis without spending the allowance yet.
+        basis["ownership"]["reporting_corrections"] = [
+            *automatic.get("reporting_corrections", []),
+            reporting_receipt,
+        ]
     basis["step"] = plans.get_step(
         state["run_plan_id"], workflow_step.step_id, project_id=project_id, full_context=True
     ).model_dump(mode="json")
-    basis["work"] = _worktree_snapshot(state["project_dir"])
+    directory = state["project_dir"]
+    basis["work"] = _worktree_snapshot(directory) if _baseline(directory) else None
     return sha256(json.dumps(basis, sort_keys=True).encode()).hexdigest()
 
 
@@ -4394,23 +4403,31 @@ def run_delivery(
                                 plans._ensure_dependencies_complete(state["run_plan_id"], raw_step)
                                 validate_step_expected_outputs(raw_step, outputs)
                                 evidence[phase]["validation_context"].update(diagnostics)
+                                correction_receipt = {
+                                    "id": uuid4().hex,
+                                    "phase": phase,
+                                    "attempt": evidence["attempt"],
+                                    "allowance_used": True,
+                                    "status": "consumed",
+                                    "original_receipt": deepcopy(evidence[phase]),
+                                }
+                                basis = _reporting_basis(
+                                    repo,
+                                    plans,
+                                    project_id,
+                                    ticket_key,
+                                    state,
+                                    workflow_step,
+                                    reporting_receipt=correction_receipt,
+                                )
                                 evidence.setdefault("reporting_corrections", []).append(
-                                    {
-                                        "id": uuid4().hex,
-                                        "phase": phase,
-                                        "attempt": evidence["attempt"],
-                                        "allowance_used": True,
-                                        "status": "consumed",
-                                        "original_receipt": deepcopy(evidence[phase]),
-                                    }
+                                    correction_receipt
                                 )
                                 # Persist allowance and safe original identity before any
                                 # continuation. Rehandoff/restart cannot mint a retry.
                                 _save_evidence(repo, project_id, ticket_key, evidence)
                                 reporting_correction = {
-                                    "basis": _reporting_basis(
-                                        repo, plans, project_id, ticket_key, state, workflow_step
-                                    ),
+                                    "basis": basis,
                                     "diagnostics": diagnostics,
                                     "outputs": outputs,
                                     "envelope": {

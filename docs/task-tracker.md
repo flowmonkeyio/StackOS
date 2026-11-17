@@ -736,9 +736,15 @@ complete trusted key-name-only diagnostics. Duplicate JSON keys, non-JSON number
 trailing content, value-pattern findings and incomplete/unknown classification
 remain failures. Key-only classification never establishes that content is safe.
 
-Before continuation, the existing `automatic_delivery.reporting_corrections`
-receipt consumes the allowance and retains the safe original invocation receipt
-and diagnostic context, omitting the rejected body. The producer may rename
+Before consuming the allowance, reporting prepares a usable comparison basis
+through the existing admitted workspace semantics. A committed Git workspace
+retains its candidate and staged, unstaged and untracked work fingerprints.
+Admitted non-Git and unborn workspaces need no synthetic commit or filesystem
+snapshot; current run, ticket, authority, candidate and session comparisons still
+apply. Failed preparation stops without spending the opportunity.
+The existing `automatic_delivery.reporting_corrections` receipt then durably
+consumes the allowance before continuation and retains the safe original invocation
+receipt and diagnostic context, omitting the rejected body. The producer may rename
 rejected descriptive labels only; status, summary, candidate, values, proof refs,
 followups and limits must remain identical. The prompt prohibits tools, actions,
 tests, code changes and lifecycle writes. Runtime does not rewrite the report or
@@ -746,13 +752,14 @@ permit credential relabeling to bypass the guard. This is a cooperative reportin
 contract, not a new host sandbox or a universal guarantee of model obedience.
 
 The corrected return passes strict parsing, schema, secret, native identity,
-candidate and current lifecycle/authority checks again. Worktree and assignment
-state must remain unchanged. Only the existing run-plan owner accepts the result;
-accepted predecessors and ordinary `repair_count` remain intact. Original and
-corrected safe receipts retain their invocation identities. A second invalid
-return stops. Restart or explicit rehandoff retains the consumed allowance and
-stops unresolved reporting recovery before a broad work assignment; it cannot
-mint another correction. Duplicate/late predecessor callbacks cannot own the
+candidate and current lifecycle/authority checks again. Applicable Git work
+fingerprints and assignment state must remain unchanged, including the absence
+of a committed baseline when none was admitted. Only the existing run-plan owner
+accepts the result; accepted predecessors and ordinary `repair_count` remain
+intact. Original and corrected safe receipts retain their invocation identities.
+A second invalid return stops. Restart or explicit rehandoff retains the consumed
+allowance and stops unresolved reporting recovery before a broad work assignment;
+it cannot mint another correction. Duplicate/late predecessor callbacks cannot own the
 continuation receipt. Missing retained comparison evidence requires explicit
 reconciliation rather than reexecution of accepted work.
 

@@ -1240,15 +1240,23 @@ def test_secret_record_validation_preserves_only_safe_bounded_context(
     assert value_sentinel not in public
 
 
+@pytest.mark.parametrize("tree_kind", ["non-git", "unborn", "committed"])
 @pytest.mark.parametrize("phase", ["delivery", "review"])
 def test_report_correction_resumes_once_without_replaying_accepted_work(
-    session, project_id, tmp_path, monkeypatch, phase
+    session, project_id, tmp_path, monkeypatch, phase, tree_kind
 ):
     from stackos import task_delivery
     from stackos.repositories.tracker.agent_stats import invocation_receipts, usage_refresh
     from stackos.repositories.tracker.schema import TrackerMetricDemand
 
-    sha = commit(tmp_path, "accepted-source")
+    if tree_kind != "committed":
+        shutil.rmtree(tmp_path / ".git")
+        if tree_kind == "unborn":
+            git(tmp_path, "init")
+    candidate = (
+        {"commit_sha": commit(tmp_path, "accepted-source")} if tree_kind == "committed" else {}
+    )
+    before = (tmp_path / "baseline").read_bytes()
     plans = RunPlanRepository(session)
     plan = plans.create(
         project_id=project_id,
@@ -1285,8 +1293,8 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
         "key admissions; rotate any disclosed key. Native0.2.8 intentionally lacks CFO provider "
         "support."
     )
-    original = {"commit_sha": sha, "recovery_plan": {"credentials": prose}}
-    corrected = {"commit_sha": sha, "recovery_plan": {"access_recovery": prose}}
+    original = {**candidate, "recovery_plan": {"credentials": prose}}
+    corrected = {**candidate, "recovery_plan": {"access_recovery": prose}}
     calls, accepted, writes, native_calls = [], [], [], []
     original_record = RunPlanRepository.record_step
     original_write = TrackerRepository.update_ticket
@@ -1406,6 +1414,11 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
     assert "repair_count" not in evidence
     assert evidence["reporting_corrections"][-1]["status"] == "accepted"
     assert evidence["sessions"][phase]["thread_id"] == "retained-report"
+    assert (tmp_path / "baseline").read_bytes() == before
+    if tree_kind != "committed":
+        assert evidence["candidate"] == {}
+        assert "commit_sha" not in plans.get_step(plan.id, "report").result_json
+        assert task_delivery._baseline(str(tmp_path)) == {}
     receipts = invocation_receipts({"automatic_delivery": evidence})
     assert [r["execution"]["invocation_id"] for r in receipts] == [
         "report-call-1",
@@ -1466,10 +1479,103 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
     assert len(calls) == 2 and accepted == ["report"]
 
 
+def test_report_correction_preparation_failure_preserves_unused_allowance(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "key": "report-preparation",
+            "title": "Report preparation",
+            "steps": [{"id": "report", "title": "Report"}],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="report")
+    task_key, ticket_key = f"workflow-{plan.id}", f"workflow-{plan.id}-report"
+    calls = []
+    original = task_delivery._reporting_basis
+
+    def unavailable(*args, **kwargs):
+        raise ValidationError("Fixture comparison preparation unavailable")
+
+    def launch(*args, **kwargs):
+        calls.append(json.loads(args[3]))
+        assert len(calls) <= 3
+        assert kwargs.get("resume_thread_id") == ("retained-report" if len(calls) > 1 else None)
+        key = "access_recovery" if len(calls) == 3 else "credentials"
+        return AgentRunResult(
+            0,
+            thread_id="retained-report",
+            result=generic_result(outputs={key: "Use the existing account owner."}),
+        )
+
+    monkeypatch.setattr(task_delivery, "_reporting_basis", unavailable)
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan.id,
+        step_id="report",
+    )
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    stopped = repo.get(project_id=project_id, task_key=task_key).tasks[0].metadata_json["delivery"]
+    evidence = repo.brief(
+        project_id=project_id, ticket_key=ticket_key
+    ).ticket.completion_evidence_json["automatic_delivery"]
+    assert stopped["status"] == "stopped"
+    assert "Fixture comparison preparation unavailable" in stopped["reason"]
+    assert len(calls) == 1
+    assert not evidence.get("reporting_corrections")
+    assert plans.get_step(plan.id, "report").result_json in (None, {})
+
+    # Only explicit fixture recovery retries the report after preparation is repaired.
+    # The failed preparation did not invoke or spend the single label correction.
+    monkeypatch.setattr(task_delivery, "_reporting_basis", original)
+    plans.reopen(
+        run_plan_id=plan.id, project_id=project_id, step_id="report", reason="Fixture repair"
+    )
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="report")
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan.id,
+        step_id="report",
+    )
+    scheduler.run()
+    session.expire_all()
+    assert len(calls) == 3
+    assert plans.get_step(plan.id, "report").status == RunPlanStepStatus.SUCCESS
+    assert (
+        repo.get(project_id=project_id, task_key=task_key)
+        .tasks[0]
+        .metadata_json["delivery"]["status"]
+        == "complete"
+    )
+    retained = repo.brief(
+        project_id=project_id, ticket_key=ticket_key
+    ).ticket.completion_evidence_json["automatic_delivery"]
+    assert len(retained["reporting_corrections"]) == 1
+    assert retained["reporting_corrections"][0]["status"] == "accepted"
+    assert retained["sessions"] == evidence["sessions"]
+
+
 @pytest.mark.parametrize(
-    "failure,phase",
+    "failure,phase,tree_kind",
     [
-        (failure, "delivery")
+        (failure, "delivery", "committed")
         for failure in (
             "value",
             "late-value",
@@ -1504,22 +1610,36 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
         )
     ]
     + [
-        (failure, "review")
+        (failure, "review", "committed")
         for failure in (
             "second-key",
             "second-native",
             "second-interrupted",
         )
+    ]
+    + [
+        ("changed-state", "delivery", "non-git"),
+        ("changed-saved-session", "delivery", "non-git"),
+        ("second-interrupted", "delivery", "non-git"),
+        ("changed-value", "review", "unborn"),
+        ("second-key", "review", "unborn"),
+        ("became-committed", "delivery", "unborn"),
     ],
 )
 def test_report_correction_fails_closed_and_retains_consumed_allowance(
-    session, project_id, tmp_path, monkeypatch, failure, phase
+    session, project_id, tmp_path, monkeypatch, failure, phase, tree_kind
 ):
     from stackos import task_delivery
     from stackos.repositories.run_plans import RunPlanSecretValidationError
     from stackos.repositories.tracker.agent_stats import invocation_receipts
 
-    sha = commit(tmp_path, "source")
+    if tree_kind != "committed":
+        shutil.rmtree(tmp_path / ".git")
+        if tree_kind == "unborn":
+            git(tmp_path, "init")
+            git(tmp_path, "config", "user.name", "Delivery Test")
+            git(tmp_path, "config", "user.email", "delivery@example.test")
+    candidate = {"commit_sha": commit(tmp_path, "source")} if tree_kind == "committed" else {}
     plans = RunPlanRepository(session)
     step = {
         "id": "report",
@@ -1542,12 +1662,12 @@ def test_report_correction_fails_closed_and_retains_consumed_allowance(
         patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 3}}},
     )
     original = {
-        "commit_sha": sha,
+        **candidate,
         "credentials": "Use the existing account owner.",
         "proof_ref": "retained-proof",
     }
     corrected = {
-        "commit_sha": sha,
+        **candidate,
         "access_recovery": original["credentials"],
         "proof_ref": "retained-proof",
     }
@@ -1609,6 +1729,8 @@ def test_report_correction_fails_closed_and_retains_consumed_allowance(
                 outputs["commit_sha"] = "a" * 40
             elif failure == "changed-work":
                 (tmp_path / "unexpected-work").write_text("changed")
+            elif failure == "became-committed":
+                commit(tmp_path, "unexpected-source")
             elif failure == "changed-state":
                 with Session(session.get_bind()) as other:
                     TrackerRepository(other).update_ticket(
@@ -1694,7 +1816,11 @@ def test_report_correction_fails_closed_and_retains_consumed_allowance(
         project_id=project_id, ticket_key=ticket_key
     ).ticket.completion_evidence_json["automatic_delivery"]
     assert evidence["repair_count"] == 3
-    correction_expected = failure.startswith("second-") or failure.startswith("changed-")
+    correction_expected = (
+        failure.startswith("second-")
+        or failure.startswith("changed-")
+        or failure == "became-committed"
+    )
     assert len(calls) == (2 if correction_expected else 1)
     if correction_expected:
         correction = evidence["reporting_corrections"][-1]
