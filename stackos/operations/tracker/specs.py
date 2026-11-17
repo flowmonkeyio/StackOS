@@ -314,7 +314,7 @@ def operation_specs() -> list[OperationSpec]:
                     title="Save main-agent launch choices",
                     arguments={
                         "project_id": 1,
-                        "main_agent": {"host_key": "codex", "model": "gpt-6.1-sol"},
+                        "main_agent": {"host_key": "codex", "model": "gpt-6.2-sol"},
                     },
                 ),
             ),
@@ -454,7 +454,7 @@ def operation_specs() -> list[OperationSpec]:
                                 "source_path": ".codex/agents/reviewer.toml",
                             },
                             "host_key": "codex",
-                            "model": "gpt-6.1-sol",
+                            "model": "gpt-6.2-sol",
                         },
                     },
                 ),

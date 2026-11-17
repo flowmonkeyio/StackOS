@@ -332,7 +332,7 @@ project defaults supply them:
   },
   "review_agent": {
     "source_ref": {"host_key": "codex", "native_name": "project-review", "source_path": ".codex/agents/project-review.toml"},
-    "model": "gpt-6.1-sol"
+    "model": "gpt-6.2-sol"
   }
 }
 ```
@@ -1649,7 +1649,7 @@ and capability notes appear in host status `agent_execution`. Current selections
 
 | Host | Native model IDs | Delivery / review |
 | --- | --- | --- |
-| Codex | `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`; configured provider models with `provider` | Automatic approval review for delivery and test-capable review |
+| Codex | `gpt-6.2-sol` (recommended), `gpt-6.2-astra`; explicit `gpt-6.1-sol`, `gpt-6-astra`, Terra (`gpt-6.1-terra`), Luna (`gpt-6-luna`) and configured provider models remain available | Automatic approval review for delivery and test-capable review |
 | Claude Code | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` | Native `auto` permissions for delivery and test-capable review |
 | Gemini CLI | `gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` | `auto_edit`, unapproved shell denied / normal native permissions, review-only instructions |
 | Hermes | Explicit provider's model ID; no Hermes model family | Native one-shot approvals / normal native permissions, review-only instructions |
@@ -1666,6 +1666,8 @@ host capability owner selects the mode (`review_sandbox`); launch receipts recor
 Hermes retains native one-shot permissions. Unsupported hosts still reject before scheduling.
 Native permissions may deny required work, including committing; a structured
 blocked result stops the task even if the process exit code is zero.
+
+The Codex catalog was checked on 2026-11-17 against the [Codex model guide](https://learn.chatgpt.com/docs/models) and the model list advertised to Codex CLI 0.169.0. Both 6.2 models offer low, medium, high, xhigh, max and ultra. The setup dialog uses the recommendation for a fresh selection. Saved choices and admitted runs keep their explicit model IDs.
 
 Source contracts checked 2026-11-05:
 [Codex models](https://learn.chatgpt.com/docs/models),

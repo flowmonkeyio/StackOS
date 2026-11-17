@@ -19,6 +19,8 @@ from stackos.host_mcp.result import validate_agent_result
     "host,model,effort,flag",
     [
         ("codex", "gpt-6.1-sol", "max", "-c"),
+        ("codex", "gpt-6.2-sol", "high", "-c"),
+        ("codex", "gpt-6.2-astra", "ultra", "-c"),
         ("claude-code", "claude-haiku-5-5", "xhigh", "--effort"),
         ("grok", "grok-4.6", "high", "--reasoning-effort"),
     ],
@@ -83,6 +85,7 @@ def test_setup_reasoning_reaches_native_command(
     "host,model,effort",
     [
         ("codex", "gpt-6.1-sol", "none"),
+        ("codex", "gpt-6.2-sol", "none"),
         ("codex", None, "high"),
         ("claude-code", "claude-opus-5-5", "ultra"),
         ("gemini-cli", "gemini-2.5-pro", "high"),
@@ -1516,9 +1519,12 @@ def test_discovery_and_execution_use_same_capability_catalog():
         capability = info["agent_execution"]
         assert info["connection_state"] == "connected"
         assert capability["credential_status"] == capability["model_access"] == "not_checked"
-        assert capability["checked_on"] == (
-            "2026-11-13" if key in {"codex", "claude-code", "grok"} else "2026-11-05"
-        )
+        expected_dates = {"codex": "2026-11-17", "claude-code": "2026-11-13", "grok": "2026-11-13"}
+        assert capability["checked_on"] == expected_dates.get(key, "2026-11-05")
+        if key == "codex":
+            assert capability["recommended_model"] == "gpt-6.2-sol"
+            for model in ("gpt-6.2-astra", "gpt-6.2-sol"):
+                assert "ultra" in capability["reasoning_efforts"][model]
         assert set(capability["reasoning_efforts"]) <= set(capability["models"])
         for model, efforts in capability["reasoning_efforts"].items():
             for effort in efforts:

@@ -1150,8 +1150,17 @@ def _single(
 def _definitions() -> tuple[HostMcpDefinition, ...]:
     codex_reasoning: dict[str, tuple[str, ...]] = {
         model: ("low", "medium", "high", "xhigh", "max")
-        for model in ("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna")
+        for model in (
+            "gpt-6.2-sol",
+            "gpt-6.2-astra",
+            "gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6.1-terra",
+            "gpt-6-luna",
+        )
     }
+    for model in ("gpt-6.2-sol", "gpt-6.2-astra"):
+        codex_reasoning[model] = (*codex_reasoning[model], "ultra")
     for model in ("gpt-6.1-terra", "gpt-6-luna"):
         codex_reasoning[model] = ("none", *codex_reasoning[model])
     claude_reasoning: dict[str, tuple[str, ...]] = {
@@ -1178,8 +1187,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     review_sandbox="workspace-write",
                     models=tuple(codex_reasoning),
                     reasoning_efforts=codex_reasoning,
-                    checked_on="2026-11-13",
-                    recommended_model="gpt-6.1-sol",
+                    checked_on="2026-11-17",
+                    recommended_model="gpt-6.2-sol",
                     provider_selection=True,
                     auth_status_command=("codex", "login", "status"),
                     notes="Native sandbox; login status establishes credential presence only.",

@@ -132,7 +132,7 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
             "tracker.configureDelivery",
             main_agent={
                 "host_key": "codex",
-                "model": "gpt-6.1-sol",
+                "model": "gpt-6.2-sol",
                 "model_reasoning_effort": "low",
             },
         ).status_code
@@ -148,12 +148,12 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     first = call(
         "projectSetup.start",
         entry_kind="managed_ui",
-        preferences={"model_reasoning_effort": "high"},
+        preferences={"model_reasoning_effort": "ultra"},
         response_mode="raw",
     )
     assert first.status_code == 200, first.text
     attempt = first.json()["data"]["attempt"]
-    assert attempt["managed"]["settings"]["model_reasoning_effort"] == "high"
+    assert attempt["managed"]["settings"]["model_reasoning_effort"] == "ultra"
     scheduler.run()
     assert len(commands) == 1
     assert (
@@ -181,8 +181,8 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     scheduler.run()
     assert len(commands) == 2
     for command in commands:
-        assert command[command.index("--model") + 1] == "gpt-6.1-sol"
-        assert 'model_reasoning_effort="high"' in command
+        assert command[command.index("--model") + 1] == "gpt-6.2-sol"
+        assert 'model_reasoning_effort="ultra"' in command
         assert "--approve-for-me" in command
     assert "resume" not in commands[0]
     assert commands[1][commands[1].index("resume") + 1] == "frozen-setup-thread"
@@ -194,8 +194,8 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
             snapshot = session.get(AgentRequest, request_id).metadata_json["native_execution"][
                 "snapshot"
             ]
-            assert snapshot["model_reasoning_effort"] == "high"
-            assert snapshot["native_settings"]["model_reasoning_effort"] == "high"
+            assert snapshot["model_reasoning_effort"] == "ultra"
+            assert snapshot["native_settings"]["model_reasoning_effort"] == "ultra"
 
 
 def test_console_explicit_null_clears_launch_only_and_configure_clears_saved_defaults(

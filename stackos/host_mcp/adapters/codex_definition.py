@@ -42,7 +42,7 @@ OPTIONAL_SETTINGS = tuple(
     for k in AgentFields.model_fields
     if k not in {"name", "description", "developer_instructions"}
 )
-NATIVE_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+NATIVE_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 _ENUMS = {
     "model_reasoning_effort": set(NATIVE_REASONING_EFFORTS),
     "model_reasoning_summary": {"auto", "concise", "detailed", "none"},

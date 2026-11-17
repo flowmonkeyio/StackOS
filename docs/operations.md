@@ -384,7 +384,7 @@ main-agent choices on the same host; explicit null clears that field for this
 launch. Changing host discards inherited host-specific choices. Changing model
 discards inherited reasoning unless reasoning is also explicitly supplied.
 Save these choices through local-admin `tracker.configureDelivery({"project_id":1,
-"main_agent":{"host_key":"codex","model":"gpt-6.1-sol"}})`. That form merges
+"main_agent":{"host_key":"codex","model":"gpt-6.2-sol"}})`. That form merges
 only `delivery.main_agent`, preserving specialist roles, unrelated settings and
 already admitted snapshots. `projectSetup.get.launch_preferences` reads saved choices;
 `hostMcp.status.agent_execution` supplies supported and recommended models from the
