@@ -377,9 +377,22 @@ class TaskDeliveryStateOut(BaseModel):
         if not isinstance(value, str) or not value.strip():
             return None
         text = redact_secret_text(value.strip())
-        return re.sub(r"(?<![\w:/])(?:/[^\s'\"<>]+|[A-Za-z]:\\[^\s'\"<>]+)", "[local path]", text)[
-            :500
-        ]
+
+        def mask_path(match: re.Match[str]) -> str:
+            if match["url"]:
+                return match["url"]
+            # Keep sentence/quote delimiters around the masked path. Match the
+            # whole file URI first so its scheme/host cannot escape masking.
+            path = match[0]
+            return "[local path]" + path[len(path.rstrip(".,;:!?)]}")) :]
+
+        return re.sub(
+            r"(?P<url>https?://[^\s'\"<>]+)|"
+            r"(?<![\w:/])(?:file:/+|[A-Za-z]:[\\/]|/|\\\\)[^\s'\"<>]+",
+            mask_path,
+            text,
+            flags=re.IGNORECASE,
+        )[:500]
 
     @classmethod
     def from_metadata(cls, metadata: dict[str, Any] | None) -> TaskDeliveryStateOut | None:

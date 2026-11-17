@@ -189,6 +189,84 @@ def test_stop_reason_masks_paths_and_bounds_legacy_text(session, project_id):
     )
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "file:///private/tmp/native-result.json",
+        "file:/private/tmp/native-result.json",
+        "file://localhost/private/tmp/native-result.json",
+        "file://workstation/share/native-result.json",
+        "FILE:///C:/Users/operator/native-result.json",
+        "C:/Users/operator/native-result.json",
+        r"C:\Users\operator\native-result.json",
+        r"\\workstation\share\native-result.json",
+        "/private/tmp/native-result.json",
+    ],
+)
+def test_stop_reason_local_representations_agree_across_readers(session, project_id, path):
+    from stackos.agent_responses import compact_tracker_task
+
+    repo = seed_inspection(session, project_id)
+    agent = {"name": "fixture", "instructions": "Never execute"}
+    link = "https://docs.example.test/help?q=stop#details"
+    reason = f'Native failed at "{path}" (again {path}). See {link}'
+    expected = f'Native failed at "[local path]" (again [local path]). See {link}'
+    _update_delivery(
+        repo,
+        project_id,
+        "inspect",
+        status="stopped",
+        job_ref="fixture",
+        delivery_agent=agent,
+        review_agent=agent,
+        reason=reason,
+    )
+    writes_before = session.connection().exec_driver_sql("SELECT total_changes()").scalar()
+    full = repo.get(project_id=project_id, task_key="inspect", include_graph=False).tasks[0]
+    light = repo.get(
+        project_id=project_id, task_key="inspect", projection="ui", include_graph=False
+    ).tasks[0]
+    compact = compact_tracker_task(full.model_dump(mode="json"))
+    activity = repo.task_activity(project_id=project_id, task_key="inspect")
+    assert (
+        full.delivery.reason == light.delivery.reason == compact["delivery"]["reason"] == expected
+    )
+    assert [item.details["reason"] for item in activity.items if item.details.get("reason")] == [
+        expected
+    ]
+    assert full.metadata_json["delivery"]["reason"] == reason
+    assert session.connection().exec_driver_sql("SELECT total_changes()").scalar() == writes_before
+
+
+@pytest.mark.parametrize(
+    ("reason", "expected"),
+    [
+        (None, None),
+        ([], None),
+        ({"reason": "old"}, None),
+        (42, None),
+        ("  ", None),
+        (" Legacy stop ", "Legacy stop"),
+        (
+            "http://example.test/help https://example.test/C:/docs",
+            "http://example.test/help https://example.test/C:/docs",
+        ),
+        (
+            "https://example.test/help?next=/docs&example=C:/docs",
+            "https://example.test/help?next=/docs&example=C:/docs",
+        ),
+        (
+            "api_key=fixture-secret; file:///private/tmp/native.json https://example.test/help?token=fixture-signed&ok=1",
+            "api_key=[redacted]; [local path] https://example.test/help?token=[redacted]&ok=1",
+        ),
+    ],
+)
+def test_stop_reason_preserves_safe_legacy_and_secret_controls(reason, expected):
+    from stackos.repositories.tracker.schema import TaskDeliveryStateOut
+
+    assert TaskDeliveryStateOut.safe_reason(reason) == expected
+
+
 @pytest.mark.parametrize("malformed", [[], {"unexpected": "value"}])
 def test_activity_retains_task_events_with_malformed_optional_ticket_metadata(
     session, project_id, malformed

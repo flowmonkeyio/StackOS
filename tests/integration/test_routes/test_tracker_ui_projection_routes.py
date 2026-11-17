@@ -42,6 +42,15 @@ def test_stop_context_survives_registered_full_light_active_and_activity_reads(
     from stackos.task_delivery import _stop_context, _update_delivery
 
     seed(api, project_id)
+    reason = (
+        'Native failed at "file:///private/tmp/native.json", '
+        r"C:/Users/operator/native.json and C:\Users\operator\native.json. "
+        "See https://example.test/help; api_key=fixture-secret"
+    )
+    safe_reason = (
+        'Native failed at "[local path]", [local path] and [local path]. '
+        "See https://example.test/help; api_key=[redacted]"
+    )
     with Session(api.app.state.engine) as session:
         repo = TrackerRepository(session)
         ticket = repo.brief(project_id=project_id, ticket_key="visible-child").ticket
@@ -54,7 +63,7 @@ def test_stop_context_survives_registered_full_light_active_and_activity_reads(
             project_id,
             "visible",
             status="stopped",
-            reason="Native invocation failed",
+            reason=reason,
             job_ref="fixture",
             delivery_agent=agent,
             review_agent=agent,
@@ -78,6 +87,7 @@ def test_stop_context_survives_registered_full_light_active_and_activity_reads(
             if task["key"] == "visible"
         )
         assert task["delivery"]["stop_context"] == expected
+        assert task["delivery"]["reason"] == safe_reason
         assert "Private frozen prompt" not in json.dumps(task["delivery"])
     activity = api.post(
         "/api/v1/operations/tracker.taskActivity/call",
@@ -88,6 +98,9 @@ def test_stop_context_survives_registered_full_light_active_and_activity_reads(
     assert activity.status_code == 200, activity.text
     data = activity.json().get("data", activity.json())
     assert any(item["details"].get("stop_context") == expected for item in data["items"])
+    assert [
+        item["details"]["reason"] for item in data["items"] if item["details"].get("reason")
+    ] == [safe_reason]
 
 
 @pytest.mark.parametrize("mode", ["raw", "compact"])

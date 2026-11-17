@@ -717,7 +717,10 @@ legacy reason. Public projections allowlist fields and bounded ticket/attempt
 references (`tracker-ticket:<project-id>:<ticket-id>[:attempt:<n>:<phase>]`),
 excluding native paths, frozen instructions and arbitrary metadata.
 Stop reasons retain legacy prose rendering, with secret redaction, local-path
-masking and a 500-character public bound.
+masking and a 500-character public bound. Local POSIX paths, file URIs (including
+localhost/host forms), Windows drive paths with either separator and UNC paths
+are masked in public readers and the retained UI fallback; ordinary HTTP(S)
+links remain readable. Raw historical metadata is not rewritten by these reads.
 
 The no-ready producer reads current explicit blockers, unresolved dependencies,
 non-pending unfinished work and containment state through their existing

@@ -7,6 +7,35 @@ const delivery = { status: 'queued', job_ref: 'task-delivery:1:2', delivery_agen
 const task = (metadata_json: unknown) => ({ metadata_json }) as Pick<TrackerTask, 'metadata_json'>
 
 describe('automatic delivery task indication', () => {
+  it.each([
+    'file:///private/tmp/native-result.json',
+    'file:/private/tmp/native-result.json',
+    'file://localhost/private/tmp/native-result.json',
+    'file://workstation/share/native-result.json',
+    'FILE:///C:/Users/operator/native-result.json',
+    'C:/Users/operator/native-result.json',
+    String.raw`C:\Users\operator\native-result.json`,
+    String.raw`\\workstation\share\native-result.json`,
+    '/private/tmp/native-result.json',
+  ])('masks local representation %s in retained metadata and lightweight delivery', (path) => {
+    const link = 'https://docs.example.test/help?q=stop#details'
+    const reason = `Native failed at "${path}" (again ${path}). See ${link}`
+    const metadata = { delivery: { ...delivery, status: 'stopped', reason } }
+    const before = structuredClone(metadata)
+    const full = taskDeliveryState(task(metadata))!
+    expect(full.reason).toBe(`Native failed at "[local path]" (again [local path]). See ${link}`)
+    expect(taskDeliveryState({ delivery: { ...full, reason } })).toEqual(full)
+    expect(metadata).toEqual(before)
+  })
+  it.each([null, undefined, [], {}, 42, '  '])('handles absent or malformed legacy reason %j', (reason) => {
+    const full = taskDeliveryState(task({ delivery: { ...delivery, status: 'stopped', reason } }))!
+    expect(full.reason).toBeNull()
+    expect(taskDeliveryState({ delivery: { ...full, reason } as never })?.reason).toBeNull()
+  })
+  it('retains remote links and already redacted secrets', () => {
+    const reason = 'api_key=[redacted]; http://example.test/help https://example.test/C:/docs?next=/docs&example=C:/docs'
+    expect(taskDeliveryState(task({ delivery: { ...delivery, status: 'stopped', reason } }))?.reason).toBe(reason)
+  })
   it('keeps legacy prose bounded and masks local filesystem paths', () => {
     const reason = 'Native failed at /private/tmp/native.json ' + 'x'.repeat(700)
     const full = taskDeliveryState(task({ delivery: { ...delivery, status: 'stopped', reason } }))!

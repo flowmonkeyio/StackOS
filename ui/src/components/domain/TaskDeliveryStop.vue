@@ -10,14 +10,15 @@ const props = defineProps<{
   detailed?: boolean
 }>()
 const ticketLabel = computed(() => props.tickets?.find(ticket => ticket.key === props.delivery?.ticketKey)?.title || props.delivery?.ticketKey)
-const context = computed(() => taskDeliveryState({ delivery: props.delivery })?.stop_context)
+const publicDelivery = computed(() => taskDeliveryState({ delivery: props.delivery }))
+const context = computed(() => publicDelivery.value?.stop_context)
 </script>
 
 <template>
   <span
     v-if="delivery?.status === 'stopped'"
     class="task-delivery-stop"
-    :title="delivery.reason ?? undefined"
+    :title="publicDelivery?.reason ?? undefined"
   >
     <span class="task-delivery-stop__summary">
       <StatusBadge
@@ -31,9 +32,9 @@ const context = computed(() => taskDeliveryState({ delivery: props.delivery })?.
       >{{ ticketLabel }}</span>
     </span>
     <span
-      v-if="detailed && delivery.reason"
+      v-if="detailed && publicDelivery?.reason"
       class="task-delivery-stop__reason"
-    >{{ delivery.reason }}</span>
+    >{{ publicDelivery.reason }}</span>
     <span v-if="detailed && context" class="task-delivery-stop__context">
       <span>{{ stopContextReason(context) }}</span>
       <span v-if="context.phase" class="text-fg-muted">Phase: {{ context.phase }}</span>

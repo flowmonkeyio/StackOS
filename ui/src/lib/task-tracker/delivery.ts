@@ -107,7 +107,11 @@ function nonemptyString(value: unknown): value is string {
 }
 
 function safeReason(value: unknown): string | null {
-  return nonemptyString(value) ? value.trim().replace(/(?<![\w:/])(?:\/[^\s'"<>]+|[A-Za-z]:\\[^\s'"<>]+)/g, '[local path]').slice(0, 500) : null
+  // Keep this retained-metadata fallback aligned with TaskDeliveryStateOut.safe_reason.
+  return nonemptyString(value) ? value.trim().replace(
+    /https?:\/\/[^\s'"<>]+|(?<![\w:/])(?:file:\/+|[A-Za-z]:[\\/]|\/|\\\\)[^\s'"<>]+/gi,
+    path => /^https?:\/\//i.test(path) ? path : '[local path]' + (path.match(/[.,;:!?)\]}]+$/)?.[0] ?? ''),
+  ).slice(0, 500) : null
 }
 
 function isFrozenAgent(value: unknown): boolean {
