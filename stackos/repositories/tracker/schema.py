@@ -381,6 +381,8 @@ class TaskDeliveryStateOut(BaseModel):
         def mask_path(match: re.Match[str]) -> str:
             if match["url"]:
                 return match["url"]
+            if match["quote"]:
+                return f"{match['quote']}[local path]{match['quote']}"
             # Keep sentence/quote delimiters around the masked path. Match the
             # whole file URI first so its scheme/host cannot escape masking.
             path = match[0]
@@ -388,7 +390,10 @@ class TaskDeliveryStateOut(BaseModel):
 
         return re.sub(
             r"(?P<url>https?://[^\s'\"<>]+)|"
-            r"(?<![\w:/])(?:file:/+|[A-Za-z]:[\\/]|/|\\\\)[^\s'\"<>]+",
+            r"(?P<quote>['\"])(?:file:/+|[A-Za-z]:[\\/]|/|\\\\)"
+            r"(?:(?!(?P=quote))[^\r\n<>])*(?P=quote)|"
+            r"(?<![\w/])(?:file:/+|[A-Za-z]:[\\/]|\\\\)[^\s'\"<>]+|"
+            r"(?<![\w:/])/[^\s'\"<>]+",
             mask_path,
             text,
             flags=re.IGNORECASE,

@@ -247,6 +247,37 @@ def test_stop_reason_local_representations_agree_across_readers(session, project
         (42, None),
         ("  ", None),
         (" Legacy stop ", "Legacy stop"),
+        ("Artifact:file:///private/tmp/native.json", "Artifact:[local path]"),
+        ("Artifact:C:/Users/operator/native.json", "Artifact:[local path]"),
+        (r"Artifact:C:\Users\operator\native.json", "Artifact:[local path]"),
+        (
+            'Native failed at "C:/Users/operator/Private Client/native.json".',
+            'Native failed at "[local path]".',
+        ),
+        (
+            r'Native failed at "C:\Users\operator\Private Client\native.json".',
+            'Native failed at "[local path]".',
+        ),
+        (
+            "Artifact:'C:/Users/operator/Private Client/native.json'; retry.",
+            "Artifact:'[local path]'; retry.",
+        ),
+        (
+            'Native failed at "file://localhost/private/tmp/Private Client/native.json".',
+            'Native failed at "[local path]".',
+        ),
+        (
+            'Native failed at "/private/tmp/Private Client/native.json".',
+            'Native failed at "[local path]".',
+        ),
+        (
+            r"Native failed at '\\workstation\Private Client\native.json'.",
+            "Native failed at '[local path]'.",
+        ),
+        (
+            'Native failed at "C:/Users/O\'Connor/Private Client/native.json".',
+            'Native failed at "[local path]".',
+        ),
         (
             "http://example.test/help https://example.test/C:/docs",
             "http://example.test/help https://example.test/C:/docs",

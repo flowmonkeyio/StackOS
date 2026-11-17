@@ -8,6 +8,22 @@ const task = (metadata_json: unknown) => ({ metadata_json }) as Pick<TrackerTask
 
 describe('automatic delivery task indication', () => {
   it.each([
+    ['Artifact:file:///private/tmp/native.json', 'Artifact:[local path]'],
+    ['Artifact:C:/Users/operator/native.json', 'Artifact:[local path]'],
+    [String.raw`Artifact:C:\Users\operator\native.json`, 'Artifact:[local path]'],
+    ['Native failed at "C:/Users/operator/Private Client/native.json".', 'Native failed at "[local path]".'],
+    [String.raw`Native failed at "C:\Users\operator\Private Client\native.json".`, 'Native failed at "[local path]".'],
+    ["Artifact:'C:/Users/operator/Private Client/native.json'; retry.", "Artifact:'[local path]'; retry."],
+    ['Native failed at "file://localhost/private/tmp/Private Client/native.json".', 'Native failed at "[local path]".'],
+    ['Native failed at "/private/tmp/Private Client/native.json".', 'Native failed at "[local path]".'],
+    [String.raw`Native failed at '\\workstation\Private Client\native.json'.`, "Native failed at '[local path]'."],
+    ['Native failed at "C:/Users/O\'Connor/Private Client/native.json".', 'Native failed at "[local path]".'],
+  ])('masks punctuation and quoted-space boundaries: %s', (reason, expected) => {
+    const full = taskDeliveryState(task({ delivery: { ...delivery, status: 'stopped', reason } }))!
+    expect(full.reason).toBe(expected)
+    expect(taskDeliveryState({ delivery: { ...full, reason } })?.reason).toBe(expected)
+  })
+  it.each([
     'file:///private/tmp/native-result.json',
     'file:/private/tmp/native-result.json',
     'file://localhost/private/tmp/native-result.json',

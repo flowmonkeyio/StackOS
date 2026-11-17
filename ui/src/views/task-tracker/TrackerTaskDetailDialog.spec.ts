@@ -254,7 +254,7 @@ describe('TrackerTaskDetailDialog', () => {
     const source = sourceTicket()
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
     const automatic = { ...task(), metadata_json: { delivery: {
-      status: 'stopped', ticket_key: source.key, reason: 'Native failed at file:///private/tmp/native.json and C:/Users/operator/native.json. See https://example.test/help',
+      status: 'stopped', ticket_key: source.key, reason: 'Native failed at Artifact:file:///private/tmp/native.json and "C:/Users/operator/Private Client/native.json". See https://example.test/help',
       stop_context: { code: 'native_failure', phase: 'delivery', next_owner: 'main_agent',
         next_action: 'inspect_retained_evidence', resume_condition: 'explicit_rehandoff',
         facts: [], evidence_refs: ['tracker-ticket:1:2:attempt:1:delivery'] },
@@ -264,7 +264,7 @@ describe('TrackerTaskDetailDialog', () => {
     const stop = popup().get('.task-delivery-stop')
     expect(stop.text()).toContain('Delivery stopped')
     expect(stop.text()).toContain(source.title)
-    const safeReason = 'Native failed at [local path] and [local path]. See https://example.test/help'
+    const safeReason = 'Native failed at Artifact:[local path] and "[local path]". See https://example.test/help'
     expect(popup().get('.task-delivery-stop__reason').text()).toBe(safeReason)
     expect(stop.attributes('title')).toBe(safeReason)
     expect(stop.text()).toContain('Native invocation failed.')

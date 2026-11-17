@@ -36,21 +36,40 @@ def seed(api, project_id):
 
 
 @pytest.mark.parametrize("mode", ["raw", "compact"])
+@pytest.mark.parametrize(
+    ("reason", "safe_reason"),
+    [
+        (
+            'Native failed at "file:///private/tmp/native.json", '
+            r"C:/Users/operator/native.json and C:\Users\operator\native.json. "
+            "See https://example.test/help; api_key=fixture-secret",
+            'Native failed at "[local path]", [local path] and [local path]. '
+            "See https://example.test/help; api_key=[redacted]",
+        ),
+        ("Artifact:file:///private/tmp/native.json", "Artifact:[local path]"),
+        ("Artifact:C:/Users/operator/native.json", "Artifact:[local path]"),
+        (r"Artifact:C:\Users\operator\native.json", "Artifact:[local path]"),
+        (
+            'Native failed at "C:/Users/operator/Private Client/native.json".',
+            'Native failed at "[local path]".',
+        ),
+        (
+            r'Native failed at "C:\Users\operator\Private Client\native.json".',
+            'Native failed at "[local path]".',
+        ),
+        (
+            'Artifact:"file://localhost/private/tmp/Private Client/native.json"; '
+            "See https://example.test/help?next=/docs&example=C:/docs",
+            'Artifact:"[local path]"; See https://example.test/help?next=/docs&example=C:/docs',
+        ),
+    ],
+)
 def test_stop_context_survives_registered_full_light_active_and_activity_reads(
-    api, project_id, mode
+    api, project_id, mode, reason, safe_reason
 ):
     from stackos.task_delivery import _stop_context, _update_delivery
 
     seed(api, project_id)
-    reason = (
-        'Native failed at "file:///private/tmp/native.json", '
-        r"C:/Users/operator/native.json and C:\Users\operator\native.json. "
-        "See https://example.test/help; api_key=fixture-secret"
-    )
-    safe_reason = (
-        'Native failed at "[local path]", [local path] and [local path]. '
-        "See https://example.test/help; api_key=[redacted]"
-    )
     with Session(api.app.state.engine) as session:
         repo = TrackerRepository(session)
         ticket = repo.brief(project_id=project_id, ticket_key="visible-child").ticket
