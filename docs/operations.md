@@ -311,6 +311,14 @@ automatically to completion. Current matching evidence may complete directly.
 There is no separate verification workflow/task or linked-run waiting lifecycle.
 Cancellation fences only current setup ownership; recovery retains evidence and
 revalidates changed sources/defaults before consumption or final success.
+An unfinished workflow receipt may have `verification: null`. A selected role's
+callback validates its exact retired native reference, current execution binding
+and bounded observation independently of that aggregate proof, retaining the
+role request once before resuming the same coordinator with
+`completed_role_verifications`. This does not complete setup: the coordinator
+must still supply complete current `VerifiedSetup` and activation coverage.
+Rejected role evidence rolls back promotion; duplicate callbacks and completion
+recovery preserve the retained native sessions and evidence.
 Confirmed failures before entering the native executor retain an explicit
 preflight marker, allowing exact-session recovery after the basis is restored;
 unknown native retirement still blocks recovery. Native final reports reconcile

@@ -379,7 +379,25 @@ def continue_managed(
                     raise ConflictError("setup continuation lineage changed", data=repair)
                 native = (parent_row.metadata_json or {}).get("native_execution") or {}
                 if native:
-                    break
+                    if (
+                        current.managed.phase == "completion"
+                        and current.managed.role_check is None
+                        and parent_id in current.managed.role_verification_request_ids
+                    ):
+                        # Completion resumes the coordinator, not the intervening
+                        # specialist. Traverse only accepted, retired role evidence
+                        # in this same owned lineage to find that exact session.
+                        if not native.get("finished_at") or not repo._native_activation_passed(
+                            parent_row, native
+                        ):
+                            raise ConflictError(
+                                "prior role verification is not completed; inspect native evidence",
+                                data=repair,
+                            )
+                        child = parent
+                        continue
+                    else:
+                        break
                 if parent.managed.callback_started and not parent.managed.preflight_failed:
                     raise ConflictError("prior native retirement is unknown", data=repair)
                 child = parent
@@ -1153,8 +1171,7 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                 continue_verification = True
             elif current.status == "partial" and role_check is not None:
                 from stackos.repositories.project_setup import (
-                    SetupActivationCheck,
-                    VerifiedSetup,
+                    SetupProofReference,
                     _digest,
                 )
 
@@ -1169,27 +1186,27 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                 _save(session, row, current, _commit=False)
                 native = row.metadata_json["native_execution"]
                 repo = ProjectSetupRepository(session)
-                receipt = repo._row(project_id, role_check.workflow_key)
-                proof = VerifiedSetup.model_validate(receipt.latest_result_json["verification"])
                 # Reuse the same canonical validator before accepting the bounded
-                # outcome and resuming the coordinator. No caller success shortcut.
-                check = SetupActivationCheck(
-                    claims=role_check.request.claims,
-                    origin="executed",
-                    execution=role_check.execution,
-                    basis=repo.activation_basis(
-                        project_id, proof, environment_ref=role_check.request.environment_ref
-                    ),
-                    reference={
-                        "kind": "native_request",
-                        "request_id": request_id,
-                        "invocation_id": native["execution"]["invocation_id"],
-                        "outcome_digest": _digest(native["result"]),
-                    },
-                    evidence_ref=role_check.request.evidence_ref,
+                # outcome and resuming the coordinator. Aggregate verification may
+                # still be absent; completion must supply and validate it later.
+                reference = SetupProofReference(
+                    kind="native_request",
+                    request_id=request_id,
+                    invocation_id=native["execution"]["invocation_id"],
+                    outcome_digest=_digest(native["result"]),
                 )
-                repo._validate_activation_reference(project_id, check)
-                repo._validate_role_check(project_id, check, {role_check.request.role})
+                repo._validate_activation_reference(project_id, reference, "passed")
+                repo._validate_role_check(
+                    project_id,
+                    reference,
+                    execution=role_check.execution,
+                    claims=role_check.request.claims,
+                    status="passed",
+                    origin="executed",
+                    environment_ref=role_check.request.environment_ref,
+                    evidence_ref=role_check.request.evidence_ref,
+                    required_roles={role_check.request.role},
+                )
                 session.commit()
                 continue_verification = True
     except Exception as exc:

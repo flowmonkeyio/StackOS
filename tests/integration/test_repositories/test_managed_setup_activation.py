@@ -130,6 +130,7 @@ def install_runner(
     seed_role=True,
     fresh_role=False,
     role_status="success",
+    partial_receipt=False,
 ):
     _execution, project, _, factory = managed
     definition = service._definition_by_key(
@@ -262,6 +263,18 @@ def install_runner(
                 assert context["adoption_readback"] == actual
                 extra["verification_status"] = verification
                 if fresh_role:
+                    if partial_receipt:
+                        partial = verified_result(repo, project)
+                        partial.attempt_ref = context["attempt_ref"]
+                        partial.status = "unfinished"
+                        partial.verification = None
+                        report["workflow_results"] = [
+                            dict(
+                                workflow_key=KEY,
+                                expected_revision=context["observed_receipt_revisions"][KEY],
+                                result=partial.model_dump(mode="json"),
+                            )
+                        ]
                     report["role_verification_request"] = dict(
                         role="review_agent",
                         claims=["reviewer_verification"],
@@ -403,13 +416,21 @@ def test_managed_incompatible_reviewer_requirement_rolls_back_adoption(
 
 
 @pytest.mark.parametrize("host", ["codex", "claude-code"])
+@pytest.mark.parametrize("partial_receipt", [False, True])
 def test_managed_fresh_reviewer_native_proof_needs_no_preseeded_task(
-    managed, session, monkeypatch, host
+    managed, session, monkeypatch, host, partial_receipt
 ):
     _, project, scheduler, _ = managed
     proposal = proposal_for(managed, session, host=host)
     proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
-    calls = install_runner(managed, monkeypatch, proposal, seed_role=False, fresh_role=True)
+    calls = install_runner(
+        managed,
+        monkeypatch,
+        proposal,
+        seed_role=False,
+        fresh_role=True,
+        partial_receipt=partial_receipt,
+    )
     native_calls = []
     run_agent = service.run_agent
 
@@ -420,8 +441,29 @@ def test_managed_fresh_reviewer_native_proof_needs_no_preseeded_task(
 
     monkeypatch.setattr(service, "run_agent", capture)
     launch(managed, host_key="codex")
-    for _ in range(4):
+    for _ in range(2):
         scheduler.run()
+    if partial_receipt:
+        session.expire_all()
+        receipt = ProjectSetupRepository(session)._row(project, KEY)
+        assert receipt.latest_result_json["status"] == "unfinished"
+        assert receipt.latest_result_json["verification"] is None
+        assert ProjectSetupRepository(session).get(project).current_attempt.status != "success"
+    role_callback, role_options = scheduler.jobs[0]
+    scheduler.run()
+    session.expire_all()
+    completing = ProjectSetupRepository(session).get(project).current_attempt
+    assert completing.status == "queued", completing.managed.diagnostic
+    assert completing.managed.phase == "completion", completing.managed.diagnostic
+    role_request_id = calls[-1]["request_id"]
+    assert completing.managed.role_verification_request_ids == [role_request_id]
+    assert len(scheduler.jobs) == 1
+    retired_before_replay = deepcopy(session.get(AgentRequest, role_request_id).metadata_json)
+    role_callback(**role_options["kwargs"])
+    session.expire_all()
+    assert session.get(AgentRequest, role_request_id).metadata_json == retired_before_replay
+    assert len(scheduler.jobs) == 1
+    scheduler.run()
     session.expire_all()
     state = ProjectSetupRepository(session).get(project)
     assert state.current_attempt.status == "success", state.current_attempt.managed.diagnostic
@@ -528,15 +570,23 @@ def test_failed_native_role_check_explicitly_resumes_same_reviewer_and_coordinat
 @pytest.mark.parametrize(
     "rejection", ["missing-observation", "wrong-environment", "wrong-settings"]
 )
+@pytest.mark.parametrize("partial_receipt", [False, True])
 def test_rejected_native_evidence_recovers_before_completion_promotion(
-    managed, session, monkeypatch, rejection
+    managed, session, monkeypatch, rejection, partial_receipt
 ):
     from stackos.project_setup_execution import continue_managed
 
     _, project, scheduler, factory = managed
     proposal = proposal_for(managed, session)
     proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
-    calls = install_runner(managed, monkeypatch, proposal, seed_role=False, fresh_role=True)
+    calls = install_runner(
+        managed,
+        monkeypatch,
+        proposal,
+        seed_role=False,
+        fresh_role=True,
+        partial_receipt=partial_receipt,
+    )
     definition = service._definition_by_key("codex")
     reject = {"value": True}
 
@@ -613,6 +663,55 @@ def test_rejected_native_evidence_recovers_before_completion_promotion(
         == {key: value for key, value in frozen.items() if key != "agent_snapshot"}
     )
     assert not session.exec(select(TrackerTask)).all()
+
+
+@pytest.mark.parametrize("completion_status", ["partial", "success"])
+def test_partial_receipt_role_success_still_needs_complete_aggregate_proof(
+    managed, session, monkeypatch, completion_status
+):
+    _, project, scheduler, _ = managed
+    proposal = proposal_for(managed, session)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+    calls = install_runner(
+        managed,
+        monkeypatch,
+        proposal,
+        seed_role=False,
+        fresh_role=True,
+        partial_receipt=True,
+    )
+    definition = service._definition_by_key("codex")
+
+    def runner(*args, **kwargs):
+        result = definition.run_agent(*args, **kwargs)
+        if json.loads(args[2])["phase"] == "completion":
+            report = json.loads(result.result["report_json"])
+            report["status"] = completion_status
+            report["workflow_results"] = []
+            result.result["report_json"] = json.dumps(report)
+        return result
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, run_agent=runner)
+    )
+    launch(managed, host_key="codex")
+    for _ in range(4):
+        scheduler.run()
+    session.expire_all()
+    repo = ProjectSetupRepository(session)
+    state = repo.get(project)
+    current = state.current_attempt
+    assert current.status == ("partial" if completion_status == "partial" else "failed")
+    assert current.managed.role_verification_request_ids == [calls[2]["request_id"]]
+    assert state.workflows[0].activation_status != "verified"
+    assert repo._row(project, KEY).latest_result_json["verification"] is None
+    assert [call["phase"] for call in calls] == [
+        "preparation",
+        "verification",
+        "role_verification",
+        "completion",
+    ]
+    assert not scheduler.jobs
 
 
 def test_cancelled_never_started_role_check_recovers_only_its_first_admission(
@@ -1269,19 +1368,31 @@ def test_proposal_report_does_not_grant_adoption_authority(managed, session):
     )
 
 
+@pytest.mark.parametrize("fresh_role", [False, True])
 def test_interrupted_completion_resumes_without_repeating_native_check(
-    managed, session, monkeypatch
+    managed, session, monkeypatch, fresh_role
 ):
     execution, project, scheduler, factory = managed
     proposal = proposal_for(managed, session)
-    calls = install_runner(managed, monkeypatch, proposal)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+    calls = install_runner(
+        managed,
+        monkeypatch,
+        proposal,
+        seed_role=not fresh_role,
+        fresh_role=fresh_role,
+        partial_receipt=fresh_role,
+    )
     launch(managed, host_key="codex")
     scheduler.run()
     scheduler.run()
+    if fresh_role:
+        scheduler.run()
     session.expire_all()
     completing = ProjectSetupRepository(session).get(project).current_attempt
     assert completing.managed.phase == "completion"
     verification_request = completing.managed.verification_request_id
+    role_requests = completing.managed.role_verification_request_ids[:]
     saved = TrackerRepository(session).delivery_defaults(project_id=project)
     execution.cancel_managed(
         project_id=project,
@@ -1299,11 +1410,19 @@ def test_interrupted_completion_resumes_without_repeating_native_check(
         scheduler=scheduler,
     )
     assert continued.attempt.managed.verification_request_id == verification_request
+    assert continued.attempt.managed.role_verification_request_ids == role_requests
+    assert continued.attempt.managed.resume_thread_id == "bounded-setup-native"
     scheduler.run()
     session.expire_all()
     current = ProjectSetupRepository(session).get(project).current_attempt
     assert current.status == "success", current.managed.diagnostic
-    assert [call["phase"] for call in calls] == ["preparation", "verification", "completion"]
+    assert [call["phase"] for call in calls] == [
+        "preparation",
+        "verification",
+        *(["role_verification"] if fresh_role else []),
+        "completion",
+    ]
+    assert current.managed.role_verification_request_ids == role_requests
     assert TrackerRepository(session).delivery_defaults(project_id=project) == saved
     assert (
         session.get(AgentRequest, verification_request).metadata_json["project_setup"]["managed"][
@@ -1311,6 +1430,63 @@ def test_interrupted_completion_resumes_without_repeating_native_check(
         ]
         is False
     )
+
+
+@pytest.mark.parametrize("failure", ["role-live", "role-cancelled", "coordinator-missing"])
+def test_completion_recovery_requires_retired_role_and_exact_coordinator(
+    managed, session, monkeypatch, failure
+):
+    execution, project, scheduler, factory = managed
+    proposal = proposal_for(managed, session)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+    calls = install_runner(
+        managed,
+        monkeypatch,
+        proposal,
+        seed_role=False,
+        fresh_role=True,
+        partial_receipt=True,
+    )
+    launch(managed, host_key="codex")
+    for _ in range(3):
+        scheduler.run()
+    session.expire_all()
+    completing = ProjectSetupRepository(session).get(project).current_attempt
+    execution.cancel_managed(
+        project, completing.request_id, session_factory=factory, scheduler=scheduler
+    )
+    session.expire_all()
+    stopped = ProjectSetupRepository(session).get(project).current_attempt
+    target = (
+        stopped.managed.verification_request_id
+        if failure == "coordinator-missing"
+        else stopped.managed.role_verification_request_ids[0]
+    )
+    row = session.get(AgentRequest, target)
+    metadata = deepcopy(row.metadata_json)
+    native = metadata["native_execution"]
+    if failure == "role-live":
+        native["finished_at"] = None
+    elif failure == "role-cancelled":
+        native["cancelled"] = True
+    else:
+        native["execution"]["thread_id"] = None
+    row.metadata_json = metadata
+    session.add(row)
+    session.commit()
+    before = len(session.exec(select(AgentRequest)).all())
+    with pytest.raises(ConflictError, match=r"role verification|session identity"):
+        execution.continue_managed(
+            project,
+            stopped.request_id,
+            expected_revision=stopped.revision,
+            session_factory=factory,
+            scheduler=scheduler,
+        )
+    session.expire_all()
+    assert len(session.exec(select(AgentRequest)).all()) == before
+    assert ProjectSetupRepository(session).get(project).current_attempt.successor_request_id is None
+    assert len(calls) == 3 and not scheduler.jobs
 
 
 @pytest.mark.parametrize("verification_status", [None, "failed", "blocked"])
