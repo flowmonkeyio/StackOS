@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import sqlite3
@@ -16,6 +17,41 @@ from uuid import UUID
 
 from stackos.host_mcp.agent_execution import ManagedProcessControl
 from stackos.host_mcp.result import ModelObservation, normalize_model_observation, usage_snapshot
+
+
+def _non_context_record(prefix: bytes) -> bool:
+    """Recognize only the native envelope header, never types inside its payload."""
+    try:
+        # The bounded read can end inside a UTF-8 character in a large payload.
+        text = codecs.utf_8_decode(prefix, "strict", False)[0].lstrip()
+        if not text.startswith("{"):
+            return False
+        text = text[1:].lstrip()
+        decoder = json.JSONDecoder()
+        # Native records put type after optional timestamp/ordinal fields. An unknown
+        # layout stays uncertain rather than searching arbitrary transcript data.
+        for _ in range(3):
+            key, end = decoder.raw_decode(text)
+            text = text[end:].lstrip()
+            if not text.startswith(":"):
+                return False
+            text = text[1:].lstrip()
+            if key not in ("timestamp", "ordinal", "type"):
+                return False
+            value, end = decoder.raw_decode(text)
+            text = text[end:].lstrip()
+            if not text.startswith(","):
+                return False
+            if key == "type":
+                return value in ("event_msg", "response_item")
+            if (key == "timestamp" and not isinstance(value, str)) or (
+                key == "ordinal" and type(value) is not int
+            ):
+                return False
+            text = text[1:].lstrip()
+    except (ValueError, RecursionError):
+        pass
+    return False
 
 
 class CodexCounterReader:
@@ -112,14 +148,17 @@ class CodexCounterReader:
                 continue
             line = self.pending + chunk
             self.pending = b""
-            if not chunk.endswith(b"\n"):
-                if len(line) < 64 * 1024:
-                    self.pending = line
-                else:
-                    # A skipped record could hide a context change. Its prose
-                    # supplies no identity; whole-invocation attribution is unknown.
+            if len(line) > 64 * 1024 or (len(line) == 64 * 1024 and not chunk.endswith(b"\n")):
+                # Large tool output is unrelated to model context. Unreadable
+                # context or an unrecognized envelope still leaves a real gap.
+                if self.model_observation is None or not _non_context_record(line):
+                    # Before the first context even an ordinary event could
+                    # hide earlier usage; preserve that attribution gap.
                     self._observe_model({})
-                    self.discard_line = True
+                self.discard_line = not chunk.endswith(b"\n")
+                continue
+            if not chunk.endswith(b"\n"):
+                self.pending = line
                 break
             if b'"token_count"' not in line and b'"turn_context"' not in line:
                 continue

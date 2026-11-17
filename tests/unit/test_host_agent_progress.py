@@ -685,7 +685,10 @@ def test_invalid_later_context_cannot_keep_an_earlier_observed_model(
         reader.close()
 
 
-def test_unreadable_bounded_context_prevents_whole_invocation_attribution(tmp_path, model_rollout):
+@pytest.mark.parametrize("late_type", [False, True])
+def test_unreadable_bounded_context_prevents_whole_invocation_attribution(
+    tmp_path, model_rollout, late_type
+):
     sid, path, append = model_rollout
     reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
     try:
@@ -695,20 +698,86 @@ def test_unreadable_bounded_context_prevents_whole_invocation_attribution(tmp_pa
         with path.open("a") as out:
             out.write(
                 json.dumps(
-                    {
-                        "type": "turn_context",
-                        "payload": {
-                            "padding": "x" * (64 * 1024),
-                            "model": "different",
-                            "cwd": str(tmp_path),
-                        },
-                    }
+                    dict(
+                        ([("type", "turn_context")] if not late_type else [])
+                        + [
+                            (
+                                "payload",
+                                {
+                                    "type": "event_msg",
+                                    "padding": "x" * (64 * 1024),
+                                    "model": "different",
+                                    "cwd": str(tmp_path),
+                                },
+                            )
+                        ]
+                        + ([("type", "turn_context")] if late_type else [])
+                    )
                 )
                 + "\n"
             )
         reader.read()
         reader.read()
         assert reader.model_observation["status"] == "ambiguous"
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize("event_type", ["response_item", "event_msg"])
+@pytest.mark.parametrize("context_first", [True, False])
+def test_large_output_preserves_model_and_following_counters(
+    tmp_path, model_rollout, event_type, context_first
+):
+    sid, path, append = model_rollout
+    reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
+    try:
+        if context_first:
+            append()
+            reader.read()
+        record = json.dumps(
+            {
+                "timestamp": "2026-11-08T01:00:10Z",
+                "ordinal": 42,
+                "type": event_type,
+                "payload": {"type": "item_completed", "output": '"turn_context" ' + "€" * 50000},
+            },
+            ensure_ascii=False,
+        ).encode()
+        # A poll may end within a large UTF-8 payload, then continue next time.
+        with path.open("ab") as out:
+            out.write(record[:70000])
+        reader.read()
+        assert len(reader.pending) < 64 * 1024
+        assert reader.model_observation["status"] == ("observed" if context_first else "ambiguous")
+        with path.open("ab") as out:
+            out.write(record[70000:] + b"\n")
+        append()
+        with path.open("ab") as out:
+            out.write(
+                json.dumps(
+                    {
+                        "type": "event_msg",
+                        "timestamp": "2026-11-08T01:00:11Z",
+                        "payload": {
+                            "type": "token_count",
+                            "info": {"total_token_usage": {"input_tokens": 10, "output_tokens": 2}},
+                        },
+                    }
+                ).encode()
+                + b"\n"
+            )
+        samples = reader.read()
+        assert len(samples) == 1 and samples[0][1]["snapshot"]["total"] == 12
+        assert _model_identity(
+            receipt_input(
+                {
+                    "launch": {"host_key": "codex", "model": "requested"},
+                    "thread_id": sid,
+                    "model_observation": reader.model_observation,
+                }
+            )
+        ) == (("observed-native", "observed") if context_first else (None, None))
+        assert reader.cursor == path.stat().st_size and not reader.pending
     finally:
         reader.close()
 
@@ -752,7 +821,9 @@ def test_final_read_retains_observation_without_a_live_counter_poll(
     assert not service._active_invocations
 
 
-@pytest.mark.parametrize("loss", ["none", "malformed-context", "reader-error", "truncated-context"])
+@pytest.mark.parametrize(
+    "loss", ["none", "large-output", "malformed-context", "reader-error", "truncated-context"]
+)
 def test_context_loss_stays_ambiguous_through_live_final_and_retained_attribution(
     tmp_path, model_rollout, monkeypatch, loss
 ):
@@ -790,6 +861,17 @@ def test_context_loss_stays_ambiguous_through_live_final_and_retained_attributio
                 raise OSError("fixture reader became unavailable")
 
             monkeypatch.setattr(CodexCounterReader, "read", unreadable)
+        elif loss == "large-output":
+            with path.open("a") as out:
+                out.write(
+                    json.dumps(
+                        {
+                            "type": "event_msg",
+                            "payload": {"type": "item_completed", "output": "x" * 70000},
+                        }
+                    )
+                    + "\n"
+                )
         service._sample_invocations()
         live.append(deepcopy(service.usage_executions(1)[0]))
         # A later valid context must not erase the gap.
@@ -819,7 +901,7 @@ def test_context_loss_stays_ambiguous_through_live_final_and_retained_attributio
     assert result.ok and result.usage["snapshot"]["total"] == 30
     assert live[0]["model_observation"]["model"] == "model-a"
     assert live[1]["live_usage"]["usage"]["measured"]["total"] == 10
-    expected_status = "observed" if loss == "none" else "ambiguous"
+    expected_status = "observed" if loss in {"none", "large-output"} else "ambiguous"
     assert live[1]["model_observation"]["status"] == (
         "observed" if loss == "truncated-context" else expected_status
     )  # An incomplete live line can still complete before native exit.
@@ -827,7 +909,7 @@ def test_context_loss_stays_ambiguous_through_live_final_and_retained_attributio
     assert handoffs[0]["model_observation"] == result.model_observation
     assert handoffs[0]["live_usage"]["usage"]["measured"]["total"] == 30
     launch = {"host_key": "codex", "model": "requested"}
-    expected = ("model-a", "observed") if loss == "none" else (None, None)
+    expected = ("model-a", "observed") if expected_status == "observed" else (None, None)
     assert _model_identity(receipt_input({"launch": launch, "execution": live[1]})) == (
         ("model-a", "observed") if loss == "truncated-context" else expected
     )
