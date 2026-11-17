@@ -1,14 +1,14 @@
-"""Exact source-only updates awaiting the operator's project adaptation."""
+"""Exact source deltas beyond each recorded base adaptation, including scoped amendments."""
 
 PENDING_PRESET_ADOPTIONS = {
     "stackos.sdlc.requirements-flow-definer": ("0.6.7", "0.6.8"),
     "stackos.sdlc.codebase-explorer": ("0.6.7", "0.6.8"),
-    "stackos.sdlc.planning": ("0.7.23", "0.7.29"),
+    "stackos.sdlc.planning": ("0.7.23", "0.7.30"),
     "stackos.sdlc.architecture": ("0.6.8", "0.6.9"),
-    "stackos.sdlc.test-designer": ("0.6.12", "0.6.13"),
-    "stackos.sdlc.delivery": ("0.7.22", "0.7.25"),
-    "stackos.sdlc.delivery-reviewer": ("0.6.21", "0.6.26"),
-    "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.31"),
+    "stackos.sdlc.test-designer": ("0.6.12", "0.6.14"),
+    "stackos.sdlc.delivery": ("0.7.26", "0.7.27"),
+    "stackos.sdlc.delivery-reviewer": ("0.6.27", "0.6.28"),
+    "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.32"),
     "branding.evidence-curator": ("0.2.2", "0.2.3"),
     "branding.narrative-writer": ("0.1.6", "0.1.7"),
     "branding.channel-strategist": ("0.1.6", "0.1.7"),

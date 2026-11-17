@@ -423,6 +423,10 @@ for stale or unavailable evidence. Repair/resume carries current feedback,
 unresolved obligations and remaining repair allowance, preserving native history.
 Shipped source versions describe future adaptation inputs; local files, saved
 defaults and frozen sessions require their own explicit adoption and evidence.
+The proof-continuity revision is a scoped source amendment in the StackOS local
+planning, test-design, delivery, review and orchestrator files. Their recorded
+base adaptations and unrelated pending deltas remain; this claims source readiness,
+not saved-default adoption, installed activation or fresh native consumption.
 
 For a required cross-task input, planning names the producer task/ticket,
 independent acceptance evidence (or pending producer work), applicability, target
@@ -453,14 +457,21 @@ work for reconciliation; continue unaffected work. Unrelated naming/style/debt
 stays in nonblocking followups; reject drift, unnecessary abstractions and
 duplicate ownership, not justified unlisted changes.
 
-Ticket-local acceptance must be distinct from integration-only obligations.
-Choose the smallest convincing checks for the requested end-to-end flow, directly
-affected existing consumers and relevant failure/recovery transitions. Repair a
-demonstrated shared cause and implicated adjacent consumers within the outcome;
-stop expanding when assigned obligations are answered unless new evidence, a
-material change or a mandatory gate warrants more. Broad suites on every child,
-exhaustive matrices and unrelated audits are not defaults. Required integration
-and final signoff retain their existing owners.
+Carry one bounded proof selection through existing plans, ticket briefs and
+receipts: outcome/criterion -> actual owner and affected consumers -> decisive
+scenario and maintained check -> candidate and evidence or gap. Test design
+refines discovery; planning packages it; delivery reconciles it with actual
+changes; review independently challenges it; repair retains the failed invariant
+and unresolved original obligations. Reuse current linked discovery rather than
+repeating it at each handoff. Project guidance owns concrete selectors and routes.
+This adds no report, schema or stage and does not make prior claims acceptance.
+
+Ticket-local acceptance remains distinct from integration-only obligations. Choose
+the smallest convincing proof for the requested flow and directly affected
+consumers, following a demonstrated shared cause through implicated transitions.
+Stop when assigned obligations are answered unless new evidence, material changes
+or a mandatory gate warrants more. Broad suites on every child and exhaustive
+matrices are not defaults; integration and final signoff keep their owners.
 
 Pass claims require actual command exit status, completion and unhandled errors,
 tested candidate and covered scope. Green assertions cannot conceal a failed
@@ -504,25 +515,26 @@ checks coverage against authoritative operator input as well as derived
 criteria, and rejects dependencies that make a ticket's required proof depend
 on its own blocked consumers.
 
-After final edits, delivery executes relevant tests, lint and area checks derived
-from current requirements/amendments, the whole diff, actual consumers and project
-rules, including necessary omitted checks. It reviews the final diff and artifact
-hygiene, keeps scratch logs/captures/one-off QA scripts outside Git, and records
-commands/results, candidate, prerequisites, environment and proof gaps in the
-existing receipt. Intentional maintained assets and regressions receive their
-applicable checks. Failed or unavailable required proof prevents candidate-ready;
-self-signoff does not replace independent acceptance.
+After final edits, delivery reconciles the whole diff and actual consumers with
+the carried proof selection and executes applicable tests, lint and area checks,
+including changed tests, helpers and maintained scripts. New/moved tests must be
+collected and executed through ordinary project configuration; custom-root proof
+alone does not establish maintained coverage. A temporary probe exposing a
+durable in-scope defect prompts an equivalence check against maintained coverage;
+retain only the smallest missing regression with safe fixtures. Keep private
+captures and scratch logs/scripts outside Git. Bind commands/results and gaps to
+the actual candidate, prerequisites and environment in the existing receipt.
+Failed or unavailable required proof prevents candidate-ready; self-signoff does
+not replace independent acceptance.
 
-Test design traces the real caller through the owning producer, affected consumer
-and actual authorization boundary, with expected results independent of the
-implementation. Delivery declares mocks/substitutions and their limits; review
-challenges any missing real wiring. Asynchronous changes select relevant lifetime
-risks, including late outcomes after cancellation where applicable, rather than
-requiring a fixed state matrix for every change. Planning assigns delivery,
-review, integration and release checks to their existing owners. Keep dependency
-mutation exclusive against checks consuming that environment, and check readiness
-after the relevant transition. Retrieve bounded current source sections once and
-expand for missing contracts or contradictions without skipping required guidance.
+Test design derives independent expectations at the real caller/producer/consumer
+and authorization boundary. Stateful proof names starting state, tested action
+and distinguishing observation so prior effects, other actors or permissive
+fixtures cannot satisfy it accidentally. Delivery verifies those preconditions
+and attribution; review challenges them and declared mocks/substitutions. Select
+relevant asynchronous lifetime risks rather than a fixed state matrix. Keep
+dependency mutation exclusive against consuming checks and readiness after the
+relevant transition; retrieve bounded current sources and expand for gaps.
 
 Source implementation and repairs produce separate scoped commits after self-checks.
 A separate reviewer checks that exact commit against the assigned
@@ -637,7 +649,11 @@ or running snapshots; adoption and installed proof remain separately owned.
 Final verification/review covers assembled behavior and remaining obligations,
 reusing valid ticket receipts instead of automatically repeating them.
 
-Repair review reassesses original coverage as well as the fix. In the existing
+Attribute introduced defects against the admitted ticket/task baseline and use
+the rejected candidate separately for the repair delta. An immediate-parent diff
+or accepted intermediate child cannot relabel a task-introduced defect as unrelated
+baseline. Repair includes applicable checks on changed implementation, tests and
+helpers, then review reassesses original coverage as well as the fix. In the existing
 receipt, distinguish checks executed on the current candidate, valid unchanged
 evidence with scope/prerequisite/environment justification, invalidated evidence
 requiring rerun, and never-executed required checks. A repair-only slice cannot

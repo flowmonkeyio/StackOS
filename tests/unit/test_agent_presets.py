@@ -876,7 +876,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     assert "active consumers" in explorer_text
     assert "producer or writer" in delivery_text
     assert "do not copy logic" in delivery_text
-    assert "actual imports, call paths, writers, readers, and consumers" in reviewer_text
+    assert "actual imports, call paths, writers, readers and consumers" in reviewer_text
     assert "bound breadth by concrete evidence" in reviewer_text
 
     test_designer = AgentPresetLoader().describe_preset(key="stackos.sdlc.test-designer")
@@ -919,11 +919,11 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.8",
         "codebase-explorer": "0.6.8",
-        "planning": "0.7.29",
+        "planning": "0.7.30",
         "architecture": "0.6.9",
-        "test-designer": "0.6.13",
-        "delivery": "0.7.26",
-        "delivery-reviewer": "0.6.27",
+        "test-designer": "0.6.14",
+        "delivery": "0.7.27",
+        "delivery-reviewer": "0.6.28",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1060,10 +1060,10 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         )
     assert "discovery anchors from explicit exclusions" in planning
     for requirement in (
-        "discovered gap",
+        "recording the gap",
         "necessary and proportionate",
         "affected consumers",
-        "missed caller",
+        "necessary omitted consumers",
         "nonblocking followup",
     ):
         assert requirement in delivery
@@ -1215,7 +1215,7 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
 
 
 def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
-    # Availability/assembly only; the assigned bounded use exercise owns behavior proof.
+    # Availability/assembly only; this does not measure agent effectiveness.
     loader = AgentPresetLoader()
     prefixes = {
         "planning": ("For each required cross-task input,",),
@@ -1225,7 +1225,7 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "Before handoff,",
             "For visual changes,",
             "Explicitly assigned proof may authorize",
-            "Prove the changed boundary through the real caller,",
+            "Execute the selected real caller/producer/consumer proof",
             "Complete necessary omitted",
             "For browser work,",
             "Classify the cause before returning blocked.",
@@ -1237,13 +1237,13 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "Explicitly assigned proof may authorize",
             "Keep dependency-mutating setup exclusive",
             "Verify project alignment",
-            "Use a concise rule-by-rule",
+            "Use the existing review receipt to give an independent disposition",
             "Order findings by severity",
             "For browser work,",
             "Classify the cause before returning blocked.",
         ),
         "test-designer": (
-            "Trace each material claim",
+            "Refine the existing requirements/design",
             "For asynchronous changes",
             "For browser work,",
         ),
@@ -1278,13 +1278,6 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             assert "Ruff" in local["developer_instructions"]
         for text in (texts[role], local["developer_instructions"]):
             for obligation in (
-                "distinct applicable obligation",
-                "affected retained consumer",
-                "matching",
-                "mocked array",
-                "real API envelope",
-                "neighboring transitions",
-                "fixed edit count",
                 "browser.session.list",
                 "browser.session.start",
                 "stackos.browser --session <full-ref>",
@@ -1303,8 +1296,13 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
         "EXECUTE relevant tests, lint and area checks",
         "current requirements/amendments, the whole diff",
         "actual affected consumers and project rules",
-        "Failed or unavailable proof required by the assigned gate prevents candidate-ready",
-        "artifact hygiene",
+        "Failed or unavailable required proof prevents candidate-ready",
+        "scratch logs, captures and one-off QA scripts outside Git",
+        "ordinary project configuration discovers and executes the exact spec",
+        "inspect equivalent maintained coverage",
+        "changed tests/helpers",
+        "admitted ticket/task baseline",
+        "rejected candidate for the repair delta",
         "original omissions from later amendments",
     ):
         assert obligation in texts["delivery"]
@@ -1334,11 +1332,38 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             assert "relevant transition" in text
         if role in {"test-designer", "delivery", "delivery-reviewer"}:
             for text in (" ".join(preset.prompt_contract.must_do), local["developer_instructions"]):
-                assert "real caller" in text
-                assert "mocks/substitutions" in text
-                assert (
-                    "late outcomes after cancellation" in text or "late completion/callback" in text
-                )
+                role_obligations = {
+                    "test-designer": (
+                        "real caller",
+                        "distinct obligation",
+                        "affected retained consumer",
+                        "mocks/substitutions",
+                        "tested action and distinguishing observation",
+                        "neighboring transitions",
+                        "fixed edit count",
+                        "late completion/callback",
+                    ),
+                    "delivery": (
+                        "real caller/producer/consumer",
+                        "distinct obligations",
+                        "declare substitutions and limits",
+                        "causal preconditions",
+                        "another process",
+                        "relevant asynchronous lifetime risks",
+                        "implicated retained consumers and transitions",
+                    ),
+                    "delivery-reviewer": (
+                        "distinct required obligation",
+                        "declared substitutions",
+                        "mocked array",
+                        "real API envelope",
+                        "causal starting state/action/observation",
+                        "asynchronous lifetime gaps",
+                        "neighboring transitions",
+                    ),
+                }
+                for obligation in role_obligations[role]:
+                    assert obligation in text, (role, obligation)
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

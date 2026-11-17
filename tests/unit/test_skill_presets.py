@@ -74,7 +74,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.31"
+    assert loaded.preset.version == "0.8.32"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -144,8 +144,8 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     assert "response_mode=raw" in required
 
     # Per-ticket proof cannot require its blocked consumer, nor claim final proof.
-    assert "ticket-local acceptance or integration proof" in required
-    assert "reject proof/dependency cycles" in required
+    assert "ticket-local or integration owner" in required
+    assert "resolve gaps and proof/dependency cycles" in required.lower()
     assert "authoritative operator-request and amendment refs" in required
     assert "unaccepted sibling work" in required
     assert "explicit coverage of every final review obligation" in required

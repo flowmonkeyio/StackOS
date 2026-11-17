@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import re
+import shutil
 import tomllib
 from pathlib import Path
 
 import pytest
 import yaml
 
+import stackos.agents.loader as agent_loader_module
+import stackos.skill_presets.loader as skill_loader_module
 from stackos.agents import AgentPresetLoader
 from stackos.skill_presets import SkillPresetLoader
 from tests.helpers.preset_adoption import assert_preset_adoption
@@ -101,9 +104,17 @@ def test_family_aliases_keep_one_shared_adaptation() -> None:
         assert len({id(role["project_adaptation"]) for role in roles}) == 1
 
 
-def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() -> None:
-    # Availability/parity only. The scenario fixture requires observed actions and
-    # an independent qualitative assessment, not a phrase-based behavior verdict.
+@pytest.mark.parametrize("packaged", [False, True])
+def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer(
+    packaged: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Availability/parity through real source and package loaders, not effectiveness.
+    if packaged:
+        bundle = tmp_path / "plugins"
+        shutil.copytree(ROOT / "plugins/engineering", bundle / "engineering")
+        for module in (agent_loader_module, skill_loader_module):
+            monkeypatch.setattr(module, "_clone_plugins_root", lambda: None)
+            monkeypatch.setattr(module, "_bundled_plugins_root", lambda: bundle)
     agents = AgentPresetLoader()
     planning = agents.describe_preset(key="stackos.sdlc.planning").preset
     rules = [
@@ -112,6 +123,9 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() 
         if rule.startswith(("Prove the requested end-to-end flow", "Base each pass claim"))
     ]
     assert len(rules) == 2
+    assert "Would this check still pass with the defect present?" in rules[0]
+    assert "update only changed facts, evidence or gaps" in rules[0]
+    assert "preserving independent review and required final signoff" in rules[0]
     skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
     main_rules = skill.operating_contract.responsibilities + skill.operating_contract.must_do
     orchestrator = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
@@ -123,6 +137,20 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() 
             local = tomllib.loads((ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
             assert rule in source.prompt_contract.must_do, role
             assert rule in local["developer_instructions"], role
+
+    # Scoped amendments retain the older full-adaptation provenance.
+    for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
+        source = agents.describe_preset(key=f"stackos.sdlc.{role}").preset
+        local_text = (ROOT / f".codex/agents/sdlc-{role}.toml").read_text()
+        assert (
+            "Scoped amendment: Proof continuity and role-specific duties from "
+            f"{source.key} v{source.version}"
+        ) in local_text
+        assert "base adaptation and other pending deltas remain unchanged" in local_text
+    assert (
+        f"Scoped amendment: Proof continuity and role-specific duties from v{skill.version}."
+        in orchestrator
+    )
 
     main_capability = next(rule for rule in main_rules if rule.startswith("Establish uncertain"))
     specialist_capability = next(

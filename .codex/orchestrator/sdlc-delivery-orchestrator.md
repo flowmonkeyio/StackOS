@@ -4,7 +4,8 @@ Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.25
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Scoped amendment: Candidate admission and bounded reporting-only continuation from v0.8.30.
 Scoped amendment: Simple, complete delivery first and project planning guidance routing from v0.8.31.
-The v0.8.25 adaptation and prior compact amendment remain; other source deltas are not claimed.
+Scoped amendment: Proof continuity and role-specific duties from v0.8.32.
+The v0.8.25 adaptation and prior scoped amendments remain; other source deltas are not claimed.
 Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
@@ -204,14 +205,15 @@ For current plans, plan tickets after design and proof. Each bounded packet cont
 - objective, source requirement/AC refs, non-goals and current amendments;
 - relevant design decisions, interfaces, reference paths and project rules;
 - accepted prerequisites, dependency refs and acceptance basis;
-- known paths, actual write ownership, shared resources, dirty baseline and isolation needs;
-- required proof outcomes/scenarios, independently derived expectations,
-  environment, authority and proof owners; cite applicable project/area guidance;
-  suggested commands are starting points, not an exhaustive checklist. Delivery
-  and review independently select and execute tests, lint and area checks from
-  the actual changes, reporting commands/results at the current candidate;
-  separately name integration obligations and block unavailable required proof;
-- concise durable results and decisive evidence references; raw logs, captures
+- known paths, actual write ownership, shared resources, admitted ticket/task baseline,
+  dirty baseline and isolation needs; retain the rejected candidate for repair deltas;
+- the carried outcome/owner/consumer/proof selection from design and test design:
+  decisive scenarios, independent expectations, causal preconditions, maintained
+  selectors or gaps, authority, evidence destinations and ticket/integration owners.
+  Cite project/area guidance; suggested commands are starting points. Delivery
+  reconciles it against actual changes and results; review independently challenges
+  it and repair retains failed invariants and unresolved obligations. Required
+  final tests/lint/area checks remain explicit; unavailable required proof blocks;
   and one-off scripts stay outside source history unless intentionally maintained
   project assets with their applicable checks;
 - return format, candidate identity, stop/blocker conditions and repair route.
@@ -236,8 +238,9 @@ relevant operation when readiness is uncertain. Resolve contradictory
 authority and completion across assembled workflow, role, local, saved and launch
 instructions within your authority, or record the affected gap before declaring ready. Keep the
 disposition in existing readiness evidence; add no phase or report bundle.
-Apply final-diff review and execute relevant tests, lint and area checks after
-final edits to main-authored tooling/recovery patches too. Passing counts and
+Apply delivery's final-diff reconciliation, ordinary test discovery,
+regression-equivalence retention and applicable changed-file checks to
+main-authored tooling/recovery patches too. Passing counts and
 evidence hashes alone do not prove the outcome.
 
 When revising agent guidance, review current official recommendations for the
@@ -372,29 +375,35 @@ The following dispatch and acceptance steps apply to terminal-managed delivery:
    state, relevant dirty baseline/environment and capture time. Review actual
    work against source requirements and the packet, independently of worker
    claims. Freeze covered scope or isolate it during review.
-8. Proof must stand on an accepted base. If tests depend on unaccepted sibling
-   edits, isolate and rerun or add the real dependency and wait. The main agent
-   adjudicates findings, sends scoped repairs to the worker and requests focused
-   re-review. Reviewers do not edit implementation or acceptance tests.
+8. Proof must stand on an accepted base. Attribute defects against the admitted
+   ticket/task baseline; an immediate-parent diff or accepted intermediate child
+   cannot turn a task-introduced defect into unrelated baseline. Use the rejected
+   candidate for repair deltas. If tests depend on unaccepted sibling edits,
+   isolate and rerun or add the real dependency and wait. Main adjudicates
+   findings and requests scoped repair/re-review; reviewers do not edit
+   implementation or acceptance tests.
 9. Integrate the reviewed candidate, check freshness and rerun affected proof
    when integration changes covered state. Only the main agent accepts, marks
    the child complete and releases dependents. Candidate-ready is not done.
 
 ## Evidence And Feedback
 
-Prove the requested end-to-end flow, directly affected existing consumers and relevant failure/recovery transitions with the smallest convincing checks. Follow a demonstrated shared cause through implicated adjacent consumers within the assigned outcome, not a general audit. Stop expanding once assigned obligations are answered unless new evidence, a material change or a mandatory gate warrants more. Do not impose broad suites on every child or an exhaustive state matrix; retain required integration and final signoff.
+Prove the requested end-to-end flow at the affected consumer. Would this check still pass with the defect present? Select the observation that distinguishes the two outcomes, including relevant failure or recovery. Carry its current reference forward and update only changed facts, evidence or gaps. Follow a shared cause across affected consumers. Stop when the assigned outcome is covered, preserving independent review and required final signoff.
 
 Base each pass claim on actual command exit status, completion and unhandled errors as well as assertions, tested candidate and covered scope. Green assertions with a nonzero exit or unhandled error are failed proof. Diagnose and correct owned code, test or setup defects without suppressing errors or weakening guarantees. Preserve failed, blocked, skipped and not-applicable observations. Reuse complete current evidence with a scope, candidate, prerequisite and environment basis; rerun only invalidated or missing required proof. A later pass can supersede a failure for acceptance without erasing its history.
 
-Require a concise coverage table in the existing review receipt: rule/source,
-applicability, inspected work or executed check with evidence refs, and result
-(passed, failed, not reviewed or not applicable). Required gaps for the assigned
-gate block approval; integration-only proof retains its owner. Use this table
-instead of duplicate narrative, without another report or unrelated rule inventory.
+Require an independent disposition of the carried proof selection in the existing
+review receipt: rule/source, applicability, observed boundary, inspected work or
+executed check, evidence refs and result (passed, failed, not reviewed or not
+applicable). New gaps refine that selection; required gaps block approval at
+that gate and integration-only proof retains its owner. Use the concise table
+instead of duplicate narrative, not another report or unrelated rule inventory.
 
-Reviewers independently assess the intended outcome against requirements, actual
-changes, affected consumers and available proof. They choose proportionate
-checks, execute relevant planned specs and integration checks plus necessary omissions, and report
+Reviewers independently challenge the carried selection against requirements,
+actual changes, affected consumers and available proof. Reuse applicable current
+discovery refs and investigate missing, changed or contradicted coverage. Choose
+proportionate independent checks, including relevant planned specs, integration
+checks and necessary omissions; report
 commands/results/current SHA. Explain material gaps or why evidence is sufficient;
 do not impose a fixed sequence, finding quota or extra report. Failed required
 specs reject; genuinely unavailable required verification blocks. Keep checks

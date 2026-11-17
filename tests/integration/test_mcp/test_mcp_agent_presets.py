@@ -304,13 +304,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert (
         raw_recommended["stackos.sdlc.test-designer"]["preset"]["summary"]["version"]
         == compact_recommended["stackos.sdlc.test-designer"]["preset"]["version"]
-        == "0.6.13"
+        == "0.6.14"
     )
     expected_versions = {
         "stackos.sdlc.requirements-flow-definer": "0.6.8",
-        "stackos.sdlc.planning": "0.7.29",
-        "stackos.sdlc.delivery": "0.7.26",
-        "stackos.sdlc.delivery-reviewer": "0.6.27",
+        "stackos.sdlc.planning": "0.7.30",
+        "stackos.sdlc.delivery": "0.7.27",
+        "stackos.sdlc.delivery-reviewer": "0.6.28",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -410,7 +410,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     ):
         assert requirement in " ".join(full_reviewer["must_do"]), requirement
     full_delivery = expected["stackos.sdlc.delivery"]["preset"]["preset"]["prompt_contract"]
-    assert "discovered gap" in " ".join(full_delivery["must_do"])
+    assert "recording the gap" in " ".join(full_delivery["must_do"])
     assert "necessary and proportionate" in " ".join(full_delivery["must_do"])
     assert len(delivery["must_do"]) == min(25, len(full_delivery["must_do"]))
     for brief_rule, full_rule in zip(
@@ -421,7 +421,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.31"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.32"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
