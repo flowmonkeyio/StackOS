@@ -7378,10 +7378,187 @@ def test_explicit_evidence_only_recovery_retains_exact_candidate_and_history(
         if fault == "stale-approval":
             assert ticket.status == "in-progress"
             assert evidence["review"]["validated_outcome"] == "blocked"
+        elif fault == "wrong-base":
+            assert len(calls) == prior_calls
+            assert "delivery" not in evidence and "review" not in evidence
+            assert "prior candidate and base" in ticket.outcome
         else:
             receipt = evidence["review" if fault == "wrong-review" else "delivery"]
             assert receipt["validated_outcome"] is None
             assert receipt["validation_error"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-prior",
+        "wrong-intent",
+        "wrong-base",
+        "pending-repair",
+        "unapproved",
+        "stale-intent",
+        "dirty-required",
+    ],
+)
+def test_candidate_correction_admission_before_native_execution(
+    session, project_id, tmp_path, monkeypatch, case
+):
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Candidate admission")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    base = git(tmp_path, "rev-parse", "HEAD")
+    if case in {"missing-prior", "dirty-required"}:
+        (tmp_path / "baseline").write_text("unrelated staged edit")
+        git(tmp_path, "add", "baseline")
+        (tmp_path / "baseline").write_text("unrelated unstaged edit")
+        (tmp_path / "unrelated").write_text("preserve this file")
+    recovering = False
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        phase = packet["phase"]
+        calls.append(packet)
+        sha = git(tmp_path, "rev-parse", "HEAD")
+        if (
+            phase == "delivery"
+            and case not in {"missing-prior", "dirty-required"}
+            and (not recovering or case == "stale-intent")
+        ):
+            sha = commit(tmp_path, f"source-{len(calls)}")
+        return AgentRunResult(
+            0,
+            thread_id=f"first-{phase}",
+            result=generic_result(
+                "blocked" if phase == "review" and not recovering else "success",
+                {} if case == "missing-prior" else {"commit_sha": sha},
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    original = deepcopy(ticket.completion_evidence_json["automatic_delivery"])
+    sha = original["candidate"].get("commit_sha", base)
+    if case == "pending-repair":
+        # Seed a retired ordinary rejection to prove admission precedes charging
+        # its next repair. The candidate and native sessions came from the loop.
+        original["review"]["validated_outcome"] = "repair"
+        original["review"]["result"]["status"] = "repair"
+    correction = {
+        "work_intent": "source_repair" if case == "dirty-required" else "evidence_only",
+        "candidate_commit_sha": base if case in {"wrong-intent", "pending-repair"} else sha,
+        "target_attempt": original["attempt"] + (case != "stale-intent"),
+    }
+    if case == "wrong-base":
+        commit(tmp_path, "new-base")
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={
+            "status": "in-progress",
+            "context_json": {"correction": correction},
+            "completion_evidence_json": {"automatic_delivery": original},
+        },
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"status": "not-started", "blocker_reason": None},
+    )
+    before = task_delivery._worktree_snapshot(str(tmp_path))
+    prior_calls = len(calls)
+    recovering = True
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    assert evidence["repair_count"] == original["repair_count"]
+    assert evidence["sessions"] == original["sessions"]
+    assert evidence["attempts"][-1] == {
+        key: original[key]
+        for key in ("attempt", "candidate", "delivery", "review", "repair_count")
+        if key in original
+    }
+    if case in {"unapproved", "stale-intent"}:
+        assert ticket.status == "complete"
+        assert len(calls) == prior_calls + 2  # Current independent review is mandatory.
+        assert calls[-2]["occurrence"]["correction_intent"] == correction
+        assert evidence["review"]["validated_outcome"] == "success"
+        assert (evidence["candidate"]["commit_sha"] == sha) == (case == "unapproved")
+    else:
+        assert len(calls) == prior_calls
+        assert ticket.status == "failed"
+        assert "delivery" not in evidence and "review" not in evidence
+        assert (
+            "dirty" if case == "dirty-required" else "prior candidate and base"
+        ) in ticket.outcome
+        assert task_delivery._worktree_snapshot(str(tmp_path)) == before
+        assert (
+            repo.get(project_id=project_id, task_key="deliver")
+            .tasks[0]
+            .metadata_json["delivery"]["status"]
+            == "stopped"
+        )
+
+
+@pytest.mark.parametrize("dirty", [False, True])
+def test_fresh_evidence_only_correction_admission_preserves_files_and_accepted_receipts(
+    session, project_id, tmp_path, monkeypatch, dirty
+):
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Admission")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="deliver",
+        key="first",
+        title="First",
+        context_json={
+            "correction": {
+                "work_intent": "evidence_only",
+                "candidate_commit_sha": git(tmp_path, "rev-parse", "HEAD"),
+                "target_attempt": 1,
+            }
+        },
+    )
+    repo.create_task(project_id=project_id, key="held", title="Accepted work")
+    repo.create_ticket(project_id=project_id, task_key="held", key="accepted", title="Accepted")
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="accepted",
+        patch_json={"status": "complete", "completion_evidence_json": {"proof": "retained"}},
+    )
+    accepted = repo.brief(project_id=project_id, ticket_key="accepted").ticket
+    if dirty:
+        (tmp_path / "baseline").write_text("unrelated staged edit")
+        git(tmp_path, "add", "baseline")
+        (tmp_path / "unrelated").write_text("retain these bytes")
+    before = task_delivery._worktree_snapshot(str(tmp_path))
+    calls = []
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **kw: calls.append((a, kw)))
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    assert calls == []
+    assert ticket.status == "failed" and "prior candidate and base" in ticket.outcome
+    assert evidence["sessions"] == {} and evidence["repair_count"] == 0
+    assert "delivery" not in evidence and "review" not in evidence
+    assert task_delivery._worktree_snapshot(str(tmp_path)) == before
+    retained = repo.brief(project_id=project_id, ticket_key="accepted").ticket
+    assert retained.completion_evidence_json == accepted.completion_evidence_json
+    assert retained.status == accepted.status == "complete"
+    assert retained.updated_at == accepted.updated_at
 
 
 @pytest.mark.parametrize(

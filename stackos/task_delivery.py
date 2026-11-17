@@ -3551,33 +3551,6 @@ def run_delivery(
                     )
                     baseline_pending = False
                     evidence.setdefault("launch_baseline_clean", baseline_clean)
-                if (
-                    workflow_step is None
-                    and phase == "delivery"
-                    and not upgrade_phase
-                    and reporting_correction is None
-                    and evidence["attempts"]
-                    and evidence["attempts"][-1].get("review", {}).get("validated_outcome")
-                    == "repair"
-                ):
-                    if evidence["repair_count"] >= MAX_REPAIR_PASSES:
-                        raise ValidationError(
-                            f"Automatic repair limit reached ({MAX_REPAIR_PASSES} passes)"
-                        )
-                    # Persist with the launch below. Requeue of this delivery resumes the
-                    # same counted pass; a pending rejected review consumes the next pass.
-                    evidence["repair_count"] += 1
-                launch = {
-                    **identity,
-                    "sandbox": sandbox,
-                    "started_at": datetime.now(UTC).isoformat(),
-                    **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
-                }
-                evidence[phase] = {
-                    "agent": agent["name"],
-                    "selected_role": selected_role,
-                    "launch": launch,
-                }
                 with managed_launch_lock, session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
@@ -3599,6 +3572,56 @@ def run_delivery(
                         != reporting_correction["basis"]
                     ):
                         raise ValidationError("Reporting correction state changed before resume")
+                    brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(
+                        mode="json"
+                    )
+                    occurrence = _assignment_occurrence(
+                        brief,
+                        evidence,
+                        selected_agents[selected_role],
+                        agent,
+                        resume_thread_id,
+                    )
+                    if workflow_step is None:
+                        # Reject impossible corrections before recording a launch or
+                        # charging a repair. Final validation still checks returned work.
+                        _evidence_only_candidate(occurrence, evidence)
+                        if (
+                            phase == "delivery"
+                            and candidate_required
+                            and not baseline_clean
+                            and "owned_work" not in evidence
+                        ):
+                            _committed_head(state["project_dir"])
+                    if (
+                        workflow_step is None
+                        and phase == "delivery"
+                        and not upgrade_phase
+                        and reporting_correction is None
+                        and evidence["attempts"]
+                        and evidence["attempts"][-1].get("review", {}).get("validated_outcome")
+                        == "repair"
+                    ):
+                        if evidence["repair_count"] >= MAX_REPAIR_PASSES:
+                            raise ValidationError(
+                                f"Automatic repair limit reached ({MAX_REPAIR_PASSES} passes)"
+                            )
+                        # Requeue resumes the same counted pass; a pending rejected
+                        # review consumes the next pass only after candidate admission.
+                        evidence["repair_count"] += 1
+                        occurrence["repair_count"] = evidence["repair_count"]
+                    launch = {
+                        **identity,
+                        "sandbox": sandbox,
+                        "started_at": datetime.now(UTC).isoformat(),
+                        **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
+                    }
+                    evidence[phase] = {
+                        "agent": agent["name"],
+                        "selected_role": selected_role,
+                        "launch": launch,
+                        "occurrence": occurrence,
+                    }
                     if replacement:
                         evidence.pop("review_replacement_pending")
                         evidence["review_replacement_active"] = replacement
@@ -3615,15 +3638,6 @@ def run_delivery(
                     brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(
                         mode="json"
                     )
-                    occurrence = _assignment_occurrence(
-                        brief,
-                        evidence,
-                        selected_agents[selected_role],
-                        agent,
-                        resume_thread_id,
-                    )
-                    evidence[phase]["occurrence"] = occurrence
-                    _save_evidence(repo, project_id, ticket_key, evidence)
                     task_tickets = repo.get(
                         project_id=project_id, task_key=task_key, include_graph=False
                     ).tickets

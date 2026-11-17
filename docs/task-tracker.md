@@ -806,6 +806,14 @@ MCP, REST and CLI share that contract. This field adds no mutation authority.
 The intent is captured in each launch's `occurrence.correction_intent`. Only
 the matching attempt may use it, and the admitted SHA must match both its
 observed base and the immediately preceding delivered candidate. Evidence-only
+consistency is checked before native invocation, launched-phase persistence or
+charging the next ordinary repair pass. Missing prior delivered SHA or a
+current-target SHA/base mismatch stops admission without creating a native
+invocation or session; retained receipts and consumed repair allowance survive.
+The prior delivered candidate need not have been approved. Stale target intent
+does not authorize evidence-only reuse and retains the conservative descendant
+rules rather than adding an unconditional admission rejection. Final validation
+still rejects candidate or intent mutation after admission. Evidence-only
 delivery and independent review must return that same clean current HEAD.
 Changed source requires explicit source-repair admission and a descendant
 commit. A changed correction during proof invalidates the observation. Current
@@ -1525,6 +1533,12 @@ Git presence alone does not require a commit or clean worktree: noncoding work
 may execute in a dirty Git directory and return non-Git outputs. Baseline HEAD
 is an observation, not a source-candidate requirement. A valid repository with no
 initial commit supplies no baseline SHA; noncoding work needs no initial commit.
+When prior results explicitly require a source candidate, an unowned dirty
+delivery baseline rejects before native invocation. Exact validated owned-work
+resumes retain their existing exception below. First coding-tree preparation
+without an explicit candidate requirement remains engineering admission's
+responsibility; the runtime does not infer coding intent or impose a universal
+clean-tree gate.
 Other Git errors still stop execution. Invalid/mismatched supplied
 candidates, dirty source candidates and review of a different SHA stop the task.
 An ordinary ticket that supplied a candidate must retain that contract on repair
