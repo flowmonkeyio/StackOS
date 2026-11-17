@@ -94,6 +94,12 @@ refresh operation available to normal API callers. The shipped bundle contains
 portable engineering recommendations. A later package can insert trusted IDs
 and update entries whose exact normalized editable content still matches the
 last-applied shipped hash.
+The bundled `self-improving-automated-delivery` pattern is the shared method for
+reviewing delivery runs, proposing a plain-language project improvement plan and
+separating StackOS requirements. Human approval authorizes creation of the
+project's engineering workflow. Reference the catalog key/revision rather than
+copying the definition into project guidance; its canonical body ships from the
+same bundle file.
 Local customizations, user entries and prior baselines on skipped updates are
 preserved. Explicit bundled deletion retains only a trusted-ID marker, so repair
 or update cannot resurrect it; package removal leaves local entries intact.

@@ -32,6 +32,7 @@ work, start here:
 | Understanding the product or evaluating a new product direction | [`docs/product-direction.md`](./docs/product-direction.md), [`docs/architecture.md`](./docs/architecture.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
 | Setup, local start, autostart, or repair | [`docs/setup.md`](./docs/setup.md), [`docs/upgrade.md`](./docs/upgrade.md), [`docs/security.md`](./docs/security.md) |
 | Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
+| Engineering planning and delivery readiness | [Main planning guidance](./.codex/orchestrator/sdlc-delivery-orchestrator.md), [planning](./.codex/agents/sdlc-planning.toml), [test design](./.codex/agents/sdlc-test-designer.toml), [independent review](./.codex/agents/sdlc-delivery-reviewer.toml) |
 | Callable operations or action execution | [`docs/operations.md`](./docs/operations.md), [`docs/action-executor.md`](./docs/action-executor.md), [`docs/extending.md`](./docs/extending.md) |
 | Provider auth or credentials | [`docs/auth-providers.md`](./docs/auth-providers.md), [`docs/security.md`](./docs/security.md) |
 | Plugins, resources, templates, runs, tasks, agent presets | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/agent-presets.md`](./docs/agent-presets.md), [`docs/run-plans.md`](./docs/run-plans.md), [`docs/task-tracker.md`](./docs/task-tracker.md) |
@@ -91,6 +92,11 @@ Project-local main-agent mappings:
 
 ## Core Rules
 
+- Deliver a simple, complete end-to-end flow first, connecting existing components
+  through their canonical owners. Improve it afterward based on real needs and
+  evidence. Required behavior, correctness, security and proportionate verification
+  belong in that first delivery; optional breadth and speculative abstractions
+  wait. Apply this direction during planning, architecture, delivery and review.
 - The runtime layers are project -> workflow template -> run plan. Projects
   store durable state, templates define reusable setup, and run plans are
   concrete execution instances with scoped grants and audit history.

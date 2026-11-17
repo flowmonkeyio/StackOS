@@ -3,6 +3,7 @@
 Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.25
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Scoped amendment: Candidate admission and bounded reporting-only continuation from v0.8.30.
+Scoped amendment: Simple, complete delivery first and project planning guidance routing from v0.8.31.
 The v0.8.25 adaptation and prior compact amendment remain; other source deltas are not claimed.
 Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
