@@ -7,6 +7,30 @@ const delivery = { status: 'queued', job_ref: 'task-delivery:1:2', delivery_agen
 const task = (metadata_json: unknown) => ({ metadata_json }) as Pick<TrackerTask, 'metadata_json'>
 
 describe('automatic delivery task indication', () => {
+  it('keeps legacy prose bounded and masks local filesystem paths', () => {
+    const reason = 'Native failed at /private/tmp/native.json ' + 'x'.repeat(700)
+    const full = taskDeliveryState(task({ delivery: { ...delivery, status: 'stopped', reason } }))!
+    expect(full.reason).toHaveLength(500)
+    expect(full.reason).toContain('[local path]')
+    expect(full.reason).not.toContain('/private/tmp')
+    expect(taskDeliveryState({ delivery: { ...full, reason } })).toEqual(full)
+  })
+  it('projects the same bounded context from full metadata and lightweight delivery', () => {
+    const stop_context = { code: 'no_ready_work', facts: ['explicit_blocker', 'dependency_wait'],
+      phase: null, evidence_refs: ['tracker-ticket:1:2'], next_owner: 'main_agent',
+      next_action: 'reconcile_prerequisites', resume_condition: 'prerequisites_ready',
+      private: { path: '/private/tmp/native', prompt: 'frozen instructions' } }
+    const full = taskDeliveryState(task({ delivery: { ...delivery, status: 'stopped', stop_context } }))!
+    const light = taskDeliveryState({ delivery: { ...full, stop_context } as never })!
+    expect(full).toEqual(light)
+    expect(full.stop_context?.facts).toEqual(['explicit_blocker', 'dependency_wait'])
+    expect(JSON.stringify(full)).not.toContain('private')
+    expect(taskDeliveryState({ delivery: { ...full, status: 'running' } })?.stop_context).toBeUndefined()
+    for (const malformed of [null, [], {}, { code: 'surprise' }, { code: 'unknown', evidence_refs: ['/private/tmp/native'] }]) {
+      expect(taskDeliveryState(task({ delivery: { ...delivery, status: 'stopped', reason: 'Legacy', stop_context: malformed } }))?.reason).toBe('Legacy')
+      expect(taskDeliveryState({ delivery: { ...full, stop_context: malformed } as never })?.stop_context).toBeUndefined()
+    }
+  })
   it('projects a stopped execution independently and discards its old reason after resume', () => {
     const metadata = { delivery: { ...delivery, status: 'stopped', ticket_key: 'fix-chart', reason: 'Browser access denied.' } }
     const before = structuredClone(metadata)

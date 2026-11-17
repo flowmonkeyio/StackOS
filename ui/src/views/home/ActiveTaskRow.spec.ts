@@ -88,7 +88,7 @@ describe('continuous Home task rows', () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
     await router.push('/')
     const feed = ref<UsageFeedState>({ status: 'live', receivedAt: Date.now() })
-    const task = activeTaskFixture({ delivery: { status: TaskDeliveryStateOutStatus.running, ticketKey: 'child', reason: null },
+    const task = activeTaskFixture({ delivery: { status: TaskDeliveryStateOutStatus.running, ticketKey: 'child', reason: null, stop_context: null },
       active_execution: { invocation_id: 'actual-fixture', ticket_key: 'child', agent: 'sdlc_delivery', host_key: 'codex', model: 'exact-recorded-model', started_at: '2026-11-11T19:00:00Z', live_usage: null } })
     const wrapper = mount(ActiveTaskRow, { props: { task, global: true }, global: { plugins: [router], provide: { [usageFeedKey as symbol]: computed(() => feed.value) } } })
     try {
@@ -102,7 +102,7 @@ describe('continuous Home task rows', () => {
       expect(wrapper.find('.usage-live-indicator--live').exists()).toBe(false)
       expect(wrapper.text()).toContain('Reconnecting')
       task.agent_stats!.last_execution = { agent: 'sdlc_review', host_key: 'codex', model: 'last-exact', started_at: '2026-11-11T18:00:00Z', invocation_id: null, ticket_key: 'child' }
-      await wrapper.setProps({ task: { ...task, active_execution: null, delivery: { status: TaskDeliveryStateOutStatus.stopped, ticketKey: 'child', reason: 'Required verification blocked' } } })
+      await wrapper.setProps({ task: { ...task, active_execution: null, delivery: { status: TaskDeliveryStateOutStatus.stopped, ticketKey: 'child', reason: 'Required verification blocked', stop_context: null } } })
       expect(wrapper.text()).toContain('Last: Review')
       expect(wrapper.text()).toContain('Required verification blocked')
       expect(wrapper.findAll('.ui-badge').filter(badge => badge.text() === 'Stopped')).toHaveLength(1)

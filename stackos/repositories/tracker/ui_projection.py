@@ -16,6 +16,7 @@ from stackos.repositories.tracker.agent_stats import ReceiptProjection, query_ta
 from stackos.repositories.tracker.board import task_columns, valid_delivery_json
 from stackos.repositories.tracker.schema import (
     TaskDeliveryStateOut,
+    TaskDeliveryStopContextOut,
     TrackerMetricDemand,
     TrackerSnapshotOut,
     TrackerTaskSummaryOut,
@@ -34,6 +35,15 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
     source_paths = ("template_key", "template_version", "run_plan_key", "run_plan_id")
     # Validate the canonical handoff shape without transporting its frozen instructions.
     delivery_paths = ("status", "ticket_key", "reason")
+    context_paths = [
+        "code",
+        "phase",
+        "next_owner",
+        "next_action",
+        "resume_condition",
+        *(f"facts[{i}]" for i in range(4)),
+        *(f"evidence_refs[{i}]" for i in range(8)),
+    ]
     valid = valid_delivery_json(TrackerTask.metadata_json)
     statement = (
         sa_select(
@@ -43,6 +53,23 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
             *[
                 func.json_extract(TrackerTask.metadata_json, f"$.delivery.{path}")
                 for path in delivery_paths
+            ],
+            *[
+                case(
+                    (
+                        func.json_type(TrackerTask.metadata_json, f"$.delivery.stop_context.{path}")
+                        == "text",
+                        func.substr(
+                            func.json_extract(
+                                TrackerTask.metadata_json, f"$.delivery.stop_context.{path}"
+                            ),
+                            1,
+                            161,
+                        ),
+                    ),
+                    else_=None,
+                )
+                for path in context_paths
             ],
             case(
                 (
@@ -77,7 +104,22 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
             for key, value in zip(source_paths, values[:4], strict=True)
             if isinstance(value, (str, int))
         }
-        valid, status, ticket_key, reason, resume_condition = values[4:]
+        valid, status, ticket_key, reason = values[4:8]
+        context_values = dict(zip(context_paths, values[8 : 8 + len(context_paths)], strict=True))
+        resume_condition = values[-1]
+        context = {key: context_values[key] for key in context_paths[:5]}
+        context.update(
+            facts=[
+                context_values[f"facts[{i}]"]
+                for i in range(4)
+                if context_values[f"facts[{i}]"] is not None
+            ],
+            evidence_refs=[
+                context_values[f"evidence_refs[{i}]"]
+                for i in range(8)
+                if context_values[f"evidence_refs[{i}]"] is not None
+            ],
+        )
         delivery = None
         if valid and status in {"queued", "running", "stopped", "complete"}:
             delivery = TaskDeliveryStateOut(
@@ -85,9 +127,10 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
                 ticketKey=ticket_key.strip()
                 if isinstance(ticket_key, str) and ticket_key.strip()
                 else None,
-                reason=reason.strip()
-                if status == "stopped" and isinstance(reason, str) and reason.strip()
+                stop_context=TaskDeliveryStopContextOut.from_value(context)
+                if status == "stopped"
                 else None,
+                reason=TaskDeliveryStateOut.safe_reason(reason) if status == "stopped" else None,
             )
         headers.append(
             TrackerTaskSummaryOut(

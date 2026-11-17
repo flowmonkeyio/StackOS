@@ -9023,11 +9023,48 @@ export interface components {
              * @enum {string}
              */
             status: TaskDeliveryStateOutStatus;
+            /** @default null */
+            stop_context: components["schemas"]["TaskDeliveryStopContextOut"] | null;
             /**
              * Ticketkey
              * @default null
              */
             ticketKey: string | null;
+        };
+        /**
+         * TaskDeliveryStopContextOut
+         * @description Bounded mechanical facts; never exception payloads, prompts or native paths.
+         */
+        TaskDeliveryStopContextOut: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: TaskDeliveryStopContextOutCode;
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            /** Facts */
+            facts?: TaskDeliveryStopContextOutFacts[];
+            /**
+             * Next Action
+             * @default null
+             */
+            next_action: TaskDeliveryStopContextOutNext_actionAnyOf0 | null;
+            /**
+             * Next Owner
+             * @default null
+             */
+            next_owner: TaskDeliveryStopContextOutNext_ownerAnyOf0 | null;
+            /**
+             * Phase
+             * @default null
+             */
+            phase: TaskDeliveryStopContextOutPhaseAnyOf0 | null;
+            /**
+             * Resume Condition
+             * @default null
+             */
+            resume_condition: TaskDeliveryStopContextOutResume_conditionAnyOf0 | null;
         };
         /**
          * TaskMcpConfigRef
@@ -9976,6 +10013,8 @@ export interface components {
             created_by: string | null;
             /** Definition Of Done Json */
             definition_of_done_json: string[];
+            /** @default null */
+            delivery: components["schemas"]["TaskDeliveryStateOut"] | null;
             /** Description */
             description: string;
             /** Expected Outcomes Json */
@@ -11891,6 +11930,7 @@ export type SchemaTaskActivityOut = components['schemas']['TaskActivityOut'];
 export type SchemaTaskDeliveryAgentOverride = components['schemas']['TaskDeliveryAgentOverride'];
 export type SchemaTaskDeliveryDefaults = components['schemas']['TaskDeliveryDefaults'];
 export type SchemaTaskDeliveryStateOut = components['schemas']['TaskDeliveryStateOut'];
+export type SchemaTaskDeliveryStopContextOut = components['schemas']['TaskDeliveryStopContextOut'];
 export type SchemaTaskMcpConfigRef = components['schemas']['TaskMcpConfigRef'];
 export type SchemaTaskResultAssociation = components['schemas']['TaskResultAssociation'];
 export type SchemaTaskResultItem = components['schemas']['TaskResultItem'];
@@ -15800,6 +15840,43 @@ export enum TaskDeliveryStateOutStatus {
     running = "running",
     stopped = "stopped",
     complete = "complete"
+}
+export enum TaskDeliveryStopContextOutCode {
+    unknown = "unknown",
+    no_ready_work = "no_ready_work",
+    candidate_validation = "candidate_validation",
+    native_failure = "native_failure",
+    output_validation = "output_validation",
+    agent_blocked = "agent_blocked",
+    agent_failed = "agent_failed",
+    repair_limit = "repair_limit",
+    workflow_changed = "workflow_changed",
+    execution_requirement = "execution_requirement"
+}
+export enum TaskDeliveryStopContextOutFacts {
+    explicit_blocker = "explicit_blocker",
+    dependency_wait = "dependency_wait",
+    non_pending_work = "non_pending_work",
+    containment_wait = "containment_wait"
+}
+export enum TaskDeliveryStopContextOutNext_actionAnyOf0 {
+    reconcile_prerequisites = "reconcile_prerequisites",
+    inspect_retained_evidence = "inspect_retained_evidence",
+    reconcile_candidate = "reconcile_candidate",
+    resolve_blocker = "resolve_blocker"
+}
+export enum TaskDeliveryStopContextOutNext_ownerAnyOf0 {
+    main_agent = "main_agent",
+    operator = "operator"
+}
+export enum TaskDeliveryStopContextOutPhaseAnyOf0 {
+    delivery = "delivery",
+    review = "review"
+}
+export enum TaskDeliveryStopContextOutResume_conditionAnyOf0 {
+    prerequisites_ready = "prerequisites_ready",
+    explicit_rehandoff = "explicit_rehandoff",
+    valid_candidate = "valid_candidate"
 }
 export enum TaskResultItemSource_kind {
     resource_record = "resource_record",

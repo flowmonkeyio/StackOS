@@ -57,6 +57,7 @@ from stackos.repositories.tracker.board import task_column
 from stackos.repositories.tracker.events import record_execution_change
 from stackos.repositories.tracker.schema import (
     TaskDeliveryStateOut,
+    TaskDeliveryStopContextOut,
     TrackerCorrectionIntent,
     TrackerDeliveryScopeExclusion,
     TrackerTicketOut,
@@ -1014,6 +1015,7 @@ def finish_managed_upgrade(
                         postflight=deepcopy(postflight),
                     )
                     metadata = deepcopy(task.metadata_json)
+                    metadata["delivery"].pop("stop_context", None)
                     metadata["delivery"].update(
                         status="queued",
                         slot_reserved=False,
@@ -1496,6 +1498,15 @@ def _update_delivery(repo, project_id, task_key, **changes) -> dict[str, Any]:
     task = _task(repo, project_id, task_key)
     metadata = dict(task.metadata_json or {})
     state = {**metadata.get("delivery", {}), **changes, "updated_at": datetime.now(UTC).isoformat()}
+    if "status" in changes:
+        # Every stop owns its facts. Resumes and unrelated stops cannot inherit
+        # a previous next action; existing tracker revisions retain the history.
+        context = TaskDeliveryStopContextOut.from_value(changes.get("stop_context"))
+        state.pop("stop_context", None)
+        if changes["status"] == "stopped":
+            state["stop_context"] = (
+                context or TaskDeliveryStopContextOut(code="unknown")
+            ).model_dump()
     metadata["delivery"] = state
     repo.update_task(
         project_id=project_id,
@@ -1504,6 +1515,78 @@ def _update_delivery(repo, project_id, task_key, **changes) -> dict[str, Any]:
         actor=ACTOR,
     )
     return state
+
+
+def _stop_context(code, *, ticket=None, phase=None, evidence=None, facts=None):
+    refs = []
+    if ticket is not None:
+        ref = f"tracker-ticket:{ticket.project_id}:{ticket.id}"
+        attempt = (evidence or {}).get("attempt")
+        if type(attempt) is int and attempt > 0 and phase in {"delivery", "review"}:
+            ref += f":attempt:{attempt}:{phase}"
+        refs.append(ref)
+    return TaskDeliveryStopContextOut(
+        code=code,
+        phase=phase,
+        evidence_refs=refs,
+        facts=facts or [],
+        next_owner="main_agent",
+        next_action="reconcile_prerequisites"
+        if code == "no_ready_work"
+        else "reconcile_candidate"
+        if code == "candidate_validation"
+        else "resolve_blocker"
+        if code == "agent_blocked"
+        else "inspect_retained_evidence",
+        resume_condition="prerequisites_ready"
+        if code == "no_ready_work"
+        else "valid_candidate"
+        if code == "candidate_validation"
+        else "explicit_rehandoff",
+    ).model_dump()
+
+
+def _no_ready_context(tickets, plans, state, project_id):
+    """Explain the selector's current inputs without changing readiness or lifecycle."""
+    by_key = {ticket.key: ticket for ticket in tickets}
+    unfinished = [
+        ticket
+        for ticket in tickets
+        if ticket.status != TrackerItemStatus.COMPLETE and not _excluded_child(ticket, by_key)
+    ]
+    facts = []
+    if any(ticket.blocker_reason for ticket in unfinished):
+        facts.append("explicit_blocker")
+    if any(ticket.blocked_by for ticket in unfinished):
+        facts.append("dependency_wait")
+    if any(ticket.status != TrackerItemStatus.NOT_STARTED for ticket in unfinished):
+        facts.append("non_pending_work")
+    contained = False
+    for ticket in unfinished:
+        if ticket.blocked_by or ticket.blocker_reason:
+            continue
+        step = _workflow_step(plans, state, ticket)
+        if step or ticket.kind == TrackerTicketKind.GROUP:
+            children = _descendants(tickets, ticket.key)
+            if step:
+                children = [
+                    child
+                    for child in tickets
+                    if child.key != ticket.key
+                    and (child in children or child.run_plan_step_id == step.id)
+                ]
+            contained |= any(child in unfinished for child in children)
+        if ticket.run_plan_step_id is not None:
+            plan = plans.get(ticket.run_plan_id, project_id=project_id)
+            contained |= (
+                next(s for s in plan.steps if s.id == ticket.run_plan_step_id).status
+                != RunPlanStepStatus.RUNNING
+            )
+    if contained:
+        facts.append("containment_wait")
+    context = _stop_context("no_ready_work", facts=facts)
+    context["evidence_refs"] = [f"tracker-ticket:{t.project_id}:{t.id}" for t in unfinished[:8]]
+    return context
 
 
 def _same_directory(left: Path, right: Path) -> bool:
@@ -3295,6 +3378,8 @@ def run_delivery(
 
     ticket_key = None
     evidence: dict[str, Any] = {}
+    phase = None
+    failure_code = "unknown"
     try:
         while True:
             with managed_launch_lock, session_factory() as session:
@@ -3355,9 +3440,11 @@ def run_delivery(
                         status="stopped",
                         ticket_key=None,
                         reason="No pending ticket is ready for delivery.",
+                        stop_context=_no_ready_context(snapshot.tickets, plans, state, project_id),
                     )
                     return
                 ticket_key = selected.key
+                failure_code = "unknown"
                 evidence = deepcopy(
                     (selected.completion_evidence_json or {}).get("automatic_delivery", {})
                 )
@@ -3526,6 +3613,7 @@ def run_delivery(
                             )
                         )
                     )
+                    failure_code = "candidate_validation"
                     if upgrade_phase:
                         # The checkpoint validated the exact source and candidate.
                         # Do not replace the original delivery base or replay review.
@@ -3551,6 +3639,7 @@ def run_delivery(
                     )
                     baseline_pending = False
                     evidence.setdefault("launch_baseline_clean", baseline_clean)
+                    failure_code = "unknown"
                 with managed_launch_lock, session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
@@ -3585,6 +3674,7 @@ def run_delivery(
                     if workflow_step is None:
                         # Reject impossible corrections before recording a launch or
                         # charging a repair. Final validation still checks returned work.
+                        failure_code = "candidate_validation"
                         _evidence_only_candidate(occurrence, evidence)
                         if (
                             phase == "delivery"
@@ -3593,6 +3683,7 @@ def run_delivery(
                             and "owned_work" not in evidence
                         ):
                             _committed_head(state["project_dir"])
+                        failure_code = "unknown"
                     if (
                         workflow_step is None
                         and phase == "delivery"
@@ -3844,6 +3935,7 @@ def run_delivery(
                 decision = value.get("status")
                 outputs = {}
                 validation_error = None
+                validation_code = "output_validation"
                 evidence_only = False
                 valid = result.ok
                 if valid:
@@ -3929,6 +4021,7 @@ def run_delivery(
                                 intent.get("work_intent") == "source_repair"
                                 and intent.get("target_attempt") == occurrence["attempt"]
                             )
+                            validation_code = "candidate_validation"
                             sha = _candidate_commit(
                                 state["project_dir"],
                                 returned_sha,
@@ -4105,6 +4198,19 @@ def run_delivery(
                             )
                         else:
                             patch.update(status="failed", outcome=reason)
+                        failure_code = (
+                            validation_code
+                            if validation_error
+                            else "native_failure"
+                            if not result.ok
+                            else "repair_limit"
+                            if decision == "repair" and workflow_step is None and phase == "review"
+                            else "workflow_changed"
+                            if decision == "repair" and workflow_step is not None
+                            else "agent_blocked"
+                            if decision == "blocked"
+                            else "agent_failed"
+                        )
                     elif accepted and phase == "review":
                         patch.update(status="complete", outcome=value["summary"])
                     if workflow_step is not None:
@@ -4141,6 +4247,12 @@ def run_delivery(
                                 project_id,
                                 task_key,
                                 status="stopped",
+                                stop_context=_stop_context(
+                                    "workflow_changed",
+                                    ticket=selected,
+                                    phase=phase,
+                                    evidence=evidence,
+                                ),
                                 reason=validation_error
                                 or result.error
                                 or (
@@ -4241,6 +4353,7 @@ def run_delivery(
                                     },
                                 }
                                 continue
+                            failure_code = "output_validation"
                             raise
                         if valid:
                             evidence[phase]["validated_outcome"] = decision
@@ -4253,7 +4366,14 @@ def run_delivery(
                         _save_evidence(repo, project_id, ticket_key, evidence, **patch)
                     if not accepted and not repair:
                         _update_delivery(
-                            repo, project_id, task_key, status="stopped", reason=reason
+                            repo,
+                            project_id,
+                            task_key,
+                            status="stopped",
+                            reason=reason,
+                            stop_context=_stop_context(
+                                failure_code, ticket=selected, phase=phase, evidence=evidence
+                            ),
                         )
                         return
                 if repair:
@@ -4268,6 +4388,8 @@ def run_delivery(
                 else:
                     break
             ticket_key = None
+            phase = None
+            failure_code = "unknown"
     except Exception as error:
         evidence.pop("review_replacement_active", None)
         with managed_launch_lock, session_factory() as session:
@@ -4312,7 +4434,29 @@ def run_delivery(
                         status=RunPlanStepStatus.BLOCKED,
                         error=str(error),
                     )
-            _update_delivery(repo, project_id, task_key, status="stopped", reason=str(error))
+            if (
+                isinstance(error, ValidationError)
+                and (error.data or {}).get("code") == "execution_requirement_mismatch"
+            ):
+                failure_code = "execution_requirement"
+            elif (
+                isinstance(error, ValidationError)
+                and (error.data or {}).get("code") == "step_output_validation"
+            ):
+                failure_code = "output_validation"
+            _update_delivery(
+                repo,
+                project_id,
+                task_key,
+                status="stopped",
+                reason=str(error),
+                stop_context=_stop_context(
+                    failure_code,
+                    ticket=ticket if ticket_key else None,
+                    phase=phase,
+                    evidence=evidence,
+                ),
+            )
     finally:
         if scheduler is not None:
             release_delivery(

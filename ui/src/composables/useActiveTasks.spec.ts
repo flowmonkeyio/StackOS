@@ -97,10 +97,12 @@ describe('shared Home active-task reads', () => {
     expect(state.items.value[0]!.work_duration).toEqual(started.work_duration)
     expect(callOperation).toHaveBeenCalledTimes(3) // Companions coalesce, no per-row reads.
     const stopped = { ...task(1, 'work', 'stopped'), work_duration: { ...started.work_duration, total_seconds: 960, live: [] } }
+    stopped.delivery!.stop_context = { code: 'agent_blocked', phase: 'review', facts: [], evidence_refs: ['tracker-ticket:1:2:attempt:1:review'], next_owner: 'main_agent', next_action: 'resolve_blocker', resume_condition: 'explicit_rehandoff' } as never
     vi.mocked(callOperation).mockResolvedValue(page([stopped, task(2)]))
     stream().onUsage?.()
     await flushPromises()
     expect(state.items.value[0]!.delivery?.reason).toBe('Review blocked')
+    expect(state.items.value[0]!.delivery?.stop_context).toEqual(stopped.delivery!.stop_context)
     expect(state.items.value[0]!.active_execution).toBeNull()
     expect(state.items.value[0]!.work_duration?.total_seconds).toBe(960)
     vi.mocked(callOperation).mockResolvedValue(page([task(2)]))

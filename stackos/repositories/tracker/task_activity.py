@@ -21,10 +21,14 @@ from stackos.repositories.tracker.inspection_scope import (
     typed_match,
     validate_limit,
 )
+from stackos.repositories.tracker.schema import TaskDeliveryStateOut, TaskDeliveryStopContextOut
 
 _OUTCOME_PATHS = [f"completion_evidence_json.{field}" for field in ("summary", "reason")]
 _TASK_PATHS = [
-    *(f"metadata_json.delivery.{field}" for field in ("status", "phase", "ticket_key")),
+    *(
+        f"metadata_json.delivery.{field}"
+        for field in ("status", "phase", "ticket_key", "stop_context")
+    ),
     *_OUTCOME_PATHS,
 ]
 _RECEIPT_PATHS = [
@@ -37,6 +41,9 @@ _RECEIPT_PATHS = [
 def _value(data: Any, path: str) -> Any:
     for key in path.split("."):
         data = object_json(data).get(key)
+    if path == "metadata_json.delivery.stop_context":
+        context = TaskDeliveryStopContextOut.from_value(data)
+        return context.model_dump() if context else None
     return data
 
 
@@ -187,7 +194,13 @@ class TaskActivityMixin:
                 f"{change['path'].removeprefix('metadata_json.').removeprefix(prefix)}: "
                 f"{change['before']} → {change['after']}"
                 for change in changes
+                if change["path"] != "metadata_json.delivery.stop_context"
             )
+            context = _value(rev.after_json, "metadata_json.delivery.stop_context")
+            if context:
+                summary = "; ".join(
+                    filter(None, [summary, f"delivery.stop_context: {context['code']}"])
+                )
             items.append(
                 TaskActivityItem(
                     source_kind="tracker_revision",
@@ -212,7 +225,10 @@ class TaskActivityMixin:
                             "rev": rev.rev,
                             "actor": rev.actor,
                             "changes": changes,
-                            "reason": _value(rev.after_json, "metadata_json.delivery.reason")
+                            "stop_context": context,
+                            "reason": TaskDeliveryStateOut.safe_reason(
+                                _value(rev.after_json, "metadata_json.delivery.reason")
+                            )
                             if rev.entity_kind == "task"
                             else None,
                         }

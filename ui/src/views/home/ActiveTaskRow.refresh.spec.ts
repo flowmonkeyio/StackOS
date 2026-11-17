@@ -40,7 +40,7 @@ it('transitions accepted snapshot changes through the real Active task reader wi
     }))
     const metrics = agentStatsFixture().totals
     return activeTasksFixture(null, [activeTaskFixture({ title,
-      delivery: { status: TaskDeliveryStateOutStatus.running, ticketKey: 'child', reason: null },
+      delivery: { status: TaskDeliveryStateOutStatus.running, ticketKey: 'child', reason: null, stop_context: null },
       active_execution: { invocation_id: 'current', ticket_key: 'child', agent: 'sdlc_delivery', host_key: 'codex', model: 'exact', started_at: samples[0]!.at, live_usage: null },
       agent_stats: { ...metrics, samples, reported_usage: { ...metrics.reported_usage, input, remaining_input: input - 80, cache_read: 80, output: 12, total: input + 12 } },
     })])

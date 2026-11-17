@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from stackos.db.models import (
     TrackerItemStatus,
@@ -270,6 +271,7 @@ class TrackerTaskOut(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     ticket_summary: TrackerTaskTicketSummaryOut | None = None
+    delivery: TaskDeliveryStateOut | None = None
     agent_stats: AgentStatsMetricsOut | None = Field(
         default=None,
         description=(
@@ -279,6 +281,8 @@ class TrackerTaskOut(BaseModel):
 
     @model_validator(mode="after")
     def legacy_board_column(self) -> TrackerTaskOut:
+        if "delivery" not in self.model_fields_set:
+            self.delivery = TaskDeliveryStateOut.from_metadata(self.metadata_json)
         # Old intent receipts predate this additive field. Reuse the same
         # projection rather than replaying a fabricated Todo for terminal work.
         if "board_column" not in self.model_fields_set:
@@ -293,12 +297,89 @@ class TrackerTaskOut(BaseModel):
         return self
 
 
+class TaskDeliveryStopContextOut(BaseModel):
+    """Bounded mechanical facts; never exception payloads, prompts or native paths."""
+
+    code: Literal[
+        "unknown",
+        "no_ready_work",
+        "candidate_validation",
+        "native_failure",
+        "output_validation",
+        "agent_blocked",
+        "agent_failed",
+        "repair_limit",
+        "workflow_changed",
+        "execution_requirement",
+    ]
+    phase: Literal["delivery", "review"] | None = None
+    facts: list[
+        Literal["explicit_blocker", "dependency_wait", "non_pending_work", "containment_wait"]
+    ] = Field(default_factory=list, max_length=4)
+    evidence_refs: list[
+        Annotated[
+            str,
+            Field(
+                max_length=160,
+                pattern=r"^tracker-ticket:[1-9][0-9]*:[1-9][0-9]*(?::attempt:[1-9][0-9]*:(?:delivery|review))?$",
+            ),
+        ]
+    ] = Field(default_factory=list, max_length=8)
+    next_owner: Literal["main_agent", "operator"] | None = None
+    next_action: (
+        Literal[
+            "reconcile_prerequisites",
+            "inspect_retained_evidence",
+            "reconcile_candidate",
+            "resolve_blocker",
+        ]
+        | None
+    ) = None
+    resume_condition: (
+        Literal["prerequisites_ready", "explicit_rehandoff", "valid_candidate"] | None
+    ) = None
+
+    @classmethod
+    def from_value(cls, value: Any) -> TaskDeliveryStopContextOut | None:
+        if not isinstance(value, dict):
+            return None
+        # Only these fields cross public projections. Bad optional data must not
+        # break a legacy task read or forward arbitrary nested metadata.
+        bounded = {key: value[key] for key in cls.model_fields if key in value}
+        for key in ("phase", "next_owner", "next_action", "resume_condition"):
+            if not isinstance(bounded.get(key), str):
+                bounded[key] = None
+        for key, limit in (("facts", 4), ("evidence_refs", 8)):
+            items = bounded.get(key)
+            bounded[key] = (
+                [item for item in items[:limit] if isinstance(item, str)]
+                if isinstance(items, list)
+                else []
+            )
+        try:
+            return cls.model_validate(bounded)
+        except ValidationError:
+            return None
+
+
 class TaskDeliveryStateOut(BaseModel):
     """Public handoff facts, excluding frozen agents, prompts and native paths."""
 
     status: Literal["queued", "running", "stopped", "complete"]
     ticketKey: str | None = None
     reason: str | None = None
+    stop_context: TaskDeliveryStopContextOut | None = None
+
+    @staticmethod
+    def safe_reason(value: Any) -> str | None:
+        from stackos.artifacts import redact_secret_text
+
+        if not isinstance(value, str) or not value.strip():
+            return None
+        text = redact_secret_text(value.strip())
+        return re.sub(r"(?<![\w:/])(?:/[^\s'\"<>]+|[A-Za-z]:\\[^\s'\"<>]+)", "[local path]", text)[
+            :500
+        ]
 
     @classmethod
     def from_metadata(cls, metadata: dict[str, Any] | None) -> TaskDeliveryStateOut | None:
@@ -330,8 +411,11 @@ class TaskDeliveryStateOut(BaseModel):
                 "ticketKey": delivery["ticket_key"].strip()
                 if nonempty(delivery.get("ticket_key"))
                 else None,
-                "reason": delivery["reason"].strip()
-                if delivery["status"] == "stopped" and nonempty(delivery.get("reason"))
+                "reason": cls.safe_reason(delivery.get("reason"))
+                if delivery["status"] == "stopped"
+                else None,
+                "stop_context": TaskDeliveryStopContextOut.from_value(delivery.get("stop_context"))
+                if delivery["status"] == "stopped"
                 else None,
             }
         )

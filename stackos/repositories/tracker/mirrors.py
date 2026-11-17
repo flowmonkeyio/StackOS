@@ -605,6 +605,7 @@ class TrackerMirrorMixin:
                         "ticket_key": None,
                         "slot_reserved": False,
                     }
+                    completed.pop("stop_context", None)
                     if completed != delivery:
                         task.metadata_json = {
                             **metadata,

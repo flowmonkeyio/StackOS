@@ -55,10 +55,28 @@ def test_finish_rejoins_queue_once_and_fences_original_callback(session, project
     submit(session, project_id, tmp_path, old)
     callback, options = old.jobs[0]
     prepare(session, old)
+    repo = TrackerRepository(session)
+    metadata = deepcopy(repo.get(project_id=project_id, task_key="deliver").tasks[0].metadata_json)
+    # Historical queued snapshots may retain prior stop facts. The continuation
+    # writer must clear them without changing its frozen checkpoint or sessions.
+    metadata["delivery"]["stop_context"] = {
+        "code": "agent_blocked",
+        "next_action": "resolve_blocker",
+    }
+    repo.update_task(
+        project_id=project_id, task_key="deliver", patch_json={"metadata_json": metadata}
+    )
     new = QueuedScheduler()
     result = finish(session, new)
     assert result["status"] == "continued" and not result["fenced"]
     assert len(new.jobs) == 1
+    session.expire_all()
+    assert (
+        "stop_context"
+        not in repo.get(project_id=project_id, task_key="deliver")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
     assert new.jobs[0][1]["kwargs"]["handoff_id"] != options["kwargs"]["handoff_id"]
     callback(**options["kwargs"])
     assert finish(session, new) == result

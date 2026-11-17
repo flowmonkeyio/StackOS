@@ -686,6 +686,30 @@ without that persisted progress, blocked/failed, malformed output and native
 failure stop the same task.
 No ready work with unfinished tickets is stopped, never reported complete.
 
+Current stops may include one optional `metadata_json.delivery.stop_context`.
+`TaskDeliveryStateOut` projects it in full tracker, lightweight board/active
+task reads and existing task activity revisions. Legacy `reason` remains
+readable. Known producers supply a mechanical `code`, optional delivery/review
+`phase`, at most four no-ready `facts` and eight scoped `evidence_refs`, and
+known `next_owner`, `next_action` and `resume_condition`. These are closed
+mechanical values, not a classifier of agent prose or a project root cause.
+Unknown exceptions remain `unknown`; arbitrary exception data and rejected
+reports never enter this object. Malformed optional context falls back to the
+legacy reason. Public projections allowlist fields and bounded ticket/attempt
+references (`tracker-ticket:<project-id>:<ticket-id>[:attempt:<n>:<phase>]`),
+excluding native paths, frozen instructions and arbitrary metadata.
+Stop reasons retain legacy prose rendering, with secret redaction, local-path
+masking and a 500-character public bound.
+
+The no-ready producer reads current explicit blockers, unresolved dependencies,
+non-pending unfinished work and containment state through their existing
+owners. Explanation does not requeue, accept, wake another project or change
+readiness. Current context is cleared on queued/running/complete and replaced
+on every new stop; existing revisions retain historical facts. The existing
+stop details show concise cause, responsible next action, resume condition and
+evidence references, using current task/ticket navigation without recovery
+controls. Inspect retained ticket evidence before explicit authorized recovery.
+
 A successful workflow report rejected by `runPlan.recordStep` may receive one
 report-only continuation in the same retained native role session. Eligibility
 requires exit zero, a valid outer envelope, one strictly parsed inner JSON object,

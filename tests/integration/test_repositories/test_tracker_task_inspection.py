@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 from sqlmodel import Session, select
 
-from stackos.db.models import ProjectEvent, TrackerRevision
+from stackos.db.models import ProjectEvent, RunPlanStepStatus, TrackerRevision
 from stackos.repositories.base import ValidationError
 from stackos.repositories.tracker import TrackerRepository
 from stackos.task_delivery import _update_delivery
@@ -20,6 +20,173 @@ def seed_inspection(session: Session, project_id: int) -> TrackerRepository:
         project_id=project_id, ticket_key="child", patch_json={"status": "in-progress"}
     )
     return repo
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        None,
+        [],
+        "bad",
+        {"code": "not-a-code", "next_action": "/private/tmp/native"},
+        {"code": "unknown", "evidence_refs": ["/private/tmp/native"]},
+        {"code": "unknown", "phase": {}},
+        {"code": "unknown", "facts": [42, {}]},
+        {
+            "code": "native_failure",
+            "phase": "review",
+            "next_owner": "main_agent",
+            "next_action": "inspect_retained_evidence",
+            "resume_condition": "explicit_rehandoff",
+            "evidence_refs": ["tracker-ticket:1:123:attempt:2:review"],
+            "extra": {"prompt": "private prompt", "path": "/private/tmp/native"},
+        },
+    ],
+)
+def test_stop_context_full_light_and_activity_are_safe_read_only(session, project_id, raw):
+    from stackos.repositories.tracker.schema import TaskDeliveryStopContextOut
+
+    repo = seed_inspection(session, project_id)
+    agent = {"name": "fixture", "instructions": "private frozen prompt"}
+    _update_delivery(
+        repo,
+        project_id,
+        "inspect",
+        status="running",
+        job_ref="fixture",
+        delivery_agent=agent,
+        review_agent=agent,
+    )
+    _update_delivery(
+        repo, project_id, "inspect", status="stopped", reason="Legacy reason", stop_context=raw
+    )
+    # Emulate historical malformed optional data without routing it through the
+    # new writer, which intentionally validates and discards unknown fields.
+    from stackos.db.models import TrackerTask
+
+    row = session.exec(select(TrackerTask).where(TrackerTask.key == "inspect")).one()
+    row.metadata_json = {"delivery": {**row.metadata_json["delivery"], "stop_context": raw}}
+    session.add(row)
+    session.commit()
+    before = session.connection().exec_driver_sql("SELECT total_changes()").scalar()
+    expected = TaskDeliveryStopContextOut.from_value(raw)
+    for _ in range(2):
+        full = repo.get(project_id=project_id, task_key="inspect", include_graph=False)
+        light = repo.get(
+            project_id=project_id, task_key="inspect", projection="ui", include_graph=False
+        )
+        assert full.tasks[0].delivery == light.tasks[0].delivery
+        assert light.tasks[0].delivery.stop_context == expected
+        safe = light.model_dump_json()
+        assert "private frozen prompt" not in safe and "/private/tmp/native" not in safe
+        activity = repo.task_activity(project_id=project_id, task_key="inspect")
+        assert "/private/tmp/native" not in activity.model_dump_json()
+        assert "private frozen prompt" not in activity.model_dump_json()
+    assert session.connection().exec_driver_sql("SELECT total_changes()").scalar() == before
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "complete", "stopped"])
+def test_stop_context_clears_current_facts_and_retains_revision_history(
+    session, project_id, status
+):
+    repo = seed_inspection(session, project_id)
+    agent = {"name": "fixture", "instructions": "Never execute"}
+    _update_delivery(
+        repo,
+        project_id,
+        "inspect",
+        status="stopped",
+        job_ref="fixture",
+        delivery_agent=agent,
+        review_agent=agent,
+        stop_context={"code": "agent_blocked", "next_action": "resolve_blocker"},
+    )
+    _update_delivery(repo, project_id, "inspect", status=status)
+    full = repo.get(project_id=project_id, task_key="inspect", include_graph=False).tasks[0]
+    if status == "stopped":
+        assert full.delivery.stop_context.code == "unknown"
+        assert full.delivery.stop_context.next_action is None
+    else:
+        assert "stop_context" not in full.metadata_json["delivery"]
+        assert full.delivery.stop_context is None
+    history = repo.task_activity(project_id=project_id, task_key="inspect")
+    assert any(
+        item.details.get("stop_context", {}).get("code") == "agent_blocked"
+        for item in history.items
+        if item.details.get("stop_context")
+    )
+
+
+def test_stop_context_clears_on_retired_workflow_completion(session, project_id):
+    from stackos.repositories.run_plans import RunPlanRepository
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "stop-completion",
+            "title": "Completion fixture",
+            "steps": [{"id": "finish", "title": "Finish"}],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id).data
+    repo = TrackerRepository(session)
+    agent = {"name": "fixture", "instructions": "Never execute"}
+    _update_delivery(
+        repo,
+        project_id,
+        f"workflow-{plan.id}",
+        status="stopped",
+        job_ref="fixture",
+        delivery_agent=agent,
+        review_agent=agent,
+        slot_reserved=False,
+        stop_context={"code": "agent_blocked", "next_action": "resolve_blocker"},
+    )
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="finish")
+    plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="finish",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Accepted completion"},
+    )
+    task = repo.get(project_id=project_id, task_key=f"workflow-{plan.id}").tasks[0]
+    assert task.metadata_json["delivery"]["status"] == "complete"
+    assert "stop_context" not in task.metadata_json["delivery"]
+    assert task.delivery.stop_context is None
+    assert any(
+        item.details.get("stop_context", {}).get("code") == "agent_blocked"
+        for item in repo.task_activity(project_id=project_id, task_key=task.key).items
+        if item.details.get("stop_context")
+    )
+
+
+def test_stop_reason_masks_paths_and_bounds_legacy_text(session, project_id):
+    repo = seed_inspection(session, project_id)
+    agent = {"name": "fixture", "instructions": "Never execute"}
+    _update_delivery(
+        repo,
+        project_id,
+        "inspect",
+        status="stopped",
+        job_ref="fixture",
+        delivery_agent=agent,
+        review_agent=agent,
+        reason="Native failed at /private/tmp/native.json " + "x" * 700,
+    )
+    full = repo.get(project_id=project_id, task_key="inspect").tasks[0]
+    light = repo.get(project_id=project_id, task_key="inspect", projection="ui").tasks[0]
+    assert full.delivery == light.delivery
+    assert len(full.delivery.reason) == 500
+    assert "[local path]" in full.delivery.reason
+    assert "/private/tmp/native.json" not in full.delivery.model_dump_json()
+    assert "/private/tmp/native.json" in full.metadata_json["delivery"]["reason"]
+    assert (
+        "/private/tmp/native.json"
+        not in repo.task_activity(project_id=project_id, task_key="inspect").model_dump_json()
+    )
 
 
 @pytest.mark.parametrize("malformed", [[], {"unexpected": "value"}])

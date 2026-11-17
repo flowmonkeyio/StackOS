@@ -310,6 +310,7 @@ def compact_tracker_task(value: Any) -> dict[str, Any]:
         )
     _add_completion_evidence_flag(result, data)
     _add_agent_stats(result, data)
+    _add_delivery_state(result, data)
     return result
 
 
@@ -353,7 +354,30 @@ def compact_tracker_snapshot_task(value: Any) -> dict[str, Any]:
         )
     _add_completion_evidence_flag(result, data)
     _add_agent_stats(result, data)
+    _add_delivery_state(result, data)
     return result
+
+
+def _add_delivery_state(result: dict[str, Any], source: dict[str, Any]) -> None:
+    from stackos.repositories.tracker.schema import TaskDeliveryStateOut, TaskDeliveryStopContextOut
+
+    delivery = source.get("delivery")
+    if not isinstance(delivery, dict):
+        return
+    context = TaskDeliveryStopContextOut.from_value(delivery.get("stop_context"))
+    try:
+        public = TaskDeliveryStateOut.model_validate(
+            {
+                **delivery,
+                "reason": TaskDeliveryStateOut.safe_reason(delivery.get("reason"))
+                if delivery.get("status") == "stopped"
+                else None,
+                "stop_context": context if delivery.get("status") == "stopped" else None,
+            }
+        )
+    except ValueError:
+        return
+    result["delivery"] = public.model_dump(mode="json")
 
 
 def compact_tracker_ticket(value: Any) -> dict[str, Any]:

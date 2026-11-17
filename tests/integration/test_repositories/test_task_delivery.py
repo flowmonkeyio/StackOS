@@ -868,26 +868,78 @@ def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
         plans.get_step(plan.id, "missing-step", project_id=project_id)
 
 
-def test_unfinished_nonready_work_stops_without_launch(session, project_id, tmp_path, monkeypatch):
+@pytest.mark.parametrize("case", ["blocker", "non-pending", "containment"])
+def test_unfinished_nonready_work_stops_without_launch(
+    session, project_id, tmp_path, monkeypatch, case
+):
     from stackos import task_delivery
 
     prepared_task(session, project_id)
     repo = TrackerRepository(session)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    # Readiness can change after an authorized Todo admission, before its callback.
     repo.update_ticket(
         project_id=project_id,
         ticket_key="first",
-        patch_json={"blocker_reason": "Missing approved input"},
+        patch_json={"blocker_reason": "Missing approved input"}
+        if case == "blocker"
+        else {"status": "in-progress"},
     )
+    if case == "containment":
+        repo.create_ticket(
+            project_id=project_id, task_key="deliver", key="group", title="Group", kind="group"
+        )
+        repo.update_ticket(
+            project_id=project_id, ticket_key="first", patch_json={"parent_ticket_key": "group"}
+        )
     monkeypatch.setattr(
         task_delivery, "run_agent", lambda *a, **kw: pytest.fail("Blocked work launched")
     )
+    scheduler.run()
+    session.expire_all()
+    snapshot = repo.get(project_id=project_id, task_key="deliver")
+    assert repo.brief(project_id=project_id, ticket_key="first").ticket.status == (
+        "not-started" if case == "blocker" else "in-progress"
+    )
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    context = snapshot.tasks[0].delivery.stop_context
+    assert context.code == "no_ready_work"
+    assert context.facts == (
+        ["explicit_blocker", "dependency_wait"]
+        if case == "blocker"
+        else ["dependency_wait", "non_pending_work"]
+        + (["containment_wait"] if case == "containment" else [])
+    )
+    assert context.next_action == "reconcile_prerequisites"
+    light = repo.get(
+        project_id=project_id, task_key="deliver", projection="ui", include_graph=False
+    )
+    assert light.tasks[0].delivery == snapshot.tasks[0].delivery
+    activity = repo.task_activity(project_id=project_id, task_key="deliver")
+    assert any(item.details.get("stop_context") == context.model_dump() for item in activity.items)
+
+
+def test_unknown_no_ready_exception_stays_unknown(session, project_id, tmp_path, monkeypatch):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+
+    def unknown(*args, **kwargs):
+        raise RuntimeError("Unrecognized failure")
+
+    monkeypatch.setattr(task_delivery, "_select_work", unknown)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
     session.expire_all()
-    snapshot = repo.get(project_id=project_id, task_key="deliver")
-    assert all(t.status == "not-started" for t in snapshot.tickets)
-    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    repo = TrackerRepository(session)
+    full = repo.get(project_id=project_id, task_key="deliver").tasks[0]
+    assert full.delivery.stop_context.code == "unknown"
+    assert full.delivery.stop_context.phase is None
+    assert full.delivery.stop_context.evidence_refs == []
+    light = repo.get(project_id=project_id, task_key="deliver", projection="ui").tasks[0]
+    assert full.delivery == light.delivery
 
 
 def test_taskwide_dispatch_cannot_complete_with_pending_actions(
@@ -1060,6 +1112,10 @@ def test_mirror_unsuccessful_or_malformed_result_stops_through_plan_owner(
     snapshot = TrackerRepository(session).get(project_id=project_id, task_key=f"workflow-{plan.id}")
     assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
     assert len(calls) == 1
+    if disposition in {"invalid-output", "invalid-json", "native"}:
+        assert snapshot.tasks[0].delivery.stop_context.code == (
+            "native_failure" if disposition == "native" else "output_validation"
+        )
     final = plans.get(plan.id)
     assert final.steps[0].status in {"blocked", "failed"}
     assert final.steps[1].status != "success"
@@ -4865,6 +4921,18 @@ def test_normal_review_receipts_and_same_task_failure(
     assert len(calls) == (2 if failure else 4)
     if failure:
         assert (
+            state["stop_context"]["code"]
+            == {
+                "native": "native_failure",
+                "mutation": "candidate_validation",
+                "reject": "output_validation",
+            }[failure]
+        )
+        assert state["stop_context"]["phase"] == "review"
+        assert state["stop_context"]["evidence_refs"] == [
+            f"tracker-ticket:{project_id}:{first.id}:attempt:1:review"
+        ]
+        assert (
             repo.brief(project_id=project_id, ticket_key="second").ticket.status.value
             == "not-started"
         )
@@ -7495,6 +7563,10 @@ def test_candidate_correction_admission_before_native_execution(
     else:
         assert len(calls) == prior_calls
         assert ticket.status == "failed"
+        assert (
+            repo.get(project_id=project_id, task_key="deliver").tasks[0].delivery.stop_context.code
+            == "candidate_validation"
+        )
         assert "delivery" not in evidence and "review" not in evidence
         assert (
             "dirty" if case == "dirty-required" else "prior candidate and base"

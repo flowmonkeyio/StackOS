@@ -36,6 +36,61 @@ def seed(api, project_id):
 
 
 @pytest.mark.parametrize("mode", ["raw", "compact"])
+def test_stop_context_survives_registered_full_light_active_and_activity_reads(
+    api, project_id, mode
+):
+    from stackos.task_delivery import _stop_context, _update_delivery
+
+    seed(api, project_id)
+    with Session(api.app.state.engine) as session:
+        repo = TrackerRepository(session)
+        ticket = repo.brief(project_id=project_id, ticket_key="visible-child").ticket
+        expected = _stop_context(
+            "native_failure", ticket=ticket, phase="review", evidence={"attempt": 2}
+        )
+        agent = {"name": "fixture", "instructions": "Private frozen prompt"}
+        _update_delivery(
+            repo,
+            project_id,
+            "visible",
+            status="stopped",
+            reason="Native invocation failed",
+            job_ref="fixture",
+            delivery_agent=agent,
+            review_agent=agent,
+            stop_context=expected,
+        )
+    for operation, scope in (
+        ("tracker.get", {"task_key": "visible", "include_graph": False}),
+        ("tracker.get", {"task_key": "visible", "projection": "ui", "include_graph": False}),
+        ("tracker.activeTasks", {}),
+    ):
+        response = api.post(
+            f"/api/v1/operations/{operation}/call",
+            json={"arguments": {"project_id": project_id, "response_mode": mode, **scope}},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        data = body.get("data", body)
+        task = next(
+            task
+            for task in data["items" if operation == "tracker.activeTasks" else "tasks"]
+            if task["key"] == "visible"
+        )
+        assert task["delivery"]["stop_context"] == expected
+        assert "Private frozen prompt" not in json.dumps(task["delivery"])
+    activity = api.post(
+        "/api/v1/operations/tracker.taskActivity/call",
+        json={
+            "arguments": {"project_id": project_id, "task_key": "visible", "response_mode": mode}
+        },
+    )
+    assert activity.status_code == 200, activity.text
+    data = activity.json().get("data", activity.json())
+    assert any(item["details"].get("stop_context") == expected for item in data["items"])
+
+
+@pytest.mark.parametrize("mode", ["raw", "compact"])
 def test_registered_ui_projection_preserves_complete_scope_and_rejects_foreign(
     api, project_id, mode
 ):

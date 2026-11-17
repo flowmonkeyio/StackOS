@@ -122,6 +122,7 @@ def validate_step_expected_outputs(
         raise ValidationError(
             "run plan step result does not satisfy expected outputs",
             data={
+                "code": "step_output_validation",
                 "run_plan_id": step.run_plan_id,
                 "step_id": step.step_id,
                 "issues": issues,

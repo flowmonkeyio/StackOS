@@ -255,6 +255,9 @@ describe('TrackerTaskDetailDialog', () => {
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
     const automatic = { ...task(), metadata_json: { delivery: {
       status: 'stopped', ticket_key: source.key, reason: 'Browser access denied.',
+      stop_context: { code: 'native_failure', phase: 'delivery', next_owner: 'main_agent',
+        next_action: 'inspect_retained_evidence', resume_condition: 'explicit_rehandoff',
+        facts: [], evidence_refs: ['tracker-ticket:1:2:attempt:1:delivery'] },
       job_ref: 'task-delivery:1:1', delivery_agent: agent, review_agent: agent,
     } } }
     const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: automatic, tickets: [source] } })
@@ -262,11 +265,15 @@ describe('TrackerTaskDetailDialog', () => {
     expect(stop.text()).toContain('Delivery stopped')
     expect(stop.text()).toContain(source.title)
     expect(popup().get('.task-delivery-stop__reason').text()).toBe('Browser access denied.')
+    expect(stop.text()).toContain('Native invocation failed.')
+    expect(stop.text()).toContain('Main agent: Inspect retained evidence.')
+    expect(stop.text()).toContain('tracker-ticket:1:2:attempt:1:delivery')
     expect(popup().text()).toContain('In Progress')
     await wrapper.setProps({ ticketKey: source.key, ticket: source })
     await flushPromises()
     const ticketStop = popup().get('.tracker-task-detail + div .task-delivery-stop')
     expect(ticketStop.text()).toContain('Browser access denied.')
+    expect(ticketStop.text()).toContain('Resume requires explicit reconciliation')
     await wrapper.setProps({ task: { ...automatic, metadata_json: { delivery: { ...automatic.metadata_json.delivery, status: 'running' } } } })
     expect(popup().find('.task-delivery-stop').exists()).toBe(false)
     wrapper.unmount()
