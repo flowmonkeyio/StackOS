@@ -2,6 +2,8 @@
 
 Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.25
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
+Scoped amendment: Candidate admission and bounded reporting-only continuation from v0.8.30.
+The v0.8.25 adaptation and prior compact amendment remain; other source deltas are not claimed.
 Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
@@ -145,6 +147,17 @@ resolve or create the workflow-backed run before tracker tickets. Direct
 tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
+
+Candidate admission: Before the first engineering coding handoff, main/planning
+establishes a clean isolated or explicitly authorized checkpointed baseline
+that can produce the required committed candidate, preserving unrelated bytes.
+No automatic stash, reset, branch move or commit is authorized. For a
+current-target evidence_only correction, the existing runtime checks the
+prior delivered candidate and base before native invocation or repair charging;
+final candidate validation remains required. Missing/mismatched current evidence
+stops admission; stale intent retains conservative source-repair validation.
+Preserve dirty noncoding, unborn/non-Git and exact owned-work resume contracts;
+do not invent a universal clean-tree gate or infer coding intent from prose.
 
 For new v0.8.0 plans the sequence is:
 
@@ -556,7 +569,7 @@ Fresh persisted correction outranks old approved review, which remains history.
 Corrected source requires a separate descendant commit and independent exact-SHA
 review. Preserve repair_count across integration-origin correction, including at
 three consumed ordinary repairs; a subsequent ordinary rejection permits no fourth
-ordinary repair. Never reopen to reset that count. Unsupported/no-progress correction and failures of the assigned agent's own invocation or
+ordinary repair. Never reopen to reset that count. Outside Bounded reporting-only continuation, unsupported/no-progress correction and failures of the assigned agent's own invocation or
 returned-result/schema/candidate integrity stop without fallback. Followups stay
 nonblocking; exclusions, authority/ownership conflicts and materially different
 outcomes require main reconciliation. Source edits do not activate this method on
@@ -623,6 +636,21 @@ not authorize a restart of the daemon orchestrating the active task. Source vali
 adoption, isolated native consumption or installed activation complete.
 
 ## Recovery And Closeout
+
+Bounded reporting-only continuation: Only the supporting runtime may offer
+one persisted allowance after an otherwise successful parsed workflow report
+is rejected with complete key-name-only diagnostics and existing schema,
+dependency and outstanding-action gates pass. In that same native session,
+rename only rejected descriptive labels; preserve status, summary, candidate,
+values, factual claims, proof references, followups and limits exactly.
+No tools, actions, tests, reviews, code changes or lifecycle writes are allowed;
+do not replay completed work. Key-only diagnostics do not establish harmlessness;
+never relabel a credential to evade detection. Real secret values,
+unknown/incomplete classification, malformed reports, actual denial,
+native failure or a second rejection still stop without fallback.
+The runtime retains original/corrected receipts and sessions; this allowance
+does not consume an ordinary source-repair pass and rehandoff cannot renew it.
+Agents cannot self-authorize this continuation or bypass final validation.
 
 Use tracker.startDelivery with replace_review only under explicit operator authorization for one quiescent stopped ordinary review on its exact clean successful delivery candidate. Pin the expected attempt, native review thread, candidate and current resolved reviewer snapshot digest; optional reviewer_source pins an approved existing same-project binding/source/digest. Use canonical current reviewer selection, preserve host/provider/profile and task-only routing, and never supply raw execution overrides. Retain completed delivery, retired review/session/snapshot/findings/attempts and consumed repair allowance. This explicit transition launches only fresh independent review; ordinary rehandoff and source edits never imply replacement. Reject live, stale, foreign, dirty or ineligible work; replacement failure stays stopped. Inspect original and replacement evidence through existing tracker reads. Specialists return evidence unless explicitly assigned recovery authority; never repair tracker metadata manually or claim installed activation from source proof.
 

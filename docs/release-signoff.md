@@ -79,6 +79,10 @@ Choose ticket-local checks from the requested flow, actual directly affected
 consumers and relevant failure/recovery transitions. Stop expanding after those
 obligations are answered unless new evidence, a material change or a mandatory
 gate warrants more. This does not replace the final integrated signoff above.
+For migration, shared UI and lifecycle-fixture changes, apply
+[retained consumer and fixture safeguards](./integration-testing.md#retained-consumers-and-lifecycle-fixtures)
+at the affected gate, using the actual emitted contract. Reuse the shipped
+regressions; this adds no broad per-child suite or installed-upgrade M2 gate.
 Judge a command by its actual exit status, completion and unhandled errors as
 well as assertions: green assertions with a nonzero exit or unhandled error are
 failed proof. Repair affected code, fixtures or setup without weakening their

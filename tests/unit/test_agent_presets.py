@@ -919,11 +919,11 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.8",
         "codebase-explorer": "0.6.8",
-        "planning": "0.7.27",
+        "planning": "0.7.28",
         "architecture": "0.6.9",
         "test-designer": "0.6.13",
-        "delivery": "0.7.25",
-        "delivery-reviewer": "0.6.26",
+        "delivery": "0.7.26",
+        "delivery-reviewer": "0.6.27",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -946,7 +946,12 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         tuple(
             rule
             for rule in presets[role].prompt_contract.must_do
-            if "stackos.sdlc.delivery-orchestrator" in rule
+            if rule.startswith(
+                (
+                    "For an explicitly assigned, operator-authorized review replacement,",
+                    "Only for an assigned ready_to_use setup or capability check,",
+                )
+            )
         )
         for role in ("planning", "delivery", "delivery-reviewer")
     }
@@ -1124,6 +1129,29 @@ def test_sdlc_final_result_rule_resolves_identically_for_delivery_and_review() -
     assert "supplied occurrence output schema when present" in rules[0]
     assert "return the validated payload unchanged" in rules[0]
     assert "Any later edit requires revalidation" in rules[0]
+
+
+def test_sdlc_roles_reference_shared_report_and_admission_boundaries() -> None:
+    loader = AgentPresetLoader()
+    for role, filename, boundary in (
+        ("planning", "sdlc-planning.toml", "Candidate admission"),
+        ("delivery", "sdlc-delivery.toml", "Bounded reporting-only continuation"),
+        (
+            "delivery-reviewer",
+            "sdlc-delivery-reviewer.toml",
+            "Bounded reporting-only continuation",
+        ),
+    ):
+        preset = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        assert any(
+            boundary in rule and "stackos.sdlc.delivery-orchestrator" in rule
+            for rule in preset.prompt_contract.must_do
+        )
+        local = tomllib.loads((REPO_ROOT / ".codex/agents" / filename).read_text())
+        assert boundary in local["developer_instructions"]
+        assert (
+            ".codex/orchestrator/sdlc-delivery-orchestrator.md" in local["developer_instructions"]
+        )
 
 
 def test_sdlc_source_and_local_verification_repair_contracts() -> None:

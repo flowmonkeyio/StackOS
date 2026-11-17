@@ -74,7 +74,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.29"
+    assert loaded.preset.version == "0.8.30"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -346,6 +346,47 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
     )
     # Manual exceptions are occurrence-scoped; no universal drag-and-drop waiver.
     assert "drag-and-drop" not in source
+
+
+def test_sdlc_new_recovery_boundaries_resolve_at_the_shared_method_owner() -> None:
+    preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    rules = preset.operating_contract.must_do
+    local = " ".join(
+        (Path(__file__).resolve().parents[2] / ".codex/orchestrator/sdlc-delivery-orchestrator.md")
+        .read_text()
+        .split()
+    )
+    boundaries = {
+        "Bounded reporting-only continuation:": (
+            "one persisted allowance",
+            "complete key-name-only diagnostics",
+            "schema, dependency and outstanding-action gates",
+            "same native session",
+            "No tools, actions, tests, reviews, code changes or lifecycle writes",
+            "preserve status, summary, candidate, values, factual claims, "
+            "proof references, followups and limits",
+            "unknown/incomplete classification",
+            "actual denial",
+            "does not consume an ordinary source-repair pass",
+        ),
+        "Candidate admission:": (
+            "first engineering coding handoff",
+            "clean isolated or explicitly authorized checkpointed baseline",
+            "No automatic stash, reset, branch move or commit",
+            "current-target evidence_only",
+            "prior delivered candidate and base",
+            "before native invocation or repair charging",
+            "final candidate validation remains required",
+            "stale intent retains conservative source-repair validation",
+            "dirty noncoding, unborn/non-Git and exact owned-work resume",
+        ),
+    }
+    for heading, requirements in boundaries.items():
+        matches = [rule for rule in rules if rule.startswith(heading)]
+        assert len(matches) == 1, heading
+        for requirement in requirements:
+            assert requirement in matches[0], requirement
+            assert requirement in local, requirement
 
 
 def test_sdlc_closeout_links_reviewed_changes_without_claiming_later_outcomes() -> None:

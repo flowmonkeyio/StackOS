@@ -133,6 +133,40 @@ verification, Block Kit interaction state, native message reaction actions,
 message delete actions, generic agent requests, and redacted action-call/resource
 audit.
 
+## Retained Consumers And Lifecycle Fixtures
+
+For a migration change, inspect affected retained readers and current-head
+expectations as well as the migration itself. Tests that initialize or upgrade
+to head must reconcile their expected revision with the migration owner;
+historical upgrade/downgrade cases retain their deliberately pinned revisions
+and data assertions. Update
+only expectations invalidated by the change, preserving released migration
+fixes and unrelated historical coverage.
+
+For a shared UI producer or component change, trace its actual emitted payload
+and event contract through affected retained callers, including screens outside
+the edited path. Exercise the applicable selection, empty/error and recovery
+interaction at the consumer; a hand-built simplified payload or a component
+test alone cannot prove that wiring. Use the existing UI checks and selected
+browser proof where rendering or interaction changes, with the independent
+guards in `ui/src/design/DESIGN.md`.
+
+Lifecycle source tests use disposable HOME, data/state directories and explicit
+host/port settings before invoking the real caller. A sandbox HOME alone does
+not isolate a probe that still targets the installed daemon. For an absent
+source, reserve a non-listening port for the fixture lifetime; occupied-source
+cases need their own owned endpoint and explicit expected refusal or handoff.
+Use the real emitted upgrade identity, preparation/continuation result and
+checkpoint refs where the claim crosses those owners. Mock only the declared
+external/native edge, retain the full consumed contract and state its limits;
+do not disable the guard or return a shortened success object to hide a failure.
+The existing install-script sandbox and upgrade-caller regressions own these
+checks; preserve them rather than adding another fixture framework.
+
+These are source/fixture safeguards. They do not execute or establish the
+deferred real installed-upgrade M2 proof, app restart, signing or notarization.
+Those remain with their existing explicitly authorized lifecycle/release gate.
+
 ## Rule
 
 Do not bypass StackOS internals during local integration testing. Mock only the

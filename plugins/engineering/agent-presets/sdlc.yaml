@@ -226,7 +226,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.27
+    version: 0.7.28
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -265,6 +265,7 @@ presets:
         - Include ticket/task/run/step refs, assignment contract revision, canonical operator source refs, objective, AC IDs, non-goals, constraints and relevant design/interfaces. State the observable outcome, intended environment/data state and acceptance owner; source-ready does not imply installed or externally verified. Record each current amendment, owning ticket and superseded requirement; surface an exclusion that would remove the requested outcome.
         - Include a task-specific before/after example grounded in operator intent and the existing flow. Preserve owners and user journeys unless their change is requested. Distinguish mistaken planning assumptions, violations of clear requirements and later operator amendments; resolve consequential unknowns with bounded discovery before dependent implementation, using a separate ticket only when it has independent value. Simplification must not remove required states or invent a journey, and later amendments are not evidence of an earlier defect.
         - Assign each correction to guidance, deterministic code or both at the existing canonical owner. Guidance owns operating judgment; code owns shared lifecycle, validation and integrity behavior. A runtime defect needs a code correction and proof, not another reminder; a judgment gap does not justify a semantic policy engine. For guidance work name generic/project adaptations and the explicit adoption proof; editing a source does not update frozen or resumed sessions.
+        - Apply Candidate admission in stackos.sdlc.delivery-orchestrator before engineering coding handoff or correction planning; retain its supported noncoding and owned-work exceptions without manufacturing a candidate or widening authority.
         - &sdlc_reviewer_capability Only for an assigned ready_to_use setup or capability check, consume the effective workflow setup_activation_method and applicable protocol from stackos.sdlc.delivery-orchestrator; reuse already-read current guidance. The selected reviewer executes missing bounded proof under its actual settings and normal approvals, returning setup_activation_checks with environment and evidence refs. Generic coordinator success cannot prove reviewer capability. Ordinary delivery does not adopt defaults or start separate setup/proof work.
         - &sdlc_activation_scope For ordinary ready_to_use Setup/Update or an explicit automatic-delivery activation assignment, retain activation as required current acceptance under the effective engineering.tracked-delivery setup_activation_method policy. Only explicit infrastructure_only stops at preparation and creates no execution state. Within the assigned role verify canonical saved project-default readback, exact role bindings, compatible local lifecycle rules and actual native consumption. First reuse actual completed delivery, distinct independent review and workflow closeout evidence only for claims covered at the current project/source/default/native/environment basis. Record covered/missing claims; perform or independently verify only missing or invalidated small harmless native/configuration/behavior checks within the existing owning setup/task and current authority. Do not automatically create a separate full verification task/workflow, tracker parent or review workflow merely for readiness, or nested queue/wait/drain machinery solely for proof. Preserve independent review within existing product/adaptation tasks; standalone setup follows its effective method and genuine current evidence. Aborted, incomplete, simulated or foreign-project evidence cannot become completed activation. Record actual consumed source/snapshot identities, reused evidence and newly executed checks separately from prepared files and saved readback in the existing receipt. Task overrides cannot prove missing defaults. Preserve supported host/model/provider preferences, compatible customization and frozen sessions; source edits do not establish saved adoption, refresh active sessions or prove installed activation. Missing authority or required proof leaves ready_to_use unfinished, never activation_pending success or a required followup. No all-role launch matrix, replacement runner or unrelated business execution is authorized.
         - Own the assigned planning outcome. Name accepted prerequisites, actual ownership, shared resources, dirty baseline and isolation needs. Check dependency feasibility and actual tool capability. Reconcile current operator instructions with frozen workflow, role, local, saved and launch context; preparation-only holds must not become execution restrictions, and manual exceptions apply only to their named proof. Resolve routine setup gaps proportionately within authority and record the result. Explicit exclusions, unavailable authority, ownership conflicts, materially different outcomes or compromised review independence stop affected work for reconciliation; continue unaffected work. Installation alone does not prove capability.
@@ -393,7 +394,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.7.25
+    version: 0.7.26
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -468,7 +469,9 @@ presets:
           alone resuming original delivery/review/verifier sessions. Fresh persisted
           correction outranks old approved review, which remains history. Corrected
           source requires a separate descendant commit and independent exact-SHA review;
-          consumed ordinary repair allowance is never reset. Unsupported/no-progress
+          consumed ordinary repair allowance is never reset. Apply Bounded reporting-only
+          continuation in stackos.sdlc.delivery-orchestrator only when offered by the
+          supporting runtime. Outside that narrow report continuation, unsupported/no-progress
           correction and failures of the assigned agent's own invocation or returned-result/schema/candidate integrity
           stop without fallback; followups remain nonblocking. Source edits never
           activate this path on unsupported frozen/live occurrences.
@@ -494,7 +497,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.6.26
+    version: 0.6.27
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer
