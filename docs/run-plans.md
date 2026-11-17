@@ -57,6 +57,15 @@ precedes step/result and tracker-mirror writes, so a rejected `recordStep`
 commits none of those changes. Successful results retain the existing
 validation and transaction path.
 
+Automatic delivery may use complete trusted key-only diagnostics for one
+[report-only continuation](task-tracker.md#automated-task-delivery) in the same
+retained session. It persists the allowance before resuming, preserves the
+candidate, proof and work state, and omits rejected bodies from receipts. Missing
+proof, unsettled actions, incomplete classification or any value finding is
+ineligible. Corrected results still enter `recordStep` through all original
+schema, secret, dependency, authority and lifecycle checks, with one accepted
+write. No accepted step or action is replayed by this reporting path.
+
 `runPlan.create` also mirrors the plan into the project task tracker: one task
 for the run plan and one ticket per concrete step. Agents can use
 `tracker.next`, `tracker.brief`, and `tracker.verify` to navigate work without

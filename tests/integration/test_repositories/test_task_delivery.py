@@ -1183,6 +1183,418 @@ def test_secret_record_validation_preserves_only_safe_bounded_context(
     assert value_sentinel not in public
 
 
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+def test_report_correction_resumes_once_without_replaying_accepted_work(
+    session, project_id, tmp_path, monkeypatch, phase
+):
+    from stackos import task_delivery
+
+    sha = commit(tmp_path, "accepted-source")
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "key": "report-correction",
+            "title": "Report correction",
+            "steps": [
+                {"id": "accepted", "title": "Accepted"},
+                {
+                    "id": "report",
+                    "title": "Report",
+                    "depends_on": ["accepted"],
+                    "metadata_json": {"agent_assignment": f"{phase}_agent"},
+                },
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="accepted")
+    plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="accepted",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"proof_ref": "accepted-proof"},
+    )
+    predecessor = plans.get_step(plan.id, "accepted").model_dump(mode="json")
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="report")
+    task_key = f"workflow-{plan.id}"
+    ticket_key = f"{task_key}-report"
+    # Exact safe prose retained by the accepted diagnostics predecessor.
+    prose = (
+        "Local disconnect removes local custody/dispatch. Explicit CFO revoke terminates future "
+        "key admissions; rotate any disclosed key. Native0.2.8 intentionally lacks CFO provider "
+        "support."
+    )
+    original = {"commit_sha": sha, "recovery_plan": {"credentials": prose}}
+    corrected = {"commit_sha": sha, "recovery_plan": {"access_recovery": prose}}
+    calls, accepted, writes, native_calls = [], [], [], []
+    original_record = RunPlanRepository.record_step
+    original_write = TrackerRepository.update_ticket
+
+    def record(owner, **kwargs):
+        result = original_record(owner, **kwargs)
+        if kwargs["status"] == RunPlanStepStatus.SUCCESS:
+            accepted.append(kwargs["step_id"])
+        return result
+
+    def capture_write(owner, **kwargs):
+        writes.append(deepcopy(kwargs["patch_json"]))
+        return original_write(owner, **kwargs)
+
+    def launch(*args, **kwargs):
+        from stackos.host_mcp.service import ActiveInvocation
+
+        packet = json.loads(args[3])
+        calls.append(packet)
+        native = ActiveInvocation(
+            invocation_id=f"report-call-{len(calls)}",
+            scope=kwargs["execution_scope"],
+            host_key=args[0],
+            model=None,
+            started_at="2026-11-17T00:00:00+00:00",
+            thread_id="retained-report",
+        )
+        kwargs["on_execution_change"](native, True)
+        kwargs["on_session_attached"](native)
+        native_calls.append(native)
+        assert packet["phase"] == phase
+        if len(calls) == 1:
+            assert kwargs.get("resume_thread_id") is None
+        else:
+            assert len(calls) == 2
+            assert kwargs["resume_thread_id"] == "retained-report"
+            assert "report-only" in packet["assignment"]
+            assert "No tools" in packet["assignment"]
+            with Session(session.get_bind()) as check:
+                current = (
+                    TrackerRepository(check)
+                    .brief(project_id=project_id, ticket_key=ticket_key)
+                    .ticket.completion_evidence_json["automatic_delivery"]
+                )
+                correction = current["reporting_corrections"][-1]
+                assert correction["allowance_used"] is True
+                assert correction["original_receipt"].get("result") is None
+                assert correction["original_receipt"]["result_omitted"] == "raw_secret"
+                assert current["attempt"] == 1
+            assert plans.get_step(plan.id, "report").status == RunPlanStepStatus.RUNNING
+            assert plans.get_step(plan.id, "report").result_json is None
+            # Late original completion/cancellation cannot overwrite the new
+            # invocation's receipt or fence, even with identical phase/attempt.
+            original_call = native_calls[0]
+            original_call.cancelled.set()
+            kwargs["on_execution_change"](original_call, False)
+            task_delivery._record_execution_transition(
+                lambda: Session(session.get_bind()), original_call, False
+            )
+            with Session(session.get_bind()) as check:
+                receipt = (
+                    TrackerRepository(check)
+                    .brief(project_id=project_id, ticket_key=ticket_key)
+                    .ticket.completion_evidence_json["automatic_delivery"][phase]
+                )
+                assert receipt["execution"]["invocation_id"] == native.invocation_id
+        native.finished = True
+        native.finished_at = "2026-11-17T00:00:01+00:00"
+        kwargs["on_execution_change"](native, False)
+        return AgentRunResult(
+            0,
+            thread_id="retained-report",
+            result=generic_result(
+                outputs=original if len(calls) == 1 else corrected,
+                followups=[{"text": "Unrelated observation"}],
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    monkeypatch.setattr(RunPlanRepository, "record_step", record)
+    monkeypatch.setattr(TrackerRepository, "update_ticket", capture_write)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan.id,
+        step_id="report",
+    )
+    scheduler.run()
+    session.expire_all()
+    assert len(calls) == 2, (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key=task_key)
+        .tasks[0]
+        .metadata_json["delivery"]
+        .get("reason")
+    )
+    assert accepted == ["report"]
+    assert plans.get_step(plan.id, "report").result_json == corrected
+    assert plans.get_step(plan.id, "accepted").model_dump(mode="json") == predecessor
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key=task_key)
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "complete"
+    assert len(snapshot.tasks[0].context_json["followups"]) == 1
+    evidence = next(t for t in snapshot.tickets if t.key == ticket_key).completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert "repair_count" not in evidence
+    assert evidence["reporting_corrections"][-1]["status"] == "accepted"
+    assert evidence["sessions"][phase]["thread_id"] == "retained-report"
+    # Rejected raw dictionary keys/bodies never enter any receipt write.
+    assert '"credentials"' not in json.dumps(writes)
+    # A duplicate scheduler delivery after acceptance cannot replay the native work.
+    task_delivery.run_delivery(
+        session_factory=lambda: Session(session.get_bind()),
+        project_id=project_id,
+        task_key=task_key,
+        handoff_id=snapshot.tasks[0].metadata_json["delivery"]["handoff_id"],
+    )
+    assert len(calls) == 2 and accepted == ["report"]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "value",
+        "late-value",
+        "incomplete",
+        "unknown",
+        "malformed",
+        "trailing",
+        "duplicate-key",
+        "nonfinite",
+        "outer",
+        "native",
+        "missing-session",
+        "candidate",
+        "blocked",
+        "missing-proof",
+        "pending-action",
+        "second-key",
+        "changed-value",
+        "changed-summary",
+        "changed-proof",
+        "changed-candidate",
+        "changed-work",
+        "changed-state",
+        "changed-session",
+        "changed-saved-session",
+        "changed-saved-candidate",
+        "second-native",
+        "second-malformed",
+        "second-outer",
+        "second-blocked",
+        "second-interrupted",
+    ],
+)
+def test_report_correction_fails_closed_and_retains_consumed_allowance(
+    session, project_id, tmp_path, monkeypatch, failure
+):
+    from stackos import task_delivery
+    from stackos.repositories.run_plans import RunPlanSecretValidationError
+
+    sha = commit(tmp_path, "source")
+    plans = RunPlanRepository(session)
+    step = {"id": "report", "title": "Report"}
+    if failure == "missing-proof":
+        step["expected_outputs"] = {"proof": {"type": "object", "required": True}}
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={"key": "closed-report", "title": "Closed report", "steps": [step]},
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="report")
+    task_key, ticket_key = f"workflow-{plan.id}", f"workflow-{plan.id}-report"
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=ticket_key,
+        patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 3}}},
+    )
+    original = {
+        "commit_sha": sha,
+        "credentials": "Use the existing account owner.",
+        "proof_ref": "retained-proof",
+    }
+    corrected = {
+        "commit_sha": sha,
+        "access_recovery": original["credentials"],
+        "proof_ref": "retained-proof",
+    }
+    if failure == "value":
+        original["credentials"] = "Bearer synthetic-private-material"
+    if failure == "late-value":
+        original.update({f"password_{i}": "plain" for i in range(8)})
+        original["last"] = [{"body": "Bearer synthetic-private-material"}]
+    calls = []
+    if failure in {"incomplete", "unknown"}:
+        original_record = RunPlanRepository.record_step
+
+        def reject(owner, **kwargs):
+            if kwargs.get("result_json"):
+                scan = task_delivery.find_run_plan_secret_findings(kwargs["result_json"])
+                data = {"rule": "raw_secret", "paths": scan.paths}
+                if failure == "incomplete":
+                    data.update(scan.model_dump(), classification_complete=False)
+                raise RunPlanSecretValidationError("Safe secret rejection", data=data)
+            return original_record(owner, **kwargs)
+
+        monkeypatch.setattr(RunPlanRepository, "record_step", reject)
+    if failure == "pending-action":
+        from stackos.db.models import ActionCall, ActionCallStatus
+
+        session.add(
+            ActionCall(
+                project_id=project_id,
+                run_id=started.run_id,
+                run_plan_id=plan.id,
+                run_plan_step_id=plans.get_step(plan.id, "report").id,
+                action_key="fixture.perform",
+                plugin_slug="fixture",
+                operation="fixture.perform",
+                status=ActionCallStatus.RUNNING,
+            )
+        )
+        session.commit()
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        calls.append(packet)
+        correcting = len(calls) == 2
+        assert len(calls) <= 2
+        outputs = deepcopy(corrected if correcting else original)
+        thread = "retained-report"
+        status, code = "success", 0
+        if correcting:
+            assert kwargs["resume_thread_id"] == thread
+            if failure == "second-interrupted":
+                raise RuntimeError("Fixture interruption after allowance commit")
+            if failure == "second-key":
+                outputs = original
+            elif failure == "changed-value":
+                outputs["access_recovery"] = "Different facts"
+            elif failure == "changed-proof":
+                outputs["proof_ref"] = "different-proof"
+            elif failure == "changed-candidate":
+                outputs["commit_sha"] = "a" * 40
+            elif failure == "changed-work":
+                (tmp_path / "unexpected-work").write_text("changed")
+            elif failure == "changed-state":
+                with Session(session.get_bind()) as other:
+                    TrackerRepository(other).update_ticket(
+                        project_id=project_id,
+                        ticket_key=ticket_key,
+                        patch_json={"context_json": {"new_authority": "changed"}},
+                    )
+            elif failure == "changed-session":
+                thread = "foreign-session"
+            elif failure in {"changed-saved-session", "changed-saved-candidate"}:
+                with Session(session.get_bind()) as other:
+                    owner = TrackerRepository(other)
+                    completion = deepcopy(
+                        owner.brief(
+                            project_id=project_id, ticket_key=ticket_key
+                        ).ticket.completion_evidence_json
+                    )
+                    automatic = completion["automatic_delivery"]
+                    if failure == "changed-saved-session":
+                        automatic["sessions"]["delivery"]["thread_id"] = "foreign-session"
+                    else:
+                        automatic["candidate"]["commit_sha"] = "a" * 40
+                    owner.update_ticket(
+                        project_id=project_id,
+                        ticket_key=ticket_key,
+                        patch_json={"completion_evidence_json": completion},
+                    )
+            elif failure == "second-native":
+                code = 1
+            elif failure == "second-blocked":
+                status = "blocked"
+        elif failure == "candidate":
+            outputs["commit_sha"] = "a" * 40
+        elif failure == "native":
+            code = 1
+        elif failure == "missing-session":
+            thread = None
+        elif failure == "blocked":
+            status = "blocked"
+        value = generic_result(status=status, outputs=outputs)
+        if failure == "changed-summary" and correcting:
+            value["summary"] = "Different claims"
+        if failure in ({"second-malformed"} if correcting else {"malformed", "trailing"}):
+            value["outputs"] = '{"credentials":"plain"}' + (
+                " trailing" if failure == "trailing" else "{"
+            )
+        if failure == "duplicate-key" and not correcting:
+            value["outputs"] = '{"credentials":"plain","credentials":"other"}'
+        if failure == "nonfinite" and not correcting:
+            value["outputs"] = '{"credentials":NaN}'
+        if failure == ("second-outer" if correcting else "outer"):
+            value["unexpected"] = True
+        return AgentRunResult(code, thread_id=thread, result=value)
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan.id,
+        step_id="report",
+    )
+    scheduler.run()
+    session.expire_all()
+    snapshot = repo.get(project_id=project_id, task_key=task_key)
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    assert plans.get_step(plan.id, "report").result_json in (None, {})
+    assert plans.get_step(plan.id, "report").status in {
+        RunPlanStepStatus.BLOCKED,
+        RunPlanStepStatus.FAILED,
+    }
+    evidence = repo.brief(
+        project_id=project_id, ticket_key=ticket_key
+    ).ticket.completion_evidence_json["automatic_delivery"]
+    assert evidence["repair_count"] == 3
+    correction_expected = failure.startswith("second-") or failure.startswith("changed-")
+    assert len(calls) == (2 if correction_expected else 1)
+    if correction_expected:
+        correction = evidence["reporting_corrections"][-1]
+        assert correction["allowance_used"] is True
+        assert correction["status"] == (
+            "consumed" if failure == "second-interrupted" else "rejected"
+        )
+        assert correction["original_receipt"].get("result") is None
+        # Explicit rehandoff/restarted controller keeps the allowance and stops
+        # before any broad native assignment or a third reporting invocation.
+        plans.reopen(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="report",
+            reason="Explicit fixture recovery of consumed reporting allowance",
+        )
+        plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="report")
+        submit(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            task_key=task_key,
+            run_plan_id=plan.id,
+            step_id="report",
+        )
+        scheduler.run()
+        session.expire_all()
+        retained = repo.brief(
+            project_id=project_id, ticket_key=ticket_key
+        ).ticket.completion_evidence_json["automatic_delivery"]
+        assert len(calls) == 2
+        assert retained["repair_count"] == 3
+        assert retained["reporting_corrections"] == evidence["reporting_corrections"]
+        assert retained["sessions"] == evidence["sessions"]
+
+
 @pytest.mark.parametrize("transition", ["reopened", "cancelled", "native_error"])
 @pytest.mark.parametrize("secret_output", [True, False])
 def test_unvalidated_result_receipt_privacy_preserves_lifetime_evidence(

@@ -686,6 +686,34 @@ without that persisted progress, blocked/failed, malformed output and native
 failure stop the same task.
 No ready work with unfinished tickets is stopped, never reported complete.
 
+A successful workflow report rejected by `runPlan.recordStep` may receive one
+report-only continuation in the same retained native role session. Eligibility
+requires exit zero, a valid outer envelope, one strictly parsed inner JSON object,
+valid frozen output/proof contracts, settled actions, an intact candidate and
+complete trusted key-name-only diagnostics. Duplicate JSON keys, non-JSON numbers,
+trailing content, value-pattern findings and incomplete/unknown classification
+remain failures. Key-only classification never establishes that content is safe.
+
+Before continuation, the existing `automatic_delivery.reporting_corrections`
+receipt consumes the allowance and retains the safe original invocation receipt
+and diagnostic context, omitting the rejected body. The producer may rename
+rejected descriptive labels only; status, summary, candidate, values, proof refs,
+followups and limits must remain identical. The prompt prohibits tools, actions,
+tests, code changes and lifecycle writes. Runtime does not rewrite the report or
+permit credential relabeling to bypass the guard. This is a cooperative reporting
+contract, not a new host sandbox or a universal guarantee of model obedience.
+
+The corrected return passes strict parsing, schema, secret, native identity,
+candidate and current lifecycle/authority checks again. Worktree and assignment
+state must remain unchanged. Only the existing run-plan owner accepts the result;
+accepted predecessors and ordinary `repair_count` remain intact. Original and
+corrected safe receipts retain their invocation identities. A second invalid
+return stops. Restart or explicit rehandoff retains the consumed allowance and
+stops unresolved reporting recovery before a broad work assignment; it cannot
+mint another correction. Duplicate/late predecessor callbacks cannot own the
+continuation receipt. Missing retained comparison evidence requires explicit
+reconciliation rather than reexecution of accepted work.
+
 For Codex, `thread.started` commits the exact native ID and frozen role identity
 into `automatic_delivery.sessions[phase]` before native exit. The write requires
 the current handoff, ticket, attempt, phase and invocation receipt; stale or

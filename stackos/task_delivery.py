@@ -50,6 +50,7 @@ from stackos.host_mcp.service import (
 from stackos.operations.tracker.schemas import TaskDeliveryAgent, TaskDeliveryAgentOverride
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
+from stackos.repositories.run_plan_output_contracts import validate_step_expected_outputs
 from stackos.repositories.run_plans import RunPlanRepository, RunPlanSecretValidationError
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.board import task_column
@@ -63,7 +64,10 @@ from stackos.repositories.tracker.schema import (
 from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
-from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
+from stackos.workflows.run_plan_schema import (
+    find_run_plan_secret_findings,
+    find_run_plan_secret_paths,
+)
 
 LAUNCH_AUTHORITY_BOUNDARY = (
     "Use only explicitly assigned operations, subject to normal native approval. "
@@ -107,6 +111,87 @@ RESULT_SCHEMA = {
 }
 ACTOR = "tracker.task-delivery"
 MAX_REPAIR_PASSES = 3
+
+
+def _result_outputs(encoded: str) -> dict[str, Any]:
+    """Decode the entire JSON object, without duplicate keys or non-JSON numbers."""
+
+    def object_pairs(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("outputs contains duplicate object keys")
+            value[key] = item
+        return value
+
+    def invalid_constant(_value):
+        raise ValueError("outputs contains a non-JSON number")
+
+    value = json.loads(encoded, object_pairs_hook=object_pairs, parse_constant=invalid_constant)
+    if not isinstance(value, dict):
+        raise ValueError("outputs must encode a JSON object")
+    return value
+
+
+def _report_labels_only(original: Any, corrected: Any) -> bool:
+    """Only rejected key labels may change; retain all values and other labels."""
+    if type(original) is not type(corrected):
+        return False
+    if isinstance(original, dict):
+        if len(original) != len(corrected):
+            return False
+        remaining = dict(corrected)
+        renamed = []
+        for key, value in original.items():
+            if find_run_plan_secret_findings({key: value}).findings and (
+                find_run_plan_secret_findings({key: None}).findings
+            ):
+                renamed.append(value)
+            elif key not in remaining or not _report_labels_only(value, remaining.pop(key)):
+                return False
+        for value in renamed:
+            match = next(
+                (key for key, item in remaining.items() if _report_labels_only(value, item)), None
+            )
+            if match is None:
+                return False
+            remaining.pop(match)
+        return not remaining
+    if isinstance(original, list):
+        return len(original) == len(corrected) and all(
+            _report_labels_only(before, after)
+            for before, after in zip(original, corrected, strict=True)
+        )
+    return bool(original == corrected)
+
+
+def _reporting_basis(repo, plans, project_id, ticket_key, state, workflow_step) -> str:
+    """Bind reporting to current work and authority, excluding receipt bookkeeping."""
+    brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(mode="json")
+    ignored = {
+        "completion_evidence_json",
+        "updated_at",
+        "ticket_summary",
+        "agent_stats",
+        "active_execution",
+        "work_duration",
+    }
+    basis = {
+        kind: {key: value for key, value in brief[kind].items() if key not in ignored}
+        for kind in ("task", "ticket")
+    }
+    automatic = (brief["ticket"].get("completion_evidence_json") or {}).get(
+        "automatic_delivery", {}
+    )
+    basis["ownership"] = {
+        key: automatic.get(key)
+        for key in ("attempt", "candidate", "repair_count", "sessions", "reporting_corrections")
+    }
+    basis["step"] = plans.get_step(
+        state["run_plan_id"], workflow_step.step_id, project_id=project_id, full_context=True
+    ).model_dump(mode="json")
+    basis["work"] = _worktree_snapshot(state["project_dir"])
+    return sha256(json.dumps(basis, sort_keys=True).encode()).hexdigest()
 
 
 def abort_run_plan(
@@ -3136,6 +3221,10 @@ def _record_execution_transition(
                 and isinstance(receipt, dict)
                 and "exit_code" not in receipt
                 and "result" not in receipt
+                and (
+                    receipt.get("execution", {}).get("invocation_id") == call.invocation_id
+                    or (active and "execution" not in receipt)
+                )
             ):
                 # Persist actual identity and bounded observations, never an outcome.
                 # Native result and candidate validation continue below unchanged.
@@ -3181,6 +3270,12 @@ def run_delivery(
 
     def execution_changed(call: ActiveInvocation, active: bool) -> None:
         nonlocal cancellation
+        receipt = evidence.get(call.scope.phase or "")
+        if isinstance(receipt, dict) and (
+            receipt.get("execution", {}).get("invocation_id") not in {None, call.invocation_id}
+            or (not active and "execution" not in receipt)
+        ):
+            return  # A late predecessor callback cannot own a reporting continuation.
         # Keep the original native fence after its registry/readers retire. A
         # canonical reopen authorizes new work, never this cancelled return.
         cancellation = call.cancelled
@@ -3266,6 +3361,14 @@ def run_delivery(
                 evidence = deepcopy(
                     (selected.completion_evidence_json or {}).get("automatic_delivery", {})
                 )
+                if any(
+                    item.get("status") != "accepted"
+                    for item in evidence.get("reporting_corrections", [])
+                ):
+                    raise ValidationError(
+                        "Reporting correction allowance already consumed; "
+                        "explicit reconciliation required without replaying work"
+                    )
                 role = state["agent_assignments"].get(ticket_key, "delivery_agent")
                 selected_agents = _ticket_agents(state, evidence)
                 _validate_ticket_execution(
@@ -3347,6 +3450,7 @@ def run_delivery(
                 if review_only or (workflow_step is not None and role == "review_agent")
                 else "delivery"
             )
+            reporting_correction = None
             while True:
                 schema = RESULT_SCHEMA
                 selected_role = (
@@ -3451,6 +3555,7 @@ def run_delivery(
                     workflow_step is None
                     and phase == "delivery"
                     and not upgrade_phase
+                    and reporting_correction is None
                     and evidence["attempts"]
                     and evidence["attempts"][-1].get("review", {}).get("validated_outcome")
                     == "repair"
@@ -3481,6 +3586,19 @@ def run_delivery(
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                     )
+                    if (
+                        reporting_correction is not None
+                        and _reporting_basis(
+                            repo,
+                            RunPlanRepository(session),
+                            project_id,
+                            ticket_key,
+                            state,
+                            workflow_step,
+                        )
+                        != reporting_correction["basis"]
+                    ):
+                        raise ValidationError("Reporting correction state changed before resume")
                     if replacement:
                         evidence.pop("review_replacement_pending")
                         evidence["review_replacement_active"] = replacement
@@ -3557,6 +3675,17 @@ def run_delivery(
                         _work_prompt_copy(
                             {
                                 "assignment": (
+                                    "Perform one report-only correction of your last rejected "
+                                    "report. No tools, actions, tests, reviews, code changes or "
+                                    "lifecycle writes. Rename only rejected descriptive labels; "
+                                    "preserve status, summary, candidate, values, factual claims, "
+                                    "proof references, followups and limits exactly. Never relabel "
+                                    "a credential to evade detection. Key-only diagnostics do not "
+                                    "establish that content is harmless. Return the complete "
+                                    "strict result envelope once."
+                                )
+                                if reporting_correction is not None
+                                else (
                                     "Execute the remaining frozen workflow_step contract. "
                                     "Use accepted receipts and current operator inputs. "
                                     "Return declared outputs and explicit disposition."
@@ -3599,6 +3728,11 @@ def run_delivery(
                                 ),
                                 "phase": phase,
                                 "occurrence": occurrence,
+                                **(
+                                    {"reporting_correction": reporting_correction["diagnostics"]}
+                                    if reporting_correction is not None
+                                    else {}
+                                ),
                                 "lifecycle": LAUNCH_AUTHORITY_BOUNDARY,
                                 "brief": brief,
                                 "delivery_result": evidence.get("delivery"),
@@ -3669,7 +3803,7 @@ def run_delivery(
                     # dictionary keys behind. Keep the original for canonical
                     # validation, and retain safe results without rewriting them.
                     try:
-                        receipt_outputs = json.loads(result.result["outputs"])
+                        receipt_outputs = _result_outputs(result.result["outputs"])
                     except (KeyError, TypeError, ValueError):
                         result_evidence["result"] = None
                         result_evidence["result_omitted"] = "unparseable_outputs"
@@ -3729,9 +3863,13 @@ def run_delivery(
                             "thread_id": thread_id,
                             **session_snapshot,
                         }
-                        outputs = json.loads(value["outputs"])
-                        if not isinstance(outputs, dict):
-                            raise ValidationError("outputs must encode a JSON object")
+                        outputs = _result_outputs(value["outputs"])
+                        if reporting_correction is not None and (
+                            {key: item for key, item in value.items() if key != "outputs"}
+                            != reporting_correction["envelope"]
+                            or not _report_labels_only(reporting_correction["outputs"], outputs)
+                        ):
+                            raise ValidationError("Reporting correction changed report content")
                         returned_sha = outputs.get("commit_sha")
                         changed_candidate = False
                         if workflow_step is None:
@@ -3891,7 +4029,26 @@ def run_delivery(
                             evidence[phase]["validation_error"] = validation_error
                             evidence[phase]["validated_outcome"] = None
                             valid = accepted = repair = False
-                    if valid:
+                    if reporting_correction is not None:
+                        correction_receipt = evidence["reporting_corrections"][-1]
+                        correction_receipt["status"] = "rejected"
+                        if (
+                            _reporting_basis(
+                                repo,
+                                RunPlanRepository(session),
+                                project_id,
+                                ticket_key,
+                                state,
+                                workflow_step,
+                            )
+                            != reporting_correction["basis"]
+                        ):
+                            validation_error = "Reporting correction changed candidate or state"
+                            evidence[phase]["validation_error"] = validation_error
+                            evidence[phase]["validated_outcome"] = None
+                            valid = accepted = repair = False
+                        correction_receipt["corrected_receipt"] = deepcopy(evidence[phase])
+                    if valid and not find_run_plan_secret_paths(outputs):
                         context = deepcopy(task.context_json or {})
                         notes = context.setdefault("followups", [])
                         notes.extend(
@@ -4001,7 +4158,9 @@ def run_delivery(
                                 project_id=project_id,
                                 step_id=workflow_step.step_id,
                                 status=status,
-                                result_json=outputs,
+                                result_json=None
+                                if reporting_correction is not None and not valid
+                                else outputs,
                                 error=None
                                 if accepted
                                 else (validation_error or result.error or value.get("summary")),
@@ -4018,9 +4177,63 @@ def run_delivery(
                                 "operation": "runPlan.recordStep",
                                 "phase": phase,
                             }
+                            scan = find_run_plan_secret_findings(outputs)
+                            diagnostics = {"paths": scan.paths, **scan.model_dump()}
+                            if (
+                                accepted
+                                and reporting_correction is None
+                                and scan.classification_complete
+                                and scan.findings
+                                and all(item.kind == "key_name" for item in scan.findings)
+                                and error.data.get("rule") == "raw_secret"
+                                and all(
+                                    error.data.get(key) == item for key, item in diagnostics.items()
+                                )
+                                and sessions.get(phase, {}).get("thread_id") == result.thread_id
+                                and result.thread_id
+                            ):
+                                # Secret rejection occurs before schema, dependencies and
+                                # outstanding actions are checked by record_step. Missing
+                                # proof or an unknown action outcome cannot enter recovery.
+                                raw_plan = plans._fetch_plan(state["run_plan_id"])
+                                raw_step = plans._fetch_step(
+                                    state["run_plan_id"], workflow_step.step_id
+                                )
+                                plans._ensure_no_running_step_actions(raw_plan, raw_step)
+                                plans._ensure_dependencies_complete(state["run_plan_id"], raw_step)
+                                validate_step_expected_outputs(raw_step, outputs)
+                                evidence[phase]["validation_context"].update(diagnostics)
+                                evidence.setdefault("reporting_corrections", []).append(
+                                    {
+                                        "id": uuid4().hex,
+                                        "phase": phase,
+                                        "attempt": evidence["attempt"],
+                                        "allowance_used": True,
+                                        "status": "consumed",
+                                        "original_receipt": deepcopy(evidence[phase]),
+                                    }
+                                )
+                                # Persist allowance and safe original identity before any
+                                # continuation. Rehandoff/restart cannot mint a retry.
+                                _save_evidence(repo, project_id, ticket_key, evidence)
+                                reporting_correction = {
+                                    "basis": _reporting_basis(
+                                        repo, plans, project_id, ticket_key, state, workflow_step
+                                    ),
+                                    "diagnostics": diagnostics,
+                                    "outputs": outputs,
+                                    "envelope": {
+                                        key: item for key, item in value.items() if key != "outputs"
+                                    },
+                                }
+                                continue
                             raise
                         if valid:
                             evidence[phase]["validated_outcome"] = decision
+                        if reporting_correction is not None:
+                            correction_receipt = evidence["reporting_corrections"][-1]
+                            correction_receipt["status"] = "accepted" if accepted else "rejected"
+                            correction_receipt["corrected_receipt"] = deepcopy(evidence[phase])
                         _save_evidence(repo, project_id, ticket_key, evidence)
                     else:
                         _save_evidence(repo, project_id, ticket_key, evidence, **patch)
