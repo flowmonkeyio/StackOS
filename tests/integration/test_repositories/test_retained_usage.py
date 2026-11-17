@@ -294,8 +294,19 @@ def test_terminal_flush_saves_history_before_release_and_reopen(session, project
         "actual-model",
         datetime.now(UTC).isoformat(),
     )
-    service._active_invocations[call.invocation_id] = call
+    service._register(call)
     try:
+        # Match run_agent: persist the admitted invocation's start identity
+        # before its terminal flush, so a late foreign return cannot take over.
+        _record_execution_transition(lambda: Session(session.get_bind()), call, True)
+        with Session(session.get_bind()) as started:
+            delivery = (
+                TrackerRepository(started)
+                .brief(project_id=project_id, ticket_key="flush")
+                .ticket.completion_evidence_json["automatic_delivery"]["delivery"]
+            )
+            assert delivery["execution"]["invocation_id"] == call.invocation_id
+            assert "finished_at" not in delivery
         call.usage = normalize_usage(
             usage_snapshot("fixture", "invocation", 10, 2, cache_read=5),
             session_id="native",
