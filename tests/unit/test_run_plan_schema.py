@@ -8,6 +8,7 @@ from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.workflows import run_plan_schema as run_plan_schema_module
 from stackos.workflows.run_plan_schema import (
     RunPlanSpec,
+    find_run_plan_secret_findings,
     find_run_plan_secret_paths,
     run_plan_from_template,
     validate_run_plan_obj,
@@ -117,6 +118,79 @@ def test_deep_secret_paths_remain_bounded_without_missing_denials():
         payload = {"metadata": payload}
     paths = find_run_plan_secret_paths(payload)
     assert paths and all(len(path) <= 256 for path in paths)
+
+
+@pytest.mark.parametrize(
+    ("payload", "kinds"),
+    [
+        ({"credentials": 21525}, ["key_name"]),
+        ({"credentials": True}, ["key_name"]),
+        ({"api_key": "Bearer SYNTHETIC_CANARY"}, ["key_name", "value_pattern"]),
+        ({"ordinary": {"nested": [{"note": "Bearer SYNTHETIC_CANARY"}]}}, ["value_pattern"]),
+        ({"password": {"$secret_ref": "invalid-marker"}}, ["key_name", "key_name"]),
+        ({"note": 'log {"authorization":"SYNTHETIC_CANARY"}'}, ["value_pattern"]),
+        ({"note": "log {'authorization': 'SYNTHETIC_CANARY'}"}, ["value_pattern"]),
+        ({"note": "inline authorization': SYNTHETIC_CANARY"}, ["value_pattern"]),
+        ({"note": "inline 'authorization\": SYNTHETIC_CANARY"}, ["value_pattern"]),
+        ({"note": "password=SYNTHETIC_CANARY"}, ["value_pattern"]),
+        (
+            {"note": "-----BEGIN PRIVATE KEY-----SYNTHETIC_CANARY-----END PRIVATE KEY-----"},
+            ["value_pattern"],
+        ),
+        ({"note": "https://example.test/file?sig=SYNTHETIC_CANARY"}, ["value_pattern"]),
+    ],
+)
+def test_secret_findings_classify_causes_without_rejected_content(payload, kinds):
+    scan = find_run_plan_secret_findings(payload)
+    assert scan.classification_complete is True
+    assert [finding.kind for finding in scan.findings] == kinds
+    assert scan.paths == find_run_plan_secret_paths(payload)
+    assert "SYNTHETIC_CANARY" not in scan.model_dump_json()
+    data = _plan_dict()
+    data["inputs"] = payload
+    assert not validate_run_plan_obj(data).valid
+
+
+def test_secret_findings_keep_reference_and_workflow_metadata_exemptions():
+    payload = {
+        "credential_ref": "cred_synthetic",
+        "secret_ref": "secret_" + "a" * 32,
+        "password": {"$secret_ref": "secret_" + "b" * 32},
+    }
+    assert find_run_plan_secret_findings(payload).findings == []
+    metadata = {"metadata": {"operator_authorization": "Proceed with the reviewed checks."}}
+    assert find_run_plan_secret_findings(metadata).findings[0].kind == "key_name"
+    assert find_run_plan_secret_findings(metadata, workflow_metadata=True).findings == []
+
+
+def test_secret_findings_saturate_before_late_value_without_a_second_scan(monkeypatch):
+    calls = []
+    original = run_plan_schema_module.redact_secret_text
+
+    def observe(value):
+        calls.append(value)
+        return original(value)
+
+    monkeypatch.setattr(run_plan_schema_module, "redact_secret_text", observe)
+    payload = {f"credential_{index}": "ordinary prose" for index in range(8)}
+    payload["nested"] = [{"note": "Bearer SYNTHETIC_CANARY"}]
+    scan = find_run_plan_secret_findings(payload)
+    assert len(scan.findings) == 8
+    assert {finding.kind for finding in scan.findings} == {"key_name"}
+    assert scan.classification_complete is False
+    assert "Bearer SYNTHETIC_CANARY" not in calls
+    assert len(calls) == 7  # The eighth key exhausts the shared budget before its value.
+    assert "credential_" not in scan.model_dump_json()
+    assert "SYNTHETIC_CANARY" not in scan.model_dump_json()
+
+
+@pytest.mark.parametrize("count", [7, 8, 20])
+def test_secret_findings_conservatively_mark_saturated_diagnostics_incomplete(count):
+    payload = {"nested": [{"password": "ordinary prose"} for _ in range(count)]}
+    scan = find_run_plan_secret_findings(payload)
+    assert len(scan.findings) == min(count, 8)
+    assert scan.classification_complete is (count < 8)
+    assert all(len(finding.path) <= 256 for finding in scan.findings)
 
 
 def test_masked_path_cannot_create_operator_metadata_exemption():

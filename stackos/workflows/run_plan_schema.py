@@ -9,7 +9,7 @@ only opaque credential refs and the daemon resolves backing credentials.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import (
     AliasChoices,
@@ -89,6 +89,20 @@ _MAX_SECRET_PATH_LENGTH = 256
 _MAX_SECRET_SEGMENT_LENGTH = 48
 
 
+class RunPlanSecretFinding(BaseModel):
+    path: str
+    kind: Literal["key_name", "value_pattern"]
+
+
+class RunPlanSecretScan(BaseModel):
+    findings: list[RunPlanSecretFinding] = Field(default_factory=list)
+    classification_complete: bool = True
+
+    @property
+    def paths(self) -> list[str]:
+        return [finding.path for finding in self.findings]
+
+
 def _secret_child_path(path: str, segment: str) -> str:
     child = path + segment
     if len(child) > _MAX_SECRET_PATH_LENGTH:
@@ -109,10 +123,16 @@ def _is_secret_key(key: str) -> bool:
     return any(part in normalized for part in _SECRET_KEY_PARTS)
 
 
-def _secret_paths(value: Any, *, path: str = "$", workflow_metadata: bool = False) -> list[str]:
+def _secret_findings(
+    value: Any, scan: RunPlanSecretScan, *, path: str = "$", workflow_metadata: bool = False
+) -> None:
+    # Keep the existing bounded traversal. Saturation cannot establish the
+    # absence of later value findings, even if all displayed findings are keys.
+    if len(scan.findings) >= _MAX_SECRET_PATHS:
+        scan.classification_complete = False
+        return
     if is_secret_ref_marker(value):
-        return []
-    paths: list[str] = []
+        return
     if isinstance(value, dict):
         for raw_key, raw_value in value.items():
             key = str(raw_key)
@@ -130,31 +150,42 @@ def _secret_paths(value: Any, *, path: str = "$", workflow_metadata: bool = Fals
                 and not is_secret_ref_marker(raw_value)
                 and not opaque_secret_ref
             ):
-                paths.append(child_path)
-            paths.extend(
-                _secret_paths(raw_value, path=child_path, workflow_metadata=workflow_metadata)
-            )
-            if len(paths) >= _MAX_SECRET_PATHS:
+                scan.findings.append(RunPlanSecretFinding(path=child_path, kind="key_name"))
+            _secret_findings(raw_value, scan, path=child_path, workflow_metadata=workflow_metadata)
+            if len(scan.findings) >= _MAX_SECRET_PATHS:
+                scan.classification_complete = False
                 break
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            paths.extend(
-                _secret_paths(
-                    item,
-                    path=_secret_child_path(path, f"[{index}]"),
-                    workflow_metadata=workflow_metadata,
-                )
+            _secret_findings(
+                item,
+                scan,
+                path=_secret_child_path(path, f"[{index}]"),
+                workflow_metadata=workflow_metadata,
             )
-            if len(paths) >= _MAX_SECRET_PATHS:
+            if len(scan.findings) >= _MAX_SECRET_PATHS:
+                scan.classification_complete = False
                 break
     elif isinstance(value, str) and redact_secret_text(value) != value:
-        paths.append(path)
-    return paths[:_MAX_SECRET_PATHS]
+        scan.findings.append(RunPlanSecretFinding(path=path, kind="value_pattern"))
+
+
+def find_run_plan_secret_findings(
+    value: Any, *, workflow_metadata: bool = False
+) -> RunPlanSecretScan:
+    """Classify rejections without exposing keys, values, or matched text.
+
+    A saturated scan is incomplete and must not authorize key-only correction.
+    Key-only classification identifies structure; it never establishes safety.
+    """
+    scan = RunPlanSecretScan()
+    _secret_findings(value, scan, workflow_metadata=workflow_metadata)
+    return scan
 
 
 def find_run_plan_secret_paths(value: Any, *, workflow_metadata: bool = False) -> list[str]:
     """Scan strictly unless the caller owns validated workflow metadata."""
-    return _secret_paths(value, workflow_metadata=workflow_metadata)
+    return find_run_plan_secret_findings(value, workflow_metadata=workflow_metadata).paths
 
 
 def ensure_run_plan_has_no_secrets(value: Any, *, workflow_metadata: bool = False) -> None:
@@ -691,6 +722,7 @@ __all__ = [
     "RunPlanStepSpec",
     "RunPlanValidationOut",
     "ensure_run_plan_has_no_secrets",
+    "find_run_plan_secret_findings",
     "find_run_plan_secret_paths",
     "parse_run_plan_obj",
     "run_plan_from_template",

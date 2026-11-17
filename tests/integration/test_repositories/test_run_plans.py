@@ -2507,6 +2507,117 @@ def test_started_plan_cannot_be_started_again_or_return_token(
     assert "run_token" not in str(exc_info.value.data)
 
 
+def test_rejected_descriptive_report_has_complete_key_only_diagnostics_and_no_writes(
+    session: Session, project_id: int
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(project_id=project_id, run_plan_json=_run_plan_json()).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.update(
+        run_plan_id=plan.id,
+        approval_key="launch-review",
+        approval_status=ApprovalRequestStatus.APPROVED,
+    )
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="create-campaign")
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).one()
+    mirror = session.exec(
+        select(TrackerTicket).where(
+            TrackerTicket.key == workflow_step_ticket_key(plan.id, "create-campaign")
+        )
+    ).one()
+    canonical_plan = session.get(RunPlan, plan.id)
+    assert canonical_plan is not None
+    rows = [canonical_plan, step, mirror]
+    before = [row.model_dump(mode="json") for row in rows]
+    # Exact safe prose from the historical CFO837 rejection diagnosis.
+    prose = (
+        "Local disconnect removes local custody/dispatch. Explicit CFO revoke terminates future "
+        "key admissions; rotate any disclosed key. Native0.2.8 intentionally lacks CFO provider "
+        "support."
+    )
+    payload = {"release_summary": {"recovery_plan": {"credentials": prose}}}
+    with pytest.raises(ValidationError) as rejected:
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="create-campaign",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json=payload,
+        )
+    assert rejected.value.data == {
+        "rule": "raw_secret",
+        "paths": ["$.release_summary.recovery_plan.[field]"],
+        "findings": [{"path": "$.release_summary.recovery_plan.[field]", "kind": "key_name"}],
+        "classification_complete": True,
+    }
+    assert "credentials" not in str(rejected.value.to_dict())
+    assert prose not in str(rejected.value.to_dict())
+    session.commit()
+    for row, snapshot in zip(rows, before, strict=True):
+        session.refresh(row)
+        assert row.model_dump(mode="json") == snapshot
+
+    corrected = {"release_summary": {"recovery_plan": {"access_recovery": prose}}}
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="create-campaign",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json=corrected,
+    )
+    session.refresh(step)
+    session.refresh(mirror)
+    assert step.status == RunPlanStepStatus.SUCCESS
+    assert step.result_json == corrected
+    assert mirror.status == TrackerItemStatus.COMPLETE
+
+
+@pytest.mark.parametrize("saturated", [False, True])
+def test_record_step_secret_diagnostics_fail_closed_for_late_or_visible_values(
+    session: Session, project_id: int, caplog, saturated: bool
+) -> None:
+    repo = RunPlanRepository(session)
+    spec = {
+        "key": "diagnostic-proof",
+        "title": "Proof",
+        "steps": [{"id": "proof", "title": "Proof"}],
+    }
+    plan = repo.create(project_id=project_id, run_plan_json=spec).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="proof")
+    payload = {f"credential_{index}": True for index in range(8)} if saturated else {}
+    payload["nested"] = [{"note": "Bearer SYNTHETIC_CANARY"}]
+    with pytest.raises(ValidationError) as rejected:
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="proof",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json=payload,
+        )
+    envelope = rejected.value.to_dict()
+    assert envelope["code"] == -32602
+    diagnostics = envelope["data"]
+    assert diagnostics["rule"] == "raw_secret"
+    assert diagnostics["classification_complete"] is (not saturated)
+    assert diagnostics["findings"] == (
+        [{"path": "$.[field]", "kind": "key_name"}] * 8
+        if saturated
+        else [{"path": "$.nested[0].note", "kind": "value_pattern"}]
+    )
+    assert diagnostics["paths"] == [finding["path"] for finding in diagnostics["findings"]]
+    assert all(f"credential_{index}" not in str(envelope) + caplog.text for index in range(8))
+    assert "SYNTHETIC_CANARY" not in str(envelope) + caplog.text
+    session.expire_all()
+    step = repo.get_step(plan.id, "proof")
+    assert step.status == RunPlanStepStatus.RUNNING
+    assert step.result_json is None
+    mirror = session.exec(
+        select(TrackerTicket).where(TrackerTicket.key == workflow_step_ticket_key(plan.id, "proof"))
+    ).one()
+    assert mirror.status == TrackerItemStatus.IN_PROGRESS
+
+
 @pytest.mark.parametrize("workflow_shaped", [False, True])
 def test_run_plan_late_writes_reject_secrets(
     session: Session, project_id: int, workflow_shaped: bool
@@ -2550,6 +2661,15 @@ def test_run_plan_late_writes_reject_secrets(
     assert envelope["data"] == {
         "rule": "raw_secret",
         "paths": ["$.metadata.operator_authorization"] if workflow_shaped else ["$.refresh_token"],
+        "findings": [
+            {
+                "path": "$.metadata.operator_authorization"
+                if workflow_shaped
+                else "$.refresh_token",
+                "kind": "key_name",
+            }
+        ],
+        "classification_complete": True,
     }
     assert repo.get_step(plan.id, "create-campaign").status == RunPlanStepStatus.RUNNING
 

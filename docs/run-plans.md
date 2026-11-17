@@ -37,6 +37,26 @@ names retain their secret checks. Opaque credential selectors and exact
 `$secret_ref` markers keep their existing run-plan paths; templates still cannot
 embed concrete credentials.
 
+Run-plan repository secret rejections retain `rule: "raw_secret"` and the
+existing safe `paths` array. They also include `findings`, each containing a
+safe `path` and a `kind` of `key_name` or `value_pattern`, plus
+`classification_complete`. One canonical traversal produces both forms;
+path-only callers keep the existing interface. Diagnostics never include
+arbitrary raw keys, values or matched text. Paths retain the fixed diagnostic
+vocabulary, masking, eight-finding limit and 256-character per-path limit.
+
+The scan stops at eight findings and conservatively marks every saturated
+result `classification_complete: false`, including one with exactly eight
+findings. Later values may be unexamined. Callers must treat missing, unknown
+or incomplete classification as ineligible for key-only reporting correction;
+the displayed paths alone cannot establish absence of value-pattern findings.
+Complete key-only classification describes the rejection cause, not the safety
+of the value. Suspicious keys still reject numeric, boolean and prose values;
+no field allowlist or semantic prose exemption is introduced. Secret validation
+precedes step/result and tracker-mirror writes, so a rejected `recordStep`
+commits none of those changes. Successful results retain the existing
+validation and transaction path.
+
 `runPlan.create` also mirrors the plan into the project task tracker: one task
 for the run plan and one ticket per concrete step. Agents can use
 `tracker.next`, `tracker.brief`, and `tracker.verify` to navigate work without

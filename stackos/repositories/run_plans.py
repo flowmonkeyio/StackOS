@@ -70,7 +70,7 @@ from stackos.workflows.run_plan_grants import allowed_tools_for_run_plan_step
 from stackos.workflows.run_plan_schema import (
     RunPlanIssue,
     RunPlanValidationOut,
-    find_run_plan_secret_paths,
+    find_run_plan_secret_findings,
     parse_run_plan_obj,
     run_plan_from_template,
     run_plan_readiness_warnings,
@@ -100,16 +100,16 @@ def _jsonable(value: Any) -> Any:
 
 
 class RunPlanSecretValidationError(ValidationError):
-    """Shared scanner rejection with value-free, bounded diagnostic paths."""
+    """Shared scanner rejection with bounded, value-free structural findings."""
 
 
 def _ensure_no_secrets(value: Any, *, label: str, workflow_metadata: bool = False) -> None:
-    paths = find_run_plan_secret_paths(value, workflow_metadata=workflow_metadata)
-    if paths:
+    scan = find_run_plan_secret_findings(value, workflow_metadata=workflow_metadata)
+    if scan.findings:
         raise RunPlanSecretValidationError(
             f"{label} must not contain secrets as raw values; use credential_ref for provider "
             "auth or secret.set with an exact $secret_ref marker for action payload values",
-            data={"rule": "raw_secret", "paths": paths},
+            data={"rule": "raw_secret", "paths": scan.paths, **scan.model_dump()},
         )
 
 
