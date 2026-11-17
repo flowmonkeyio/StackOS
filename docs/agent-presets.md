@@ -423,6 +423,8 @@ for stale or unavailable evidence. Repair/resume carries current feedback,
 unresolved obligations and remaining repair allowance, preserving native history.
 Shipped source versions describe future adaptation inputs; local files, saved
 defaults and frozen sessions require their own explicit adoption and evidence.
+For StackOS changes, choose the affected setup, contract, UI or lifecycle case
+from the [project verification map](./integration-testing.md#select-proof-for-a-stackos-change).
 The proof-continuity revision is a scoped source amendment in the StackOS local
 planning, test-design, delivery, review and orchestrator files. Their recorded
 base adaptations and unrelated pending deltas remain; this claims source readiness,

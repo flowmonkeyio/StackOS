@@ -204,3 +204,62 @@ shells. Verify native help, output, stdin, exit status, terminal behavior and
 signals. Set a synthetic cookie/localStorage marker and verify it survives native
 browser restart and StackOS daemon restart. Installed-app signoff also covers
 managed-launcher repair, doctor, and restart from `/Applications/StackOS.app`.
+
+### Measure StackOS shell layout
+
+Use a ticket-owned tab on a disposable **source Vite** instance with the actual App, sidebar, router and CSS. For Home, use a synthetic project with one visible task and recorded usage. Start from a different route in a fresh tab. Use the [native cookbook](../plugins/stackos/skills/stackos/references/browser.md) to set the viewport, run each page script with `eval`, press keys and capture the viewport. Save the measurements with the candidate and viewport.
+
+**Notification reachability.** At 1280×800 and 1024×768, save the top of a visible content landmark such as `.home-header-actions`. In the fixture tab, populate the real App queue:
+
+```js
+(async () => {
+  const { useToastsStore } = await import('/src/stores/toasts.ts')
+  const queue = useToastsStore()
+  queue.clear()
+  for (const n of [1, 2, 3]) {
+    queue.add('warning', 'Task needs attention', ('W'.repeat(115) + ' ').repeat(3),
+      0, { key: 'fixture-' + n, actionLabel: 'Open fixture ' + n,
+           onAction: () => { window.lastFixtureAction = n } })
+  }
+})()
+```
+
+Wait for all three `.ui-toast` entries and their entry animations. The top of the content landmark should stay within one CSS pixel of its baseline. Measure the rectangle of `ul[aria-label="Notifications"]`; its top and bottom must be inside the viewport. Focus that list, then use Tab to reach **Open fixture 3**. Verify its rectangle is inside the list and its center hits the focused control or its descendant using `document.elementFromPoint`. Press Enter and check `window.lastFixtureAction === 3`. This exercises the real toast queue, layout, scrolling and keyboard action. The [App callback cases](../ui/src/App.notifications.spec.ts) cover how desktop notices enter that queue.
+
+**Cold and retained project Home.** At 800×800 and 1280×800, hold only the selected project's `projectSetup.get` read. Use its synthetic project ID for `id` below. Install this fixture on the other route, then navigate to the project's Home using app links:
+
+```js
+(() => {
+  const id = 1, original = window.fetch
+  let release
+  window.setupGate = {
+    fail: false,
+    hold() { this.wait = new Promise(resolve => { release = resolve }) },
+    release() { release() },
+    restore() { release(); window.fetch = original }
+  }
+  window.setupGate.hold()
+  window.fetch = async (input, init) => {
+    if (String(input).endsWith('/api/v1/operations/projectSetup.get/call') &&
+        JSON.parse(init.body).arguments.project_id === id) {
+      await window.setupGate.wait
+      if (window.setupGate.fail) return Response.json({ detail: 'Fixture refresh failed' }, { status: 503 })
+      return Response.json({ project_id: id, eligible: true, status: 'updates_available',
+        folder_status: 'available', update_count: 3, current_attempt: null })
+    }
+    return original.call(window, input, init)
+  }
+})()
+```
+
+While setup is pending, wait for the first task and Agent activity data as well as `[aria-label="Loading project setup"]`. Use this read before and after `setupGate.release()` and the appearance of `[aria-label="Project setup reminder"]`:
+
+```js
+['.home-header-actions', '.home-setup-action', '.home-setup-slot',
+ '.active-task-row__link', '.agent-activity__heading'].map(selector => {
+  const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect()
+  return { selector, x, y, width, height }
+})
+```
+
+Check that the setup action fits in the header, the reminder fits its reserved slot, and the task and activity landmarks keep their positions. Record any movement in CSS pixels and inspect wrapping/overlap at the narrow width. For a retained entry, navigate away, call `setupGate.hold()`, then return via the app. The accepted reminder and task should already be visible. Repeat the measurement across release. Set `setupGate.fail = true` and click **Refresh**; confirm the setup error is visible alongside the retained content. Set it to false, click **Check again**, and verify recovery. Restore the original fetch with `setupGate.restore()` and close the owned tab. The [Home component cases](../ui/src/views/HomeConsoleView.spec.ts) exercise ordering and retained state; use the browser measurements for physical layout.

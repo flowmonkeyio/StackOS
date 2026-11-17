@@ -289,6 +289,8 @@ sanitized `delivery.agents` map. Ticket identifiers containing words such as
 agent contents and other metadata retain normal redaction. This persistence
 rule does not replace delivery admission's role and independent-review checks.
 
+When changing public error or tracker output, trace the exceptional write through the consuming UI using the [sanitization cases](./integration-testing.md#state-history-and-lifetime).
+
 Telegram's shared application hash is encrypted as daemon-held configuration.
 Native Accounts keep their own bot tokens, TDLib database keys, and proxy
 authentication in encrypted Account backing.

@@ -140,6 +140,8 @@ current generation, revision and doctor command evidence. Failed postflight does
 not resume anything. See the [continuation contract](task-tracker.md#managed-upgrade-continuation)
 for the input fields and identity format.
 
+For source changes, select the [native recovery and caller cases](./integration-testing.md#state-history-and-lifetime) for the phase, session or retry contract being changed.
+
 Safe checkpoints rejoin the existing queue under project capacity and directory
 exclusion. Delivery, repair, independent review and workflow mirrors retain their
 original phase/session/settings; resuming review never replays accepted delivery.
