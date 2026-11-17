@@ -966,8 +966,13 @@ def finish_managed_upgrade(
             raise NotFoundError("Managed upgrade not found", data={"upgrade_id": upgrade_id})
         if row.target_identity != target_identity:
             raise ConflictError("Upgrade target identity changed", data=upgrades.status(upgrade_id))
-        if row.status != "continued":
-            if row.revision != expected_revision or row.status not in {"quiesced", "partial"}:
+        current = upgrades.status(upgrade_id, daemon_generation=identity)
+        if row.status != "continued" or current["recovery_required"]:
+            if row.revision != expected_revision or row.status not in {
+                "quiesced",
+                "partial",
+                "continued",
+            }:
                 raise ConflictError(
                     "Upgrade is not ready to continue", data=upgrades.status(upgrade_id)
                 )
@@ -987,24 +992,63 @@ def finish_managed_upgrade(
                     # Foreign state is never repaired by this transaction.
                     held = True
                     continue
-                if checkpoint.get("status") == "consumed":
-                    held |= state.get("handoff_id") != checkpoint.get("continuation_handoff_id")
-                    continue
+                consumed = checkpoint.get("status") == "consumed"
+                if consumed:
+                    observed = upgrades._checkpoint(ref, upgrade_id)
+                    if observed["continuation_state"] == "settled":
+                        continue
+                    if checkpoint.get("continuation_dispatch_started") is True:
+                        if observed["continuation_state"] == "unconfirmed":
+                            checkpoint["issues"] = observed["issues"]
+                            _checkpoint_task(session, task, checkpoint)
+                            held = True
+                        elif observed["continuation_generation"] != identity:
+                            checkpoint["issues"] = [
+                                "Continuation dispatch already began in a prior daemon generation; "
+                                "reconcile the original delivery owner before explicit rehandoff"
+                            ]
+                            _checkpoint_task(session, task, checkpoint)
+                            held = True
+                        continue
                 if checkpoint.get("status") == "settled":
                     continue
-                if state.get("handoff_id") != ref["handoff_id"]:
+                if not consumed and state.get("handoff_id") != ref["handoff_id"]:
+                    checkpoint.update(status="held", issues=["Original delivery handoff changed"])
+                    _checkpoint_task(session, task, checkpoint)
                     held = True
                     continue
-                if task.status in TERMINAL_TRACKER_STATUSES:
+                if not consumed and task.status in TERMINAL_TRACKER_STATUSES:
                     checkpoint.update(status="settled", issues=[])
                     _checkpoint_task(session, task, checkpoint)
                     continue
                 try:
-                    if not checkpoint.get("admission_id") or checkpoint["admission_id"] == identity:
+                    if consumed:
+                        cursor = state.get("upgrade_continuation") or {}
+                        if (
+                            checkpoint.get("continuation_dispatch_started") is not False
+                            or state.get("status") != "queued"
+                            or state.get("slot_reserved")
+                            or state.get("handoff_id") != checkpoint.get("continuation_handoff_id")
+                            or cursor.get("upgrade_id") != upgrade_id
+                            or cursor.get("handoff_id") != state.get("handoff_id")
+                            or cursor.get("ticket_key") != checkpoint.get("ticket_key")
+                        ):
+                            raise ValidationError(
+                                "Exact never-dispatched continuation is unconfirmed or changed"
+                            )
+                    elif (
+                        not checkpoint.get("admission_id") or checkpoint["admission_id"] == identity
+                    ):
                         raise ValidationError("Continuation requires the target daemon generation")
-                    phase, evidence = _validate_upgrade_checkpoint(session, task, state, checkpoint)
+                    phase, evidence = _validate_upgrade_checkpoint(
+                        session, task, state, checkpoint, consumed=consumed
+                    )
+                    if consumed and cursor.get("phase") != phase:
+                        raise ValidationError("Original continuation phase changed")
                 except (ValidationError, NotFoundError, ConflictError, OSError) as error:
-                    checkpoint.update(status="held", issues=[str(error)])
+                    checkpoint.update(
+                        status="consumed" if consumed else "held", issues=[str(error)]
+                    )
                     held = True
                 else:
                     handoff = uuid4().hex
@@ -1012,6 +1056,7 @@ def finish_managed_upgrade(
                         status="consumed",
                         issues=[],
                         continuation_handoff_id=handoff,
+                        continuation_dispatch_started=False,
                         postflight=deepcopy(postflight),
                     )
                     metadata = deepcopy(task.metadata_json)
@@ -1065,9 +1110,9 @@ def finish_managed_upgrade(
             row.updated_at = datetime.now(UTC).replace(tzinfo=None)
             session.add(row)
             session.commit()
-        result = upgrades.status(upgrade_id)
     _request_delivery_drain(session_factory, scheduler)
-    return result
+    with session_factory() as session:
+        return ManagedUpgradeRepository(session).status(upgrade_id, daemon_generation=identity)
 
 
 def _workflow_scope(repo, project_id, task, run_plan_id, step_id, *, starting=False):
@@ -2689,6 +2734,14 @@ def _reserve_delivery(session_factory, scheduler):
             state = (task.metadata_json or {})["delivery"]
             if not _delivery_active(task, state.get("handoff_id")):
                 continue
+            checkpoint = state.get("upgrade_checkpoint") or {}
+            if (
+                checkpoint.get("status") == "consumed"
+                and checkpoint.get("issues")
+                and (state.get("upgrade_continuation") or {}).get("upgrade_id")
+                == checkpoint.get("upgrade_id")
+            ):
+                continue  # Explicit finish must revalidate and clear this retained hold.
             if state.get("slot_reserved"):
                 continue
             try:
@@ -2698,7 +2751,19 @@ def _reserve_delivery(session_factory, scheduler):
                     repo, task.project_id, task.key, status="stopped", reason="Project unavailable."
                 )
                 continue
-            _update_delivery(repo, task.project_id, task.key, slot_reserved=True)
+            changes = {"slot_reserved": True}
+            checkpoint = state.get("upgrade_checkpoint") or {}
+            if checkpoint.get("status") == "consumed" and checkpoint.get(
+                "continuation_handoff_id"
+            ) == state.get("handoff_id"):
+                # Persist before registration can call back or the process can
+                # disappear. A reservation makes dispatch uncertain after loss,
+                # so only an explicit False is safe for finish to recover.
+                changes["upgrade_checkpoint"] = {
+                    **checkpoint,
+                    "continuation_dispatch_started": True,
+                }
+            _update_delivery(repo, task.project_id, task.key, **changes)
             return task.project_id, task.key, state
         from stackos.project_setup_execution import reserve_setup
 

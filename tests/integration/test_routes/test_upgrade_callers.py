@@ -133,6 +133,88 @@ def test_postflight_failure_preserves_fence_then_retry(api, settings, monkeypatc
     assert caller.finish_pending_upgrade(settings)["status"] == "continued"
 
 
+@pytest.mark.parametrize("damage", [None, "health", "doctor", "source", "dispatch"])
+def test_named_finish_recovers_committed_queue_through_real_operation(
+    api, settings, project_id, tmp_path, monkeypatch, damage
+):
+    from stackos import task_delivery
+    from stackos.cli import upgrade_commands as caller
+    from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+    api.app.state.scheduler.pause()
+    calls, doctors = [], []
+    root = tmp_path / "source"
+    root.mkdir()
+    git(root, "init")
+    git(root, "config", "user.name", "Continuation fixture")
+    git(root, "config", "user.email", "fixture@example.test")
+    git(root, "commit", "--allow-empty", "-m", "baseline")
+
+    def request(method, path, *, body=None, **kwargs):
+        calls.append(path)
+        return maintenance_request(api, method, path, body=body)
+
+    monkeypatch.setattr(caller, "_api_request", request)
+    monkeypatch.setattr(caller, "get_settings", lambda: settings)
+    monkeypatch.setattr(caller, "_tcp_can_connect", lambda *a: True)
+    monkeypatch.setattr(caller, "_daemon_health_ok", lambda *a: True)
+    monkeypatch.setattr(
+        caller, "run_target_doctor", lambda *a: doctors.append(True) or "fixture:doctor:exit-0"
+    )
+    with Session(api.app.state.engine) as session:
+        prepared_task(session, project_id)
+        submit(session, project_id, root, api.app.state.scheduler)
+    from stackos.operations.maintenance import runtime_identity
+
+    prepared = caller.prepare_for_upgrade(settings, runtime_identity())
+    target = QueuedScheduler()
+    target.running = True
+    with monkeypatch.context() as generation:
+        generation.setitem(api.app.state.operation_services, "scheduler", target)
+        with monkeypatch.context() as crash:
+            crash.setattr(task_delivery, "_request_delivery_drain", lambda *_args: None)
+            first = CliRunner().invoke(
+                app, ["finish-upgrade", "--upgrade-id", prepared["upgrade_id"]]
+            )
+        assert first.exit_code == 0, first.output
+        assert json.loads(first.stdout)["checkpoints"][0]["continuation_state"] == "pending"
+        assert not target.jobs
+        recovered = QueuedScheduler()
+        recovered.running = True
+        generation.setitem(api.app.state.operation_services, "scheduler", recovered)
+        if damage == "health":
+            monkeypatch.setattr(caller, "_daemon_health_ok", lambda *a: False)
+        elif damage == "doctor":
+
+            def failed_doctor(*a):
+                raise typer.Exit(9)
+
+            monkeypatch.setattr(caller, "run_target_doctor", failed_doctor)
+        elif damage == "source":
+            (root / "foreign.txt").write_text("source changed after continuation commit")
+        elif damage == "dispatch":
+
+            def failed_dispatch(*a, **k):
+                raise RuntimeError("fixture dispatch registration failure")
+
+            monkeypatch.setattr(recovered, "add_job", failed_dispatch)
+        calls.clear()
+        retry = CliRunner().invoke(app, ["finish-upgrade", "--upgrade-id", prepared["upgrade_id"]])
+        if damage:
+            assert retry.exit_code in {1, 9}, retry.output
+            assert prepared["upgrade_id"] in retry.stderr
+            assert f"finish-upgrade --upgrade-id {prepared['upgrade_id']}" in retry.stderr
+            assert not recovered.jobs
+            if damage in {"source", "dispatch"}:
+                held = json.loads(retry.stdout)
+                assert held["recovery_required"] and held["checkpoints"][0]["issues"]
+            return
+        assert retry.exit_code == 0, retry.output
+        assert len(recovered.jobs) == 1, retry.stdout
+        assert any("finishUpgrade" in path for path in calls)
+        assert len(doctors) == 2
+
+
 @pytest.mark.parametrize("reachable", [False, True])
 def test_unsupported_source_refuses_admitted_work_then_bootstraps_quiescent(
     api, settings, project_id, monkeypatch, capsys, reachable
@@ -430,6 +512,13 @@ def test_partial_finish_explicit_retry_preserves_safe_and_unrelated_work(
     finish = next(call["body"]["arguments"] for call in calls if "finishUpgrade" in call["path"])
     assert finish["upgrade_id"] == partial["upgrade_id"]
     assert finish["expected_revision"] == partial["revision"]
+    from stackos import task_delivery
+
+    # The response precedes asynchronous queue draining. Complete that owner
+    # before comparing saved metadata; pending -> dispatched is observable.
+    task_delivery.drain_delivery(
+        session_factory=lambda: Session(api.app.state.engine), scheduler=api.app.state.scheduler
+    )
     after = metadata()
     assert after["safe"] == before["safe"]
     assert after["unrelated"] == before["unrelated"]
@@ -437,6 +526,10 @@ def test_partial_finish_explicit_retry_preserves_safe_and_unrelated_work(
     calls.clear()
     repeated = CliRunner().invoke(app, ["finish-upgrade", "--upgrade-id", partial["upgrade_id"]])
     assert repeated.exit_code == 0, repeated.output
-    assert json.loads(repeated.stdout) == continued
+    current = json.loads(repeated.stdout)
+    for prior, now in zip(continued["checkpoints"], current["checkpoints"], strict=True):
+        assert prior.pop("continuation_state") in {"pending", "dispatched"}
+        assert now.pop("continuation_state") == "dispatched"
+    assert current == continued
     assert metadata() == after
     assert not any("finishUpgrade" in call["path"] for call in calls)

@@ -254,7 +254,21 @@ def test_target_postflight_finish_and_queue_across_actual_app_lifespans(
             result = call(client, "finishUpgrade", finish)
             assert result.status_code == 200, result.text
             assert result.json()["data"]["status"] == "continued"
-            assert call(client, "finishUpgrade", finish).json() == result.json()
+            first = result.json()
+            repeated = call(client, "finishUpgrade", finish).json()
+            # The shared queue can reserve between responses without advancing
+            # the upgrade revision or admitting a second callback.
+            for prior, now in zip(
+                first["data"]["checkpoints"], repeated["data"]["checkpoints"], strict=True
+            ):
+                prior_state = prior.pop("continuation_state")
+                now_state = now.pop("continuation_state")
+                assert (prior_state, now_state) in {
+                    ("pending", "pending"),
+                    ("pending", "dispatched"),
+                    ("dispatched", "dispatched"),
+                }
+            assert repeated == first
             assert not launches
             scheduler.resume()
             assert done.wait(5)

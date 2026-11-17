@@ -229,13 +229,13 @@ def finish_pending_upgrade(settings: Settings, upgrade_id: str | None = None):
     if status["status"] == "idle" and upgrade_id is None:
         return None
     upgrade_id = status["upgrade_id"]
-    # A named completed transaction is a read-only acknowledgment, not another
-    # doctor/finish attempt or authority to continue any other work.
-    if status["status"] == "continued":
+    # Consumption alone does not prove dispatch. Pending/old-generation work
+    # needs the same original finish owner and current target postflight.
+    if status["status"] == "continued" and not status.get("recovery_required"):
         return status
     retry = f"stackos finish-upgrade --upgrade-id {upgrade_id}"
     if (
-        status["status"] not in {"quiesced", "partial"}
+        status["status"] not in {"quiesced", "partial", "continued"}
         or status["target_identity"] != runtime_identity()
     ):
         _fail(
@@ -268,7 +268,11 @@ def finish_pending_upgrade(settings: Settings, upgrade_id: str | None = None):
             "doctor_evidence_ref": evidence,
         },
     )["data"]
-    if result.get("status") != "continued" or result.get("fenced"):
+    if (
+        result.get("status") != "continued"
+        or result.get("fenced")
+        or result.get("recovery_required")
+    ):
         # Partial finish releases the global fence while preserving task holds.
         # Keep the actual owner envelope available even though this command fails.
         _echo_json(result)
@@ -277,9 +281,12 @@ def finish_pending_upgrade(settings: Settings, upgrade_id: str | None = None):
             + (": " + ", ".join(item["issues"]) if item.get("issues") else "")
             for item in result.get("checkpoints", [])
             if item.get("status") not in {"consumed", "settled"}
+            or item.get("issues")
+            or item.get("continuation_state") in {"pending", "unconfirmed"}
         )
         _fail(
-            f"upgrade {upgrade_id} continuation remains {result.get('status')}; "
+            f"upgrade {upgrade_id} continuation remains incomplete "
+            f"(status {result.get('status')}); "
             f"held checkpoints: {held or 'inspect the retained upgrade receipt'}. "
             f"After repairing these original checkpoints, use `{retry}`."
         )

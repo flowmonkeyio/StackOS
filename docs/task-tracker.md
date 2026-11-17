@@ -179,11 +179,29 @@ Non-Git/unborn work retains the existing absence of an optional Git fingerprint.
 
 The runner rechecks a queued continuation before native launch. Drift holds the
 checkpoint and stops that handoff with repair context, preserving ticket and
-native evidence. Repeated finish does not consume a checkpoint twice; retry
-after commit but before scheduling asks the same queue to drain. Transaction
-failure rolls back admission. A later arbitrary daemon restart does not re-admit
-already-consumed work or replace native sessions; explicit reconciliation remains
-required for that runtime stop. Desktop/CLI update callers must explicitly run
+native evidence. Consumption records `continuation_dispatch_started=false` in
+the existing checkpoint; slot reservation sets it to true atomically before job
+registration can start. Status exposes `continuation_state` (`pending`,
+`dispatched`, `settled` or legacy `unconfirmed`) and `continuation_generation` on
+consumed checkpoints. `recovery_required` identifies unresolved holds and
+unfinished continuations from a different current daemon generation. A stored
+`continued` result alone is not proof that dispatch happened. Queue reservation
+can advance the observed continuation state without changing the upgrade revision;
+pending work in the current generation still waits on the ordinary queue limits.
+
+Repeated finish does not consume a checkpoint twice. A same-generation retry
+asks the existing queue to drain. After generation loss, explicit finish of the
+original upgrade requires current target postflight and revision, and revalidates
+the exact pending handoff, cursor, authority, source, native evidence and original
+retirement. Only a proven never-dispatched continuation is rebound to the current
+generation with a fresh callback identity. Accepted work, sessions, phase,
+candidate, attempts and repair counts remain unchanged. Drift or missing legacy
+dispatch evidence returns a structured hold. A prior dispatch reservation is
+conservative evidence that dispatch may have begun: unfinished work from that
+generation requires explicit delivery-owner reconciliation, never automatic
+replay through the old upgrade. Settled work cannot be replayed. Transaction
+failure rolls back admission. Startup alone does not re-admit work or replace
+native sessions. Desktop/CLI update callers must explicitly run
 the prepare/target-postflight/finish protocol; this operation adds no installer.
 
 Explicit workflow abort uses `runPlan.abort` and the shared delivery/native launch

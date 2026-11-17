@@ -92,7 +92,13 @@ def _authorize(inp, ctx):
 
 async def upgrade_status(inp, ctx, _emitter):
     _authorize(inp, ctx)
-    return _runtime_result(ManagedUpgradeRepository(ctx.session).status(inp.upgrade_id), ctx)
+    runtime = upgrade_runtime(ctx.extras["scheduler"])
+    return _runtime_result(
+        ManagedUpgradeRepository(ctx.session).status(
+            inp.upgrade_id, daemon_generation=runtime["daemon_generation"]
+        ),
+        ctx,
+    )
 
 
 async def prepare_upgrade(inp, ctx, _emitter):
@@ -166,7 +172,8 @@ def operation_specs():
                 allowed_modes=("compact", "raw"),
                 ack_safe=False,
                 compact_notes=(
-                    "Retain build identity, revision, fence, checkpoint refs and repair context.",
+                    "Retain build identity, revision, fence, checkpoint refs, continuation state, "
+                    "recovery_required and repair context.",
                 ),
             ),
             purpose=(
@@ -174,6 +181,8 @@ def operation_specs():
                 "Finish requires the intended running target, current daemon generation, healthy "
                 "database/scheduler and local-admin doctor exit/evidence. Safe checkpoints rejoin "
                 "the existing queue once at their retained phase; unsafe checkpoints stay held. "
+                "A committed pending continuation requires explicit finish and current postflight; "
+                "only a proven never-dispatched cursor can rebind after generation loss. "
                 "Startup alone never resumes work."
             ),
             prerequisites=("Explicit installation administrator authority; no project/run token.",),

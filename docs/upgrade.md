@@ -167,8 +167,14 @@ and names the original upgrade, held tasks and retry command on stderr.
 After repairing the reported cause, retry that exact upgrade with
 `stackos finish-upgrade --upgrade-id <original-upgrade-id>`. It reads the current
 revision and reaches the existing continuation owner for the remaining checkpoints;
-already consumed work stays unchanged. Repeating a completed named finish only
-acknowledges its retained completion. Without `--upgrade-id`, finish selects only
+already dispatched or settled work is never replayed. A committed continuation
+that lost its target daemon before dispatch can rejoin the existing queue after
+current target health/doctor and exact checkpoint validation. Named finish checks
+`recovery_required` even when the retained status is `continued`; it reports
+unresolved drift, unconfirmed dispatch or a prior-generation dispatch hold as a
+failure naming the original upgrade and recovery action. Only proven pending
+work can be rebound automatically. Repeating a completed named finish acknowledges
+its retained completion. Without `--upgrade-id`, finish selects only
 the currently active global fence, so an idle result does not establish that
 earlier partial upgrades completed. To inspect a retained transaction, call
 `stackos ops call maintenance.upgradeStatus --input status.json`, where the file

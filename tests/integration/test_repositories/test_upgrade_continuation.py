@@ -110,7 +110,17 @@ def test_failed_postflight_keeps_fence_and_never_dispatches(session, project_id,
 
 
 @pytest.mark.parametrize(
-    "damage", ["settings", "authority", "source", "binding", "route", "retirement"]
+    "damage",
+    [
+        "settings",
+        "authority",
+        "source",
+        "binding",
+        "route",
+        "retirement",
+        "handoff",
+        "terminal-handoff",
+    ],
 )
 def test_unsafe_checkpoint_is_held_with_repair_context(session, project_id, tmp_path, damage):
     from stackos.db.models import TrackerTask, WorkspaceBinding
@@ -152,6 +162,10 @@ def test_unsafe_checkpoint_is_held_with_repair_context(session, project_id, tmp_
     elif damage == "retirement":
         cp = metadata["delivery"]["upgrade_checkpoint"]
         cp["invocations"] = [{"invocation_id": "missing-retirement"}]
+    elif damage in {"handoff", "terminal-handoff"}:
+        metadata["delivery"]["handoff_id"] = "foreign-handoff"
+        if damage == "terminal-handoff":
+            task.status = "complete"
     task.metadata_json = metadata
     session.add(task)
     session.commit()
@@ -191,9 +205,155 @@ def test_finish_transaction_and_dispatch_gap_are_retry_safe(
     result = finish(session, new)
     assert not new.jobs and result["status"] == "continued"
     monkeypatch.setattr(task_delivery, "_request_delivery_drain", drain)
-    assert finish(session, new) == result
+    retried = finish(session, new)
+    assert retried["revision"] == result["revision"]
+    assert retried["checkpoints"][0]["continuation_state"] == "dispatched"
     assert len(new.jobs) == 1
     assert task_delivery._checkpoint_task is original
+
+
+def test_committed_continuation_recovers_in_new_generation(
+    session, project_id, tmp_path, monkeypatch
+):
+    prepared_task(session, project_id)
+    old = QueuedScheduler()
+    submit(session, project_id, tmp_path, old)
+    prepare(session, old)
+    target = QueuedScheduler()
+    with monkeypatch.context() as crash:
+        crash.setattr(task_delivery, "_request_delivery_drain", lambda *_args: None)
+        committed = finish(session, target)
+    assert committed["status"] == "continued" and not target.jobs
+    # Durable commit succeeded; the target process disappears before dispatch.
+    recovered = QueuedScheduler()
+    assert task_delivery._admission_id(recovered) != task_delivery._admission_id(target)
+    retried = finish(session, recovered, committed["revision"])
+    assert retried["status"] == "continued", retried
+    assert len(recovered.jobs) == 1, retried
+    callback, options = recovered.jobs[0]
+    before = options["kwargs"].copy()
+    assert finish(session, recovered, retried["revision"]) == retried
+    task_delivery.drain_delivery(
+        session_factory=lambda: Session(session.get_bind()), scheduler=recovered
+    )
+    assert recovered.jobs == [(callback, options)] and options["kwargs"] == before
+    # Even dispatched-but-not-started work cannot replay through an old upgrade.
+    later = QueuedScheduler()
+    held = finish(session, later, retried["revision"])
+    assert held["status"] == "partial" and held["recovery_required"]
+    assert "dispatch already began" in str(held["checkpoints"][0]["issues"])
+    assert not later.jobs
+
+
+@pytest.mark.parametrize(
+    "damage", ["source", "handoff", "authority", "session", "retirement", "legacy", "cursor"]
+)
+def test_pending_continuation_drift_holds_without_dispatch(
+    session, project_id, tmp_path, monkeypatch, damage
+):
+    from stackos.db.models import TrackerTask
+
+    prepared_task(session, project_id)
+    old = QueuedScheduler()
+    submit(session, project_id, tmp_path, old)
+    prepare(session, old)
+    target = QueuedScheduler()
+    with monkeypatch.context() as crash:
+        crash.setattr(task_delivery, "_request_delivery_drain", lambda *_args: None)
+        committed = finish(session, target)
+    repo = TrackerRepository(session)
+    session.expire_all()
+    out = repo.get(project_id=project_id, task_key="deliver").tasks[0]
+    task = session.get(TrackerTask, out.id)
+    metadata = deepcopy(task.metadata_json)
+    checkpoint = metadata["delivery"]["upgrade_checkpoint"]
+    if damage == "source":
+        (tmp_path / "foreign.txt").write_text("source drift after continuation commit")
+    elif damage == "handoff":
+        metadata["delivery"]["handoff_id"] = "foreign-handoff"
+    elif damage == "authority":
+        task.context_json = {"contract_revision": 900}
+    elif damage == "session":
+        metadata["delivery"]["agents"]["delivery_agent"]["model"] = "foreign-model"
+    elif damage == "retirement":
+        checkpoint["invocations"] = [{"invocation_id": "unconfirmed-original"}]
+    elif damage == "legacy":
+        checkpoint.pop("continuation_dispatch_started")
+    else:
+        metadata["delivery"]["upgrade_continuation"]["phase"] = "review"
+    task.metadata_json = metadata
+    session.add(task)
+    session.commit()
+    recovered = QueuedScheduler()
+    result = finish(session, recovered, committed["revision"])
+    assert result["status"] == "partial" and result["recovery_required"]
+    assert result["checkpoints"][0]["issues"]
+    assert not recovered.jobs
+    # An incidental drain of either generation cannot bypass the retained hold.
+    for scheduler in (target, recovered):
+        task_delivery.drain_delivery(
+            session_factory=lambda: Session(session.get_bind()), scheduler=scheduler
+        )
+        assert not scheduler.jobs
+
+
+def test_pending_continuation_needs_current_postflight_and_revision(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
+
+    prepared_task(session, project_id)
+    old = QueuedScheduler()
+    submit(session, project_id, tmp_path, old)
+    prepare(session, old)
+    with monkeypatch.context() as crash:
+        crash.setattr(task_delivery, "_request_delivery_drain", lambda *_args: None)
+        committed = finish(session, QueuedScheduler())
+    recovered = QueuedScheduler()
+    for change in ({"health_ok": False}, {"doctor_exit_code": 7}, {"daemon_generation": "old"}):
+        with pytest.raises(ConflictError, match="postflight"):
+            finish(session, recovered, committed["revision"], **change)
+    with pytest.raises(ConflictError, match="not ready"):
+        finish(session, recovered, committed["revision"] - 1)
+    session.expire_all()
+    assert ManagedUpgradeRepository(session).status(IDENTITY["upgrade_id"]) == committed
+    assert not recovered.jobs
+
+
+def test_old_upgrade_cannot_replay_settled_continuation(session, project_id, tmp_path, monkeypatch):
+    prepared_task(session, project_id)
+    old = QueuedScheduler()
+    submit(session, project_id, tmp_path, old)
+    prepare(session, old)
+    head = git(tmp_path, "rev-parse", "HEAD")
+    launches = []
+
+    def native(_directory, _instructions, prompt, _schema, *, on_session, **_kwargs):
+        packet = json.loads(prompt)
+        identity = f"{packet['brief']['ticket']['key']}-{packet['phase']}"
+        launches.append(identity)
+        on_session(identity)
+        return AgentRunResult(
+            0, thread_id=identity, result=generic_result(outputs={"commit_sha": head})
+        )
+
+    use_codex_native(monkeypatch, native)
+    target = QueuedScheduler()
+    result = finish(session, target)
+    target.run()
+    session.expire_all()
+    before = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    later = QueuedScheduler()
+    settled = finish(session, later, result["revision"])
+    assert settled["status"] == "continued" and not settled["recovery_required"]
+    assert not later.jobs
+    session.expire_all()
+    after = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert after.tasks[0].metadata_json == before.tasks[0].metadata_json
+    assert [t.completion_evidence_json for t in after.tickets] == [
+        t.completion_evidence_json for t in before.tickets
+    ]
+    assert launches == ["first-delivery", "first-review", "second-delivery", "second-review"]
 
 
 def test_partial_finish_retries_only_held_work_and_keeps_queue_capacity(
@@ -429,10 +589,12 @@ def test_current_workflow_authority_is_rechecked(session, project_id, tmp_path, 
 
 
 @pytest.mark.parametrize(
-    "phase", ["delivery", "review", "repair", "mirror", "review-mirror", "prevented"]
+    "phase,dispatch_gap",
+    [(p, False) for p in ("delivery", "review", "repair", "mirror", "review-mirror", "prevented")]
+    + [("review", True), ("repair", True), ("review", "session-drift")],
 )
 def test_original_phase_session_and_attempt_resume(
-    delivery_engine, project_id, tmp_path, monkeypatch, phase
+    delivery_engine, project_id, tmp_path, monkeypatch, phase, dispatch_gap
 ):
     from stackos.repositories.run_plans import RunPlanRepository
 
@@ -531,7 +693,25 @@ def test_original_phase_session_and_attempt_resume(
         expected_count = len(launches)
         continued = True
         new = QueuedScheduler()
-        result = finish(session, new, receipt["revision"])
+        if dispatch_gap:
+            with monkeypatch.context() as crash:
+                crash.setattr(task_delivery, "_request_delivery_drain", lambda *_args: None)
+                committed = finish(session, new, receipt["revision"])
+            assert committed["checkpoints"][0]["continuation_state"] == "pending"
+            assert not new.jobs
+            new = QueuedScheduler()
+            if dispatch_gap == "session-drift":
+                changed = deepcopy(old_evidence)
+                changed["sessions"]["review"]["thread_id"] = "foreign-review-session"
+                task_delivery._save_evidence(repo, project_id, ticket_key, changed)
+                held = finish(session, new, committed["revision"])
+                assert held["status"] == "partial" and held["recovery_required"]
+                assert "session" in str(held["checkpoints"][0]["issues"])
+                assert not new.jobs and len(launches) == expected_count
+                return
+            result = finish(session, new, committed["revision"])
+        else:
+            result = finish(session, new, receipt["revision"])
         assert result["status"] == "continued", result
         new.run()
         session.expire_all()
@@ -573,7 +753,7 @@ def test_interrupted_history_and_cumulative_usage_reach_existing_projections(
 
     monkeypatch.setattr(sys.modules[__name__], "AgentRunResult", measured_result)
     test_original_phase_session_and_attempt_resume(
-        delivery_engine, project_id, tmp_path, monkeypatch, phase
+        delivery_engine, project_id, tmp_path, monkeypatch, phase, False
     )
     with Session(delivery_engine) as session:
         repo = TrackerRepository(session)
@@ -620,7 +800,7 @@ def test_missing_interruption_usage_cannot_bridge_an_older_repair_baseline(
 
     monkeypatch.setattr(sys.modules[__name__], "AgentRunResult", measured_result)
     test_original_phase_session_and_attempt_resume(
-        delivery_engine, project_id, tmp_path, monkeypatch, "repair"
+        delivery_engine, project_id, tmp_path, monkeypatch, "repair", False
     )
     with Session(delivery_engine) as session:
         evidence = (
