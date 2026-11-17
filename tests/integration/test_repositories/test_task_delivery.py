@@ -9,6 +9,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import UTC, datetime
 from itertools import pairwise
 from pathlib import Path
 from threading import Barrier, Event, RLock
@@ -1188,6 +1189,8 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
     session, project_id, tmp_path, monkeypatch, phase
 ):
     from stackos import task_delivery
+    from stackos.repositories.tracker.agent_stats import invocation_receipts, usage_refresh
+    from stackos.repositories.tracker.schema import TrackerMetricDemand
 
     sha = commit(tmp_path, "accepted-source")
     plans = RunPlanRepository(session)
@@ -1252,7 +1255,7 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
             scope=kwargs["execution_scope"],
             host_key=args[0],
             model=None,
-            started_at="2026-11-17T00:00:00+00:00",
+            started_at=datetime.now(UTC).isoformat(),
             thread_id="retained-report",
         )
         kwargs["on_execution_change"](native, True)
@@ -1264,6 +1267,7 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
         else:
             assert len(calls) == 2
             assert kwargs["resume_thread_id"] == "retained-report"
+            assert kwargs["previous_usage"]["measured"]["total"] == 110
             assert "report-only" in packet["assignment"]
             assert "No tools" in packet["assignment"]
             with Session(session.get_bind()) as check:
@@ -1295,11 +1299,17 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
                 )
                 assert receipt["execution"]["invocation_id"] == native.invocation_id
         native.finished = True
-        native.finished_at = "2026-11-17T00:00:01+00:00"
+        native.finished_at = datetime.now(UTC).isoformat()
         kwargs["on_execution_change"](native, False)
         return AgentRunResult(
             0,
             thread_id="retained-report",
+            usage=usage_snapshot(
+                "codex.turn",
+                "session",
+                100 if len(calls) == 1 else 120,
+                10 if len(calls) == 1 else 20,
+            ),
             result=generic_result(
                 outputs=original if len(calls) == 1 else corrected,
                 followups=[{"text": "Unrelated observation"}],
@@ -1340,6 +1350,54 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
     assert "repair_count" not in evidence
     assert evidence["reporting_corrections"][-1]["status"] == "accepted"
     assert evidence["sessions"][phase]["thread_id"] == "retained-report"
+    receipts = invocation_receipts({"automatic_delivery": evidence})
+    assert [r["execution"]["invocation_id"] for r in receipts] == [
+        "report-call-1",
+        "report-call-2",
+    ]
+    assert [r["usage"]["measured"]["total"] for r in receipts] == [110, 30]
+    # Known copies in reporting history, archive and upgrade observations still
+    # describe these same two calls. Exercise actual projection writes/readers.
+    copied = deepcopy(evidence)
+    copied["attempts"].append({"attempt": 1, phase: deepcopy(evidence[phase])})
+    copied["reporting_corrections"].append(deepcopy(copied["reporting_corrections"][0]))
+    copied["upgrade_interruptions"] = [
+        {"attempt": 1, "phase": phase, "receipt": deepcopy(receipts[0])},
+    ]
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=ticket_key,
+        patch_json={"completion_evidence_json": {"automatic_delivery": copied}},
+    )
+    assert len(invocation_receipts({"automatic_delivery": copied})) == 2
+    full = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
+    assert full.agent_stats.launch_attempts == 2
+    assert full.agent_stats.reported_usage.total == 140
+    assert full.agent_stats.coverage.usage_measured_attempts == 2
+    assert full.work_duration.recorded_intervals == 2
+    assert full.work_duration.coverage == "complete"
+    expected_seconds = sum(
+        (
+            datetime.fromisoformat(r["finished_at"])
+            - datetime.fromisoformat(r["launch"]["started_at"])
+        ).total_seconds()
+        for r in receipts
+    )
+    assert full.work_duration.total_seconds == pytest.approx(expected_seconds)
+    demand = TrackerMetricDemand(task_keys=[task_key], ticket_keys=[ticket_key])
+    ui = repo.get(
+        project_id=project_id,
+        task_key=task_key,
+        projection="ui",
+        metric_demand=demand,
+    )
+    projected = next(t for t in ui.tickets if t.key == ticket_key)
+    refreshed = usage_refresh(session, project_id, None, metric_demand=demand)
+    refreshed_ticket = next(t for t in refreshed["tickets"] if t["key"] == ticket_key)
+    for field in ("agent_stats", "work_duration"):
+        assert getattr(projected, field) == getattr(full, field)
+        assert refreshed_ticket[field] == full.model_dump(mode="json")[field]
     # Rejected raw dictionary keys/bodies never enter any receipt write.
     assert '"credentials"' not in json.dumps(writes)
     # A duplicate scheduler delivery after acceptance cannot replay the native work.
@@ -1353,49 +1411,65 @@ def test_report_correction_resumes_once_without_replaying_accepted_work(
 
 
 @pytest.mark.parametrize(
-    "failure",
+    "failure,phase",
     [
-        "value",
-        "late-value",
-        "incomplete",
-        "unknown",
-        "malformed",
-        "trailing",
-        "duplicate-key",
-        "nonfinite",
-        "outer",
-        "native",
-        "missing-session",
-        "candidate",
-        "blocked",
-        "missing-proof",
-        "pending-action",
-        "second-key",
-        "changed-value",
-        "changed-summary",
-        "changed-proof",
-        "changed-candidate",
-        "changed-work",
-        "changed-state",
-        "changed-session",
-        "changed-saved-session",
-        "changed-saved-candidate",
-        "second-native",
-        "second-malformed",
-        "second-outer",
-        "second-blocked",
-        "second-interrupted",
+        (failure, "delivery")
+        for failure in (
+            "value",
+            "late-value",
+            "incomplete",
+            "unknown",
+            "malformed",
+            "trailing",
+            "duplicate-key",
+            "nonfinite",
+            "outer",
+            "native",
+            "missing-session",
+            "candidate",
+            "blocked",
+            "missing-proof",
+            "pending-action",
+            "second-key",
+            "changed-value",
+            "changed-summary",
+            "changed-proof",
+            "changed-candidate",
+            "changed-work",
+            "changed-state",
+            "changed-session",
+            "changed-saved-session",
+            "changed-saved-candidate",
+            "second-native",
+            "second-malformed",
+            "second-outer",
+            "second-blocked",
+            "second-interrupted",
+        )
+    ]
+    + [
+        (failure, "review")
+        for failure in (
+            "second-key",
+            "second-native",
+            "second-interrupted",
+        )
     ],
 )
 def test_report_correction_fails_closed_and_retains_consumed_allowance(
-    session, project_id, tmp_path, monkeypatch, failure
+    session, project_id, tmp_path, monkeypatch, failure, phase
 ):
     from stackos import task_delivery
     from stackos.repositories.run_plans import RunPlanSecretValidationError
+    from stackos.repositories.tracker.agent_stats import invocation_receipts
 
     sha = commit(tmp_path, "source")
     plans = RunPlanRepository(session)
-    step = {"id": "report", "title": "Report"}
+    step = {
+        "id": "report",
+        "title": "Report",
+        "metadata_json": {"agent_assignment": f"{phase}_agent"},
+    }
     if failure == "missing-proof":
         step["expected_outputs"] = {"proof": {"type": "object", "required": True}}
     plan = plans.create(
@@ -1498,7 +1572,7 @@ def test_report_correction_fails_closed_and_retains_consumed_allowance(
                     )
                     automatic = completion["automatic_delivery"]
                     if failure == "changed-saved-session":
-                        automatic["sessions"]["delivery"]["thread_id"] = "foreign-session"
+                        automatic["sessions"][phase]["thread_id"] = "foreign-session"
                     else:
                         automatic["candidate"]["commit_sha"] = "a" * 40
                     owner.update_ticket(
@@ -1531,7 +1605,14 @@ def test_report_correction_fails_closed_and_retains_consumed_allowance(
             value["outputs"] = '{"credentials":NaN}'
         if failure == ("second-outer" if correcting else "outer"):
             value["unexpected"] = True
-        return AgentRunResult(code, thread_id=thread, result=value)
+        return AgentRunResult(
+            code,
+            thread_id=thread,
+            result=value,
+            usage=usage_snapshot(
+                "codex.turn", "session", 120 if correcting else 100, 20 if correcting else 10
+            ),
+        )
 
     monkeypatch.setattr(task_delivery, "run_agent", launch)
     scheduler = QueuedScheduler()
@@ -1566,6 +1647,9 @@ def test_report_correction_fails_closed_and_retains_consumed_allowance(
             "consumed" if failure == "second-interrupted" else "rejected"
         )
         assert correction["original_receipt"].get("result") is None
+        receipts = invocation_receipts({"automatic_delivery": evidence})
+        assert len(receipts) == 2  # The corrected copy cannot count twice, even without IDs.
+        assert receipts[0]["usage"]["measured"]["total"] == 110
         # Explicit rehandoff/restarted controller keeps the allowance and stops
         # before any broad native assignment or a third reporting invocation.
         plans.reopen(
@@ -1593,6 +1677,7 @@ def test_report_correction_fails_closed_and_retains_consumed_allowance(
         assert retained["repair_count"] == 3
         assert retained["reporting_corrections"] == evidence["reporting_corrections"]
         assert retained["sessions"] == evidence["sessions"]
+        assert invocation_receipts({"automatic_delivery": retained}) == receipts
 
 
 @pytest.mark.parametrize("transition", ["reopened", "cancelled", "native_error"])

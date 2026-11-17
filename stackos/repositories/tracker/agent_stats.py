@@ -125,19 +125,29 @@ def _receipt_items(
                 )
                 normal[receipt_attempt, phase] = receipt
     # Normal current/archive precedence remains unchanged, including legacy
-    # copies without invocation IDs. Upgrade observations have an explicit
-    # source location and may share that attempt/phase with a resumed call.
+    # copies without invocation IDs. Retained observations have explicit source
+    # locations and may share an attempt/phase with a resumed call.
     interruptions = automatic.get("upgrade_interruptions")
+    observations = [
+        (f"upgrade_interruptions:{position}", item, "receipt")
+        for position, item in enumerate(interruptions if isinstance(interruptions, list) else [])
+    ]
+    corrections = automatic.get("reporting_corrections")
+    observations.extend(
+        (f"reporting_corrections:{position}:{receipt_key}", item, receipt_key)
+        for position, item in enumerate(corrections if isinstance(corrections, list) else [])
+        for receipt_key in ("original_receipt", "corrected_receipt")
+    )
     retained: dict[tuple[int | None, str], dict[str, dict[str, Any]]] = defaultdict(dict)
     normal_ids = set()
     for (attempt, phase), receipt in normal.items():
         execution = receipt.get("execution")
         if isinstance(execution, dict) and isinstance(execution.get("invocation_id"), str):
             normal_ids.add((attempt, phase, execution["invocation_id"]))
-    for position, item in enumerate(interruptions if isinstance(interruptions, list) else []):
+    for locator, item, receipt_key in observations:
         if not isinstance(item, dict) or item.get("phase") not in {"delivery", "review"}:
             continue
-        receipt = item.get("receipt")
+        receipt = item.get(receipt_key)
         if not isinstance(receipt, dict) or (
             require_launch and not isinstance(receipt.get("launch"), dict)
         ):
@@ -152,9 +162,20 @@ def _receipt_items(
                 continue  # Still-current/archive copies are the same invocation.
             observation = f"invocation:{invocation}"
         else:
+            current = normal.get((attempt, phase))
+            launch = receipt.get("launch")
+            if (
+                receipt_key != "receipt"
+                and isinstance(current, dict)
+                and isinstance(launch, dict)
+                and isinstance(launch.get("started_at"), str)
+                and launch["started_at"]
+                and launch == current.get("launch")
+            ):
+                continue  # A known reporting copy of the same saved launch.
             # A source locator distinguishes an incomplete observation without
             # inventing a native invocation identity, timestamp or usage.
-            observation = f"upgrade_interruptions:{position}"
+            observation = locator
         retained[attempt, phase][observation] = receipt
     unique = {}
     for (attempt, phase), receipt in normal.items():

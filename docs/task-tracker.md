@@ -714,6 +714,11 @@ mint another correction. Duplicate/late predecessor callbacks cannot own the
 continuation receipt. Missing retained comparison evidence requires explicit
 reconciliation rather than reexecution of accepted work.
 
+The canonical receipt reader includes each reporting invocation once, deduplicating
+current and archived copies. Continuation normalization reads the original session
+counter baseline through that reader. Existing statistics, lightweight usage and
+duration projections consume the same inventory, including failed continuations.
+
 For Codex, `thread.started` commits the exact native ID and frozen role identity
 into `automatic_delivery.sessions[phase]` before native exit. The write requires
 the current handoff, ticket, attempt, phase and invocation receipt; stale or
