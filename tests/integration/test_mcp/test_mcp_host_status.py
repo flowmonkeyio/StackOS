@@ -78,6 +78,55 @@ def test_host_status_has_one_read_only_local_admin_contract() -> None:
     assert not {"auth_status_command", "config_path", "credential"} & capability_fields.keys()
 
 
+def test_console_subscription_snapshot_is_independent_and_allowlisted(mcp_client, monkeypatch):
+    assert set(service.subscription_readers()) == {"codex", "claude-code", "grok"}
+    client = mcp_client.test_client
+    path = "/api/v1/operations/hostMcp.subscriptions/call"
+    spec = build_operation_registry().get("hostMcp.subscriptions")
+    assert spec.read_only and spec.surfaces.rest.browser_safe
+    assert not spec.surfaces.mcp.enabled and not spec.surfaces.cli.enabled
+    calls = []
+
+    def healthy():
+        calls.append("codex")
+        return {
+            "plan": "ChatGPT Pro",
+            "account": "private-account",
+            "meters": [{"scope": "Weekly", "remaining_percent": 0, "resets_at": None}],
+        }
+
+    def offline():
+        raise RecursionError("private-provider-error")
+
+    monkeypatch.setattr(
+        service,
+        "subscription_readers",
+        lambda: {
+            "codex": healthy,
+            "claude-code": offline,
+            "grok": lambda: None,
+        },
+    )
+    assert client.post(path, json={"arguments": {}}).status_code == 401
+    headers = {"Authorization": f"Bearer {client.app.state.ui_token}"}
+    for arguments in ({"binary": "/tmp/user-choice"}, {"run_token": "test-run-token"}):
+        assert client.post(path, json={"arguments": arguments}, headers=headers).is_error
+    assert not calls
+    response = client.post(path, json={"arguments": {"response_mode": "raw"}}, headers=headers)
+    assert response.status_code == 200, response.text
+    snapshot = response.json()
+    assert snapshot["checked_at"]
+    assert snapshot["readings"] == {
+        "codex": {
+            "plan": "ChatGPT Pro",
+            "meters": [{"scope": "Weekly", "remaining_percent": 0, "resets_at": None}],
+        },
+        "claude-code": None,
+        "grok": None,
+    }
+    assert calls == ["codex"]
+
+
 def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspected) -> None:
     client = mcp_client.test_client
     response = client.post(
