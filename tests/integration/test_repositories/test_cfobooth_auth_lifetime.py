@@ -38,7 +38,6 @@ async def test_project_probe_rejects_ended_connection(session, project_id, httpx
         fields={
             "api_key": native.CANARY,
             "api_base_url": native.BASE,
-            "organization_id": native.ORG,
         },
         attach_project_id=project_id,
     ).data
@@ -49,9 +48,7 @@ async def test_project_probe_rejects_ended_connection(session, project_id, httpx
         await release.wait()
         return httpx.Response(200, json=native.identity())
 
-    httpx_mock.add_callback(
-        held, method="GET", url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current"
-    )
+    httpx_mock.add_callback(held, method="GET", url=native.BASE + "/api/api-keys/current")
     old = asyncio.create_task(_test_account(session, project_id, saved.credential_ref))
     await asyncio.wait_for(entered.wait(), 5)
     with Session(session.get_bind()) as changes:
@@ -88,9 +85,7 @@ async def test_detached_probe_failure_preserves_shared_account(session, project_
         await release.wait()
         return httpx.Response(401, json={"error": "denied"})
 
-    httpx_mock.add_callback(
-        held, method="GET", url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current"
-    )
+    httpx_mock.add_callback(held, method="GET", url=native.BASE + "/api/api-keys/current")
     old = asyncio.create_task(_test_account(session, project_id, ref))
     await asyncio.wait_for(entered.wait(), 5)
     with Session(session.get_bind()) as changes:
@@ -130,9 +125,7 @@ async def test_probe_keeps_unaffected_authority(session, project_id, httpx_mock,
         await release.wait()
         return httpx.Response(200, json=native.identity())
 
-    httpx_mock.add_callback(
-        held, method="GET", url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current"
-    )
+    httpx_mock.add_callback(held, method="GET", url=native.BASE + "/api/api-keys/current")
     old = asyncio.create_task(_test_account(session, None if global_admin else other, ref))
     await asyncio.wait_for(entered.wait(), 5)
     with Session(session.get_bind()) as changes:
@@ -152,9 +145,7 @@ async def test_global_probe_cannot_restore_revoked_key(session, project_id, http
         await release.wait()
         return httpx.Response(200, json=native.identity())
 
-    httpx_mock.add_callback(
-        held, method="GET", url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current"
-    )
+    httpx_mock.add_callback(held, method="GET", url=native.BASE + "/api/api-keys/current")
     old = asyncio.create_task(_test_account(session, None, ref))
     await asyncio.wait_for(entered.wait(), 5)
     with Session(session.get_bind()) as changes:

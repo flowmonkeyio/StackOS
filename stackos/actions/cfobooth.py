@@ -106,6 +106,17 @@ class CFOBoothActionConnector:
                 raise ValidationError("CFOBooth inventory scope changed; verify and sync again")
         revision = request.credential.credential.updated_at
         bridge, prepared = self._bridge(request)
+        # Supply the tenant through the native auth config projection only.
+        prepared = replace(
+            prepared,
+            credential=replace(
+                request.credential,
+                config_json={
+                    **(request.credential.config_json or {}),
+                    "organization_id": scope["organization_id"],
+                },
+            ),
+        )
         native = await bridge.execute_native(prepared)
         # Do not return results or publish inventory after Account replacement,
         # revocation, or removal of this project's original Connection.

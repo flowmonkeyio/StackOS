@@ -97,6 +97,17 @@ class CredentialResolutionMixin:
                     "status": credential.status,
                 },
             )
+        if require_connected and credential.provider_key == "cfobooth":
+            # Check before action idempotency can return a stored response.
+            from stackos.integrations.cfobooth import account_key_identity
+
+            try:
+                account_key_identity(self._s, credential.id)
+            except ValidationError as exc:
+                raise ConflictError(
+                    exc.detail,
+                    data={"credential_ref": credential_ref, "status": "repair-required"},
+                ) from None
         return credential
 
     async def resolve_for_execution(

@@ -39,6 +39,13 @@ def test_cfobooth_capability_controls_setup_and_dispatch(session, project_id, ht
     if available:
         assert [m.key for m in provider.auth_methods] == ["api_key"]
         assert provider.auth_methods[0].permission_verification is None
+        assert {f.key for f in provider.auth_methods[0].fields} == {"api_key", "api_base_url"}
+        declaration = get_default_client().registry.connector_metadata["cfobooth"]["auth_methods"][
+            0
+        ]
+        config_schema = declaration["config_schema"]
+        assert "organization_id" in config_schema["properties"]
+        assert "organization_id" not in config_schema["required"]
     else:
         assert provider.auth_methods == []
         assert provider.config_json["enabled"] is False

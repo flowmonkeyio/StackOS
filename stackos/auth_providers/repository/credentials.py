@@ -404,10 +404,7 @@ class CredentialStorageMixin:
         )
         cfobooth_identity_changed = provider.key == "cfobooth" and bool(
             changed_secret_fields
-            or any(
-                safe_config.get(key) != (credential.config_json or {}).get(key)
-                for key in ("api_base_url", "organization_id")
-            )
+            or safe_config.get("api_base_url") != (credential.config_json or {}).get("api_base_url")
         )
         resolved_status = credential.status
         secret_payload = declared_secret_payload

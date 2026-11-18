@@ -86,12 +86,12 @@ async def verified_account(
     saved = repo.store_credential(
         provider_key="cfobooth",
         display_name=name,
-        fields={"api_key": key, "api_base_url": base, "organization_id": ORG},
+        fields={"api_key": key, "api_base_url": base},
         attach_project_id=project_id,
     ).data
     httpx_mock.add_response(
         method="GET",
-        url=base.rstrip("/") + f"/api/organizations/{ORG}/api-keys/current",
+        url=base.rstrip("/") + "/api/api-keys/current",
         json=identity(),
     )
     tested = (await repo.test(project_id=project_id, credential_ref=saved.credential_ref)).data

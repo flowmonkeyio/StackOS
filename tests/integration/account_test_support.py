@@ -67,7 +67,7 @@ def install_cfobooth_contract(session: Session, monkeypatch: Any) -> dict[str, A
                 },
                 "config_schema": {
                     "type": "object",
-                    "required": ["api_base_url", "organization_id"],
+                    "required": ["api_base_url"],
                     "properties": {
                         "api_base_url": {"type": "string", "minLength": 1},
                         "organization_id": {"type": "string", "format": "uuid"},
@@ -104,13 +104,6 @@ def install_cfobooth_contract(session: Session, monkeypatch: Any) -> dict[str, A
                                 "Editable example only. Use your owned local HTTP loopback "
                                 "or remote HTTPS endpoint."
                             ),
-                            "type": "text",
-                            "secret": False,
-                        },
-                        {
-                            "key": "organization_id",
-                            "label": "Organization ID",
-                            "required": True,
                             "type": "text",
                             "secret": False,
                         },

@@ -353,16 +353,17 @@ The CFOBooth provider expands its native `auth_catalog_ref`. With the public
 `stackos-connectors==0.2.8` dependency it is disabled, exposes no setup methods,
 and rejects Account setup/storage and dispatch. The separately qualified
 companion package supplies the native declaration, probe and catalog transport.
+Organization discovery requires the companion contract with an optional runtime
+organization field and URL/key setup fields.
 Malformed existing native metadata remains an error; it never becomes an
 anonymous or copied-schema fallback.
 
-CFOBooth uses an explicit API-key Account with `api_base_url` and
-`organization_id`. Enter the key in the local masked field. The editable
-`https://cfobooth.com` placeholder is an example, not a verified deployment or
-a default destination. The native connector validates the configured endpoint
-(HTTPS or HTTP exact loopback), probes the current key identity, and checks its
-organization. No CFO password, browser session, refresh token or automatic key
-renewal is used.
+CFOBooth uses an explicit API-key Account. Enter the service URL and the key
+in the local Accounts form. The editable `https://cfobooth.com` placeholder
+illustrates the URL format. The native connector validates the configured
+endpoint (HTTPS or HTTP exact loopback) and authenticates the key through
+`GET /api/api-keys/current`. The probe returns the organization, key ID, and
+user for the verified Account.
 
 A new CFO Account remains pending until that probe succeeds. Typed safe
 account identity is saved independently of permission-grant evidence; no grants
@@ -371,9 +372,15 @@ financial access remains CFOBooth's responsibility. A rejected or malformed
 probe leaves the Account requiring repair and discards its old identity and
 generated inventory. Other providers retain their existing diagnostic behavior.
 
+Catalog sync and generated actions use the verified Account organization in
+the connector's runtime auth configuration. Request data and obsolete saved
+organization fields cannot select the destination. Testing an existing Account
+retains its project attachments. A change in verified identity retires the
+previous scoped inventory and requires a fresh sync.
+
 To rotate a key, create its replacement in CFOBooth, edit this same-method
-Account locally, and verify it before synchronizing again. Changing the key,
-organization or endpoint clears old identity and retires scoped actions;
+Account locally, and verify it before synchronizing again. Changing the key
+or endpoint clears old identity and retires scoped actions;
 late tests from the previous Account revision cannot restore them. The Account
 form rechecks explicit replacements. A failed replacement never silently
 restores the previous usable key. Revoke the old key in CFOBooth after validating

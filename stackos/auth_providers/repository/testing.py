@@ -263,12 +263,13 @@ class CredentialTestingMixin:
                         declaration=declaration,
                     )
                     assert auth is not None
+                    probe_config = dict(resolved.config_json or {})
+                    if credential.provider_key == "cfobooth":
+                        probe_config.pop("organization_id", None)
                     auth = ConnectorAuth(
                         method=auth.method,
                         fields=auth.fields,
-                        config=native_probe.project_probe_config(
-                            catalog_key, resolved.config_json or {}
-                        ),
+                        config=native_probe.project_probe_config(catalog_key, probe_config),
                     )
                     # Mailbox choice is a host preference; only the native mailbox
                     # crosses the package boundary, never aliases or policy maps.
@@ -305,35 +306,36 @@ class CredentialTestingMixin:
         )
         now = utcnow()
         if credential.provider_key == "cfobooth":
+            from stackos_connectors.connectors.cfobooth import normalize_api_base_url
+            from stackos_connectors.errors import ValidationError as NativeValidationError
+
+            from stackos.actions.generated_inventory import retire_generated_credential_inventory
+            from stackos.integrations.cfobooth import account_key_identity, verified_key_identity
+
             # The native probe validates provider identity and destination. The
             # host accepts only typed evidence bound to this Account's scope.
-            try:
-                evidence = AuthProbeEvidence.model_validate(out.metadata.get("evidence"))
-                account = evidence.account
-                valid_identity = bool(
-                    raw_result.get("ok") is True
-                    and account is not None
-                    and account.provider_account_id
-                    and account.provider_account_id.strip()
-                    and account.display_name
-                    and account.display_name.strip()
-                    and account.metadata.get("organization_id")
-                    == (resolved.config_json or {}).get("organization_id")
-                    and isinstance(account.metadata.get("key_id"), str)
-                    and account.metadata["key_id"].strip()
-                    and isinstance(out.metadata.get("api_base_url"), str)
-                    and out.metadata["api_base_url"].strip()
-                )
-            except PydanticValidationError:
-                valid_identity = False
-            if out.ok and not valid_identity:
-                out = self._normalize_test_result(
-                    credential=credential,
-                    provider_key=credential.provider_key,
-                    raw=_failed_test_result(
-                        credential.provider_key, ValidationError("Invalid probe evidence")
-                    ),
-                )
+            identity = None
+            if out.ok:
+                try:
+                    evidence = AuthProbeEvidence.model_validate(out.metadata.get("evidence"))
+                    account = evidence.account
+                    base = normalize_api_base_url((resolved.config_json or {}).get("api_base_url"))
+                    if (
+                        raw_result.get("ok") is not True
+                        or account is None
+                        or not (account.display_name or "").strip()
+                        or out.metadata.get("api_base_url") != base
+                    ):
+                        raise ValidationError("Invalid probe evidence")
+                    identity = verified_key_identity(account.provider_account_id, account.metadata)
+                except (PydanticValidationError, NativeValidationError, ValidationError):
+                    out = self._normalize_test_result(
+                        credential=credential,
+                        provider_key=credential.provider_key,
+                        raw=_failed_test_result(
+                            credential.provider_key, ValidationError("Invalid probe evidence")
+                        ),
+                    )
             # Claim this revision atomically before persisting any result or
             # identity. The original Connection must still authorize a project
             # probe; global-admin probes do not depend on project attachments.
@@ -372,8 +374,20 @@ class CredentialTestingMixin:
                 )
             self._s.refresh(credential)
             if out.ok:
+                try:
+                    previous_identity = account_key_identity(self._s, credential.id)
+                except ValidationError:
+                    previous_identity = None
+                if previous_identity != identity:
+                    retire_generated_credential_inventory(
+                        self._s,
+                        provider_key=credential.provider_key,
+                        credential_ref=credential_ref,
+                        now=now,
+                    )
                 config = dict(credential.config_json or {})
                 config["api_base_url"] = out.metadata["api_base_url"]
+                config.pop("organization_id", None)
                 credential.config_json = self._safe_config(config)
             else:
                 self._invalidate_cfobooth_identity(credential)

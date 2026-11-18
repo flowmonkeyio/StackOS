@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import (
     Action,
@@ -21,7 +22,7 @@ from stackos.db.models import (
     Plugin,
     Provider,
 )
-from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.base import ConflictError, RepositoryError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 from tests.integration.account_test_support import install_cfobooth_contract
 from tests.integration.test_repositories import cfobooth_test_support as native
@@ -34,7 +35,7 @@ BASE = "http://localhost:3100"
 
 
 def fields(**overrides):
-    return {"api_base_url": BASE, "organization_id": ORG, "api_key": CANARY, **overrides}
+    return {"api_base_url": BASE, "api_key": CANARY, **overrides}
 
 
 def probe_result(**overrides):
@@ -70,17 +71,19 @@ def contract(session, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_org", [None, "b6ed0649-65a3-4ec1-bcf5-233bd5049817"])
 async def test_unverified_account_persists_identity_without_grant_overlay(
     session: Session,
     project_id: int,
     monkeypatch,
     contract,
+    legacy_org,
 ):
     repo = AuthRepository(session)
     method = repo.list_providers(provider_key="cfobooth")[0].auth_methods[0]
     assert method.permission_verification is None
     assert method.interactive is False
-    assert {f.key for f in method.fields} == {"api_base_url", "organization_id", "api_key"}
+    assert {f.key for f in method.fields} == {"api_base_url", "api_key"}
     saved = repo.store_credential(
         provider_key="cfobooth",
         display_name="Local CFO",
@@ -89,6 +92,11 @@ async def test_unverified_account_persists_identity_without_grant_overlay(
     ).data
     assert saved.account is None
     assert saved.status == "pending"
+    if legacy_org is not None:
+        credential = session.exec(select(Credential)).one()
+        credential.config_json = {**credential.config_json, "organization_id": legacy_org}
+        session.add(credential)
+        session.commit()
     with pytest.raises(ConflictError, match="not connected"):
         await repo.resolve_for_execution(
             project_id=project_id,
@@ -100,7 +108,7 @@ async def test_unverified_account_persists_identity_without_grant_overlay(
     async def probe(connector, *, auth, **kwargs):
         assert connector == "cfobooth"
         assert dict(auth.fields) == {"api_key": CANARY}
-        assert dict(auth.config) == {"api_base_url": BASE, "organization_id": ORG}
+        assert dict(auth.config) == {"api_base_url": BASE}
         return probe_result()
 
     monkeypatch.setattr("stackos_connectors.probe.probe_credentials", probe)
@@ -109,10 +117,12 @@ async def test_unverified_account_persists_identity_without_grant_overlay(
     account = repo.get_account(credential_ref=saved.credential_ref)
     assert account.account["provider_account_id"] == USER
     assert account.account["metadata_json"]["key_id"] == KEY_ID
+    assert account.account["metadata_json"]["organization_id"] == ORG
+    assert account.project_ids == [project_id]
     assert account.scopes == []
 
 
-@pytest.mark.parametrize("missing", ["api_key", "api_base_url", "organization_id"])
+@pytest.mark.parametrize("missing", ["api_key", "api_base_url"])
 def test_missing_inputs_never_create_custody(session, contract, missing):
     values = fields(**{missing: ""})
     with pytest.raises(ValidationError, match="missing"):
@@ -123,7 +133,16 @@ def test_missing_inputs_never_create_custody(session, contract, missing):
 
 
 @pytest.mark.parametrize(
-    "outcome", ["failed", "malformed", "wrong-org", "missing-account", "blank-id", "string-ok"]
+    "outcome",
+    [
+        "failed",
+        "malformed",
+        "malformed-org",
+        "missing-org",
+        "missing-account",
+        "blank-id",
+        "string-ok",
+    ],
 )
 @pytest.mark.asyncio
 async def test_failed_or_malformed_probe_cannot_establish_identity(
@@ -145,8 +164,10 @@ async def test_failed_or_malformed_probe_cannot_establish_identity(
         raw.update(ok=False, status="failed")
     elif outcome == "malformed":
         raw["metadata"]["evidence"]["account"]["provider_account_id"] = {"unsafe": "shape"}
-    elif outcome == "wrong-org":
+    elif outcome == "malformed-org":
         raw["metadata"]["evidence"]["account"]["metadata"]["organization_id"] = "other-org"
+    elif outcome == "missing-org":
+        raw["metadata"]["evidence"]["account"]["metadata"].pop("organization_id")
     elif outcome == "missing-account":
         raw["metadata"]["evidence"] = {}
     elif outcome == "blank-id":
@@ -201,7 +222,7 @@ def inventory(session, ref, project_id, *, suffix="own"):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("changed_field", ["api_key", "api_base_url", "organization_id"])
+@pytest.mark.parametrize("changed_field", ["api_key", "api_base_url"])
 async def test_replacement_invalidates_scope_and_late_probe_cannot_overwrite(
     session,
     project_id,
@@ -229,7 +250,6 @@ async def test_replacement_invalidates_scope_and_late_probe_cannot_overwrite(
             changed_field: {
                 "api_key": "replacement-canary",
                 "api_base_url": "http://127.0.0.1:3200",
-                "organization_id": "b6ed0649-65a3-4ec1-bcf5-233bd5049817",
             }[changed_field]
         }
     )
@@ -259,12 +279,11 @@ async def test_replacement_invalidates_scope_and_late_probe_cannot_overwrite(
     session.refresh(foreign_inventory)
     assert foreign_inventory.config_json["inventory_state"] == "active"
 
+    replacement_key_id = "a80e7020-3854-4f26-bf33-458b27139f20"
+
     async def replacement(*args, **kwargs):
         result = probe_result(api_base_url=values["api_base_url"])
-        result["metadata"]["evidence"]["account"]["metadata"]["key_id"] = "replacement-key-id"
-        result["metadata"]["evidence"]["account"]["metadata"]["organization_id"] = values[
-            "organization_id"
-        ]
+        result["metadata"]["evidence"]["account"]["metadata"]["key_id"] = replacement_key_id
         return result
 
     monkeypatch.setattr("stackos_connectors.probe.probe_credentials", replacement)
@@ -274,7 +293,7 @@ async def test_replacement_invalidates_scope_and_late_probe_cannot_overwrite(
         await old_test
     current = repo.get_account(credential_ref=saved.credential_ref)
     assert current.status == "connected"
-    assert current.account["metadata_json"]["key_id"] == "replacement-key-id"
+    assert current.account["metadata_json"]["key_id"] == replacement_key_id
     edit = repo.get_credential_edit_state(credential_ref=saved.credential_ref)
     assert edit.values["api_base_url"] == values["api_base_url"]
 
@@ -337,9 +356,7 @@ def test_real_local_admin_api_custody_failure_recovery_and_disconnect(
     verified = api.post(path + "/test")
     assert verified.status_code == 200, verified.text
     assert verified.json()["data"]["ok"] is True
-    assert observed == [
-        ("cfobooth", {"api_base_url": BASE, "organization_id": ORG}, {"api_key": CANARY})
-    ]
+    assert observed == [("cfobooth", {"api_base_url": BASE}, {"api_key": CANARY})]
     foreign = api.post(
         "/api/v1/projects",
         json={
@@ -422,7 +439,7 @@ def test_real_local_admin_api_custody_failure_recovery_and_disconnect(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "failure",
-    ["denied", "revoked", "expired", "wrong-org", "malformed-email", "malformed-identity"],
+    ["denied", "revoked", "expired", "missing-org", "malformed-email", "malformed-identity"],
 )
 async def test_native_account_failure_never_establishes_identity(
     session, project_id, httpx_mock, failure, caplog
@@ -434,7 +451,6 @@ async def test_native_account_failure_never_establishes_identity(
         fields={
             "api_key": native.CANARY,
             "api_base_url": native.BASE,
-            "organization_id": native.ORG,
         },
         attach_project_id=project_id,
     ).data
@@ -445,15 +461,15 @@ async def test_native_account_failure_never_establishes_identity(
         raw = {"requestId": "denied", "error": {"code": "forbidden", "message": native.CANARY}}
     elif failure == "expired":
         raw["data"]["expiresAt"] = "2020-01-01T00:00:00Z"
-    elif failure == "wrong-org":
-        raw["data"]["organizationId"] = "b6ed0649-65a3-4ec1-bcf5-233bd5049817"
+    elif failure == "missing-org":
+        raw["data"].pop("organizationId")
     elif failure == "malformed-email":
         raw["data"]["user"]["email"] = "not-an-email"
     else:
         raw["data"]["user"]["id"] = {"unsafe": "shape"}
     httpx_mock.add_response(
         method="GET",
-        url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current",
+        url=native.BASE + "/api/api-keys/current",
         status_code=status,
         json=raw,
     )
@@ -479,18 +495,14 @@ async def test_native_account_failure_never_establishes_identity(
 @pytest.mark.parametrize(
     "url",
     [
-        "https://cfobooth.com",
-        "https://CFOBOOTH.COM.:443",
         "http://remote.example.test",
         "",
         "http://localhost:31837?override=true",
     ],
 )
-async def test_native_canonical_host_and_unsafe_url_reject_before_probe(
-    session, project_id, httpx_mock, url
-):
+async def test_native_unsafe_url_rejects_before_probe(session, project_id, httpx_mock, url):
     repo = AuthRepository(session)
-    values = {"api_key": native.CANARY, "api_base_url": url, "organization_id": native.ORG}
+    values = {"api_key": native.CANARY, "api_base_url": url}
     if not url:
         with pytest.raises(ValidationError):
             repo.store_credential(provider_key="cfobooth", display_name="Invalid", fields=values)
@@ -509,7 +521,7 @@ async def test_native_canonical_host_and_unsafe_url_reject_before_probe(
 @native.native_cfo
 @pytest.mark.fresh_catalog
 @pytest.mark.asyncio
-@pytest.mark.parametrize("field", ["api_key", "api_base_url", "organization_id"])
+@pytest.mark.parametrize("field", ["api_key", "api_base_url"])
 async def test_native_replacement_and_held_probe_fence(session, project_id, httpx_mock, field):
     repo = AuthRepository(session)
     ref = await native.verified_account(session, project_id, httpx_mock)
@@ -525,28 +537,28 @@ async def test_native_replacement_and_held_probe_fence(session, project_id, http
         await release.wait()
         return httpx.Response(200, json=native.identity())
 
-    httpx_mock.add_callback(
-        held, method="GET", url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current"
-    )
+    httpx_mock.add_callback(held, method="GET", url=native.BASE + "/api/api-keys/current")
     old = asyncio.create_task(repo.test(project_id=project_id, credential_ref=ref))
     await asyncio.wait_for(entered.wait(), 5)
     values = {
         "api_key": "s12-replacement-key",
         "api_base_url": "http://localhost:31838/new;prefix",
-        "organization_id": "b6ed0649-65a3-4ec1-bcf5-233bd5049817",
     }
     changed = repo.update_credential(
         credential_ref=ref, fields={field: values[field]}, display_name=None
     ).data
     assert changed.status == "pending" and changed.account is None
-    current_org = values[field] if field == "organization_id" else native.ORG
+    for action_ref in ["cfobooth.catalog.sync", synced["action_refs"][0]]:
+        with pytest.raises(RepositoryError):
+            await ActionRepository(session).execute(
+                project_id=project_id, action_ref=action_ref, credential_ref=ref, input_json={}
+            )
+    assert len(httpx_mock.get_requests()) == 3
     current_base = values[field] if field == "api_base_url" else native.BASE
-    replacement = native.identity(
-        organizationId=current_org, keyId="a80e7020-3854-4f26-bf33-458b27139f20"
-    )
+    replacement = native.identity(keyId="a80e7020-3854-4f26-bf33-458b27139f20")
     httpx_mock.add_response(
         method="GET",
-        url=current_base + f"/api/organizations/{current_org}/api-keys/current",
+        url=current_base + "/api/api-keys/current",
         json=replacement,
     )
     assert (await repo.test(project_id=project_id, credential_ref=ref)).data.ok
@@ -555,9 +567,6 @@ async def test_native_replacement_and_held_probe_fence(session, project_id, http
         await old
     current = repo.get_account(credential_ref=ref)
     assert current.account["metadata_json"]["key_id"] == replacement["data"]["keyId"]
-    from stackos.actions import ActionRepository
-    from stackos.repositories.base import RepositoryError
-
     with pytest.raises(RepositoryError):
         await ActionRepository(session).execute(
             project_id=project_id,
@@ -579,6 +588,7 @@ def test_native_local_admin_account_custody_api_and_disconnect(app, auth_token, 
         )
         method = provider["auth_methods"][0]
         assert method["key"] == "api_key" and method["permission_verification"] is None
+        assert {field["key"] for field in method["fields"]} == {"api_base_url", "api_key"}
         secret = next(f for f in method["fields"] if f["key"] == "api_key")
         assert secret["secret"] is True
         project_id = api.post(
@@ -597,7 +607,6 @@ def test_native_local_admin_account_custody_api_and_disconnect(app, auth_token, 
                 "fields": {
                     "api_key": native.CANARY,
                     "api_base_url": native.BASE + "/",
-                    "organization_id": native.ORG,
                 },
                 "attach_project_id": project_id,
             },
@@ -607,7 +616,7 @@ def test_native_local_admin_account_custody_api_and_disconnect(app, auth_token, 
         path = f"/api/v1/auth/accounts/{ref}"
         httpx_mock.add_response(
             method="GET",
-            url=native.BASE + f"/api/organizations/{native.ORG}/api-keys/current",
+            url=native.BASE + "/api/api-keys/current",
             json=native.identity(),
         )
         tested = api.post(path + "/test")

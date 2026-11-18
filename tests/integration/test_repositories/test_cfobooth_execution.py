@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
-from stackos.db.models import ActionCall
+from stackos.db.models import ActionCall, Credential, CredentialAccount, ProjectCredential
 from stackos.mcp.context import build_context
 from stackos.mcp.permissions import check_call_grant
 from stackos.mcp.streaming import ProgressEmitter
@@ -77,7 +77,7 @@ async def caller(session, project_id, ref, action_ref, payload, *, granted=False
 async def test_held_result_cannot_restore_detached_project_scope(
     session, project_id, httpx_mock, granted, reattach_while_held, catalog_sync
 ):
-    from stackos.db.models import Action, ProjectCredential
+    from stackos.db.models import Action
 
     ref = await verified_account(session, project_id, httpx_mock)
     initial = await sync(session, project_id, ref, httpx_mock, catalog(descriptor()))
@@ -197,6 +197,11 @@ async def test_detaching_other_project_does_not_discard_current_catalog(
 @pytest.mark.parametrize("granted", [False, True])
 async def test_direct_and_granted_owner_then_foreign_call(session, project_id, httpx_mock, granted):
     ref = await verified_account(session, project_id, httpx_mock)
+    credential = session.exec(select(Credential).where(Credential.credential_ref == ref)).one()
+    legacy_org = "b6ed0649-65a3-4ec1-bcf5-233bd5049817"
+    credential.config_json = {**credential.config_json, "organization_id": legacy_org}
+    session.add(credential)
+    session.commit()
     operation = descriptor()
     synced = await sync(session, project_id, ref, httpx_mock, catalog(operation))
     action_ref = synced["action_refs"][0]
@@ -218,6 +223,17 @@ async def test_direct_and_granted_owner_then_foreign_call(session, project_id, h
     )
     result = await caller(session, project_id, ref, action_ref, {}, granted=granted)
     assert result.data.output_json["data"] == {"ok": True}
+    with pytest.raises(ValidationError) as override:
+        await caller(
+            session,
+            project_id,
+            ref,
+            action_ref,
+            {"path": {"organizationId": legacy_org}},
+            granted=granted,
+        )
+    assert override.value.data["issues"]
+    assert credential.config_json["organization_id"] == legacy_org
     before = len(httpx_mock.get_requests())
     foreign = (
         ProjectRepository(session)
@@ -236,7 +252,46 @@ async def test_direct_and_granted_owner_then_foreign_call(session, project_id, h
     calls = session.exec(select(ActionCall)).all()
     assert len(calls) == 2  # sync + legitimate invocation; foreign has no audit mutation
     assert CANARY not in json.dumps([c.model_dump(mode="json") for c in calls])
+
+    attachment = session.exec(select(ProjectCredential)).one().model_dump()
+    httpx_mock.add_response(method="GET", url=BASE + "/api/api-keys/current", json=identity())
+    auth = AuthRepository(session)
+    assert (await auth.test(project_id=project_id, credential_ref=ref)).data.ok
+    assert session.exec(select(ProjectCredential)).one().model_dump() == attachment
+    assert "organization_id" not in credential.config_json
+    assert repo.validate(
+        project_id=project_id, action_ref=action_ref, input_json={}, credential_ref=ref
+    ).valid
     assert all(r.headers["X-API-Key"] == CANARY for r in httpx_mock.get_requests())
+
+
+@pytest.mark.parametrize(
+    "identity_change", [{}, {"organization_id": "bad"}, {"expires_at": "2020-01-01T00:00:00Z"}]
+)
+async def test_invalid_saved_identity_prevents_dispatch_and_replay(
+    session, project_id, httpx_mock, identity_change
+):
+    ref = await verified_account(session, project_id, httpx_mock)
+    synced = await sync(session, project_id, ref, httpx_mock, catalog(descriptor()))
+    action_ref = synced["action_refs"][0]
+    httpx_mock.add_response(
+        method="GET",
+        url=BASE + f"/api/organizations/{ORG}/fixture/read",
+        json={"requestId": "stored-response", "data": {"current": True}},
+    )
+    await caller(session, project_id, ref, action_ref, {}, idem="read-once")
+    account = session.exec(select(CredentialAccount)).one()
+    account.metadata_json = {**account.metadata_json, **identity_change} if identity_change else {}
+    session.add(account)
+    session.commit()
+    for action, idem in [(action_ref, "read-once"), ("cfobooth.catalog.sync", None)]:
+        with pytest.raises(ValidationError) as denied:
+            await caller(session, project_id, ref, action, {}, idem=idem)
+        assert any(
+            issue["code"] == "credential_not_connected" for issue in denied.value.data["issues"]
+        )
+    assert len(httpx_mock.get_requests()) == 3
+    assert len(session.exec(select(ActionCall)).all()) == 2
 
 
 async def test_strict_schema_survives_import_and_actual_dispatch(session, project_id, httpx_mock):
@@ -409,17 +464,16 @@ async def test_generated_mutation_replay_conflicts_after_organization_change(
 
     new_org = "ea283c40-3cb2-4e71-9b49-5fc48fca1ec9"
     auth = AuthRepository(session)
-    auth.update_credential(
-        credential_ref=ref,
-        fields={"api_key": "replacement-fixture-key", "organization_id": new_org},
-        display_name=None,
-    )
     httpx_mock.add_response(
         method="GET",
-        url=BASE + f"/api/organizations/{new_org}/api-keys/current",
+        url=BASE + "/api/api-keys/current",
         json=identity(organizationId=new_org, keyId="64cc04ad-d93c-4b98-810c-8ee1b2073282"),
     )
     assert (await auth.test(project_id=project_id, credential_ref=ref)).data.ok
+    with pytest.raises(RepositoryError):
+        await caller(
+            session, project_id, ref, action_ref, {"body": {}}, granted=granted, idem="one-write"
+        )
     httpx_mock.add_response(
         method="GET",
         url=BASE + f"/api/organizations/{new_org}/operation-catalog",
@@ -483,10 +537,14 @@ async def test_real_loopback_probe_sync_and_stored_action(session, project_id):
         ref = repo.store_credential(
             provider_key="cfobooth",
             display_name="Loopback",
-            fields={"api_key": CANARY, "organization_id": ORG, "api_base_url": base},
-            attach_project_id=project_id,
+            fields={"api_key": CANARY, "api_base_url": base},
         ).data.credential_ref
-        assert (await repo.test(project_id=project_id, credential_ref=ref)).data.ok
+        tested = (await repo.test(project_id=None, credential_ref=ref)).data
+        assert tested.ok
+        identity_evidence = repo.get_account(credential_ref=ref).account
+        assert identity_evidence["metadata_json"]["organization_id"] == ORG
+        assert "organization_id" not in repo.get_credential_edit_state(credential_ref=ref).values
+        repo.attach_account(project_id=project_id, credential_ref=ref)
         actions = ActionRepository(session)
         out = (
             await actions.execute(
@@ -499,7 +557,7 @@ async def test_real_loopback_probe_sync_and_stored_action(session, project_id):
         result = await caller(session, project_id, ref, out["action_refs"][0], {})
         assert result.data.output_json["data"] == {"source": "owned-fixture"}
         assert [path for path, _ in seen] == [
-            f"/owned;prefix/api/organizations/{ORG}/api-keys/current",
+            "/owned;prefix/api/api-keys/current",
             f"/owned;prefix/api/organizations/{ORG}/operation-catalog",
             f"/owned;prefix/api/organizations/{ORG}/fixture/read",
         ]
