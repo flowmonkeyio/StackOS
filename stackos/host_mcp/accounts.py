@@ -262,9 +262,19 @@ class HostAccounts:
             host.desired, self._account_profile(account), account.identity.principal_key
         )
 
+    @contextmanager
+    def guard_selection(self, host_key: str, expected: DesiredAccount) -> Iterator[None]:
+        """Hold the selection stable for a bounded native input decision."""
+        with self._locked_state(fcntl.LOCK_SH | fcntl.LOCK_NB) as state:
+            host = state.hosts.get(host_key) if host_key in self._adapters else None
+            current = host.desired if host is not None else DesiredAccount()
+            if current != expected:
+                raise HostAccountError("stale_selection")
+            yield
+
     def adopt(self, host_key: str) -> AccountView:
         adapter = self._adapter(host_key)
-        with self._write() as state:
+        with self._locked_state() as state:
             host = state.hosts.setdefault(host_key, _HostState())
             adopted = next(
                 (
@@ -300,7 +310,7 @@ class HostAccounts:
 
     def add(self, host_key: str, enrollment_ref: str) -> EnrollmentView:
         adapter = self._adapter(host_key)
-        with self._write() as state:
+        with self._locked_state() as state:
             host = state.hosts.setdefault(host_key, _HostState())
             now = datetime.now(UTC)
             for row in host.enrollments.values():
@@ -326,7 +336,7 @@ class HostAccounts:
 
     def complete(self, host_key: str, enrollment_ref: str) -> EnrollmentView:
         adapter = self._adapter(host_key)
-        with self._write() as state:
+        with self._locked_state() as state:
             host = state.hosts.get(host_key, _HostState())
             row = self._enrollment(host, enrollment_ref)
             if row.is_expired(datetime.now(UTC)):
@@ -359,7 +369,7 @@ class HostAccounts:
 
     def cancel(self, host_key: str, enrollment_ref: str) -> EnrollmentView:
         adapter = self._adapter(host_key)
-        with self._write() as state:
+        with self._locked_state() as state:
             row = self._enrollment(state.hosts.get(host_key, _HostState()), enrollment_ref)
             now = datetime.now(UTC)
             if row.status == "pending":
@@ -370,7 +380,7 @@ class HostAccounts:
 
     def select(self, host_key: str, account_ref: str, expected_revision: int) -> DesiredAccount:
         adapter = self._adapter(host_key)
-        with self._write() as state:
+        with self._locked_state() as state:
             host = state.hosts.get(host_key, _HostState())
             if host.desired.revision != expected_revision:
                 raise HostAccountError("stale_selection")
@@ -388,7 +398,7 @@ class HostAccounts:
 
     def refresh(self, host_key: str, account_ref: str) -> AccountView:
         adapter = self._adapter(host_key)
-        with self._write() as state:
+        with self._locked_state() as state:
             account = self._account(state.hosts.get(host_key, _HostState()), account_ref)
             self._refresh(adapter, account)
             self._save(state)
@@ -528,13 +538,16 @@ class HostAccounts:
             raise HostAccountError("account_store_unavailable") from None
 
     @contextmanager
-    def _write(self) -> Iterator[_State]:
+    def _locked_state(self, mode: int = fcntl.LOCK_EX) -> Iterator[_State]:
         try:
             self._root.mkdir(mode=0o700, exist_ok=True)
             _private_directory(self._root, "account_store_unavailable")
             fd = _private_fd(self._root / ".lock", os.O_RDWR | os.O_CREAT)
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX)
+                try:
+                    fcntl.flock(fd, mode)
+                except BlockingIOError:
+                    raise HostAccountError("account_store_busy") from None
                 yield self._load()
             finally:
                 os.close(fd)

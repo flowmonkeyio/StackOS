@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import signal
@@ -54,7 +55,7 @@ class FixtureForeground:
         def observe(pid: int, returncode: int | None) -> ForegroundObservation:
             if returncode is None and (ROOT / "observe-only-on-exit").exists():
                 return ForegroundObservation()
-            if principal[0] == "b" and (ROOT / "hold-b-observation").exists():
+            if (ROOT / f"hold-{principal[0]}-observation").exists():
                 return ForegroundObservation()
             if not observation.exists():
                 return ForegroundObservation()
@@ -67,6 +68,17 @@ class FixtureForeground:
             )
 
         def decide_input(accepted: bool) -> None:
+            if accepted and (ROOT / "fail-admission").exists():
+                with (ROOT / "host-accounts" / ".lock").open("rb") as account_lock:
+                    try:
+                        fcntl.flock(account_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        (ROOT / "selection-fenced").touch()
+                raise OSError("synthetic admission channel failure")
+            if not accepted:
+                (ROOT / "retire-requested").touch()
+                if (ROOT / "fail-retirement").exists():
+                    raise OSError("synthetic retirement channel failure")
             fd = os.open(input_decision, os.O_WRONLY | os.O_NONBLOCK)
             with os.fdopen(fd, "wb", buffering=0) as gate:
                 gate.write(b"1" if accepted else b"0")
@@ -102,6 +114,8 @@ def native(session: str, *args: str) -> int:
         sys.exit(128 + signum)
 
     signal.signal(signal.SIGINT, interrupt)
+    if (ROOT / "fail-retirement").exists():
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     admission_fd = os.open(os.environ["FIXTURE_INPUT_DECISION"], os.O_RDWR)
     publish()
     print(

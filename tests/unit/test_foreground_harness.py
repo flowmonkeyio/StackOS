@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -58,6 +58,14 @@ class Terminal:
         self.read_until(b"tool and approval still pending ")
         return int(self.read_until(b"\n"))
 
+    def assert_safe_shell_recovery(self) -> None:
+        self.read_until(f"stackos harness run codex --session {SESSION}".encode())
+        self.read_until(b"shell returned 1\r\n")
+        self.send("operator-marker")
+        self.read_until(b"shell received ")
+        assert self.read_until(b"\r\n") == b"operator-marker"
+        assert self.exit_code() == 1
+
     def exit_code(self) -> int:
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
@@ -82,11 +90,9 @@ def foreground_terminal(argv: list[str], cwd: Path, env: dict[str, str]) -> Iter
     try:
         yield terminal
     finally:
-        if not terminal.reaped:
-            with suppress(ProcessLookupError):
-                os.killpg(pid, signal.SIGKILL)
-            os.waitpid(pid, 0)
         os.close(fd)
+        if not terminal.reaped:
+            terminal.exit_code()
 
 
 class Harness:
@@ -247,16 +253,61 @@ def test_rejected_destination_cannot_accept_terminal_input(tmp_path):
         harness.assert_status("pending", requested=2, confirmed=1)
         terminal.send("continue\nfinish")
         hold.unlink()
-        terminal.read_until(f"stackos harness run codex --session {SESSION}".encode())
-        terminal.read_until(b"shell returned 1\r\n")
-        terminal.send("operator-marker")
-        terminal.read_until(b"shell received ")
-        assert terminal.read_until(b"\r\n") == b"operator-marker"
-        assert terminal.exit_code() == 1
+        terminal.assert_safe_shell_recovery()
     assert (harness.data / f"{SESSION}.history").read_text() == "initial-marker\n"
     assert (harness.data / "effects").read_text() == "committed\n"
     assert b"Native launch did not confirm the selected account." in terminal.received
     harness.assert_status("failed", requested=2, confirmed=1)
+
+
+def test_withdrawn_switch_cannot_accept_terminal_input(tmp_path):
+    harness = Harness(tmp_path)
+    harness.select("a", 1)
+    with harness.terminal(observe_shell=True) as terminal:
+        assert terminal.native_start()["principal"] == "a"
+        harness.assert_status("confirmed", requested=1, confirmed=1)
+        terminal.send("commit")
+        terminal.read_until(b"effect committed\r\n")
+        hold = harness.data / "hold-b-observation"
+        hold.touch()
+        harness.select("b", 2)
+        terminal.send("finish")
+        assert terminal.native_start()["principal"] == "b"
+        harness.select("a", 3)
+        harness.assert_status("pending", requested=3, confirmed=1)
+        terminal.send("continue")
+        hold.unlink()
+        terminal.read_until(b"Account selection changed before terminal input could be enabled.")
+        terminal.assert_safe_shell_recovery()
+    assert (harness.data / f"{SESSION}.history").read_text() == "initial-marker\n"
+    assert (harness.data / "effects").read_text() == "committed\n"
+    assert len(list(harness.data.glob("observation-*"))) == 2
+    harness.assert_status("failed", requested=3, confirmed=1)
+
+
+@pytest.mark.parametrize("retirement_error", [False, True], ids=["decline", "broken-channel"])
+def test_admission_io_error_retires_unadmitted_child(tmp_path, retirement_error):
+    harness = Harness(tmp_path)
+    harness.select("a", 1)
+    hold = harness.data / "hold-a-observation"
+    hold.touch()
+    (harness.data / "fail-admission").touch()
+    if retirement_error:
+        (harness.data / "fail-retirement").touch()
+    with harness.terminal(observe_shell=True) as terminal:
+        assert terminal.native_start()["session"] == SESSION
+        harness.assert_status("pending", requested=1, confirmed=None)
+        terminal.send("continue")
+        hold.unlink()
+        terminal.read_until(b"Unable to enable terminal input for the native harness.")
+        if retirement_error:
+            terminal.read_until(b"The input channel did not retire the unadmitted native process.")
+        terminal.assert_safe_shell_recovery()
+    assert (harness.data / "selection-fenced").is_file()
+    assert (harness.data / "retire-requested").is_file()
+    assert (harness.data / f"{SESSION}.history").read_text() == ""
+    assert len(list(harness.data.glob("observation-*"))) == 1
+    harness.assert_status("failed", requested=1, confirmed=None)
 
 
 @pytest.mark.parametrize("target", ["native", "launcher"])

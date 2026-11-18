@@ -27,6 +27,7 @@ from stackos.host_mcp.accounts import (
 
 _NATIVE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}\Z")
 _OBSERVATION_INTERVAL_SECONDS = 0.25
+_STARTUP_RETIRE_TIMEOUT_SECONDS = 1.5
 Phase = Literal["closed", "requested", "pending", "confirmed", "failed"]
 
 
@@ -73,7 +74,8 @@ class ForegroundAdapter(Protocol):
 
         Keep input and turn dispatch closed from process start until decide_input(True).
         A failed admission keeps the gate closed. A negative decision retires the
-        gated startup without starting any work.
+        gated startup without starting any work. The decision must be bounded and
+        must not mutate the account store.
         Refuse managed launch during preparation if the stock host cannot enforce
         this boundary on the original terminal.
         """
@@ -210,7 +212,9 @@ def run_foreground(
                     )
 
                 require_foreground_terminal()
-                code, settled = _run_native(launch, request, lock_fd, status, slot, notice)
+                code, settled = _run_native(
+                    launch, request, lock_fd, status, slot, notice, accounts, host_key
+                )
                 if code < 0 or not settled:
                     status.phase = "failed"
                     slot.publish(status)
@@ -256,6 +260,8 @@ def _run_native(
     status: ForegroundStatus,
     slot: ForegroundSlot,
     notice: Callable[[str], None],
+    accounts: HostAccounts,
+    host_key: str,
 ) -> tuple[int, bool]:
     child: subprocess.Popen[bytes] | None = None
     input_admitted = False
@@ -285,31 +291,46 @@ def _run_native(
             except subprocess.TimeoutExpired:
                 if status.phase == "pending" and stopping is None:
                     previous_session = status.session_id
-                    try:
-                        observed = _read_native_observation(launch, child.pid, None, status)
-                        if _matches_selection(observed, request) and stopping is None:
-                            launch.decide_input(True)
-                            input_admitted = True
-                            status.confirmed_revision = status.requested_revision
-                            status.phase = "confirmed"
-                    except ForegroundError as exc:
-                        status.phase = "failed"
+                    observed = _read_native_observation(launch, child.pid, None, status)
+                    if _matches_selection(observed, request) and stopping is None:
                         try:
-                            notice(str(exc))
-                        finally:
-                            launch.decide_input(False)
-                    if status.phase != "pending" or status.session_id != previous_session:
+                            with accounts.guard_selection(host_key, request.selection.desired):
+                                if stopping is None:
+                                    _enable_input(launch)
+                                    input_admitted = True
+                        except HostAccountError as exc:
+                            if exc.code != "account_store_busy":
+                                raise
+                    if input_admitted:
+                        status.confirmed_revision = status.requested_revision
+                        status.phase = "confirmed"
+                    if input_admitted or status.session_id != previous_session:
                         slot.publish(status)
                 continue
-            if stopping is not None or code < 0 or status.phase == "failed":
+            if stopping is not None or code < 0:
                 # A signal can arrive before the first live observation. Capture a
                 # published ID for recovery without confirming or starting another child.
                 with suppress(ForegroundError):
                     _read_native_observation(launch, child.pid, code, status)
-                return (-stopping if stopping is not None else code or 1), False
+                return (-stopping if stopping is not None else code), False
             observed = _read_native_observation(launch, child.pid, code, status)
             settled = input_admitted and _matches_selection(observed, request) and observed.settled
             return (-stopping, False) if stopping is not None else (code, settled)
+    except (ForegroundError, HostAccountError, OSError) as exc:
+        if child is None or input_admitted:
+            raise
+        try:
+            if isinstance(exc, HostAccountError) and exc.code == "stale_selection":
+                notice("Account selection changed before terminal input could be enabled.")
+            elif isinstance(exc, ForegroundError):
+                notice(str(exc))
+            else:
+                notice("Unable to complete native startup with the current account selection.")
+        finally:
+            _retire_unadmitted(launch, child, notice)
+        with suppress(ForegroundError):
+            _read_native_observation(launch, child.pid, child.returncode, status)
+        return (-stopping if stopping is not None else 1), False
     finally:
         try:
             if child is not None:
@@ -323,6 +344,37 @@ def _run_native(
         finally:
             for sig, handler in original.items():
                 signal.signal(sig, handler)
+
+
+def _enable_input(launch: ForegroundLaunch) -> None:
+    try:
+        launch.decide_input(True)
+    except ForegroundError:
+        raise
+    except Exception:
+        raise ForegroundError("Unable to enable terminal input for the native harness.") from None
+
+
+def _retire_unadmitted(
+    launch: ForegroundLaunch, child: subprocess.Popen[bytes], notice: Callable[[str], None]
+) -> None:
+    if child.poll() is not None:
+        return
+    try:
+        launch.decide_input(False)
+        child.wait(timeout=_STARTUP_RETIRE_TIMEOUT_SECONDS)
+    except Exception:
+        try:
+            notice("The input channel did not retire the unadmitted native process.")
+        finally:
+            # Only this owned child is still behind the input gate. Its process
+            # group also contains the operator's foreground command.
+            child.terminate()
+            try:
+                child.wait(timeout=_STARTUP_RETIRE_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
 
 
 def _read_native_observation(
