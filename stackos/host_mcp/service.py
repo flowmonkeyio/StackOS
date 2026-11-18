@@ -23,6 +23,7 @@ from stackos.host_mcp.agent_execution import (
     managed_launch_lock,
 )
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
+from stackos.host_mcp.foreground import ForegroundAdapter
 from stackos.host_mcp.progress import CodexCounterReader
 from stackos.host_mcp.result import (
     AgentCapabilities,
@@ -592,6 +593,8 @@ class HostMcpDefinition:
     run_agent: AgentRunner | None = None
     subscription: Callable[[], dict | None] | None = None
     account_adapter: NativeAccountAdapter | None = None
+    foreground_binary: Callable[[], str | None] | None = None
+    foreground_adapter: ForegroundAdapter | None = None
 
 
 def host_accounts(data_dir: Path) -> HostAccounts:
@@ -601,6 +604,12 @@ def host_accounts(data_dir: Path) -> HostAccounts:
         if item.account_adapter is not None
     }
     return HostAccounts(data_dir, adapters)
+
+
+def foreground_host(host_key: str) -> HostMcpDefinition | None:
+    """Limit the operator's foreground launcher to explicitly supported hosts."""
+    definition = _definition_by_key(host_key)
+    return definition if definition is not None and definition.foreground_binary else None
 
 
 def _read_subscription(binary: str | None, reader: Callable[[str], dict | None]) -> dict | None:
@@ -1225,6 +1234,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             force_register=lambda home, force: codex.register(home, force=force),
             run_agent=codex.run_agent,
             subscription=lambda: _read_subscription(codex.resolve_codex_bin(), read_codex),
+            foreground_binary=codex.resolve_codex_bin,
         ),
         HostMcpDefinition(
             claude_code,
@@ -1253,6 +1263,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             ),
             run_agent=claude_code.run_agent,
             subscription=lambda: _read_subscription(claude_mcp.resolve_claude_bin(), read_claude),
+            foreground_binary=claude_mcp.resolve_claude_bin,
         ),
         HostMcpDefinition(
             claude_desktop,
@@ -1367,6 +1378,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             subscription=lambda: _read_subscription(
                 grok.resolve_grok_bin(default_home()), read_grok
             ),
+            foreground_binary=lambda: grok.resolve_grok_bin(default_home()),
         ),
     )
 
