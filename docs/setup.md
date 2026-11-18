@@ -50,7 +50,7 @@ provided separately by the host agent runtime.
 Use this path when working from this repository:
 
 The pinned dependency `stackos-connectors==0.2.9` is installed by uv from accepted
-Git commit `b026a1259cab07ff34e519d145460cc202c5ad9d` using `tool.uv.sources` and
+Git commit `32416f21d53771e25ec52e357260b081db1e9887` using `tool.uv.sources` and
 `uv.lock` while that version awaits separate PyPI publication. Keep both files
 together; a separate connectors checkout is not required. See
 [packaging dependencies](desktop-distribution.md#packaging-dependencies) for

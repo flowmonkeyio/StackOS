@@ -54,7 +54,7 @@ Build machines need:
 
 The payload builder builds the StackOS wheel and exports locked dependencies.
 For 2.1.45, `tool.uv.sources` and `uv.lock` pin `stackos-connectors` 0.2.9 to
-accepted Git commit `b026a1259cab07ff34e519d145460cc202c5ad9d` from
+accepted Git commit `32416f21d53771e25ec52e357260b081db1e9887` from
 `https://github.com/flowmonkeyio/StackOSConnectors.git` while that version awaits
 separate PyPI publication. The frozen export retains that immutable source;
 uv fetches and builds it without a sibling checkout or local dependency path.
