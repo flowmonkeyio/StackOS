@@ -340,11 +340,12 @@ Use the native CLI's normal exit after tools, approvals, and subagents settle
 and any draft is saved. When the host verifies that boundary, the launcher
 reopens the exact conversation in the same tab and directory. A settled
 rate-limit error can qualify. The status changes to `confirmed` when the host
-observes the requested account on that conversation. Continue your next turn
-in the reopened CLI.
+observes the requested account on that conversation and enables terminal input.
+Continue your next turn in the reopened CLI after confirmation.
 
-If reopening fails, the launcher prints the exact recovery command. Select the
-intended account and retry that ID with your original native options. The
+If reopening fails, the launcher discards input queued for that startup and
+prints the exact recovery command when the native session ID is known. Select
+the intended account and retry that ID with your original native options. The
 launcher permits one managed foreground process per host in the configured
 StackOS data directory. For a host without managed switching, the launcher
 runs the stock CLI with native defaults when there is no selected account

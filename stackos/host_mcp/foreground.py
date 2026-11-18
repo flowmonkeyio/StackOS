@@ -7,6 +7,7 @@ import os
 import re
 import signal
 import subprocess
+import termios
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
@@ -55,6 +56,7 @@ class ForegroundLaunch:
     argv: tuple[str, ...] = field(repr=False)
     env: Mapping[str, str] | None = field(repr=False)
     observe: Callable[[int, int | None], ForegroundObservation] = field(repr=False)
+    decide_input: Callable[[bool], None] = field(repr=False)
 
 
 class ForegroundAdapter(Protocol):
@@ -68,6 +70,12 @@ class ForegroundAdapter(Protocol):
         is a bounded local read. Mark settled only after native retirement, with
         tool, approval and subagent work resolved and resumable input preserved.
         A terminal native error can qualify; process exit alone cannot.
+
+        Keep input and turn dispatch closed from process start until decide_input(True).
+        A failed admission keeps the gate closed. A negative decision retires the
+        gated startup without starting any work.
+        Refuse managed launch during preparation if the stock host cannot enforce
+        this boundary on the original terminal.
         """
         ...
 
@@ -202,7 +210,7 @@ def run_foreground(
                     )
 
                 require_foreground_terminal()
-                code, settled = _run_native(launch, request, lock_fd, status, slot)
+                code, settled = _run_native(launch, request, lock_fd, status, slot, notice)
                 if code < 0 or not settled:
                     status.phase = "failed"
                     slot.publish(status)
@@ -247,8 +255,10 @@ def _run_native(
     lock_fd: int,
     status: ForegroundStatus,
     slot: ForegroundSlot,
+    notice: Callable[[str], None],
 ) -> tuple[int, bool]:
     child: subprocess.Popen[bytes] | None = None
+    input_admitted = False
     stopping: int | None = None
 
     def on_signal(signum: int, _frame: object) -> None:
@@ -269,43 +279,57 @@ def _run_native(
             child.send_signal(stopping)
         status.phase = "pending"
         slot.publish(status)
-        observation_error: ForegroundError | None = None
         while True:
             try:
                 code = child.wait(timeout=_OBSERVATION_INTERVAL_SECONDS)
             except subprocess.TimeoutExpired:
                 if status.phase == "pending" and stopping is None:
+                    previous_session = status.session_id
                     try:
-                        _observe(launch, request, child.pid, None, status, slot)
+                        observed = _read_native_observation(launch, child.pid, None, status)
+                        if _matches_selection(observed, request) and stopping is None:
+                            launch.decide_input(True)
+                            input_admitted = True
+                            status.confirmed_revision = status.requested_revision
+                            status.phase = "confirmed"
                     except ForegroundError as exc:
-                        observation_error = exc
                         status.phase = "failed"
+                        try:
+                            notice(str(exc))
+                        finally:
+                            launch.decide_input(False)
+                    if status.phase != "pending" or status.session_id != previous_session:
                         slot.publish(status)
                 continue
-            if stopping is not None:
-                return -stopping, False
-            if code < 0:
-                return code, False
-            if observation_error is not None:
-                raise observation_error
-            settled = _observe(launch, request, child.pid, code, status, slot).settled
+            if stopping is not None or code < 0 or status.phase == "failed":
+                # A signal can arrive before the first live observation. Capture a
+                # published ID for recovery without confirming or starting another child.
+                with suppress(ForegroundError):
+                    _read_native_observation(launch, child.pid, code, status)
+                return (-stopping if stopping is not None else code or 1), False
+            observed = _read_native_observation(launch, child.pid, code, status)
+            settled = input_admitted and _matches_selection(observed, request) and observed.settled
             return (-stopping, False) if stopping is not None else (code, settled)
     finally:
         try:
             if child is not None:
                 child.wait()
+                if not input_admitted:
+                    # Bytes typed into an unadmitted startup belong to that launch.
+                    # Discard them before returning the terminal to the shell.
+                    with suppress(OSError, termios.error):
+                        if os.tcgetpgrp(0) == os.getpgrp():
+                            termios.tcflush(0, termios.TCIFLUSH)
         finally:
             for sig, handler in original.items():
                 signal.signal(sig, handler)
 
 
-def _observe(
+def _read_native_observation(
     launch: ForegroundLaunch,
-    request: ForegroundRequest,
     pid: int,
     code: int | None,
     status: ForegroundStatus,
-    slot: ForegroundSlot,
 ) -> ForegroundObservation:
     try:
         observed = launch.observe(pid, code)
@@ -314,22 +338,24 @@ def _observe(
     except Exception:
         raise ForegroundError("Native conversation observation failed.") from None
     if observed.session_id is None:
-        return ForegroundObservation()
+        return observed
     if not _NATIVE_ID.fullmatch(observed.session_id) or status.session_id not in (
         None,
         observed.session_id,
     ):
         raise ForegroundError("Native launch did not retain the exact conversation.")
-    discovered = status.session_id is None
     status.session_id = observed.session_id
-    principal = request.selection.principal_key
-    if principal is not None and observed.principal_key != principal:
-        if observed.principal_key is not None:
-            raise ForegroundError("Native launch did not confirm the selected account.")
-        if discovered:
-            slot.publish(status)
-        return ForegroundObservation()
-    status.confirmed_revision = status.requested_revision
-    status.phase = "confirmed"
-    slot.publish(status)
     return observed
+
+
+def _matches_selection(observed: ForegroundObservation, request: ForegroundRequest) -> bool:
+    if observed.session_id is None:
+        return False
+    principal = request.selection.principal_key
+    if principal is None:
+        return True
+    if observed.principal_key is None:
+        return False
+    if observed.principal_key != principal:
+        raise ForegroundError("Native launch did not confirm the selected account.")
+    return True

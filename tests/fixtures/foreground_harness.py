@@ -40,10 +40,22 @@ class FixtureForeground:
         if request.session_id is not None and not transcript.is_file():
             raise ValueError("unknown exact session")
         principal = request.selection.principal_key or ("a", None)
-        observation = ROOT / f"observation-{uuid4()}"
-        env = dict(os.environ, FIXTURE_PRINCIPAL=principal[0], FIXTURE_OBSERVATION=str(observation))
+        launch_id = uuid4()
+        observation = ROOT / f"observation-{launch_id}"
+        input_decision = ROOT / f"admission-{launch_id}"
+        os.mkfifo(input_decision, 0o600)
+        env = dict(
+            os.environ,
+            FIXTURE_PRINCIPAL=principal[0],
+            FIXTURE_OBSERVATION=str(observation),
+            FIXTURE_INPUT_DECISION=str(input_decision),
+        )
 
         def observe(pid: int, returncode: int | None) -> ForegroundObservation:
+            if returncode is None and (ROOT / "observe-only-on-exit").exists():
+                return ForegroundObservation()
+            if principal[0] == "b" and (ROOT / "hold-b-observation").exists():
+                return ForegroundObservation()
             if not observation.exists():
                 return ForegroundObservation()
             row = json.loads(observation.read_text())
@@ -54,10 +66,16 @@ class FixtureForeground:
                 settled=(returncode == row.get("settled_exit") and returncode is not None),
             )
 
+        def decide_input(accepted: bool) -> None:
+            fd = os.open(input_decision, os.O_WRONLY | os.O_NONBLOCK)
+            with os.fdopen(fd, "wb", buffering=0) as gate:
+                gate.write(b"1" if accepted else b"0")
+
         return ForegroundLaunch(
             (request.executable, "-E", __file__, "native", session, *request.native_args),
             env,
             observe,
+            decide_input,
         )
 
 
@@ -84,6 +102,7 @@ def native(session: str, *args: str) -> int:
         sys.exit(128 + signum)
 
     signal.signal(signal.SIGINT, interrupt)
+    admission_fd = os.open(os.environ["FIXTURE_INPUT_DECISION"], os.O_RDWR)
     publish()
     print(
         "native "
@@ -101,6 +120,9 @@ def native(session: str, *args: str) -> int:
         ),
         flush=True,
     )
+    with os.fdopen(admission_fd, "rb", buffering=0) as gate:
+        if gate.read(1) != b"1":
+            return 1
     tool = None
     for line in sys.stdin:
         match line.strip():
@@ -151,6 +173,11 @@ def main() -> None:
     mode, *args = sys.argv[1:]
     if mode == "native":
         sys.exit(native(*args))
+    if mode == "shell":
+        result = subprocess.run([sys.executable, "-E", __file__, "cli", *args], check=False)
+        print(f"shell returned {result.returncode}", flush=True)
+        print("shell received " + sys.stdin.readline(), end="", flush=True)
+        sys.exit(result.returncode)
     if mode == "setup":
         a = accounts.adopt("codex")
         accounts.add("codex", ENROLLMENT)

@@ -118,8 +118,9 @@ class Harness:
                 return
             assert time.monotonic() < deadline, status
 
-    def terminal(self, *args: str):
-        argv = [*COMMAND, "cli", "harness", "run", "codex", *args, "--", *NATIVE_FLAGS]
+    def terminal(self, *args: str, observe_shell: bool = False):
+        mode = "shell" if observe_shell else "cli"
+        argv = [*COMMAND, mode, "harness", "run", "codex", *args, "--", *NATIVE_FLAGS]
         return foreground_terminal(argv, self.cwd, self.env)
 
 
@@ -228,23 +229,57 @@ def test_pending_quota_work_never_triggers_a_successor_on_unverified_exit(tmp_pa
     assert not (harness.data / "effects").exists()
 
 
-def test_cached_old_principal_does_not_confirm_new_selection(tmp_path):
+def test_rejected_destination_cannot_accept_terminal_input(tmp_path):
     harness = Harness(tmp_path)
     harness.select("a", 1)
-    with harness.terminal() as terminal:
+    with harness.terminal(observe_shell=True) as terminal:
         assert terminal.native_start()["principal"] == "a"
         harness.assert_status("confirmed", requested=1, confirmed=1)
+        terminal.send("commit")
+        terminal.read_until(b"effect committed\r\n")
         (harness.data / "cached-a").touch()
+        hold = harness.data / "hold-b-observation"
+        hold.touch()
         harness.select("b", 2)
         terminal.send("finish")
         cached = terminal.native_start()
         assert cached["principal"] == "a"
-        harness.assert_status("failed", requested=2, confirmed=1)
-        assert os.getpgid(cached["pid"]) == terminal.pid
-        terminal.send("finish")
+        harness.assert_status("pending", requested=2, confirmed=1)
+        terminal.send("continue\nfinish")
+        hold.unlink()
         terminal.read_until(f"stackos harness run codex --session {SESSION}".encode())
+        terminal.read_until(b"shell returned 1\r\n")
+        terminal.send("operator-marker")
+        terminal.read_until(b"shell received ")
+        assert terminal.read_until(b"\r\n") == b"operator-marker"
         assert terminal.exit_code() == 1
+    assert (harness.data / f"{SESSION}.history").read_text() == "initial-marker\n"
+    assert (harness.data / "effects").read_text() == "committed\n"
+    assert b"Native launch did not confirm the selected account." in terminal.received
     harness.assert_status("failed", requested=2, confirmed=1)
+
+
+@pytest.mark.parametrize("target", ["native", "launcher"])
+def test_signal_before_live_observation_retains_exact_recovery_id(tmp_path, target):
+    harness = Harness(tmp_path)
+    harness.select("a", 1)
+    (harness.data / "observe-only-on-exit").touch()
+    with harness.terminal() as terminal:
+        native = terminal.native_start()
+        assert native["session"] == SESSION
+        harness.select("b", 2)
+        harness.assert_status("pending", requested=2, confirmed=None)
+        os.kill(native["pid"] if target == "native" else terminal.pid, signal.SIGTERM)
+        terminal.read_until(f"stackos harness run codex --session {SESSION}".encode())
+        assert terminal.exit_code() == 143
+    status = json.loads(harness.call("cli", "harness", "status", "codex"))
+    assert status == {
+        "phase": "failed",
+        "session_id": SESSION,
+        "requested_revision": 2,
+        "confirmed_revision": None,
+    }
+    assert len(list(harness.data.glob("observation-*"))) == 1
 
 
 def test_unenrolled_host_executes_stock_cli_and_refuses_unsupported_managed_resume(tmp_path):
