@@ -8,7 +8,7 @@ import os
 import selectors
 import subprocess
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from time import monotonic
 from typing import TypeGuard
@@ -26,9 +26,10 @@ def run_capture(
     stdin: str | None = None,
     timeout: float = 12.0,
     max_output_bytes: int = 1_048_576,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str] | None:
     """Bound both output streams and retire only our process group; never log output."""
-    return _capture(binary, args, (stdin or "").encode(), timeout, max_output_bytes)
+    return _capture(binary, args, (stdin or "").encode(), timeout, max_output_bytes, env=env)
 
 
 def _capture(
@@ -38,6 +39,8 @@ def _capture(
     timeout: float,
     max_output_bytes: int,
     on_output: _OutputHandler | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str] | None:
     # The existing host process owner confirms group retirement only on POSIX.
     if os.name != "posix" or timeout <= 0 or max_output_bytes <= 0:
@@ -54,7 +57,7 @@ def _capture(
             process = control.spawn(
                 [binary, *args],
                 cwd=cwd,
-                env=subprocess_env_for_cli(binary),
+                env=subprocess_env_for_cli(binary) if env is None else env,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -122,7 +125,13 @@ def _capture(
     )
 
 
-def read_rpc(binary: str, args: Sequence[str], calls: list[tuple[str, dict | None]]) -> list[dict]:
+def read_rpc(
+    binary: str,
+    args: Sequence[str],
+    calls: list[tuple[str, dict | None]],
+    *,
+    env: Mapping[str, str] | None = None,
+) -> list[dict]:
     """Sequence native reads after initialize, ignoring notifications and private fields."""
     responses: list[dict] = []
     pending = bytearray()
@@ -159,7 +168,7 @@ def read_rpc(binary: str, args: Sequence[str], calls: list[tuple[str, dict | Non
             reply += request(len(responses))
         return reply, False
 
-    result = _capture(binary, args, request(0), 15.0, 1_048_576, receive)
+    result = _capture(binary, args, request(0), 15.0, 1_048_576, receive, env=env)
     return responses if result is not None and len(responses) == len(calls) else []
 
 

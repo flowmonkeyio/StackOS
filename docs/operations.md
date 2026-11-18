@@ -996,6 +996,44 @@ Use that payload at `/api/v1/operations/tracker.agentStats/call`. Local admin
 may call `/api/v1/operations/tracker.agentStatsAll/call` with
 `{"arguments":{"is_active":null}}` for all projects.
 
+## Native harness account controls
+
+The authenticated local console calls these operations at
+`POST /api/v1/operations/{operation_name}/call`. They use the user-local host
+registry. Requests only accept the declared identifiers and revision.
+
+| Operation | Arguments | Result |
+| --- | --- | --- |
+| `hostMcp.listAccounts` | None | `hosts` keyed by switch-capable host, including hosts with zero accounts. Each row contains `accounts`, `desired` and `pending_enrollment`. |
+| `hostMcp.adoptAccount` | `host_key` | Enrolled account after checking the existing native default sign-in in place. |
+| `hostMcp.addAccount` | `host_key`, new UUID `enrollment_ref` | Provisional native sign-in receipt. Retry with the same reference to recover the original receipt without starting sign-in again. |
+| `hostMcp.completeAccountEnrollment` | `host_key`, `enrollment_ref` | Current enrollment outcome. Poll while pending. Native verification can report missing email, expired credentials or a competing credential. |
+| `hostMcp.cancelAccountEnrollment` | `host_key`, `enrollment_ref` | Final enrollment outcome. If `cleanup_pending` is true, retirement is unconfirmed and the same cancel call may retry it. |
+| `hostMcp.selectAccount` | `host_key`, `account_ref`, `expected_revision` | Verified desired account and revision. On a stale revision, reload inventory before submitting a new selection. |
+| `hostMcp.refreshAccount` | `host_key`, `account_ref` | Enrolled account with current identity status and the last verified display email. |
+
+The inventory is the read response body. Writes return the corresponding
+receipt under `data`. Enrollment expires after 15 minutes. A duplicate native
+principal and workspace returns the existing account reference. Enrollment
+verification describes the provisional sign-in. The account inventory and
+refresh operation report the retained account's verification state. Email is
+display data, so equal emails can have distinct account references. Selection
+changes require an explicit select call. Revision 0 with a null account
+reference uses the native default. Saving a selection confirms the desired
+generation. The terminal or automated launcher determines the account applied
+to its own session. Native profile references, principals and workspace
+identifiers stay inside host management.
+
+These operations use raw responses and the exact-path local-admin console
+policy. See [native harness account custody](security.md#native-harness-account-custody).
+
+Host definitions opt in through `HostMcpDefinition.account_adapter`. Native
+launch and quota consumers can get a single internal snapshot through
+`service.host_accounts(settings.data_dir).resolve(host_key)`. The snapshot
+includes the desired revision, the native profile context and the expected
+principal/workspace tuple. Recheck native identity at the affected consumer
+and use the revision to detect a superseded request.
+
 ## Browser Operations
 
 The browser operation surface owns runtime status, profile create/list, and

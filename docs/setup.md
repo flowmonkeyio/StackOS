@@ -254,6 +254,15 @@ Queued/running work, setup continuations and resumed native sessions retain
 their admitted settings. Editing or adopting choices starts no work.
 Generic agent presets remain a separate read-only catalog.
 
+Harness account switching is declared by the host's native account adapter.
+The local account inventory includes supported hosts before enrollment.
+Adopting the default account verifies the existing native sign-in in place.
+Adding another account starts first-party sign-in in an isolated profile, and
+the account holder completes that sign-in. An explicit selection becomes the
+desired account for managed native consumers. Each consumer establishes which
+account its own session actually uses. See
+[native harness account controls](operations.md#native-harness-account-controls).
+
 The host connection model has one brain:
 
 1. the shared bridge contract owns the local stdio command, runtime label,

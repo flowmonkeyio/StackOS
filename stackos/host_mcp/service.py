@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
 from stackos import claude_mcp
+from stackos.host_mcp.accounts import HostAccounts, NativeAccountAdapter
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.agent_execution import (
     ManagedProcessControl,
@@ -590,6 +591,16 @@ class HostMcpDefinition:
     remove_profile: ProfileAdapterFn | None = None
     run_agent: AgentRunner | None = None
     subscription: Callable[[], dict | None] | None = None
+    account_adapter: NativeAccountAdapter | None = None
+
+
+def host_accounts(data_dir: Path) -> HostAccounts:
+    adapters = {
+        item.policy.host_key: item.account_adapter
+        for item in _definitions()
+        if item.account_adapter is not None
+    }
+    return HostAccounts(data_dir, adapters)
 
 
 def _read_subscription(binary: str | None, reader: Callable[[str], dict | None]) -> dict | None:

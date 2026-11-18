@@ -62,9 +62,10 @@ def test_registered_subscription_reader_uses_its_native_protocol(
     monkeypatch.setattr(service.codex, "resolve_codex_bin", lambda: "fake-codex")
     monkeypatch.setattr(service.grok, "resolve_grok_bin", lambda home: "fake-grok")
 
-    def capture(binary, args, stdin, timeout, limit, receive):
+    def capture(binary, args, stdin, timeout, limit, receive, *, env):
         assert binary == f"fake-{host_key}"
         assert args == argv
+        assert env is None
         sent = [json.loads(stdin)["method"]]
         for request_id, result in enumerate(responses, 1):
             response = json.dumps({"id": request_id, "result": result}).encode() + b"\n"
@@ -277,8 +278,9 @@ def test_rpc_waits_for_initialize_and_does_not_create_work(monkeypatch):
         ("account/rateLimits/read", None),
     ]
 
-    def capture(binary, args, stdin, timeout, limit, receive):
+    def capture(binary, args, stdin, timeout, limit, receive, *, env):
         assert json.loads(stdin)["method"] == "initialize"
+        assert env == {"NATIVE_PROFILE": "isolated"}
         assert receive(b"[" * 10_000 + b"]" * 10_000 + b"\n") == (b"", False)
         assert receive(b'{"jsonrpc":"2.0","id":1,') == (b"", False)
         outgoing, done = receive(b'"result":{}}\n')
@@ -296,11 +298,15 @@ def test_rpc_waits_for_initialize_and_does_not_create_work(monkeypatch):
         return subprocess.CompletedProcess([binary], -15, "", "")
 
     monkeypatch.setattr(native, "_capture", capture)
-    assert len(native.read_rpc("codex", ["app-server"], calls)) == 3
+    assert (
+        len(native.read_rpc("codex", ["app-server"], calls, env={"NATIVE_PROFILE": "isolated"}))
+        == 3
+    )
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Native host group retirement requires POSIX")
-def test_capture_uses_neutral_cwd_cli_environment_and_preserves_exit_code(monkeypatch):
+@pytest.mark.parametrize("profile_env", [None, {"STACKOS_SUBSCRIPTION_ENV_TEST": "isolated"}])
+def test_capture_uses_neutral_cwd_cli_environment_and_preserves_exit_code(monkeypatch, profile_env):
     def cli_environment(binary):
         assert binary == sys.executable
         return {"STACKOS_SUBSCRIPTION_ENV_TEST": "ready"}
@@ -311,13 +317,15 @@ def test_capture_uses_neutral_cwd_cli_environment_and_preserves_exit_code(monkey
         [
             "-c",
             "import os,sys;"
-            "assert os.environ['STACKOS_SUBSCRIPTION_ENV_TEST']=='ready';"
-            "print(os.getcwd());sys.exit(3)",
+            "print(os.environ['STACKOS_SUBSCRIPTION_ENV_TEST']);print(os.getcwd());sys.exit(3)",
         ],
+        env=profile_env,
     )
     assert result is not None and result.returncode == 3
-    assert "stackos-subscription-" in result.stdout
-    assert not os.path.exists(result.stdout.strip())
+    marker, cwd = result.stdout.splitlines()
+    assert marker == ("isolated" if profile_env else "ready")
+    assert "stackos-subscription-" in cwd
+    assert not os.path.exists(cwd)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Native host group retirement requires POSIX")

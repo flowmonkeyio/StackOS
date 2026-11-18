@@ -22,6 +22,7 @@ from stackos.mcp.contract import MCPInput
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools.sitemap import SitemapFetchInput, SitemapFetchOutput, _sitemap_fetch
+from stackos.operations import host_accounts
 from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import (
     OperationExample,
@@ -160,6 +161,7 @@ async def host_mcp_status(
 
 def operation_specs():
     return [
+        *host_accounts.operation_specs(),
         OperationSpec(
             name="hostMcp.subscriptions",
             summary="Read subscription plans and remaining quotas from signed-in native tools.",
