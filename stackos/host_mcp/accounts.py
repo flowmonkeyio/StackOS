@@ -75,7 +75,10 @@ class NativeAccountAdapter(Protocol):
         ...
 
     def discard_login(self, profile: NativeAccountProfile) -> bool:
-        """Idempotently retire this provisional login. True confirms native cleanup."""
+        """Idempotently retire by profile ref, even if its directory is gone.
+
+        Return True only when native cleanup is confirmed.
+        """
         ...
 
 
@@ -113,6 +116,7 @@ class HostAccountsView(BaseModel):
     desired: DesiredAccount
     accounts: list[AccountView]
     pending_enrollment: EnrollmentView | None = None
+    pending_cleanups: list[EnrollmentView] = Field(default_factory=list)
 
 
 class HostAccountInventory(BaseModel):
@@ -134,6 +138,17 @@ class _Account(BaseModel):
     native_default: bool
     identity: NativeIdentity
     identity_status: IdentityStatus = "verified"
+
+    def observe_identity(self, identity: NativeIdentity | NativeIdentityIssue) -> IdentityStatus:
+        if isinstance(identity, NativeIdentity):
+            if self.identity.principal_key == identity.principal_key:
+                self.identity = identity
+                self.identity_status = "verified"
+            else:
+                self.identity_status = "identity_changed"
+        else:
+            self.identity_status = identity
+        return self.identity_status
 
     def view(self, ref: str) -> AccountView:
         return AccountView(
@@ -224,6 +239,11 @@ class HostAccounts:
                 desired=host.desired,
                 accounts=[row.view(ref) for ref, row in host.accounts.items()],
                 pending_enrollment=pending,
+                pending_cleanups=[
+                    row.view(ref, now)
+                    for ref, row in host.enrollments.items()
+                    if row.cleanup_pending
+                ],
             )
         return HostAccountInventory(hosts=hosts)
 
@@ -246,21 +266,35 @@ class HostAccounts:
         adapter = self._adapter(host_key)
         with self._write() as state:
             host = state.hosts.setdefault(host_key, _HostState())
-            identity = self._read_identity(adapter, NativeAccountProfile(None, None))
+            adopted = next(
+                (
+                    (ref, account)
+                    for ref, account in host.accounts.items()
+                    if account.native_default
+                ),
+                None,
+            )
+            profile = NativeAccountProfile(adopted[1].profile_ref if adopted else None, None)
+            identity = self._read_identity(adapter, profile)
+            if adopted is not None:
+                ref, account = adopted
+                status = account.observe_identity(identity)
+                self._save(state)
+                if status == "identity_changed":
+                    raise HostAccountError("default_profile_changed")
+                if status != "verified":
+                    raise HostAccountError("identity_unverified", status=status)
+                return account.view(ref)
             if not isinstance(identity, NativeIdentity):
                 raise HostAccountError("identity_unverified", status=identity)
-            for ref, account in host.accounts.items():
-                if account.identity.principal_key == identity.principal_key:
-                    if account.native_default:
-                        account.identity = identity
-                        account.identity_status = "verified"
-                        self._save(state)
-                    return account.view(ref)
-            if any(account.native_default for account in host.accounts.values()):
-                raise HostAccountError("default_profile_changed")
-            ref = str(uuid4())
-            account = _Account(profile_ref=str(uuid4()), native_default=True, identity=identity)
-            host.accounts[ref] = account
+            matched = self._matching_account(host, identity)
+            if matched is not None and self._refresh(adapter, matched[1]) == "verified":
+                self._save(state)
+                return matched[1].view(matched[0])
+            ref = matched[0] if matched else str(uuid4())
+            account = self._bind_verified_profile(
+                host, ref, str(uuid4()), identity, native_default=True
+            )
             self._save(state)
             return account.view(ref)
 
@@ -303,18 +337,19 @@ class HostAccounts:
             if row.is_expired(datetime.now(UTC)):
                 self._finish(state, adapter, row, "expired")
             elif isinstance(identity, NativeIdentity):
+                matched = self._matching_account(host, identity)
+                healthy = matched is not None and self._refresh(adapter, matched[1]) == "verified"
+                if row.is_expired(datetime.now(UTC)):
+                    self._finish(state, adapter, row, "expired")
+                    return row.view(enrollment_ref, datetime.now(UTC))
                 row.identity_status = "verified"
-                for ref, account in host.accounts.items():
-                    if account.identity.principal_key == identity.principal_key:
-                        row.account_ref = ref
-                        self._finish(state, adapter, row, "duplicate")
-                        break
+                row.account_ref = matched[0] if matched else str(uuid4())
+                if healthy:
+                    self._finish(state, adapter, row, "duplicate")
                 else:
-                    ref = str(uuid4())
-                    host.accounts[ref] = _Account(
-                        profile_ref=row.profile_ref, native_default=False, identity=identity
+                    self._bind_verified_profile(
+                        host, row.account_ref, row.profile_ref, identity, native_default=False
                     )
-                    row.account_ref = ref
                     row.status = "enrolled"
                     self._save(state)
             elif row.identity_status != identity:
@@ -360,17 +395,46 @@ class HostAccounts:
             return account.view(account_ref)
 
     def _refresh(self, adapter: NativeAccountAdapter, account: _Account) -> IdentityStatus:
-        identity = self._read_identity(adapter, self._account_profile(account))
-        if isinstance(identity, NativeIdentity):
-            if account.identity.principal_key != identity.principal_key:
-                status: IdentityStatus = "identity_changed"
-            else:
-                status = "verified"
-                account.identity = identity
-        else:
-            status = identity
-        account.identity_status = status
-        return status
+        try:
+            profile = self._account_profile(account)
+        except HostAccountError as exc:
+            if exc.code != "profile_missing":
+                raise
+            return account.observe_identity("needs_sign_in")
+        return account.observe_identity(self._read_identity(adapter, profile))
+
+    @staticmethod
+    def _matching_account(
+        host: _HostState, identity: NativeIdentity
+    ) -> tuple[str, _Account] | None:
+        return next(
+            (
+                (ref, account)
+                for ref, account in host.accounts.items()
+                if account.identity.principal_key == identity.principal_key
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _bind_verified_profile(
+        host: _HostState,
+        account_ref: str,
+        profile_ref: str,
+        identity: NativeIdentity,
+        *,
+        native_default: bool,
+    ) -> _Account:
+        if host.desired.account_ref == account_ref:
+            # The same selection now resolves to a new native profile.
+            host.desired = DesiredAccount(
+                account_ref=account_ref, revision=host.desired.revision + 1
+            )
+        account = _Account(
+            profile_ref=profile_ref, native_default=native_default, identity=identity
+        )
+        host.accounts[account_ref] = account
+        return account
 
     def _finish(
         self,
@@ -386,7 +450,9 @@ class HostAccounts:
 
     def _cleanup(self, state: _State, adapter: NativeAccountAdapter, row: _Enrollment) -> None:
         try:
-            retired = adapter.discard_login(self._isolated_profile(row.profile_ref))
+            retired = adapter.discard_login(
+                self._isolated_profile(row.profile_ref, allow_missing=True)
+            )
         except Exception:
             return
         if retired is True:
@@ -430,13 +496,19 @@ class HostAccounts:
             return NativeAccountProfile(account.profile_ref, None)
         return self._isolated_profile(account.profile_ref)
 
-    def _isolated_profile(self, ref: str, *, create: bool = False) -> NativeAccountProfile:
+    def _isolated_profile(
+        self, ref: str, *, create: bool = False, allow_missing: bool = False
+    ) -> NativeAccountProfile:
         directory = self._root / f"profile-{ref}"
         try:
             _private_directory(self._root, "unsafe_profile")
             if create:
                 directory.mkdir(mode=0o700)
-            _private_directory(directory, "unsafe_profile")
+            try:
+                _private_directory(directory, "unsafe_profile")
+            except FileNotFoundError:
+                if not allow_missing:
+                    raise HostAccountError("profile_missing") from None
         except OSError:
             raise HostAccountError("unsafe_profile") from None
         return NativeAccountProfile(ref, directory)

@@ -1004,7 +1004,7 @@ registry. Requests only accept the declared identifiers and revision.
 
 | Operation | Arguments | Result |
 | --- | --- | --- |
-| `hostMcp.listAccounts` | None | `hosts` keyed by switch-capable host, including hosts with zero accounts. Each row contains `accounts`, `desired` and `pending_enrollment`. |
+| `hostMcp.listAccounts` | None | `hosts` keyed by switch-capable host, including hosts with zero accounts. Each row contains `accounts`, `desired`, `pending_enrollment` and `pending_cleanups`. |
 | `hostMcp.adoptAccount` | `host_key` | Enrolled account after checking the existing native default sign-in in place. |
 | `hostMcp.addAccount` | `host_key`, new UUID `enrollment_ref` | Provisional native sign-in receipt. Retry with the same reference to recover the original receipt without starting sign-in again. |
 | `hostMcp.completeAccountEnrollment` | `host_key`, `enrollment_ref` | Current enrollment outcome. Poll while pending. Native verification can report missing email, expired credentials or a competing credential. |
@@ -1013,16 +1013,25 @@ registry. Requests only accept the declared identifiers and revision.
 | `hostMcp.refreshAccount` | `host_key`, `account_ref` | Enrolled account with current identity status and the last verified display email. |
 
 The inventory is the read response body. Writes return the corresponding
-receipt under `data`. Enrollment expires after 15 minutes. A duplicate native
-principal and workspace returns the existing account reference. Enrollment
-verification describes the provisional sign-in. The account inventory and
-refresh operation report the retained account's verification state. Email is
-display data, so equal emails can have distinct account references. Selection
-changes require an explicit select call. Revision 0 with a null account
-reference uses the native default. Saving a selection confirms the desired
-generation. The terminal or automated launcher determines the account applied
-to its own session. Native profile references, principals and workspace
-identifiers stay inside host management.
+receipt under `data`. Enrollment expires after 15 minutes. A matching native
+principal and workspace keeps its account reference. A healthy saved profile
+is reused, and a newly verified sign-in can replace an unusable saved profile.
+A successful replacement through enrollment returns `enrolled`. A failed
+recheck of an adopted native default updates the saved verification status.
+Inventory and refresh report that state alongside the last verified display
+email. Equal emails can have distinct account references.
+
+Only an explicit select call changes the desired account reference. Replacing
+the selected account's underlying profile advances its revision so consumers
+can detect stale work. Revision 0 with a null reference uses the native default.
+The terminal or automated launcher determines which account its own session
+uses. Native profile references, principals and workspace identifiers stay
+inside host management.
+
+`pending_cleanups` lists finalized enrollments whose native cleanup is still
+unconfirmed. After reopening the console, retry cancellation with the listed
+`enrollment_ref`. Native adapters retry by profile reference even when a prior
+attempt already removed the provisional directory.
 
 These operations use raw responses and the exact-path local-admin console
 policy. See [native harness account custody](security.md#native-harness-account-custody).

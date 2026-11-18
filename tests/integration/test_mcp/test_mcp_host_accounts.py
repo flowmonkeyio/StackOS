@@ -98,6 +98,164 @@ def _begin(store, adapter):
     return ref, adapter.started[-1]
 
 
+@pytest.fixture
+def account_console(mcp_client):
+    client = mcp_client.test_client
+    headers = {"Authorization": f"Bearer {client.app.state.ui_token}"}
+
+    def call(verb, **arguments):
+        return client.post(
+            f"/api/v1/operations/hostMcp.{verb}/call",
+            json={"arguments": arguments},
+            headers=headers,
+        )
+
+    return call
+
+
+def _account_data(response):
+    assert response.status_code == 200, response.text
+    return response.json()["data"]
+
+
+def _enroll_in_console(console, adapter, identity):
+    arguments = {"host_key": "codex", "enrollment_ref": str(uuid4())}
+    assert _account_data(console("addAccount", **arguments))["status"] == "pending"
+    profile = adapter.started[-1]
+    adapter.identities[profile.ref] = identity
+    receipt = _account_data(console("completeAccountEnrollment", **arguments))
+    return arguments, receipt, profile
+
+
+@pytest.mark.parametrize("recover_selected", [False, True])
+def test_console_recovers_expired_enrollment_profile(
+    account_console, adapter, mcp_settings, recover_selected
+):
+    host = {"host_key": "codex"}
+    a = _account_data(account_console("adoptAccount", **host))
+    _, enrolled, expired_profile = _enroll_in_console(account_console, adapter, B)
+    b_ref = enrolled["account_ref"]
+    current_ref = b_ref if recover_selected else a["account_ref"]
+    _account_data(
+        account_console("selectAccount", **host, account_ref=current_ref, expected_revision=0)
+    )
+    adapter.identities[expired_profile.ref] = "expired"
+    if recover_selected:
+        expired = _account_data(account_console("refreshAccount", **host, account_ref=b_ref))
+        assert expired["identity_status"] == "expired"
+
+    arguments, recovered, replacement = _enroll_in_console(account_console, adapter, B)
+    assert recovered["status"] == "enrolled" and recovered["account_ref"] == b_ref
+    assert recovered["identity_status"] == "verified" and not recovered["cleanup_pending"]
+    assert recovered == _account_data(account_console("completeAccountEnrollment", **arguments))
+    assert recovered == _account_data(account_console("cancelAccountEnrollment", **arguments))
+    assert adapter.discarded == []
+    assert expired_profile.directory.is_dir()
+
+    inventory = account_console("listAccounts").json()["hosts"]["codex"]
+    revision = 2 if recover_selected else 1
+    assert inventory["desired"] == {"account_ref": current_ref, "revision": revision}
+    if recover_selected:
+        stale = account_console("selectAccount", **host, account_ref=b_ref, expected_revision=1)
+        assert stale.status_code == 409 and stale.json()["data"]["code"] == "stale_selection"
+    selected = _account_data(
+        account_console("selectAccount", **host, account_ref=b_ref, expected_revision=revision)
+    )
+    assert selected == {"account_ref": b_ref, "revision": 2}
+    assert service.host_accounts(mcp_settings.data_dir).resolve("codex").profile == replacement
+
+
+@pytest.mark.parametrize("retained_profile", ["expired", "missing", "healthy"])
+def test_console_adopts_working_default_for_existing_account(
+    account_console, adapter, mcp_settings, retained_profile
+):
+    _, enrolled, profile = _enroll_in_console(account_console, adapter, B)
+    account_ref = enrolled["account_ref"]
+    if retained_profile == "expired":
+        adapter.identities[profile.ref] = "expired"
+    elif retained_profile == "missing":
+        profile.directory.rmdir()
+    adapter.default = B
+
+    host = {"host_key": "codex"}
+    adopted = _account_data(account_console("adoptAccount", **host))
+    assert (adopted["account_ref"], adopted["identity_status"]) == (account_ref, "verified")
+    assert adopted == _account_data(account_console("adoptAccount", **host))
+    inventory = account_console("listAccounts").json()["hosts"]["codex"]
+    assert inventory["accounts"] == [adopted]
+    assert inventory["desired"] == {"account_ref": None, "revision": 0}
+    _account_data(
+        account_console("selectAccount", **host, account_ref=account_ref, expected_revision=0)
+    )
+    resolved = service.host_accounts(mcp_settings.data_dir).resolve("codex")
+    if retained_profile == "healthy":
+        assert resolved.profile == profile
+    else:
+        assert resolved.profile.directory is None
+        assert resolved.profile.ref != profile.ref
+    assert adapter.discarded == []
+
+
+@pytest.mark.parametrize(
+    ("default", "response_status", "identity_status"),
+    [(B, 409, "identity_changed"), ("expired", 422, "expired")],
+)
+def test_console_records_failed_default_verification(
+    account_console, adapter, default, response_status, identity_status
+):
+    host = {"host_key": "codex"}
+    account = _account_data(account_console("adoptAccount", **host))
+    selected = _account_data(
+        account_console(
+            "selectAccount", **host, account_ref=account["account_ref"], expected_revision=0
+        )
+    )
+    adapter.default = default
+    response = account_console("adoptAccount", **host)
+    assert response.status_code == response_status, response.text
+    inventory = account_console("listAccounts").json()["hosts"]["codex"]
+    assert inventory["desired"] == selected
+    assert inventory["accounts"] == [{**account, "identity_status": identity_status}]
+
+
+def test_console_rediscovers_and_retries_partial_cleanup(account_console, adapter, monkeypatch):
+    arguments = {"host_key": "codex", "enrollment_ref": str(uuid4())}
+    _account_data(account_console("addAccount", **arguments))
+    initial = adapter.started[-1]
+    retired = []
+
+    def discard(profile):
+        retired.append(profile)
+        if len(retired) == 1:
+            profile.directory.rmdir()
+            return False
+        assert not profile.directory.exists()
+        return True
+
+    monkeypatch.setattr(adapter, "discard_login", discard)
+    cancelled = _account_data(account_console("cancelAccountEnrollment", **arguments))
+    assert cancelled["status"] == "cancelled" and cancelled["cleanup_pending"]
+
+    next_ref = str(uuid4())
+    _account_data(account_console("addAccount", host_key="codex", enrollment_ref=next_ref))
+    inventory = account_console("listAccounts").json()["hosts"]["codex"]
+    assert inventory["pending_enrollment"]["enrollment_ref"] == next_ref
+    assert inventory["pending_cleanups"] == [cancelled]
+    retry = _account_data(
+        account_console(
+            "cancelAccountEnrollment",
+            host_key="codex",
+            enrollment_ref=inventory["pending_cleanups"][0]["enrollment_ref"],
+        )
+    )
+    assert retry == {**cancelled, "cleanup_pending": False}
+    assert retired == [initial, initial]
+    assert _account_data(account_console("cancelAccountEnrollment", **arguments)) == retry
+    inventory = account_console("listAccounts").json()["hosts"]["codex"]
+    assert inventory["pending_cleanups"] == []
+    assert inventory["pending_enrollment"]["enrollment_ref"] == next_ref
+
+
 def test_harness_account_registry_is_rest_console_only():
     registry = build_operation_registry()
     for name in ACCOUNT_OPERATIONS:
@@ -164,6 +322,7 @@ def test_console_enrolls_and_selects_through_the_registered_host_adapter(
             "accounts": [],
             "desired": {"account_ref": None, "revision": 0},
             "pending_enrollment": None,
+            "pending_cleanups": [],
         }
     }
     initial = service.host_accounts(mcp_settings.data_dir).resolve("codex")
@@ -280,6 +439,8 @@ def test_native_identity_keys_refresh_and_restart(tmp_path):
     )
     assert adapter.discarded == [profile]
     assert store.add("codex", duplicate) == result
+    assert store.resolve("codex").profile == default_profile
+    assert store.resolve("codex").desired.revision == 1
 
     ref, profile = _begin(store, adapter)
     # The same email and principal in another workspace are a distinct identity.
@@ -362,6 +523,22 @@ def test_enrollment_cancel_expiry_and_native_failure_are_terminal(tmp_path, monk
         assert late.status == "expired" and late.account_ref is None
     assert adapter.discarded[-1] == profile
 
+    ref, profile = _begin(store, adapter)
+    adapter.identities[profile.ref] = A
+    read_identity = adapter.read_identity
+
+    def late_retained_identity(context):
+        nonlocal now
+        if context.directory is None:
+            now += timedelta(minutes=15)
+        return read_identity(context)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(adapter, "read_identity", late_retained_identity)
+        late = store.complete("codex", ref)
+        assert late.status == "expired" and late.account_ref is None
+    assert adapter.discarded[-1] == profile
+
     adapter.start_error = True
     failed = store.add("codex", str(uuid4()))
     assert failed.status == "failed" and failed.identity_status == "unavailable"
@@ -410,6 +587,11 @@ def test_isolated_profile_and_state_reject_symlinks_and_public_modes(tmp_path):
     assert store.cancel("codex", ref).cleanup_pending
     assert not adapter.discarded
     assert list(outside.iterdir()) == []
+
+    profile.directory.unlink()
+    profile.directory.symlink_to(outside / "missing", target_is_directory=True)
+    assert store.cancel("codex", ref).cleanup_pending
+    assert not adapter.discarded
 
     profile.directory.unlink()
     profile.directory.mkdir(mode=0o755)
