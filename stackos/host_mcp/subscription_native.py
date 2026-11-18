@@ -1,4 +1,4 @@
-"""Read native account allowances without creating conversations or exposing identity."""
+"""Shared bounded native transport and quota meter normalization."""
 
 from __future__ import annotations
 
@@ -122,7 +122,7 @@ def _capture(
     )
 
 
-def _rpc(binary: str, args: Sequence[str], calls: list[tuple[str, dict | None]]) -> list[dict]:
+def read_rpc(binary: str, args: Sequence[str], calls: list[tuple[str, dict | None]]) -> list[dict]:
     """Sequence native reads after initialize, ignoring notifications and private fields."""
     responses: list[dict] = []
     pending = bytearray()
@@ -163,7 +163,7 @@ def _rpc(binary: str, args: Sequence[str], calls: list[tuple[str, dict | None]])
     return responses if result is not None and len(responses) == len(calls) else []
 
 
-def _result(responses: list[dict], index: int) -> dict:
+def rpc_result(responses: list[dict], index: int) -> dict:
     result = responses[index].get("result") if len(responses) > index else None
     return result if isinstance(result, dict) else {}
 
@@ -177,7 +177,7 @@ def _percent(value: object) -> TypeGuard[int | float]:
     )
 
 
-def _meter(scope: str, used: object, reset: object) -> dict | None:
+def quota_meter(scope: str, used: object, reset: object) -> dict | None:
     if not _percent(used):
         return None
     resets_at = None
@@ -197,104 +197,3 @@ def _meter(scope: str, used: object, reset: object) -> dict | None:
         except (ValueError, OverflowError, OSError):
             return None
     return {"scope": scope, "remaining_percent": 100 - used, "resets_at": resets_at}
-
-
-def _window_name(minutes: object, fallback: str) -> str:
-    if type(minutes) is not int or not 0 < minutes <= 527_040:
-        return fallback
-    if minutes in {1440, 10080, 43200}:
-        return {1440: "Daily", 10080: "Weekly", 43200: "Monthly"}[minutes]
-    return f"{minutes // 60}-hour" if minutes % 60 == 0 else f"{minutes}-minute"
-
-
-def read_codex(binary: str) -> dict | None:
-    responses = _rpc(
-        binary,
-        ["app-server", "--listen", "stdio://"],
-        [
-            ("initialize", {"clientInfo": {"name": "stackos_subscription", "version": "1"}}),
-            ("account/read", {"refreshToken": False}),
-            ("account/rateLimits/read", None),
-        ],
-    )
-    account = _result(responses, 1).get("account")
-    account = account if isinstance(account, dict) else {}
-    if account.get("type") == "apiKey":
-        return None
-    limits = _result(responses, 2)
-    buckets = limits.get("rateLimitsByLimitId")
-    buckets = dict(buckets) if isinstance(buckets, dict) else {}
-    default = limits.get("rateLimits")
-    if isinstance(default, dict):
-        key = default.get("limitId")
-        key = key if isinstance(key, str) else "codex"
-        buckets.setdefault(key, default)
-    plans = {
-        "free": "Free",
-        "go": "Go",
-        "plus": "Plus",
-        "pro": "Pro",
-        "team": "Team",
-        "business": "Business",
-        "enterprise": "Enterprise",
-        "edu": "Education",
-    }
-    plan_type = account.get("planType")
-    plan = plans.get(plan_type) if isinstance(plan_type, str) else None
-    meters = []
-    for index, (key, bucket) in enumerate(buckets.items(), 1):
-        if not isinstance(bucket, dict):
-            continue
-        if plan is None and isinstance(bucket.get("planType"), str):
-            plan = plans.get(bucket["planType"])
-        for field in ("primary", "secondary"):
-            window = bucket.get(field)
-            if not isinstance(window, dict):
-                continue
-            label = _window_name(window.get("windowDurationMins"), field.title() + " limit")
-            scope = label if key == "codex" else f"Additional limit {index}: {label}"
-            meter = _meter(scope, window.get("usedPercent"), window.get("resetsAt"))
-            if meter is not None:
-                meters.append(meter)
-    return (
-        {"plan": "ChatGPT " + plan if plan else None, "meters": meters} if plan or meters else None
-    )
-
-
-def read_grok(binary: str) -> dict | None:
-    responses = _rpc(
-        binary,
-        ["--no-auto-update", "agent", "stdio"],
-        [
-            (
-                "initialize",
-                {
-                    "protocolVersion": 1,
-                    "clientCapabilities": {},
-                    "clientInfo": {"name": "stackos_subscription", "version": "1"},
-                },
-            ),
-            ("_x.ai/billing", {}),
-            ("_x.ai/auth/check_subscription", {}),
-        ],
-    )
-    billing, auth = _result(responses, 1), _result(responses, 2)
-    if auth.get("authenticated") is False:
-        return None
-    meta = auth.get("meta")
-    meta = meta if isinstance(meta, dict) else {}
-    tier = billing.get("subscription_tier") or meta.get("subscription_tier")
-    plans = {"SuperGrok", "SuperGrok Heavy", "X Premium", "X Premium+", "X Premium Plus"}
-    plan = tier if isinstance(tier, str) and tier in plans else None
-    config = billing.get("config")
-    config = config if isinstance(config, dict) else {}
-    period = config.get("currentPeriod")
-    period = period if isinstance(period, dict) else {}
-    period_type = period.get("type")
-    scope = {"USAGE_PERIOD_TYPE_WEEKLY": "Weekly", "USAGE_PERIOD_TYPE_MONTHLY": "Monthly"}.get(
-        period_type if isinstance(period_type, str) else "", "Current limit"
-    )
-    if config.get("isUnifiedBillingUser") is True:
-        scope = "Shared " + scope.lower()
-    meter = _meter(scope, config.get("creditUsagePercent"), period.get("end"))
-    return {"plan": plan, "meters": [meter] if meter else []} if plan or meter else None

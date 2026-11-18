@@ -35,7 +35,8 @@ from stackos.host_mcp.result import (
     normalize_usage,
 )
 from stackos.host_mcp.subscription_claude import read_claude
-from stackos.host_mcp.subscription_native import read_codex, read_grok
+from stackos.host_mcp.subscription_codex import read_codex
+from stackos.host_mcp.subscription_grok import read_grok
 
 Action = Literal["inspect", "register", "repair", "remove"]
 if TYPE_CHECKING:
