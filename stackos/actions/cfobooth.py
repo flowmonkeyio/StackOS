@@ -90,8 +90,10 @@ class CFOBoothActionConnector:
         return 0
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
-        scope = inventory_scope(request)
-        assert request.credential is not None and request.session is not None
+        if request.credential is None or request.session is None:
+            raise ValidationError("CFOBooth requires a verified Account and inventory session")
+        credential = request.credential.credential
+        scope = inventory_scope(request.session, request.project_id, credential)
         attachment_revision = project_attachment_revision(request)
         if attachment_revision is None:
             raise ValidationError("CFOBooth Account is no longer attached to this project")
@@ -104,7 +106,7 @@ class CFOBoothActionConnector:
                 or any(config.get(f"inventory_{field}") != value for field, value in scope.items())
             ):
                 raise ValidationError("CFOBooth inventory scope changed; verify and sync again")
-        revision = request.credential.credential.updated_at
+        revision = credential.updated_at
         bridge, prepared = self._bridge(request)
         # Supply the tenant through the native auth config projection only.
         prepared = replace(
@@ -113,6 +115,7 @@ class CFOBoothActionConnector:
                 request.credential,
                 config_json={
                     **(request.credential.config_json or {}),
+                    "api_base_url": scope["api_base_url"],
                     "organization_id": scope["organization_id"],
                 },
             ),
@@ -120,13 +123,13 @@ class CFOBoothActionConnector:
         native = await bridge.execute_native(prepared)
         # Do not return results or publish inventory after Account replacement,
         # revocation, or removal of this project's original Connection.
-        request.session.refresh(request.credential.credential)
+        request.session.refresh(credential)
         try:
-            current_scope = inventory_scope(request)
+            current_scope = inventory_scope(request.session, request.project_id, credential)
         except ValidationError:
             current_scope = None
         if (
-            request.credential.credential.updated_at != revision
+            credential.updated_at != revision
             or current_scope != scope
             or project_attachment_revision(request) != attachment_revision
         ):
@@ -209,5 +212,5 @@ class CFOBoothActionConnector:
                 "catalog_hash": native.output_json["data"]["catalogHash"],
                 "manual_sync": True,
             },
-            metadata_json=native.metadata_json,
+            metadata_json={**native.metadata_json, "inventory_scope_key": scope_key},
         )

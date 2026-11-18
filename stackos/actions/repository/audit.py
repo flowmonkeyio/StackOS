@@ -630,6 +630,22 @@ class ActionAuditMixin:
                     "action_call_id": row.id,
                 },
             )
+        if not dry_run and (manifest.connector_key, manifest.operation) == (
+            "cfobooth",
+            "catalog.sync",
+        ):
+            from stackos.integrations.cfobooth import catalog_sync_replay_matches
+
+            if not catalog_sync_replay_matches(self._s, row):
+                raise ConflictError(
+                    "idempotency key replayed with different CFOBooth catalog scope",
+                    data={
+                        "project_id": project_id,
+                        "action_ref": manifest.action_ref,
+                        "action_call_id": row.id,
+                        "next_action": "Sync again with a new intent or idempotency key.",
+                    },
+                )
         return ActionExecutionOut(
             action_call=self._call_audit_out(row),
             output_json=row.response_json or {},

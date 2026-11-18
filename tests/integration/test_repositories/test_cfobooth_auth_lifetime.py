@@ -1,6 +1,10 @@
 """Project Account probes retain the Connection that authorized their result."""
 
 import asyncio
+import sqlite3
+import subprocess
+import sys
+from contextlib import closing
 
 import httpx
 import pytest
@@ -17,6 +21,33 @@ from stackos.repositories.projects import ProjectRepository
 from tests.integration.test_repositories import cfobooth_test_support as native
 
 pytestmark = [pytest.mark.fresh_catalog, native.native_cfo, pytest.mark.asyncio]
+
+
+async def test_connected_account_from_cold_repository(session, project_id, httpx_mock, tmp_path):
+    ref = await native.verified_account(session, project_id, httpx_mock)
+    database = tmp_path / "account.db"
+    with closing(sqlite3.connect(database)) as target:
+        session.connection().connection.driver_connection.backup(target)
+    program = """
+import sys
+from sqlmodel import Session, create_engine
+from stackos.auth_providers import AuthRepository
+
+assert "stackos.actions" not in sys.modules
+with Session(create_engine("sqlite:///" + sys.argv[1])) as session:
+    account = AuthRepository(session).require_attached_account(
+        project_id=int(sys.argv[2]), credential_ref=sys.argv[3], provider_key="cfobooth"
+    )
+    assert account.status == "connected"
+assert "stackos.actions" not in sys.modules
+"""
+    completed = subprocess.run(
+        [sys.executable, "-B", "-c", program, str(database), str(project_id), ref],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 async def _test_account(session, project_id, ref):

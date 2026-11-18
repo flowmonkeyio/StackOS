@@ -139,6 +139,7 @@ def test_missing_inputs_never_create_custody(session, contract, missing):
         "malformed",
         "malformed-org",
         "missing-org",
+        "missing-expiry",
         "missing-account",
         "blank-id",
         "string-ok",
@@ -168,6 +169,8 @@ async def test_failed_or_malformed_probe_cannot_establish_identity(
         raw["metadata"]["evidence"]["account"]["metadata"]["organization_id"] = "other-org"
     elif outcome == "missing-org":
         raw["metadata"]["evidence"]["account"]["metadata"].pop("organization_id")
+    elif outcome == "missing-expiry":
+        raw["metadata"]["evidence"]["account"]["metadata"].pop("expires_at")
     elif outcome == "missing-account":
         raw["metadata"]["evidence"] = {}
     elif outcome == "blank-id":

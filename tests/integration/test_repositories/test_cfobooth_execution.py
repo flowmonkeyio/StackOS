@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -9,7 +10,7 @@ from sqlmodel import Session, select
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
-from stackos.db.models import ActionCall, Credential, CredentialAccount, ProjectCredential
+from stackos.db.models import Action, ActionCall, Credential, CredentialAccount, ProjectCredential
 from stackos.mcp.context import build_context
 from stackos.mcp.permissions import check_call_grant
 from stackos.mcp.streaming import ProgressEmitter
@@ -34,7 +35,9 @@ from tests.integration.test_repositories.cfobooth_test_support import (
 pytestmark = [native_cfo, pytest.mark.fresh_catalog, pytest.mark.asyncio]
 
 
-async def caller(session, project_id, ref, action_ref, payload, *, granted=False, idem=None):
+async def caller(
+    session, project_id, ref, action_ref, payload, *, granted=False, idem=None, output_dir=None
+):
     args = dict(
         project_id=project_id,
         action_ref=action_ref,
@@ -43,6 +46,8 @@ async def caller(session, project_id, ref, action_ref, payload, *, granted=False
         response_mode="raw",
         idempotency_key=idem,
     )
+    if output_dir is not None:
+        args["output_policy_json"] = {"mode": "always_file", "path": str(output_dir)}
     if granted:
         plans = RunPlanRepository(session)
         plan = plans.create(
@@ -77,8 +82,6 @@ async def caller(session, project_id, ref, action_ref, payload, *, granted=False
 async def test_held_result_cannot_restore_detached_project_scope(
     session, project_id, httpx_mock, granted, reattach_while_held, catalog_sync
 ):
-    from stackos.db.models import Action
-
     ref = await verified_account(session, project_id, httpx_mock)
     initial = await sync(session, project_id, ref, httpx_mock, catalog(descriptor()))
     action_ref = initial["action_refs"][0]
@@ -156,8 +159,6 @@ async def test_held_result_cannot_restore_detached_project_scope(
 async def test_detaching_other_project_does_not_discard_current_catalog(
     session, project_id, httpx_mock, granted
 ):
-    from stackos.db.models import Action
-
     ref = await verified_account(session, project_id, httpx_mock)
     other = (
         ProjectRepository(session)
@@ -266,10 +267,26 @@ async def test_direct_and_granted_owner_then_foreign_call(session, project_id, h
 
 
 @pytest.mark.parametrize(
-    "identity_change", [{}, {"organization_id": "bad"}, {"expires_at": "2020-01-01T00:00:00Z"}]
+    ("identity_change", "remove_fields"),
+    [
+        ({}, {"organization_id", "key_id", "expires_at"}),
+        ({"organization_id": "bad"}, set()),
+        ({"expires_at": "2020-01-01T00:00:00Z"}, set()),
+        ({}, {"expires_at"}),
+        ({"key_id": "53761da2-37bc-90ab-afbb-489fb72a67a1"}, set()),
+        ({"expires_at": "2099-01-01 00:00:00Z"}, set()),
+    ],
+    ids=[
+        "missing-evidence",
+        "malformed-org",
+        "expired",
+        "missing-expiry",
+        "bad-key-version",
+        "bad-expiry",
+    ],
 )
 async def test_invalid_saved_identity_prevents_dispatch_and_replay(
-    session, project_id, httpx_mock, identity_change
+    session, project_id, httpx_mock, identity_change, remove_fields
 ):
     ref = await verified_account(session, project_id, httpx_mock)
     synced = await sync(session, project_id, ref, httpx_mock, catalog(descriptor()))
@@ -281,7 +298,10 @@ async def test_invalid_saved_identity_prevents_dispatch_and_replay(
     )
     await caller(session, project_id, ref, action_ref, {}, idem="read-once")
     account = session.exec(select(CredentialAccount)).one()
-    account.metadata_json = {**account.metadata_json, **identity_change} if identity_change else {}
+    account.metadata_json = {
+        **{key: value for key, value in account.metadata_json.items() if key not in remove_fields},
+        **identity_change,
+    }
     session.add(account)
     session.commit()
     for action, idem in [(action_ref, "read-once"), ("cfobooth.catalog.sync", None)]:
@@ -291,6 +311,75 @@ async def test_invalid_saved_identity_prevents_dispatch_and_replay(
             issue["code"] == "credential_not_connected" for issue in denied.value.data["issues"]
         )
     assert len(httpx_mock.get_requests()) == 3
+    assert len(session.exec(select(ActionCall)).all()) == 2
+
+
+@pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
+async def test_catalog_sync_retry_requires_current_verified_scope(
+    session, project_id, httpx_mock, granted, tmp_path
+):
+    ref = await verified_account(session, project_id, httpx_mock)
+    auth = AuthRepository(session)
+    action_ref = "cfobooth.catalog.sync"
+    export_url = BASE + f"/api/organizations/{ORG}/operation-catalog"
+
+    async def sync_with_key(key):
+        return (
+            await caller(
+                session,
+                project_id,
+                ref,
+                action_ref,
+                {},
+                granted=granted,
+                idem=key,
+                output_dir=tmp_path if granted else None,
+            )
+        ).data
+
+    def synced_count(output):
+        if granted:
+            saved = json.loads(Path(output["file"]["path"]).read_text(encoding="utf-8"))
+            output = saved["response"]["output_json"]
+        return output["synced"]
+
+    httpx_mock.add_response(method="GET", url=export_url, json=catalog(descriptor()))
+    original = await sync_with_key("first-sync")
+    assert synced_count(original.output_json) == 1
+
+    httpx_mock.add_response(method="GET", url=BASE + "/api/api-keys/current", json=identity())
+    assert (await auth.test(project_id=project_id, credential_ref=ref)).data.ok
+    replay = await sync_with_key("first-sync")
+    assert replay.model_dump()["action_call"]["id"] == original.model_dump()["action_call"]["id"]
+    assert replay.output_json == original.output_json
+
+    auth.update_credential(
+        credential_ref=ref, fields={"api_key": "replacement-fixture-key"}, display_name=None
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=BASE + "/api/api-keys/current",
+        json=identity(keyId="bc71b2e7-e1a9-4e19-91ce-202cab672006"),
+    )
+    assert (await auth.test(project_id=project_id, credential_ref=ref)).data.ok
+    with pytest.raises(ConflictError, match="different CFOBooth catalog scope"):
+        await sync_with_key("first-sync")
+    assert len(httpx_mock.get_requests(url=export_url)) == 1
+    assert len(session.exec(select(ActionCall)).all()) == 1
+    assert [
+        row.config_json["inventory_state"]
+        for row in session.exec(select(Action).where(Action.key.startswith("api.")))
+    ] == ["retired"]
+
+    httpx_mock.add_response(method="GET", url=export_url, json=catalog(descriptor()))
+    fresh = await sync_with_key("fresh-sync")
+    assert fresh.model_dump()["action_call"]["id"] != original.model_dump()["action_call"]["id"]
+    assert synced_count(fresh.output_json) == 1
+    auth.detach_account(project_id=project_id, credential_ref=ref)
+    auth.attach_account(project_id=project_id, credential_ref=ref)
+    with pytest.raises(ConflictError, match="different CFOBooth catalog scope"):
+        await sync_with_key("fresh-sync")
+    assert len(httpx_mock.get_requests(url=export_url)) == 2
     assert len(session.exec(select(ActionCall)).all()) == 2
 
 
@@ -375,8 +464,6 @@ async def test_strict_schema_survives_import_and_actual_dispatch(session, projec
 async def test_each_scope_dimension_denies_stale_inventory(
     session, project_id, httpx_mock, scope_field
 ):
-    from stackos.db.models import Action
-
     ref = await verified_account(session, project_id, httpx_mock)
     out = await sync(session, project_id, ref, httpx_mock, catalog(descriptor()))
     row = session.exec(select(Action).where(Action.key.startswith("api."))).first()

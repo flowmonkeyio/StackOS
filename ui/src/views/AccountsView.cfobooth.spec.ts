@@ -10,7 +10,7 @@ const originalFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = originalFetch; vi.restoreAllMocks() })
 
 describe('CFOBooth Account controls (UI-only API boundary)', () => {
-  it('requires explicit inputs, masks the key, rechecks replacement, and explains local disconnect', async () => {
+  it('uses URL and key setup, masks the key, rechecks replacement, and explains local disconnect', async () => {
     setActivePinia(createPinia())
     const provider = authProvider('cfobooth', 'CFOBooth', 'api_key', [{
       key: 'api_key', label: 'CFOBooth API key', auth_type: 'api_key', interactive: false,
@@ -19,7 +19,6 @@ describe('CFOBooth Account controls (UI-only API boundary)', () => {
         { key: 'api_key', label: 'API key', type: 'password', secret: true, required: true },
         { key: 'api_base_url', label: 'API base URL', type: 'text', required: true,
           placeholder: 'https://cfobooth.com', description: 'Editable example only. No remote deployment has been verified.' },
-        { key: 'organization_id', label: 'Organization ID', type: 'text', required: true },
       ],
     }])
     const account = { ...authConnection({ providerKey: 'cfobooth', credentialRef: 'cred_cfo',
@@ -47,7 +46,7 @@ describe('CFOBooth Account controls (UI-only API boundary)', () => {
       if (url.endsWith('/cred_cfo/revoke')) { saved = false; return json({ data: {} }) }
       if (url.endsWith('/cred_cfo')) {
         if (init?.method === 'PATCH') return json({ data: account })
-        return json({ account, values: { api_base_url: 'http://localhost:3100', organization_id: 'org' },
+        return json({ account, values: { api_base_url: 'http://localhost:3100' },
           secret_present: { api_key: true } })
       }
       return json({})
@@ -60,21 +59,25 @@ describe('CFOBooth Account controls (UI-only API boundary)', () => {
     await clickButton(wrapper, 'Add Account')
     const endpoint = wrapper.get<HTMLInputElement>('input[placeholder="https://cfobooth.com"]')
     expect(endpoint.element.value).toBe('')
+    expect(wrapper.find('input[id$="organization_id"]').exists()).toBe(false)
     await clickButton(wrapper, 'Save and verify')
     expect(wrapper.text()).toContain('required')
     expect(writes.filter((w) => w.url.startsWith('/api/v1/auth/accounts'))).toEqual([])
     await wrapper.get('input[type="password"]').setValue('ui-private-canary')
     await wrapper.get('input[placeholder="Service - Default"]').setValue('Local CFO')
     await endpoint.setValue('http://localhost:3100')
-    await wrapper.get('input[id$="organization_id"]').setValue('org')
     await clickButton(wrapper, 'Save and verify')
     await vi.waitFor(() => expect(releaseTest).toBeTypeOf('function'))
+    expect(writes.find((w) => w.url === '/api/v1/auth/accounts/cfobooth')?.fields).toEqual({
+      api_base_url: 'http://localhost:3100', api_key: 'ui-private-canary',
+    })
     expect(wrapper.text()).not.toContain('Complete the required fields to continue.')
     expect(wrapper.html()).not.toContain('ui-private-canary')
     releaseTest!()
     await vi.waitFor(() => expect(wrapper.text()).toContain('CFO identity checked.'))
     await clickButton(wrapper, 'Edit')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Authentication method is locked'))
+    expect(wrapper.find('input[id$="organization_id"]').exists()).toBe(false)
     expect(wrapper.get<HTMLInputElement>('input[type="password"]').element.value).toBe('')
     await wrapper.get('input[type="password"]').setValue('ui-replacement-canary')
     await wrapper.get('input[id$="api_base_url"]').setValue('http://127.0.0.1:3200')
@@ -86,7 +89,7 @@ describe('CFOBooth Account controls (UI-only API boundary)', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Replace the API key and test again.'))
     expect(checks).toBe(2)
     expect(writes.find((w) => w.url.endsWith('/cred_cfo'))?.fields).toEqual({
-      api_base_url: 'http://127.0.0.1:3200', organization_id: 'org', api_key: 'ui-replacement-canary',
+      api_base_url: 'http://127.0.0.1:3200', api_key: 'ui-replacement-canary',
     })
     expect(wrapper.html()).not.toContain('ui-replacement-canary')
     await clickButton(wrapper, 'Disconnect')

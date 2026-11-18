@@ -377,6 +377,9 @@ the connector's runtime auth configuration. Request data and obsolete saved
 organization fields cannot select the destination. Testing an existing Account
 retains its project attachments. A change in verified identity retires the
 previous scoped inventory and requires a fresh sync.
+Catalog sync retries reuse their recorded result while the verified scope and
+Connection are current. After either changes, sync with a new intent or
+idempotency key.
 
 To rotate a key, create its replacement in CFOBooth, edit this same-method
 Account locally, and verify it before synchronizing again. Changing the key

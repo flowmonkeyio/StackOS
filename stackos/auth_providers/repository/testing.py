@@ -309,7 +309,6 @@ class CredentialTestingMixin:
             from stackos_connectors.connectors.cfobooth import normalize_api_base_url
             from stackos_connectors.errors import ValidationError as NativeValidationError
 
-            from stackos.actions.generated_inventory import retire_generated_credential_inventory
             from stackos.integrations.cfobooth import account_key_identity, verified_key_identity
 
             # The native probe validates provider identity and destination. The
@@ -379,12 +378,7 @@ class CredentialTestingMixin:
                 except ValidationError:
                     previous_identity = None
                 if previous_identity != identity:
-                    retire_generated_credential_inventory(
-                        self._s,
-                        provider_key=credential.provider_key,
-                        credential_ref=credential_ref,
-                        now=now,
-                    )
+                    self._invalidate_cfobooth_identity(credential)
                 config = dict(credential.config_json or {})
                 config["api_base_url"] = out.metadata["api_base_url"]
                 config.pop("organization_id", None)
