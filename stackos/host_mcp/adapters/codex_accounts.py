@@ -22,7 +22,6 @@ from stackos.host_mcp.accounts import (
     NativeAccountProfile,
     NativeIdentity,
     NativeIdentityIssue,
-    ResolvedAccountSelection,
     _private_directory,
     _private_fd,
 )
@@ -101,40 +100,6 @@ def native_identity(
         if isinstance(detail, str) and "expired" in detail.lower():
             return "expired"
     return _identity(native.rpc_result(responses, 1), native.rpc_result(responses, 2))
-
-
-def selected_quota_responses(binary: str, selection: ResolvedAccountSelection) -> list[dict]:
-    """Read quota only from the same native process that confirmed the selection."""
-    if selection.profile is None or selection.principal_key is None:
-        return []
-    env = subprocess_env_for_cli(binary)
-    try:
-        _check_environment(env)
-        regular = _home(env)
-        mode = _storage(_config(binary, env))
-        if selection.profile.directory is not None and mode != "file":
-            return []
-        home = selection.profile.directory or regular
-        responses = _rpc(
-            binary,
-            _profile_env(env, home),
-            _ACCOUNT,
-            _SESSIONS,
-            ("account/rateLimits/read", None),
-            overrides=("-c", f'cli_auth_credentials_store="{mode}"'),
-        )
-        identity = _identity(native.rpc_result(responses, 1), native.rpc_result(responses, 2))
-        attributed_workspace = native.rpc_result(responses, 3).get("accountId")
-        return (
-            [responses[0], responses[1], responses[3]]
-            if isinstance(identity, NativeIdentity)
-            and identity.principal_key == selection.principal_key
-            and len(responses) == 4
-            and attributed_workspace in (None, identity.workspace)
-            else []
-        )
-    except (CodexAccountError, HostAccountError, OSError):
-        return []
 
 
 def _check_environment(env: dict[str, str]) -> None:
