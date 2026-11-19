@@ -26,7 +26,12 @@ from stackos.actions.connectors import (
     ActionProgressCallback,
 )
 from stackos.actions.manifest import ExecutableActionManifest
-from stackos.actions.provider_utils import ELEVENLABS_AUDIO_OPERATIONS, elevenlabs_audio_receipt
+from stackos.actions.provider_utils import (
+    ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE,
+    ELEVENLABS_ALIGNMENT_REF,
+    ELEVENLABS_AUDIO_OPERATIONS,
+    elevenlabs_audio_receipt,
+)
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository, ResolvedCredential
 from stackos.config import Settings
@@ -157,6 +162,7 @@ class ActionExecutionMixin:
             idempotency_key=idempotency_key,
         )
         validation_issues = _dedupe_validation_issues([*runtime_context.issues, *validation.issues])
+        pending_validation_error = None
         if validation_issues:
             credential_repair_operation = manifest.config_json.get("credential_repair_operation")
             repair = (
@@ -172,7 +178,7 @@ class ActionExecutionMixin:
                 and any(issue.code == "credential_not_connected" for issue in validation_issues)
                 else {}
             )
-            raise ValidationError(
+            validation_error = ValidationError(
                 "action payload is invalid",
                 data={
                     "action_ref": manifest.action_ref,
@@ -183,6 +189,18 @@ class ActionExecutionMixin:
                     **repair,
                 },
             )
+            if (
+                manifest.action_ref == ELEVENLABS_ALIGNMENT_REF
+                and not dry_run
+                and idempotency_key is not None
+                and all(
+                    issue.code == ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE for issue in validation_issues
+                )
+            ):
+                # A matching authorized replay returns a receipt and never reads audio.
+                pending_validation_error = validation_error
+            else:
+                raise validation_error
         effective_output_policy = _effective_output_policy(
             manifest=manifest,
             runtime_context=runtime_context,
@@ -358,6 +376,8 @@ class ActionExecutionMixin:
             )
             if replay is not None:
                 return Envelope(data=replay, project_id=project_id, run_id=run_id)
+        if pending_validation_error is not None:
+            raise pending_validation_error
         connector = self._connectors.get(manifest.connector_key)
         projected_payload = project_secret_refs(payload)
         dry_request = self._connector_request(

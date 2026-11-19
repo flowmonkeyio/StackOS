@@ -52,6 +52,7 @@ def elevenlabs_action_kwargs() -> list[dict[str, Any]]:
             properties.pop("mime_type")
             properties["audio_artifact_id"] = artifact_id
             input_schema["required"] = ["audio_artifact_id", "text"]
+            output_schema["$defs"]["timed_item"]["additionalProperties"] = False
             description = (
                 "Align an existing managed project audio artifact to the supplied transcript."
             )

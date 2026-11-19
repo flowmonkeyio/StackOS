@@ -128,6 +128,24 @@ def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.Zip
             raise ValueError("invalid project IDs")
         if any(f"data/projects/{project_id}" not in names for project_id in project_ids):
             raise ValueError("missing project directory")
+        identities = manifest.get("project_file_identities", {})
+        if not isinstance(identities, dict) or any(
+            name not in declared
+            or not name.startswith("data/projects/")
+            or not isinstance(identity, list)
+            or len(identity) != 2
+            or any(type(value) is not int or value < 0 for value in identity)
+            for name, identity in identities.items()
+        ):
+            raise ValueError("invalid project file identity")
+        if identities:
+            root = manifest["source"]["data_dir"]
+            if (
+                not isinstance(root, str)
+                or not Path(root).is_absolute()
+                or ".." in Path(root).parts
+            ):
+                raise ValueError("invalid source data root")
         for info in infos:
             parts = PurePosixPath(info.filename).parts
             if (
@@ -258,6 +276,56 @@ def _initialize_project_locks(output: Path, project_ids: list[int]) -> None:
         os.close(output_fd)
 
 
+def _rebind_project_artifact_custody(output: Path, manifest: dict[str, Any]) -> None:
+    """Retain custody only when the authenticated member matched the old registered file."""
+    identities = manifest.get("project_file_identities", {})
+    if not identities:
+        return
+
+    from stackos.repositories.resources import PROJECT_FILE_ARTIFACT_URI_PREFIX
+
+    original_root = manifest["source"]["data_dir"]
+    database_path = output / "data/stackos.db"
+    with closing(sqlite3.connect(database_path.as_uri() + "?mode=rw", uri=True)) as database:
+        database.execute("PRAGMA trusted_schema=OFF")
+        database.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_TRIGGER, False)
+        columns = {row[1] for row in database.execute("PRAGMA table_info(artifacts)")}
+        if not {"id", "project_id", "uri", "managed_file_json"} <= columns:
+            return  # Older databases may have no producer custody.
+        with database:
+            rows = database.execute(
+                "SELECT id, project_id, managed_file_json FROM artifacts "
+                "WHERE uri GLOB ? AND managed_file_json IS NOT NULL ORDER BY id",
+                (PROJECT_FILE_ARTIFACT_URI_PREFIX + "*",),
+            )
+            for artifact_id, project_id, serialized in rows:
+                try:
+                    custody = json.loads(serialized)
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(custody, dict) or type(project_id) is not int:
+                    continue
+                relative = custody.get("path")
+                if (
+                    custody.get("owner_project_id") != project_id
+                    or custody.get("root") != original_root
+                    or not isinstance(relative, str)
+                    or not relative.startswith(f"projects/{project_id}/")
+                ):
+                    continue
+                member = f"data/{relative}"
+                if identities.get(member) != [custody.get("device"), custody.get("inode")]:
+                    continue
+                # All members are exclusively extracted as regular files and hashed
+                # in the private recovery stage before custody can be rewritten.
+                info = (output / member).lstat()
+                custody.update(device=info.st_dev, inode=info.st_ino)
+                database.execute(
+                    "UPDATE artifacts SET managed_file_json = ? WHERE id = ?",
+                    (json.dumps(custody), artifact_id),
+                )
+
+
 def restore_backup(
     settings: Settings, archive: Path, private_key_path: Path, output_dir: Path
 ) -> dict[str, Any]:
@@ -294,6 +362,7 @@ def restore_backup(
             private_directory(recovered)
             with zipfile.ZipFile(plaintext) as payload:
                 manifest = _extract_verified(payload, recovered)
+            _rebind_project_artifact_custody(recovered, manifest)
             _initialize_project_locks(recovered, manifest.get("project_ids", []))
             # Reserve without overwriting another recovery. Only validated files are moved.
             os.mkdir(output, mode=0o700)

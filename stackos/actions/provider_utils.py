@@ -20,6 +20,8 @@ from stackos.repositories.base import ValidationError
 JsonObject = dict[str, Any]
 ELEVENLABS_VOICES_LIST_REF = "utils.elevenlabs.voices.list"
 ELEVENLABS_VOICE_DESIGN_REF = "utils.elevenlabs.voices.design"
+ELEVENLABS_ALIGNMENT_REF = "utils.elevenlabs.alignment.create"
+ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE = "alignment_audio_unavailable"
 ELEVENLABS_AUDIO_OPERATIONS = frozenset({"speech.generate", "voices.design"})
 
 

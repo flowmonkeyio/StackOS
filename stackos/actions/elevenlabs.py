@@ -21,6 +21,7 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.package_bridge import PackageActionConnector, host_result
 from stackos.actions.provider_utils import (
+    ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE,
     ELEVENLABS_AUDIO_OPERATIONS,
     JsonObject,
     elevenlabs_audio_receipt,
@@ -43,15 +44,21 @@ class ElevenLabsActionConnector(PackageActionConnector):
         if request.operation == _ALIGNMENT_OPERATION:
             try:
                 with _alignment_audio(request) as (_, mime_type):
-                    request = _native_alignment_request(request, Path("audio"), mime_type)
-            except ValidationError as exc:
-                return [ActionValidationIssue(path="$.audio_artifact_id", message=exc.detail)]
-            except OSError:
-                return [
-                    ActionValidationIssue(
-                        path="$.audio_artifact_id", message="managed project file is unavailable"
+                    return super().validate(
+                        _native_alignment_request(request, Path("audio"), mime_type)
                     )
-                ]
+            except ValidationError as exc:
+                message = exc.detail
+            except OSError:
+                message = "managed project file is unavailable"
+            return [
+                *super().validate(_native_alignment_request(request, Path("audio"), "audio/wav")),
+                ActionValidationIssue(
+                    path="$.audio_artifact_id",
+                    message=message,
+                    code=ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE,
+                ),
+            ]
         if request.operation in ELEVENLABS_AUDIO_OPERATIONS:
             request = replace(
                 request, asset_dir=_output_dir(_data_dir(request), request.project_id)
@@ -116,12 +123,21 @@ class ElevenLabsActionConnector(PackageActionConnector):
                 raise _alignment_input_error("project audio could not be staged") from None
 
             native = await self.execute_native(_native_alignment_request(request, path, mime_type))
-            # The native result already scrubs credential echoes. Keep the temporary
-            # host path out of any provider-supplied response or metadata fields.
+            output = dict(native.output_json)
+            for key in ("words", "characters"):
+                if key in output:
+                    output[key] = [
+                        {
+                            field: entry[field]
+                            for field in ("text", "start", "end", "loss")
+                            if field in entry
+                        }
+                        for entry in output[key]
+                    ]
             return host_result(
                 native.model_copy(
                     update={
-                        "output_json": redact_secret_values(native.output_json, (directory,)),
+                        "output_json": redact_secret_values(output, (directory,)),
                         "metadata_json": redact_secret_values(native.metadata_json, (directory,)),
                     }
                 ),
@@ -136,7 +152,10 @@ def _alignment_audio(request: ActionConnectorRequest) -> Iterator[tuple[BinaryIO
         raise ValidationError("audio_artifact_id requires a stored project audio artifact")
     try:
         with ArtifactRepository(request.session).open_project_file(
-            data_dir=_data_dir(request), project_id=request.project_id, artifact_id=artifact_id
+            data_dir=_data_dir(request),
+            generated_assets_dir=request.asset_dir or Settings().generated_assets_dir,
+            project_id=request.project_id,
+            artifact_id=artifact_id,
         ) as (stream, mime_type):
             if not mime_type or not mime_type.lower().startswith("audio/"):
                 raise ValidationError("artifact must have an audio MIME type")

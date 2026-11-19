@@ -64,16 +64,19 @@ store writer locks through file creation and artifact registration. An active
 backup or writer can stop generation before the provider request.
 
 To align saved speech or a preview, pass its returned `artifact_id` as
-`audio_artifact_id` and provide the transcript as `text`. StackOS verifies the
-active artifact belongs to the selected project, has an audio MIME type, and
-still identifies the regular file recorded by the project artifact store.
+`audio_artifact_id` and provide the transcript as `text`. The same input
+accepts audio saved by a project-scoped generated-file producer such as a
+Telegram download. StackOS verifies that the active artifact belongs to the
+selected project, has an audio MIME type, and still identifies the regular
+file recorded in the appropriate managed store.
 The audio must be nonempty and under 1 GB. The public input accepts only the
 artifact ID and transcript. StackOS supplies the verified file and MIME type
 to the native connector. Missing, foreign, unmanaged, and replaced files fail
 before upload.
 
 The result preserves the provider's `words` entries with `text`, `start`
-and `end` in seconds, plus character timings and loss when supplied.
+and `end` in seconds, plus character timings and loss when supplied. Timing
+entries contain only text, start, end and the optional loss.
 The input audio path, upload staging path, and audio bytes stay out of the
 action result and audit.
 
@@ -81,7 +84,9 @@ Inspect the original call after a partial preview batch, ambiguous provider
 outcome, or local storage failure. A post-dispatch storage error carries the
 original call ID, any available provider request or history ID, and any saved
 artifact or generated preview IDs. Replaying that intent returns the original
-result or recovery receipt. Starting a new intent can incur another charge.
+result or recovery receipt. An authorized matching alignment intent can
+recover that receipt after the audio is removed. A new intent requires an
+available verified artifact and can incur another charge.
 
 MCP and REST provider action responses use the shared response file by default.
 The action audit records the execution and safe Account reference.

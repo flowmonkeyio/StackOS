@@ -563,25 +563,36 @@ class ArtifactRepository:
 
     @contextmanager
     def open_project_file(
-        self, *, data_dir: Path, project_id: int, artifact_id: int
+        self, *, data_dir: Path, generated_assets_dir: Path, project_id: int, artifact_id: int
     ) -> Iterator[tuple[BinaryIO, str | None]]:
         """Open a checked producer file for a private, project-scoped consumer."""
         row = self._artifact_row(artifact_id, project_id=project_id)
         if row.status not in ARTIFACT_ACTIVE_STATUSES:
             raise ValidationError("artifact is archived or superseded")
-        root = data_dir.resolve()
         custody = row.managed_file_json or {}
         raw_path = custody.get("path")
-        if (
-            not row.uri.startswith(PROJECT_FILE_ARTIFACT_URI_PREFIX)
-            or custody.get("root") != str(root)
-            or custody.get("owner_project_id") != project_id
-            or not isinstance(raw_path, str)
-        ):
+        if not isinstance(raw_path, str):
             raise ValidationError("artifact has no managed project file")
         relative = Path(raw_path)
-        owner = project_data_dir(root, project_id).relative_to(root)
-        if ".." in relative.parts or not relative.is_relative_to(owner) or relative == owner:
+        if row.uri.startswith(PROJECT_FILE_ARTIFACT_URI_PREFIX):
+            root = data_dir.resolve()
+            owner = Path("projects") / str(project_id)
+            owned = custody.get("owner_project_id") == project_id and relative.is_relative_to(owner)
+        else:
+            root = generated_assets_dir.resolve()
+            owned = row.uri == f"/generated-assets/{relative.as_posix()}" and relative.parts[
+                :2
+            ] in {
+                ("telegram", str(project_id)),
+                ("action-outputs", f"project-{project_id}"),
+            }
+        if (
+            not owned
+            or custody.get("root") != str(root)
+            or relative.is_absolute()
+            or ".." in relative.parts
+            or len(relative.parts) < 3
+        ):
             raise ValidationError("artifact has no managed project file")
 
         with ExitStack() as opened:
