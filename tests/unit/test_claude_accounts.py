@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from dataclasses import replace
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -54,6 +56,9 @@ def profile(tmp_path, monkeypatch):
 
     def capture(binary, args, *, env, cwd):
         calls.append((binary, args, cwd))
+        if args == ["agents", "--json"]:
+            assert Path(env["CLAUDE_CONFIG_DIR"]) in (directory, default)
+            return subprocess.CompletedProcess(args, 0, "[]", "")
         assert env["CLAUDE_CONFIG_DIR"] == str(directory)
         return subprocess.CompletedProcess(args, 0, json.dumps(status), "")
 
@@ -228,9 +233,53 @@ def test_headless_selected_profile_uses_exact_original_file_and_inherits_lease(
         account_selection=selection,
     )
     assert result.ok and result.thread_id == session_id
-    assert calls == [("/native/claude", ["auth", "status", "--json"], tmp_path)]
+    assert calls == [
+        ("/native/claude", ["auth", "status", "--json"], tmp_path),
+        ("/native/claude", ["agents", "--json"], tmp_path),
+        ("/native/claude", ["agents", "--json"], tmp_path),
+    ]
     with claude_accounts.transcript_writer(session_id):
         assert original.exists()
+
+
+@pytest.mark.parametrize("where", ["transcript-owner", "enrolled-peer"])
+def test_headless_resume_refuses_existing_native_writer_before_spawn(
+    tmp_path, monkeypatch, profile, where
+):
+    selection, original, _, _ = profile
+    owner = original.parent.parent.parent
+    peer = tmp_path / "peer"
+    peer.mkdir()
+    (peer / "projects").symlink_to(owner / "projects", target_is_directory=True)
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    selection = replace(selection, enrolled_directories=(peer, unrelated))
+    native_capture = claude_accounts.run_capture
+    active = owner if where == "transcript-owner" else peer
+    before = original.read_bytes()
+
+    def capture(binary, args, *, env, cwd):
+        if args == ["agents", "--json"]:
+            directory = Path(env["CLAUDE_CONFIG_DIR"])
+            assert directory != unrelated
+            rows = [{"pid": 42, "sessionId": original.stem}] if directory == active else []
+            return subprocess.CompletedProcess(args, 0, json.dumps(rows), "")
+        return native_capture(binary, args, env=env, cwd=cwd)
+
+    monkeypatch.setattr(claude_accounts, "run_capture", capture)
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_a, **_kw: pytest.fail("spawned a second writer")
+    )
+    result = claude_code.run_agent(
+        tmp_path,
+        "role",
+        "prompt",
+        SCHEMA,
+        resume_thread_id=original.stem,
+        account_selection=selection,
+    )
+    assert not result.ok and "active native session" in result.error
+    assert original.read_bytes() == before
 
 
 @pytest.mark.parametrize("condition", ["missing", "ambiguous", "foreign", "stale", "unsafe"])

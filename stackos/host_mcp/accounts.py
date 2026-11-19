@@ -95,6 +95,7 @@ class ResolvedAccountSelection:
     desired: DesiredAccount
     profile: NativeAccountProfile | None = None
     principal_key: tuple[str, str | None] | None = field(default=None, repr=False)
+    enrolled_directories: tuple[Path, ...] = field(default=(), repr=False, compare=False)
 
 
 class AccountView(BaseModel):
@@ -254,14 +255,19 @@ class HostAccounts:
         if host_key not in self._adapters:
             return ResolvedAccountSelection(DesiredAccount())
         host = self._load().hosts.get(host_key, _HostState())
+        enrolled = tuple(
+            self._root / f"profile-{row.profile_ref}"
+            for row in host.accounts.values()
+            if not row.native_default
+        )
         ref = host.desired.account_ref
         if ref is None:
-            return ResolvedAccountSelection(host.desired)
+            return ResolvedAccountSelection(host.desired, enrolled_directories=enrolled)
         account = host.accounts.get(ref)
         if account is None:
             raise HostAccountError("account_store_unavailable")
         return ResolvedAccountSelection(
-            host.desired, self._account_profile(account), account.identity.principal_key
+            host.desired, self._account_profile(account), account.identity.principal_key, enrolled
         )
 
     @contextmanager

@@ -15,6 +15,7 @@ from stackos import claude_mcp
 from stackos.host_mcp.accounts import HostAccountError, ResolvedAccountSelection
 from stackos.host_mcp.adapters.claude_accounts import (
     ClaudeAccountError,
+    ensure_transcript_inactive,
     resume_transcript,
     selected_profile,
     transcript_writer,
@@ -90,6 +91,9 @@ def run_agent(
             with transcript_writer(session_id) as fd:
                 if resume_thread_id is not None:
                     path = resume_transcript(paths, session_id, project_dir)
+                    ensure_transcript_inactive(
+                        cli, env, paths, account_selection, project_dir, session_id
+                    )
                     command += ["--resume", str(path)]
                 else:
                     command += ["--session-id", session_id]

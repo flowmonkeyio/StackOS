@@ -14,18 +14,19 @@ from uuid import uuid4
 from stackos.host_mcp.accounts import HostAccountError
 from stackos.host_mcp.adapters.claude_accounts import (
     ClaudeAccountError,
+    ensure_transcript_inactive,
     read_native_object,
     resume_transcript,
     selected_profile,
     transcript_writer,
 )
+from stackos.host_mcp.adapters.claude_trust import confirm_workspace
 from stackos.host_mcp.foreground import (
     ForegroundError,
     ForegroundLaunch,
     ForegroundObservation,
     ForegroundRequest,
 )
-from stackos.host_mcp.subscription_native import run_capture
 
 _OPTIONS = {
     "--add-dir",
@@ -115,24 +116,6 @@ def _record(path: Path) -> dict | None:
         return None
 
 
-def _ensure_inactive(binary: str, env: dict[str, str], cwd: Path, session_id: str) -> None:
-    result = run_capture(binary, ["agents", "--json"], cwd=cwd, env=env)
-    try:
-        if result is None or result.returncode:
-            raise ValueError
-        sessions = json.loads(result.stdout)
-        if not isinstance(sessions, list) or any(not isinstance(row, dict) for row in sessions):
-            raise ValueError
-    except (ValueError, RecursionError):
-        raise ForegroundError(
-            "Claude Code could not confirm that the local session is inactive."
-        ) from None
-    if any(row.get("sessionId") == session_id for row in sessions):
-        raise ForegroundError(
-            "The requested Claude Code conversation has an active native session."
-        )
-
-
 class ClaudeForeground:
     def prepare(self, request: ForegroundRequest) -> ForegroundLaunch:
         args = _native_options(request.native_args)
@@ -146,9 +129,29 @@ class ClaudeForeground:
             expected = request.session_id if request.session_id is not None else str(uuid4())
             fd = resources.enter_context(transcript_writer(expected))
             transcript = None
+
+            def ensure_inactive(*, pid: int | None = None) -> None:
+                try:
+                    ensure_transcript_inactive(
+                        request.executable,
+                        env,
+                        paths,
+                        request.selection,
+                        request.cwd,
+                        expected,
+                        owned_pid=pid,
+                    )
+                except ClaudeAccountError as exc:
+                    raise ForegroundError(str(exc)) from None
+
             if request.session_id is not None:
                 transcript = resume_transcript(paths, expected, request.cwd)
-                _ensure_inactive(request.executable, env, request.cwd, expected)
+                ensure_inactive()
+            if (
+                confirm_workspace(request.executable, env, paths, request.cwd)
+                and transcript is not None
+            ):
+                ensure_inactive()
             directory = Path(
                 resources.enter_context(TemporaryDirectory(prefix="stackos-claude-tty-"))
             )
@@ -190,7 +193,7 @@ class ClaudeForeground:
                         and turn_settled
                     )
                     if settled:
-                        _ensure_inactive(request.executable, env, request.cwd, expected)
+                        ensure_inactive()
                     return ForegroundObservation(expected, principal, settled)
 
                 start = _record(directory / "SessionStart.json")
@@ -219,6 +222,8 @@ class ClaudeForeground:
                     raise ForegroundError(
                         "The Claude Code profile changed during terminal startup."
                     )
+                if transcript is not None:
+                    ensure_inactive(pid=pid)
                 return ForegroundObservation(expected, principal)
 
             def admit(enable: bool) -> None:

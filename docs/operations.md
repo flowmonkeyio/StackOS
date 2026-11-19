@@ -1075,8 +1075,16 @@ Run `stackos harness run claude-code` in the original working directory. Use
 `--session <uuid>` for an existing saved local conversation. With an account
 selected, StackOS starts Claude on the same terminal, keeps the terminal input
 closed until the selected profile and exact native session are confirmed, and
-holds the conversation's writer lease. After selecting another account, finish
-any current work and use `/exit` in Claude. The launcher waits for native
+holds the conversation's writer lease. If Claude requests workspace trust,
+answer the native choice in the terminal. StackOS passes only that decision
+to the setup process and waits for Claude to save it before opening the
+conversation. Declining returns to the shell without opening a conversation.
+
+Before resuming, foreground and automated Claude launches check for an active
+native writer in the selected and known profiles that share the transcript.
+Close a live native session before resuming it through StackOS. After
+selecting another account, finish any current work and use `/exit` in Claude.
+The launcher waits for native
 shutdown and reopens the original local transcript by absolute path in the same
 terminal. Keep one conversation per managed launch and exit before choosing
 another conversation. Remote sessions, missing or ambiguous transcripts,

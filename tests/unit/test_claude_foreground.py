@@ -89,7 +89,7 @@ def _confirmed(slot, revision):
     pytest.fail(f"Expected confirmed Claude revision {revision}, got {state}")
 
 
-def _run(work):
+def _run(work, *, session_id=None):
     return foreground_terminal(
         [
             sys.executable,
@@ -98,6 +98,7 @@ def _run(work):
             "harness",
             "run",
             HOST,
+            *(("--session", session_id) if session_id is not None else ()),
             "--",
             "--model",
             "sonnet",
@@ -115,6 +116,85 @@ def _assert_shell(terminal, code):
     terminal.send("operator-marker")
     terminal.read_until(b"shell received operator-marker\r\n")
     assert terminal.exit_code() == code
+
+
+@pytest.mark.parametrize("choice", ["y", "n", "unadmitted conversation input"])
+def test_first_workspace_trust_only_releases_an_exact_admitted_conversation(harness, choice):
+    _, _, _, data, work, default = harness
+    metadata = default / ".claude.json"
+    config = json.loads(metadata.read_text())
+    config["projects"][str(work.resolve())]["hasTrustDialogAccepted"] = False
+    metadata.write_text(json.dumps(config))
+    session_id = str(uuid4())
+    transcript = default / "projects" / "work" / f"{session_id}.jsonl"
+    transcript.parent.mkdir(parents=True)
+    original = (
+        json.dumps(
+            {
+                "type": "user",
+                "sessionId": session_id,
+                "cwd": str(work.resolve()),
+                "message": "original",
+            }
+        )
+        + "\n"
+    )
+    transcript.write_text(original)
+    slot = ForegroundSlot(data, HOST)
+    with _run(work, session_id=session_id) as terminal:
+        terminal.read_until(b"Trust this workspace in Claude Code [y/N]? ")
+        assert slot.status(1).confirmed_revision is None
+        assert transcript.read_text() == original
+        terminal.send(choice)
+        if choice == "y":
+            assert terminal.native_start()["session_id"] == session_id
+            assert _confirmed(slot, 1) == session_id
+            terminal.send("continue-after-trust")
+            terminal.read_until(b"effect continue-after-trust\n")
+            terminal.send("exit")
+            _assert_shell(terminal, 0)
+            assert "continue-after-trust" in transcript.read_text()
+        else:
+            terminal.read_until(b"workspace trust was declined")
+            _assert_shell(terminal, 1)
+            assert transcript.read_text() == original
+            assert b"native {" not in terminal.received
+    config = json.loads(metadata.read_text())
+    assert config["projects"][str(work.resolve())]["hasTrustDialogAccepted"] == (choice == "y")
+
+
+def test_foreground_refuses_enrolled_peer_writer_without_mutation(harness):
+    _, _, _, data, work, default = harness
+    peer = next((data / "host-accounts").glob("profile-*"))
+    (peer / "sessions").mkdir()
+    session_id = str(uuid4())
+    (peer / "sessions" / "42.json").write_text(json.dumps({"pid": 42, "sessionId": session_id}))
+    transcript = default / "projects" / "work" / f"{session_id}.jsonl"
+    transcript.parent.mkdir(parents=True)
+    before = (
+        json.dumps({"type": "user", "cwd": str(work.resolve()), "sessionId": session_id}) + "\n"
+    )
+    transcript.write_text(before)
+    with _run(work, session_id=session_id) as terminal:
+        terminal.read_until(b"has an active native session")
+        _assert_shell(terminal, 1)
+        assert b"native {" not in terminal.received
+    assert transcript.read_text() == before
+
+
+def test_foreground_uses_native_trust_already_saved_for_parent(harness):
+    _, _, _, data, work, default = harness
+    nested = work / "nested"
+    nested.mkdir()
+    metadata = default / ".claude.json"
+    before = metadata.read_bytes()
+    with _run(nested) as terminal:
+        session_id = terminal.native_start()["session_id"]
+        assert _confirmed(ForegroundSlot(data, HOST), 1) == session_id
+        terminal.send("exit")
+        _assert_shell(terminal, 0)
+        assert b"Trust this workspace" not in terminal.received
+    assert metadata.read_bytes() == before
 
 
 def test_registered_claude_switch_keeps_tty_transcript_settings_and_writer(harness):

@@ -48,7 +48,21 @@ def native(args: list[str]) -> int:
         metadata.write_text(json.dumps(info))
         return 0
     if args == ["agents", "--json"]:
-        print("[]")
+        rows = [json.loads(file.read_text()) for file in (profile / "sessions").glob("*.json")]
+        print(json.dumps(rows))
+        return 0
+    if args == ["--safe-mode", "--ax-screen-reader", "--strict-mcp-config"]:
+        print(f"Permission Required: Accessing workspace:\n{Path.cwd()}")
+        print("Quick safety check: Is this a project you created or one you trust?")
+        print("y. Yes, I trust this folder\nn. No, exit\nEnter y/n:", flush=True)
+        if input() != "y":
+            return 1
+        info.setdefault("projects", {}).setdefault(str(Path.cwd()), {})[
+            "hasTrustDialogAccepted"
+        ] = True
+        metadata.write_text(json.dumps(info))
+        # Wait for retirement without forwarding or consuming a conversation turn.
+        input()
         return 0
 
     selector, target = args[:2]

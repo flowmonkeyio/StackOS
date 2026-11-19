@@ -179,6 +179,23 @@ def read_native_object(path: Path, limit: int = 4096) -> dict:
     return value
 
 
+def workspace_trusted(paths: ClaudeProfile, cwd: Path, *, include_parents: bool = False) -> bool:
+    try:
+        config = read_native_object(paths.metadata, _MAX_CONFIG_BYTES)
+        projects = config.get("projects")
+        if not isinstance(projects, dict):
+            return False
+        directory = cwd.resolve()
+        candidates = (directory, *directory.parents) if include_parents else (directory,)
+        for candidate in candidates:
+            row = projects.get(str(candidate))
+            if isinstance(row, dict) and "hasTrustDialogAccepted" in row:
+                return row["hasTrustDialogAccepted"] is True
+        return False
+    except (FileNotFoundError, ValueError, RecursionError):
+        return False
+
+
 def _seed_tool_config(default: ClaudeProfile, directory: Path) -> None:
     # Claude keeps user/local MCP definitions and workspace trust in the same
     # native file as its account metadata. Carry over only tool configuration
@@ -299,6 +316,52 @@ def resume_transcript(paths: ClaudeProfile, session_id: str, cwd: Path) -> Path:
         "The exact local Claude Code transcript is missing, ambiguous, or outside this workspace. "
         "Resume a saved local conversation from its original workspace."
     )
+
+
+def ensure_transcript_inactive(
+    binary: str,
+    env: dict[str, str],
+    paths: ClaudeProfile,
+    selection: ResolvedAccountSelection,
+    cwd: Path,
+    session_id: str,
+    *,
+    owned_pid: int | None = None,
+) -> None:
+    """Check native writers in the selected and known profiles sharing the transcript."""
+    try:
+        root = paths.projects.resolve()
+        inherited = subprocess_env_for_cli(binary)
+        home = Path(inherited.get("HOME") or Path.home())
+        default = Path(inherited.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser()
+        selected = paths.config.resolve()
+        profiles = {selected: env}
+        candidates = (default, home / ".claude", *selection.enrolled_directories)
+        if root.name == "projects":
+            candidates += (root.parent,)
+        for directory in candidates:
+            if (directory / "projects").resolve() == root:
+                config = directory.resolve()
+                profiles.setdefault(config, {**env, "CLAUDE_CONFIG_DIR": str(config)})
+        for config, profile_env in profiles.items():
+            result = run_capture(binary, ["agents", "--json"], cwd=cwd, env=profile_env)
+            if result is None or result.returncode:
+                raise ValueError
+            sessions = json.loads(result.stdout)
+            if not isinstance(sessions, list) or any(not isinstance(row, dict) for row in sessions):
+                raise ValueError
+            for row in sessions:
+                if row.get("sessionId") != session_id:
+                    continue
+                if owned_pid is not None and row.get("pid") == owned_pid and config == selected:
+                    continue
+                raise ClaudeAccountError(
+                    "The requested Claude Code conversation has an active native session."
+                )
+    except (OSError, ValueError, RecursionError, RuntimeError):
+        raise ClaudeAccountError(
+            "Claude Code could not confirm that the local session is inactive."
+        ) from None
 
 
 @contextmanager
