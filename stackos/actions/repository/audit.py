@@ -294,7 +294,9 @@ class ActionAuditMixin:
             dry_run=dry_run,
             idempotency_key=idempotency_key,
             credential_ref=credential_ref,
-            request_json=_redact_for_audit(request_json, action_ref=manifest.action_ref),
+            request_json=_redact_for_audit(
+                request_json, action_ref=manifest.action_ref, retain_request_identity=True
+            ),
             provider_context_json=_redact_for_audit(provider_context_json)
             if provider_context_json is not None
             else None,
@@ -685,7 +687,10 @@ class ActionAuditMixin:
             return None
         _require_generated_replay_scope(row, manifest)
         if (
-            row.request_json != _redact_for_audit(request_json, action_ref=manifest.action_ref)
+            row.request_json
+            != _redact_for_audit(
+                request_json, action_ref=manifest.action_ref, retain_request_identity=True
+            )
             or row.provider_context_json != _redact_for_audit(provider_context_json)
             or row.credential_ref != credential_ref
             or row.dry_run != dry_run

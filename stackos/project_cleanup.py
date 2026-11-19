@@ -323,7 +323,12 @@ class ProjectCleanupService:
             assets / "telegram" / str(project_id),
             *[
                 assets / kind / f"project-{project_id}"
-                for kind in ("action-outputs", "imap-transfers", "stripe-invoice-transfers")
+                for kind in (
+                    "action-outputs",
+                    "elevenlabs",
+                    "imap-transfers",
+                    "stripe-invoice-transfers",
+                )
             ],
         ]
 

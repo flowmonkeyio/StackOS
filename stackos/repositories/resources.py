@@ -555,9 +555,12 @@ class ArtifactRepository:
         if uri != "/generated-assets/" + relative.as_posix():
             raise ValidationError("generated artifact URI must identify its actual file")
         parts = relative.parts
-        if parts[0] in {"action-outputs", "imap-transfers", "stripe-invoice-transfers"} and (
-            len(parts) < 3 or parts[1] != f"project-{project_id}"
-        ):
+        if parts[0] in {
+            "action-outputs",
+            "elevenlabs",
+            "imap-transfers",
+            "stripe-invoice-transfers",
+        } and (len(parts) < 3 or parts[1] != f"project-{project_id}"):
             raise ValidationError("generated file belongs to another project root")
         if parts[0] == "telegram" and (len(parts) < 3 or parts[1] != str(project_id)):
             raise ValidationError("generated Telegram file belongs to another project root")

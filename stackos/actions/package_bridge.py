@@ -237,6 +237,7 @@ class PackageActionConnector:
                     definition.operation,
                     thaw(prepared.input_json),
                     definition.config,
+                    options=self._options(prepared),
                 )
                 provider_issues = self.client.registry.implementation(self.key).validate(native)
                 if provider_issues:

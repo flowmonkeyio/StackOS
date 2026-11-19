@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 import pytest
+from jsonschema import Draft202012Validator
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 from stackos_connectors import get_default_client
@@ -609,7 +610,7 @@ def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
     )
 
 
-def test_elevenlabs_discovery_projects_native_data_actions_without_placeholders(
+def test_elevenlabs_discovery_projects_executable_actions_without_placeholders(
     mcp_client: MCPClient,
     seeded_project: dict,
     httpx_mock: HTTPXMock,
@@ -657,6 +658,8 @@ def test_elevenlabs_discovery_projects_native_data_actions_without_placeholders(
         "library.add": "write",
         "voices.create": "write",
         "dictionaries.create": "write",
+        "speech.generate": "cost",
+        "voices.design": "cost",
     }
     expected_refs = {f"utils.elevenlabs.{operation}" for operation in expected_effects}
     assert expected_refs <= {entry["action_ref"] for entry in listed["items"]}
@@ -668,7 +671,8 @@ def test_elevenlabs_discovery_projects_native_data_actions_without_placeholders(
             mcp_client, "action.describe", {"project_id": project_id, "action_ref": f"utils.{key}"}
         )["manifest"]
         assert manifest["input_schema_json"] == native["input_schema"]
-        assert manifest["output_schema_json"] == native["output_schema"]
+        if effect != "cost":
+            assert manifest["output_schema_json"] == native["output_schema"]
         assert manifest["operation"] == native["operation"]
         assert manifest["risk_level"] == native["risk_level"] == effect
         assert manifest["requires_credential"] is True
@@ -968,9 +972,12 @@ def _assert_elevenlabs_unsafe_replay(mcp_client: MCPClient, tool: str, arguments
     assert replay["replayed"] is True
 
 
-def _start_elevenlabs_write_step(mcp_client: MCPClient, project_id: int) -> tuple[dict, dict]:
-    add_ref = "utils.elevenlabs.library.add"
-    create_ref = "utils.elevenlabs.voices.create"
+def _start_elevenlabs_write_step(
+    mcp_client: MCPClient,
+    project_id: int,
+    granted_ref: str = "utils.elevenlabs.library.add",
+    denied_ref: str = "utils.elevenlabs.voices.create",
+) -> tuple[dict, dict]:
     plan = mcp_client.call_tool_structured(
         "runPlan.create",
         {
@@ -984,7 +991,7 @@ def _start_elevenlabs_write_step(mcp_client: MCPClient, project_id: int) -> tupl
                         {
                             "step_id": "add-voice",
                             "tool": "action.execute",
-                            "action_refs": [add_ref],
+                            "action_refs": [granted_ref],
                         },
                     ]
                 },
@@ -992,7 +999,7 @@ def _start_elevenlabs_write_step(mcp_client: MCPClient, project_id: int) -> tupl
                     {
                         "id": "add-voice",
                         "title": "Add a voice",
-                        "action_refs": [add_ref, create_ref],
+                        "action_refs": [granted_ref, denied_ref],
                     }
                 ],
             },
@@ -1010,6 +1017,337 @@ def _start_elevenlabs_write_step(mcp_client: MCPClient, project_id: int) -> tupl
         },
     )["data"]
     return started, claimed
+
+
+_ELEVENLABS_SPEECH = {"voice_id": "test-voice", "text": "Hi", "output_format": "wav_44100"}
+_ELEVENLABS_DESIGN = {
+    "voice_description": "A warm and deliberate narrator",
+    "auto_generate_text": True,
+    "model_id": "eleven_ttv_v3",
+    "reference_audio_base64": "cHJpdmF0ZS1yZWZlcmVuY2UtYXVkaW8=",
+}
+_ELEVENLABS_TIMINGS = {
+    "alignment": {
+        "characters": ["H", "i"],
+        "character_start_times_seconds": [0, 0.2],
+        "character_end_times_seconds": [0.2, 0.4],
+    },
+    "normalized_alignment": {
+        "characters": ["h", "i", "."],
+        "character_start_times_seconds": [0, 0.1, 0.3],
+        "character_end_times_seconds": [0.1, 0.3, 0.4],
+    },
+}
+
+
+def _mock_elevenlabs_audio(httpx_mock: HTTPXMock, operation: str) -> None:
+    if operation == "speech.generate":
+        httpx_mock.add_response(
+            method="POST",
+            url="https://api.elevenlabs.io/v1/text-to-speech/test-voice/with-timestamps"
+            "?output_format=wav_44100",
+            match_json={"text": "Hi"},
+            match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+            headers={"request-id": "request-123", "history-item-id": "history-456"},
+            json={
+                **_ELEVENLABS_TIMINGS,
+                "alignment": {**_ELEVENLABS_TIMINGS["alignment"], "audio_base64": "unexpected"},
+                "audio_base64": "c3ludGhldGljLXdhdg==",
+            },
+        )
+    else:
+        httpx_mock.add_response(
+            method="POST",
+            url="https://api.elevenlabs.io/v1/text-to-voice/design",
+            match_json=_ELEVENLABS_DESIGN,
+            match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+            headers={"request-id": "request-123"},
+            json={
+                "text": "The provider's script",
+                "previews": [
+                    {
+                        "generated_voice_id": voice_id,
+                        "duration_secs": duration,
+                        "media_type": mime,
+                        "language": "en",
+                        "audio_base_64": encoded,
+                    }
+                    for voice_id, duration, mime, encoded in (
+                        ("preview-first", 1.2, "audio/mpeg", "Zmlyc3Q="),
+                        ("preview-middle", 2.3, "audio/mpeg", "***"),
+                        ("preview-last", 3.4, "audio/ogg", "bGFzdA=="),
+                    )
+                ],
+            },
+        )
+
+
+@pytest.mark.parametrize("operation", ["speech.generate", "voices.design"])
+@pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
+def test_elevenlabs_audio_outputs_cross_real_mcp_and_artifact_owners(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    operation: str,
+    granted: bool,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    speech = operation == "speech.generate"
+    action_ref = f"utils.elevenlabs.{operation}"
+    arguments = {
+        "project_id": project_id,
+        "action_ref": action_ref,
+        "credential_ref": elevenlabs_action_account,
+        "input_json": _ELEVENLABS_SPEECH if speech else _ELEVENLABS_DESIGN,
+    }
+    validated = _call_tool_raw(mcp_client, "action.validate", arguments)
+    assert validated["valid"] is True, validated
+    assert validated["manifest"]["risk_level"] == "cost"
+    invalid = _call_tool_raw(
+        mcp_client,
+        "action.validate",
+        {**arguments, "input_json": {**arguments["input_json"], "output_dir": "/tmp/choose"}},
+    )
+    assert invalid["valid"] is False
+    if granted:
+        tool = "action.execute"
+        other = "utils.elevenlabs.voices.design" if speech else "utils.elevenlabs.speech.generate"
+        started, claimed = _start_elevenlabs_write_step(mcp_client, project_id, action_ref, other)
+        arguments["run_token"] = started["run_token"]
+        denied = mcp_client.call_tool_error(
+            tool,
+            {
+                **arguments,
+                "action_ref": other,
+                "input_json": _ELEVENLABS_DESIGN if speech else _ELEVENLABS_SPEECH,
+            },
+        )
+        assert denied["code"] == -32007
+    else:
+        tool = "action.run"
+        denied = mcp_client.call_tool_error(tool, arguments)
+        assert denied["data"]["risk_level"] == "cost"
+        arguments.update(
+            confirm_direct=True,
+            intent_summary="Generate synthetic project audio.",
+            idempotency_key="elevenlabs-audio-intent",
+        )
+    assert httpx_mock.get_requests() == []
+    assert (
+        mcp_client.call_tool_structured("artifact.query", {"project_id": project_id})["items"] == []
+    )
+
+    _mock_elevenlabs_audio(httpx_mock, operation)
+    first = _call_tool_raw(mcp_client, tool, arguments)["data"]
+    replay = _call_tool_raw(mcp_client, tool, arguments)["data"]
+    assert len(httpx_mock.get_requests()) == 1
+    assert first["action_call"]["id"] == replay["action_call"]["id"]
+    assert first["output_json"] == replay["output_json"]
+    if granted:
+        assert first["action_call"]["run_plan_step_id"] == claimed["id"]
+    pointer = first["output_json"]["file"]
+    content = json.loads(Path(pointer["path"]).read_text())
+    output = content["response"]["output_json"]
+    Draft202012Validator(validated["manifest"]["output_schema_json"]).validate(output)
+    assert content["response"]["metadata_json"]["provider_request_id"] == "request-123"
+    if speech:
+        assert output == {
+            "output_format": "wav_44100",
+            **_ELEVENLABS_TIMINGS,
+            "artifact_id": output["artifact_id"],
+        }
+        files = [(output["artifact_id"], "audio/wav", b"synthetic-wav", None)]
+    else:
+        assert output["status"] == "partial"
+        assert output["text"] == "The provider's script"
+        first_preview, middle, last = output["previews"]
+        assert middle == {
+            "generated_voice_id": "preview-middle",
+            "duration_secs": 2.3,
+            "media_type": "audio/mpeg",
+            "language": "en",
+            "reason_code": "invalid_preview",
+        }
+        assert (first_preview["file_index"], last["file_index"]) == (0, 1)
+        assert (first_preview["generated_voice_id"], last["generated_voice_id"]) == (
+            "preview-first",
+            "preview-last",
+        )
+        files = [
+            (first_preview["artifact_id"], "audio/mpeg", b"first", "preview-first"),
+            (last["artifact_id"], "audio/ogg", b"last", "preview-last"),
+        ]
+    items = mcp_client.call_tool_structured("artifact.query", {"project_id": project_id})["items"]
+    assert {item["id"] for item in items} == {file[0] for file in files}
+    rendered = json.dumps([first, content, items])
+    for private in (
+        "synthetic-elevenlabs-action-key",
+        _ELEVENLABS_DESIGN["reference_audio_base64"],
+        "c3ludGhldGljLXdhdg==",
+        "audio_base_64",
+        '"audio_base64"',
+    ):
+        assert private not in rendered
+    for artifact_id, mime, expected_bytes, voice_id in files:
+        assert type(artifact_id) is int
+        artifact = _call_tool_raw(
+            mcp_client,
+            "artifact.get",
+            {"artifact_id": artifact_id, "project_id": project_id},
+        )
+        assert artifact["mime_type"] == mime
+        assert artifact["kind"] == "audio"
+        assert artifact["size_bytes"] == len(expected_bytes)
+        assert artifact["metadata_json"].get("generated_voice_id") == voice_id
+        path = mcp_settings.generated_assets_dir / artifact["uri"].removeprefix(
+            "/generated-assets/"
+        )
+        assert path.read_bytes() == expected_bytes
+        assert str(path) not in rendered
+        assert mcp_client.test_client.get(artifact["uri"]).status_code == 404
+    if speech and not granted:
+        # A public-looking name must not bypass the private filesystem boundary.
+        alias = mcp_settings.generated_assets_dir / "public-speech-alias.wav"
+        alias.symlink_to(path)
+        assert (
+            mcp_client.test_client.get("/generated-assets/public-speech-alias.wav").status_code
+            == 404
+        )
+        foreign = mcp_client.call_tool_structured(
+            "project.create",
+            {
+                "slug": "foreign-audio-fixture",
+                "name": "Foreign audio fixture",
+                "domain": "foreign.example",
+                "locale": "en-US",
+            },
+        )["data"]["id"]
+        foreign_args = {"project_id": foreign, "artifact_id": files[0][0]}
+        assert mcp_client.call_tool_error("artifact.get", foreign_args)["code"] == -32004
+        assert (
+            mcp_client.call_tool_structured("artifact.query", {"project_id": foreign})["items"]
+            == []
+        )
+
+
+@pytest.mark.parametrize("operation", ["speech.generate", "voices.design"])
+@pytest.mark.parametrize("failure", ["artifact", "response"])
+def test_elevenlabs_audio_storage_failure_retains_receipt_and_prevents_resend(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    failure: str,
+) -> None:
+    from stackos.actions import ActionRepository
+    from stackos.repositories.resources import ArtifactRepository
+
+    project = seeded_project["data"]
+    project_id = project["id"]
+    speech = operation == "speech.generate"
+    arguments = {
+        "project_id": project_id,
+        "action_ref": f"utils.elevenlabs.{operation}",
+        "credential_ref": elevenlabs_action_account,
+        "input_json": _ELEVENLABS_SPEECH if speech else _ELEVENLABS_DESIGN,
+        "confirm_direct": True,
+        "intent_summary": "Generate synthetic audio for the storage recovery check.",
+        "idempotency_key": "elevenlabs-audio-storage-failure",
+    }
+    _mock_elevenlabs_audio(httpx_mock, operation)
+    private_path = "/private/fixture/elevenlabs"
+    create_generated_file = ArtifactRepository.create_generated_file
+
+    def fail_first_artifact(repo, **kwargs):
+        if kwargs["metadata_json"].get("generated_voice_id") != "preview-last":
+            raise OSError(private_path)
+        return create_generated_file(repo, **kwargs)
+
+    def fail_response_file(*_args, **_kwargs):
+        raise OSError(private_path)
+
+    with monkeypatch.context() as scoped:
+        if failure == "artifact":
+            scoped.setattr(ArtifactRepository, "create_generated_file", fail_first_artifact)
+        else:
+            scoped.setattr(ActionRepository, "_apply_output_policy", fail_response_file)
+        first = mcp_client.call_tool_error("action.run", arguments)["data"]
+    replay = mcp_client.call_tool_error("action.run", arguments)["data"]
+    audit = _call_tool_raw(
+        mcp_client,
+        "actionCall.get",
+        {"project_id": project_id, "action_call_id": first["action_call_id"]},
+    )
+    assert audit["status"] == "failed"
+    for receipt in (first, replay, audit["output_json"]):
+        assert receipt["provider_request_id"] == "request-123"
+        assert receipt["output_persistence_failed"] is True
+        assert receipt["provider_executed"] is True
+        assert receipt["charge_possible"] is True
+        assert receipt["retry_safe"] is False
+        assert receipt["reconcile_before_retry"] is True
+        if speech:
+            assert receipt["history_item_id"] == "history-456"
+        assert receipt.get("audio_result") == first.get("audio_result")
+    assert len(httpx_mock.get_requests()) == 1
+    assert replay["action_call_id"] == first["action_call_id"]
+    assert private_path not in json.dumps([first, replay, audit])
+
+    items = mcp_client.call_tool_structured("artifact.query", {"project_id": project_id})["items"]
+    ids = {item["id"] for item in items}
+    if speech and failure == "artifact":
+        assert ids == set()
+        assert "audio_result" not in first
+    elif speech:
+        assert ids == {first["audio_result"]["artifact_id"]}
+    else:
+        first_preview, middle, last = first["audio_result"]["previews"]
+        assert first["audio_result"]["status"] == "partial"
+        assert middle == {"generated_voice_id": "preview-middle", "reason_code": "invalid_preview"}
+        assert last == {
+            "generated_voice_id": "preview-last",
+            "file_index": 1,
+            "artifact_id": last["artifact_id"],
+        }
+        assert first_preview["generated_voice_id"] == "preview-first"
+        if failure == "artifact":
+            assert first_preview["reason_code"] == "audio_persistence_failed"
+            assert ids == {last["artifact_id"]}
+        else:
+            assert ids == {first_preview["artifact_id"], last["artifact_id"]}
+        changed = mcp_client.call_tool_error(
+            "action.run",
+            {
+                **arguments,
+                "input_json": {**_ELEVENLABS_DESIGN, "reference_audio_base64": "ZGlmZmVyZW50"},
+            },
+        )
+        assert "different action request" in changed["data"]["detail"]
+        assert changed["data"]["action_call_id"] == first["action_call_id"]
+        assert len(httpx_mock.get_requests()) == 1
+
+    if failure == "artifact":
+        # Project cleanup owns both registered files and files stranded by a failed save.
+        root = mcp_settings.generated_assets_dir / "elevenlabs" / f"project-{project_id}"
+        assert len([path for path in root.rglob("*") if path.is_file()]) == (1 if speech else 2)
+        deletion = mcp_client.call_tool_structured(
+            "project.delete",
+            {
+                "project_id": project_id,
+                "confirmation": {
+                    "project_id": project_id,
+                    "project_slug": project["slug"],
+                    "permanent": True,
+                },
+            },
+        )
+        assert deletion["data"]["status"] == "deleted"
+        assert not root.exists()
 
 
 def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(

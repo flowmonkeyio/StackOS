@@ -26,6 +26,7 @@ from stackos.actions.connectors import (
     ActionProgressCallback,
 )
 from stackos.actions.manifest import ExecutableActionManifest
+from stackos.actions.provider_utils import ELEVENLABS_AUDIO_OPERATIONS, elevenlabs_audio_receipt
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository, ResolvedCredential
 from stackos.config import Settings
@@ -955,7 +956,15 @@ class ActionExecutionMixin:
                 )
         except Exception as exc:
             self._s.rollback()
-            safe_error = redact_secret_text(redact_output(str(exc)))
+            elevenlabs_audio = (
+                manifest.connector_key == "elevenlabs"
+                and manifest.operation in ELEVENLABS_AUDIO_OPERATIONS
+            )
+            safe_error = (
+                "could not store the ElevenLabs action response"
+                if elevenlabs_audio
+                else redact_secret_text(redact_output(str(exc)))
+            )
             # Dispatch already succeeded. Keep this distinction in the durable audit,
             # not only the immediate error, so a resumed agent cannot mistake a local
             # output failure for permission to repeat a provider mutation.
@@ -968,6 +977,12 @@ class ActionExecutionMixin:
                 "reconcile_before_retry": mutation,
                 "side_effect": "provider_executed_output_not_persisted",
             }
+            if elevenlabs_audio:
+                persistence_diagnosis.update(elevenlabs_audio_receipt(output_json))
+                persistence_diagnosis["charge_possible"] = True
+                for key in ("provider_request_id", "history_item_id"):
+                    if result_metadata and key in result_metadata:
+                        persistence_diagnosis[key] = result_metadata[key]
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,

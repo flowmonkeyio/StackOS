@@ -26,6 +26,7 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.elevenlabs import ElevenLabsActionConnector
 from stackos.actions.google_gemini_image import GoogleGeminiImageActionConnector
 from stackos.actions.google_veo import GoogleVeoVideoActionConnector
 from stackos.actions.http import HttpActionConnector
@@ -90,7 +91,7 @@ DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("apollo"))
 DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("clay"))
 DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("cloudflare"))
 DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("dataforseo"))
-DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("elevenlabs"))
+DEFAULT_ACTION_CONNECTORS.register(ElevenLabsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("firecrawl"))
 DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("ftp"))
 DEFAULT_ACTION_CONNECTORS.register(PackageActionConnector("ghost"))
