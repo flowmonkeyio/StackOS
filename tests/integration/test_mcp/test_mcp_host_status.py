@@ -7,6 +7,7 @@ from threading import get_ident
 import pytest
 
 from stackos.host_mcp import service
+from stackos.host_mcp.accounts import DesiredAccount, ResolvedAccountSelection
 from stackos.host_mcp.result import HostMcpResult
 from stackos.operations import build_operation_registry
 
@@ -125,6 +126,50 @@ def test_console_subscription_snapshot_is_independent_and_allowlisted(mcp_client
         "grok": None,
     }
     assert calls == ["codex"]
+    assert snapshot["selections"] == {
+        key: {"account_ref": None, "revision": 0} for key in ("codex", "claude-code", "grok")
+    }
+
+
+@pytest.mark.parametrize("new_ref", ["a" * 8, "b" * 8])
+def test_subscription_read_drops_only_the_account_that_changed(
+    mcp_client: MCPClient, monkeypatch: pytest.MonkeyPatch, new_ref: str
+) -> None:
+    first = "aaaaaaaa-1111-2222-3333-444444444444"
+    current = DesiredAccount(account_ref=first, revision=1)
+
+    class Accounts:
+        def resolve(self, host_key: str) -> ResolvedAccountSelection:
+            return ResolvedAccountSelection(current if host_key == "codex" else DesiredAccount())
+
+    def interrupted_read():
+        nonlocal current
+        # Covers both A -> B and A -> B -> A while a native quota read is held.
+        current = DesiredAccount(account_ref=f"{new_ref}-1111-2222-3333-444444444444", revision=3)
+        return {"plan": "Old account quota", "meters": []}
+
+    monkeypatch.setattr(service, "host_accounts", lambda _data_dir: Accounts())
+    monkeypatch.setattr(
+        service,
+        "subscription_readers",
+        lambda: {
+            "codex": interrupted_read,
+            "claude-code": lambda: {"plan": "Unchanged sibling", "meters": []},
+        },
+    )
+    client = mcp_client.test_client
+    result = client.post(
+        "/api/v1/operations/hostMcp.subscriptions/call",
+        json={"arguments": {}},
+        headers={"Authorization": f"Bearer {client.app.state.ui_token}"},
+    )
+    assert result.status_code == 200, result.text
+    snapshot = result.json()
+    assert snapshot["readings"] == {
+        "codex": None,
+        "claude-code": {"plan": "Unchanged sibling", "meters": []},
+    }
+    assert snapshot["selections"]["codex"] == current.model_dump()
 
 
 def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspected) -> None:

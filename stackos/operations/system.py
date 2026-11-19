@@ -11,6 +11,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from stackos.artifacts import redact_secrets
 from stackos.host_mcp import service as host_mcp_service
+from stackos.host_mcp.accounts import DesiredAccount
 from stackos.host_mcp.result import (
     AgentSandbox,
     HostMcpConnectionState,
@@ -108,6 +109,7 @@ class HostSubscription(BaseModel):
 class HostSubscriptionsOut(BaseModel):
     checked_at: AwareDatetime
     readings: dict[str, HostSubscription | None]
+    selections: dict[str, DesiredAccount]
 
 
 async def host_subscriptions(
@@ -129,9 +131,17 @@ async def host_subscriptions(
             return None
 
     readers = host_mcp_service.subscription_readers()
+    accounts = host_mcp_service.host_accounts(ctx.extras["settings"].data_dir)
+    before = {key: accounts.resolve(key).desired for key in readers}
     readings = await gather(*(to_thread(read, reader) for reader in readers.values()))
+    selections = {key: accounts.resolve(key).desired for key in readers}
     return HostSubscriptionsOut(
-        checked_at=datetime.now(UTC), readings=dict(zip(readers, readings, strict=True))
+        checked_at=datetime.now(UTC),
+        readings={
+            key: reading if before[key] == selections[key] else None
+            for key, reading in zip(readers, readings, strict=True)
+        },
+        selections=selections,
     )
 
 
