@@ -458,10 +458,7 @@ REST authority. The account inventory is separate from the general
 `hostMcp.status` feed. Provider replies stay inside the adapter. The local
 console receives enrolled account references, display email, verification
 status and enrollment or selection receipts. Account management stays on the
-local-console routes. The foreground CLI consumes the existing selection and
-exposes only the native session ID, phase and selection revisions to the local
-OS user. Its private status files omit account identities, profile paths and
-native arguments. See [the operation contract](operations.md#native-harness-account-controls).
+local-console routes. See [the operation contract](operations.md#native-harness-account-controls).
 
 ### Private finance console
 

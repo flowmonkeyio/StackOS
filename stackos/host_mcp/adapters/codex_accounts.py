@@ -346,7 +346,7 @@ class CodexAccounts:
                     control,
                     overrides=overrides,
                     pass_fds=(fd,),
-                ) as (session, _):
+                ) as session:
                     result = session.call("account/login/start", {"type": "chatgpt"})
                     url = result.get("authUrl")
                     login_id = result.get("loginId")

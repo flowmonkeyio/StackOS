@@ -270,16 +270,6 @@ class HostAccounts:
             host.desired, self._account_profile(account), account.identity.principal_key, enrolled
         )
 
-    @contextmanager
-    def guard_selection(self, host_key: str, expected: DesiredAccount) -> Iterator[None]:
-        """Hold the selection stable for a bounded native input decision."""
-        with self._locked_state(fcntl.LOCK_SH | fcntl.LOCK_NB) as state:
-            host = state.hosts.get(host_key) if host_key in self._adapters else None
-            current = host.desired if host is not None else DesiredAccount()
-            if current != expected:
-                raise HostAccountError("stale_selection")
-            yield
-
     def adopt(self, host_key: str) -> AccountView:
         adapter = self._adapter(host_key)
         with self._locked_state() as state:
@@ -546,16 +536,13 @@ class HostAccounts:
             raise HostAccountError("account_store_unavailable") from None
 
     @contextmanager
-    def _locked_state(self, mode: int = fcntl.LOCK_EX) -> Iterator[_State]:
+    def _locked_state(self) -> Iterator[_State]:
         try:
             self._root.mkdir(mode=0o700, exist_ok=True)
             _private_directory(self._root, "account_store_unavailable")
             fd = _private_fd(self._root / ".lock", os.O_RDWR | os.O_CREAT)
             try:
-                try:
-                    fcntl.flock(fd, mode)
-                except BlockingIOError:
-                    raise HostAccountError("account_store_busy") from None
+                fcntl.flock(fd, fcntl.LOCK_EX)
                 yield self._load()
             finally:
                 os.close(fd)

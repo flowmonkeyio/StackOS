@@ -321,41 +321,6 @@ testing desktop lifecycle changes.
 Build and release details live in
 [`desktop-distribution.md`](./desktop-distribution.md).
 
-## Run a native harness in your terminal
-
-From your working directory, use `stackos harness run codex`,
-`stackos harness run claude-code`, or `stackos harness run grok`. To adopt a
-closed conversation on a host that supports managed switching, pass its exact
-native ID with `--session`. Pass native configuration options such as model,
-MCP, and permissions after `--`.
-
-```bash
-stackos harness run codex --session YOUR_NATIVE_ID -- --model YOUR_MODEL
-```
-
-Select the destination account in StackOS. In a separate shell,
-`stackos harness status codex` shows the requested revision and the last
-confirmed revision. A change stays `pending` while the current CLI is live.
-Use the native CLI's normal exit after tools, approvals, and subagents settle
-and any draft is saved. When the host verifies that boundary, the launcher
-reopens the exact conversation in the same tab and directory. A settled
-rate-limit error can qualify. The status changes to `confirmed` when the host
-observes the requested account on that conversation and enables terminal input.
-Continue your next turn in the reopened CLI after confirmation.
-
-If you change the selection during startup, the previous startup retires with
-its input closed. Use the recovery command to open the conversation under the
-current selection.
-
-If reopening fails before input is enabled, the launcher restores the terminal
-settings and discards input queued for that startup. The launcher prints the
-exact recovery command when the native session ID is known. Select the intended
-account and retry that ID with your original native options. The
-launcher permits one managed foreground process per host in the configured
-StackOS data directory. For a host without managed switching, the launcher
-runs the stock CLI with native defaults when there is no selected account
-and `--session` is omitted.
-
 ## Autostart
 
 On macOS, StackOS can install a launchd job for the current user:

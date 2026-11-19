@@ -81,7 +81,6 @@ from .doctor_commands import (
     doctor,
     mcp_host_status,
 )
-from .harness_commands import harness_run, harness_status
 from .launchd import (
     _install_launchd_autostart,
     _launchctl,

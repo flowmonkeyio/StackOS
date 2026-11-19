@@ -9,9 +9,6 @@ import pytest
 from stackos.host_mcp.accounts import DesiredAccount, NativeAccountProfile, ResolvedAccountSelection
 from stackos.host_mcp.adapters import codex, codex_accounts
 from stackos.host_mcp.adapters.codex_accounts import AuthExchange, CodexAccountError
-from stackos.host_mcp.adapters.codex_foreground import _native_flags
-from stackos.host_mcp.adapters.codex_tui import TuiAttachment
-from stackos.host_mcp.foreground import ForegroundError
 
 
 @pytest.fixture
@@ -152,37 +149,6 @@ def test_native_identity_requires_native_workspace_and_uses_email_for_display():
     assert identity.email == "same@example.invalid"
 
 
-@pytest.mark.parametrize(
-    "args",
-    [
-        ("--remote", "unix://bad"),
-        ("--model", "--last"),
-        ("--last",),
-        ("-c", 'cli_auth_credentials_store="file"'),
-        ("-c", 'sandbox_mode.other="read-only"'),
-        ("-c", "approval_policy=true"),
-    ],
-)
-def test_foreground_refuses_alternate_routing_before_launch(args):
-    with pytest.raises(ForegroundError, match="conflicts"):
-        _native_flags(args)
-
-
-@pytest.mark.parametrize(
-    "permissions",
-    [
-        ("--sandbox", "read-only", "--ask-for-approval=never"),
-        ("-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"'),
-        ("--config=sandbox_mode=read-only", "--config=approval_policy=never"),
-        ("-s", "read-only", "-c", 'sandbox_mode="workspace-write"', "-c", "approval_policy=never"),
-    ],
-)
-def test_foreground_keeps_permission_overrides_on_the_native_backend(permissions):
-    flags, settings = _native_flags((*permissions, "--no-alt-screen"))
-    assert flags == ("--no-alt-screen",)
-    assert settings == {"sandbox": "read-only", "approvalPolicy": "never"}
-
-
 def test_ordinary_reader_prevents_a_managed_account_exchange(homes):
     regular, isolated = homes
     exchange = AuthExchange(regular, fixture_principal)
@@ -237,7 +203,7 @@ def test_enrollment_starts_native_first_party_signin_in_isolated_home(homes, mon
         observed["cwd"] = cwd
         observed["mode"] = overrides
         try:
-            yield Session(), "private"
+            yield Session()
         finally:
             completed.set()
 
@@ -264,54 +230,6 @@ def test_enrollment_starts_native_first_party_signin_in_isolated_home(homes, mon
         "login": "native-login",
     }
     assert (regular / "auth.json").read_bytes() == b"original A"
-
-
-def test_terminal_publication_follows_acknowledged_attachments_and_original_options(homes):
-    regular, _ = homes
-    exchange = AuthExchange(regular, fixture_principal)
-    first = "00000000-0000-4000-8000-000000000881"
-    second = "00000000-0000-4000-8000-000000000882"
-    temporary = "00000000-0000-4000-8000-000000000883"
-    settings = {
-        "approvalPolicy": "never",
-        "sandbox": "read-only",
-        "config": {"model_reasoning_effort": "low"},
-    }
-    relay = TuiAttachment("unix:///fixture", settings, exchange.thread_lease, first)
-    with relay.writers:
-        new = {"id": 2, "method": "thread/start", "params": {"sandbox": "workspace-write"}}
-        with pytest.raises(CodexAccountError, match="initial Codex conversation"):
-            relay.request(new)
-        resume = {"id": 1, "method": "thread/resume", "params": {"threadId": first}}
-        relay.request(resume)
-        assert relay.snapshot()[0] is None
-        relay.response({"id": 1, "result": {"thread": {"id": first}}})
-        assert relay.snapshot()[0] == first
-        relay.admit(True)
-        relay.request({"id": 3, "method": "thread/start", "params": {"ephemeral": True}})
-        relay.response({"id": 3, "result": {"thread": {"id": temporary}}})
-        relay.request({"id": 4, "method": "turn/start", "params": {"threadId": temporary}})
-        assert relay.snapshot() == (first, (first,))
-        relay.request(new)
-        assert relay.snapshot()[0] == first
-        assert new["params"] == settings
-        relay.response({"id": 2, "result": {"thread": {"id": second}}})
-        assert relay.snapshot()[0] == second
-        with (
-            pytest.raises(CodexAccountError, match="already has a managed writer"),
-            exchange.thread_lease(second),
-        ):
-            pytest.fail("a parallel invocation must not write the foreground thread")
-    with exchange.thread_lease(second):
-        pass
-
-
-def test_native_reasoning_option_keeps_routing_overrides_closed():
-    flags, settings = _native_flags(("-c", 'model_reasoning_effort="low"', "--no-alt-screen"))
-    assert flags == ("--no-alt-screen",)
-    assert settings == {"config": {"model_reasoning_effort": "low"}}
-    with pytest.raises(ForegroundError, match="conflicts"):
-        _native_flags(("-c", 'model_provider="a-different-provider"'))
 
 
 def test_login_thread_failure_is_cleanable_by_a_new_adapter(homes, monkeypatch):

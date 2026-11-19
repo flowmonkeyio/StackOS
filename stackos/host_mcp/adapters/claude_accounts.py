@@ -179,23 +179,6 @@ def read_native_object(path: Path, limit: int = 4096) -> dict:
     return value
 
 
-def workspace_trusted(paths: ClaudeProfile, cwd: Path, *, include_parents: bool = False) -> bool:
-    try:
-        config = read_native_object(paths.metadata, _MAX_CONFIG_BYTES)
-        projects = config.get("projects")
-        if not isinstance(projects, dict):
-            return False
-        directory = cwd.resolve()
-        candidates = (directory, *directory.parents) if include_parents else (directory,)
-        for candidate in candidates:
-            row = projects.get(str(candidate))
-            if isinstance(row, dict) and "hasTrustDialogAccepted" in row:
-                return row["hasTrustDialogAccepted"] is True
-        return False
-    except (FileNotFoundError, ValueError, RecursionError):
-        return False
-
-
 def _seed_tool_config(default: ClaudeProfile, directory: Path) -> None:
     # Claude keeps user/local MCP definitions and workspace trust in the same
     # native file as its account metadata. Carry over only tool configuration

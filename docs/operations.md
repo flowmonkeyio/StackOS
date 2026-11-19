@@ -1024,9 +1024,8 @@ email. Equal emails can have distinct account references.
 Only an explicit select call changes the desired account reference. Replacing
 the selected account's underlying profile advances its revision so consumers
 can detect stale work. Revision 0 with a null reference uses the native default.
-The terminal or automated launcher determines which account its own session
-uses. Native profile references, principals and workspace identifiers stay
-inside host management.
+Each native client determines the account used by its session. Native profile
+references, principals and workspace identifiers stay inside host management.
 
 `pending_cleanups` lists finalized enrollments whose native cleanup is still
 unconfirmed. After reopening the console, retry cancellation with the listed
@@ -1058,12 +1057,6 @@ An adopted default still uses its configured native store, including Keychain.
 An isolated account switch requires file mode. Strict Keychain, automatic
 store selection, and ephemeral storage decline the file exchange. A competing
 credential override or a missing exact thread also stops the managed launch.
-Foreground Codex connects the stock TUI to a private native backend in the
-existing terminal, leaving the shared Codex daemon alone. StackOS confirms the
-actual native attachment before forwarding turns and follows native
-conversation navigation. At a switch it reopens the conversation the terminal
-last attached to and preserves the admitted native model and permission
-options.
 
 Managed Claude Code starts first-party subscription sign-in in a separate
 `CLAUDE_CONFIG_DIR`. Claude keeps its native Keychain or file-backed login.
@@ -1071,27 +1064,8 @@ The enrolled profile shares the native local transcript tree and user settings,
 and inherits the existing user and workspace MCP definitions at enrollment.
 Project settings and tools still load through Claude's native startup.
 
-Run `stackos harness run claude-code` in the original working directory. Use
-`--session <uuid>` for an existing saved local conversation. With an account
-selected, StackOS starts Claude on the same terminal, keeps the terminal input
-closed until the selected profile and exact native session are confirmed, and
-holds the conversation's writer lease. If Claude requests workspace trust,
-answer the native choice in the terminal. StackOS passes only that decision
-to the setup process and waits for Claude to save it before opening the
-conversation. Declining returns to the shell without opening a conversation.
-
-Before resuming, foreground and automated Claude launches check for an active
-native writer in the selected and known profiles that share the transcript.
-Close a live native session before resuming it through StackOS. After
-selecting another account, finish any current work and use `/exit` in Claude.
-The launcher waits for native
-shutdown and reopens the original local transcript by absolute path in the same
-terminal. Keep one conversation per managed launch and exit before choosing
-another conversation. Remote sessions, missing or ambiguous transcripts,
-competing authentication, and options that dispatch work during startup are
-rejected. A failed or withdrawn handoff shows the exact session for recovery.
-With no selected account or explicit session, the launcher starts the ordinary
-unmanaged Claude CLI and passes through its native arguments.
+Automated Claude runs check for an existing writer before resuming the original
+local transcript by its exact path.
 
 ## Browser Operations
 
