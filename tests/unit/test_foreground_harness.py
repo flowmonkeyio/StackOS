@@ -361,7 +361,9 @@ def test_unenrolled_host_executes_stock_cli_and_refuses_unsupported_managed_resu
         term.read_until(expected.encode())
         assert term.exit_code() == 13
     with foreground_terminal([*command, "--session", SESSION], tmp_path, env) as term:
-        term.read_until(b"Managed exact-session launch is unavailable")
+        # The ordinary stock path still works. An exact resume now requires an
+        # actual Codex app-server, which this stand-in cannot start.
+        term.read_until(b"Unable to prepare a private Codex backend and exact conversation")
         assert term.exit_code() == 1
     no_tty = subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, timeout=8)
     assert no_tty.returncode == 1

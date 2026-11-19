@@ -1043,6 +1043,23 @@ includes the desired revision, the native profile context and the expected
 principal/workspace tuple. Recheck native identity at the affected consumer
 and use the revision to detect a superseded request.
 
+Managed Codex switching uses a native file-backed sign-in. Enrollment opens
+first-party browser sign-in in the isolated Codex home and verifies the native
+principal and workspace before saving an account. Launches keep the regular
+`CODEX_HOME` and original thread UUID. A private execution lease serializes a
+credential exchange with other StackOS launchers using that home. It returns
+the native file to its enrolled profile after the CLI settles, including any
+refresh written by Codex. An unexpected native write leaves recovery evidence
+and blocks further use of the exchange. Keep concurrent unmanaged Codex login
+or execution out of a home used for managed account switching.
+
+An adopted default still uses its configured native store, including Keychain.
+An isolated account switch requires file mode. Strict Keychain, automatic
+store selection, and ephemeral storage decline the file exchange. A competing
+credential override or a missing exact thread also stops the managed launch.
+Foreground Codex connects the stock TUI to a private native backend in the
+existing terminal, leaving the shared Codex daemon alone.
+
 ## Browser Operations
 
 The browser operation surface owns runtime status, profile create/list, and

@@ -11,6 +11,8 @@ from stackos.cli.app import app
 from stackos.config import Settings
 from stackos.host_mcp import service
 from stackos.host_mcp.accounts import HostAccountError
+from stackos.host_mcp.adapters.codex_accounts import CodexAccountError, ordinary_launch
+from stackos.host_mcp.adapters.codex_foreground import CodexForeground
 from stackos.host_mcp.foreground import (
     ForegroundError,
     ForegroundSlot,
@@ -47,6 +49,14 @@ def harness_run(
         accounts = service.host_accounts(settings.data_dir)
         args = tuple(native_args or ())
         adapter = definition.foreground_adapter
+        if (
+            isinstance(adapter, CodexForeground)
+            and session_id is None
+            and accounts.resolve(host).desired.account_ref is None
+        ):
+            with ordinary_launch(executable) as (_, fd):
+                os.set_inheritable(fd, True)
+                os.execv(executable, (executable, *args))
         if adapter is None:
             if session_id is not None or accounts.resolve(host).desired.account_ref is not None:
                 raise ForegroundError("Managed exact-session launch is unavailable for this host.")
@@ -61,7 +71,7 @@ def harness_run(
             session_id=session_id,
             notice=lambda message: typer.echo(message, err=True),
         )
-    except (ForegroundError, HostAccountError, OSError) as exc:
+    except (CodexAccountError, ForegroundError, HostAccountError, OSError) as exc:
         _fail(exc)
     else:
         raise typer.Exit(code)
@@ -81,7 +91,7 @@ def harness_status(host: HostKey) -> None:
         _fail(exc)
 
 
-def _fail(error: ForegroundError | HostAccountError | OSError) -> None:
+def _fail(error: CodexAccountError | ForegroundError | HostAccountError | OSError) -> None:
     if isinstance(error, OSError):
         message = "Unable to access foreground state or start the native CLI."
     elif isinstance(error, HostAccountError):

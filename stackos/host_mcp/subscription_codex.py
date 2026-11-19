@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from . import subscription_native as native
+from .accounts import ResolvedAccountSelection
+from .adapters.codex_accounts import CodexAccountError, ordinary_launch, selected_quota_responses
 
 
 def _window_name(minutes: object, fallback: str) -> str:
@@ -13,16 +15,33 @@ def _window_name(minutes: object, fallback: str) -> str:
     return f"{minutes // 60}-hour" if minutes % 60 == 0 else f"{minutes}-minute"
 
 
-def read_codex(binary: str) -> dict | None:
-    responses = native.read_rpc(
-        binary,
-        ["app-server", "--listen", "stdio://"],
-        [
-            ("initialize", {"clientInfo": {"name": "stackos_subscription", "version": "1"}}),
-            ("account/read", {"refreshToken": False}),
-            ("account/rateLimits/read", None),
-        ],
-    )
+def read_codex(
+    binary: str, *, account_selection: ResolvedAccountSelection | None = None
+) -> dict | None:
+    if account_selection is None:
+        try:
+            with ordinary_launch(binary):
+                responses = native.read_rpc(
+                    binary,
+                    ["app-server", "--listen", "stdio://"],
+                    [
+                        (
+                            "initialize",
+                            {
+                                "clientInfo": {
+                                    "name": "stackos_subscription",
+                                    "version": "1",
+                                }
+                            },
+                        ),
+                        ("account/read", {"refreshToken": False}),
+                        ("account/rateLimits/read", None),
+                    ],
+                )
+        except CodexAccountError:
+            return None
+    else:
+        responses = selected_quota_responses(binary, account_selection)
     account = native.rpc_result(responses, 1).get("account")
     account = account if isinstance(account, dict) else {}
     if account.get("type") == "apiKey":

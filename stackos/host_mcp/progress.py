@@ -260,6 +260,7 @@ def run_codex_process(
     env: dict[str, str],
     on_session: Callable[[str], None],
     process_control: ManagedProcessControl | None = None,
+    pass_fds: tuple[int, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
     """Preserve native stdout/stderr/result behavior while exposing thread.started early."""
     process = (process_control.spawn if process_control else subprocess.Popen)(
@@ -270,6 +271,7 @@ def run_codex_process(
         cwd=cwd,
         env=env,
         text=True,
+        pass_fds=pass_fds,
     )
     output: list[str] = []
     errors: list[str] = []
