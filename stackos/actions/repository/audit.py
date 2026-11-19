@@ -11,7 +11,7 @@ import stat
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import ColumnElement, and_, or_, update
 from sqlalchemy.exc import IntegrityError
@@ -49,6 +49,9 @@ from .schema import (
     ActionExecutionOut,
 )
 from .utils import _connector_failure_data, _redact_for_audit, _write_failure_receipt, utcnow
+
+if TYPE_CHECKING:
+    from .execution import _PreparedActionExecution
 
 
 class ActionAuditMixin:
@@ -311,6 +314,46 @@ class ActionAuditMixin:
         self._s.refresh(row)
         return row
 
+    def _reserve_foreground_call(
+        self, prepared: _PreparedActionExecution, credential: ResolvedCredential | None
+    ) -> ActionCall | ActionExecutionOut:
+        from stackos.repositories.projects import ProjectRepository
+
+        # Serialize the second lookup and RUNNING insert with the project writer fence.
+        # The caller commits the reservation before awaiting provider transport.
+        ProjectRepository(self._s).require_available(prepared.project_id, reserve=True)
+        assert prepared.idempotency_key is not None
+        replay = self._idempotency_replay(
+            project_id=prepared.project_id,
+            manifest=prepared.manifest,
+            idempotency_key=prepared.idempotency_key,
+            request_json=prepared.payload,
+            provider_context_json=prepared.provider_context_for_audit,
+            credential_ref=prepared.credential_ref,
+            dry_run=False,
+        )
+        if replay is not None:
+            return replay
+        return self._record_call(
+            project_id=prepared.project_id,
+            manifest=prepared.manifest,
+            credential=credential,
+            credential_ref=prepared.credential_ref,
+            run_id=prepared.run_id,
+            run_plan_id=prepared.run_plan_id,
+            run_plan_step_id=prepared.run_plan_step_id,
+            idempotency_key=prepared.idempotency_key,
+            request_json=prepared.payload,
+            provider_context_json=prepared.provider_context_for_audit,
+            response_json=None,
+            metadata_json=prepared.metadata_json,
+            status=ActionCallStatus.RUNNING,
+            dry_run=False,
+            cost_cents=prepared.estimated_cost_cents,
+            duration_ms=None,
+            commit=False,
+        )
+
     def _reserve_background_call(
         self,
         *,
@@ -494,7 +537,7 @@ class ActionAuditMixin:
         if result.rowcount != 1:
             self._s.rollback()
             raise ConflictError(
-                "background action call is no longer running",
+                "action call is no longer running",
                 data={"project_id": project_id, "action_call_id": action_call_id},
             )
         if commit:
@@ -507,11 +550,11 @@ class ActionAuditMixin:
         return row
 
     def reconcile_running_calls(self) -> int:
-        """Recover durable calls, then hold other orphaned background calls unknown.
+        """Recover durable calls, then mark other orphaned calls as unknown.
 
         A durable item's persisted lease is the only proof that an effect may
         already have started.  Its own recovery marks that item unknown-hold;
-        the generic background reconciler must not finalize the parent first.
+        the generic reconciler must not finalize the parent first.
         """
         self.reconcile_durable_action_jobs()
         durable_action_call_ids = select(DurableActionJob.action_call_id)
@@ -603,7 +646,7 @@ class ActionAuditMixin:
         credential_ref: str | None,
         dry_run: bool,
     ) -> ActionExecutionOut | None:
-        terminal: ColumnElement[bool] = col(ActionCall.status).in_(
+        eligible: ColumnElement[bool] = col(ActionCall.status).in_(
             [ActionCallStatus.SUCCESS, ActionCallStatus.DRY_RUN]
         )
         if not dry_run and manifest.risk_level != "read":
@@ -622,8 +665,10 @@ class ActionAuditMixin:
                         metadata["automatic_retry_count"].as_integer() == 0,
                     ),
                 )
-            terminal = or_(
-                terminal, and_(col(ActionCall.status) == ActionCallStatus.FAILED, unsafe)
+            eligible = or_(
+                eligible,
+                col(ActionCall.status) == ActionCallStatus.RUNNING,
+                and_(col(ActionCall.status) == ActionCallStatus.FAILED, unsafe),
             )
         row = self._s.exec(
             select(ActionCall)
@@ -632,7 +677,7 @@ class ActionAuditMixin:
                 ActionCall.plugin_slug == manifest.plugin_slug,
                 ActionCall.action_key == manifest.action_key,
                 ActionCall.idempotency_key == idempotency_key,
-                terminal,
+                eligible,
             )
             .order_by(ActionCall.id.desc())  # type: ignore[union-attr]
         ).first()
@@ -652,6 +697,17 @@ class ActionAuditMixin:
                     "action_ref": manifest.action_ref,
                     "idempotency_key": idempotency_key,
                     "action_call_id": row.id,
+                },
+            )
+        if row.status == ActionCallStatus.RUNNING:
+            raise ConflictError(
+                "action write intent is already in flight",
+                data={
+                    "project_id": project_id,
+                    "action_ref": manifest.action_ref,
+                    "action_call_id": row.id,
+                    "replay": True,
+                    "in_flight": True,
                 },
             )
         if row.status == ActionCallStatus.FAILED:

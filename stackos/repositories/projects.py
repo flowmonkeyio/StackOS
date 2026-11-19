@@ -742,6 +742,7 @@ class IntegrationBudgetRepository:
         kind: str,
         cost_usd: float = 0.0,
         now: datetime | None = None,
+        commit: bool = True,
     ) -> Envelope[IntegrationBudgetOut]:
         ts = now or _utcnow()
         row = self._row(project_id, kind)
@@ -764,8 +765,11 @@ class IntegrationBudgetRepository:
         row.current_month_calls += 1
         row.updated_at = ts
         self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
+        if commit:
+            self._s.commit()
+            self._s.refresh(row)
+        else:
+            self._s.flush()
         return Envelope(data=IntegrationBudgetOut.model_validate(row), project_id=project_id)
 
     def _row(self, project_id: int, kind: str) -> IntegrationBudget:

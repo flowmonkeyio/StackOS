@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from typing import Any
 
+import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
@@ -964,13 +968,7 @@ def _assert_elevenlabs_unsafe_replay(mcp_client: MCPClient, tool: str, arguments
     assert replay["replayed"] is True
 
 
-def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(
-    mcp_client: MCPClient,
-    seeded_project: dict,
-    httpx_mock: HTTPXMock,
-    elevenlabs_action_account: str,
-) -> None:
-    project_id = seeded_project["data"]["id"]
+def _start_elevenlabs_write_step(mcp_client: MCPClient, project_id: int) -> tuple[dict, dict]:
     add_ref = "utils.elevenlabs.library.add"
     create_ref = "utils.elevenlabs.voices.create"
     plan = mcp_client.call_tool_structured(
@@ -1011,6 +1009,19 @@ def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(
             "step_id": "add-voice",
         },
     )["data"]
+    return started, claimed
+
+
+def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    add_ref = "utils.elevenlabs.library.add"
+    create_ref = "utils.elevenlabs.voices.create"
+    started, claimed = _start_elevenlabs_write_step(mcp_client, project_id)
     arguments = {
         "project_id": project_id,
         "credential_ref": elevenlabs_action_account,
@@ -1066,6 +1077,96 @@ def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(
         },
     )
     assert len(httpx_mock.get_requests()) == 2
+
+
+@pytest.mark.parametrize(
+    ("mode", "status_code"),
+    [("intent_id", 200), ("workflow_step", 200), ("explicit_key", 200), ("workflow_step", 503)],
+)
+def test_elevenlabs_overlap_reserves_write_intent(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    status_code: int,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    arguments = {
+        "project_id": project_id,
+        "action_ref": "utils.elevenlabs.library.add",
+        "input_json": _ELEVENLABS_LIBRARY_ADD,
+        "credential_ref": elevenlabs_action_account,
+        "response_mode": "raw",
+    }
+    if mode == "workflow_step":
+        tool = "action.execute"
+        started, _ = _start_elevenlabs_write_step(mcp_client, project_id)
+        arguments["run_token"] = started["run_token"]
+    else:
+        tool = "action.run"
+        arguments.update(confirm_direct=True, intent_summary="Add the fixture voice once.")
+        arguments["idempotency_key" if mode == "explicit_key" else "intent_id"] = "add-once"
+
+    entered, release = Event(), Event()
+    first_preflight, proceed_to_dispatch = Event(), Event()
+    overlap_preflight = mode == "workflow_step" and status_code == 200
+    if overlap_preflight:
+        from stackos.actions import ActionRepository
+
+        resolve = ActionRepository._resolve_credential
+
+        async def interleave_preflight(self, **kwargs):
+            credential = await resolve(self, **kwargs)
+            if not first_preflight.is_set():
+                first_preflight.set()
+                assert await asyncio.to_thread(proceed_to_dispatch.wait, 10)
+            else:
+                # Both callers passed the initial lookup before the reservation exists.
+                proceed_to_dispatch.set()
+                assert await asyncio.to_thread(entered.wait, 10)
+            return credential
+
+        monkeypatch.setattr(ActionRepository, "_resolve_credential", interleave_preflight)
+
+    async def provider_response(_request: httpx.Request) -> httpx.Response:
+        if not entered.is_set():
+            entered.set()
+            assert await asyncio.to_thread(release.wait, 25)
+        return httpx.Response(status_code, json={"voice_id": "fixture-voice"})
+
+    httpx_mock.add_callback(
+        provider_response,
+        method="POST",
+        url="https://api.elevenlabs.io/v1/voices/add/owner-id/shared-id",
+        is_reusable=True,
+    )
+    call = mcp_client.call_tool_structured if status_code == 200 else mcp_client.call_tool_error
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(call, tool, arguments)
+        try:
+            ready = first_preflight if overlap_preflight else entered
+            assert ready.wait(10), "The original write never reached the overlap barrier."
+            repeat = pool.submit(mcp_client.call_tool_error, tool, arguments).result(timeout=10)
+            assert len(httpx_mock.get_requests()) == 1
+            assert repeat["data"]["in_flight"] is True
+        finally:
+            proceed_to_dispatch.set()
+            release.set()
+        original = first.result(timeout=10)["data"]
+
+    replay = call(tool, arguments)["data"]
+    if status_code == 503:
+        call_id = original["action_call_id"]
+        assert replay["action_call_id"] == call_id
+        assert replay["reconcile_before_retry"] is True
+    else:
+        call_id = original["action_call"]["id"]
+        assert replay["action_call"]["id"] == call_id
+    if mode != "explicit_key":
+        assert repeat["data"]["action_call_id"] == call_id
+    assert len(httpx_mock.get_requests()) == 1
 
 
 def test_elevenlabs_storage_recovery_preserves_write_receipt(

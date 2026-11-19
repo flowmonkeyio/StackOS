@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -575,6 +576,8 @@ class ActionExecutionMixin:
             project_id, lambda: self._require_project(project_id)
         ):
             row, transient_output = await self._execute_prepared(prepared)
+        if isinstance(row, ActionExecutionOut):
+            return Envelope(data=row, project_id=project_id, run_id=run_id)
         return Envelope(
             data=ActionExecutionOut(
                 action_call=self._call_audit_out(row),
@@ -596,7 +599,7 @@ class ActionExecutionMixin:
         *,
         action_call_id: int | None = None,
         progress_callback: ActionProgressCallback | None = None,
-    ) -> Any:
+    ) -> tuple[ActionCall | ActionExecutionOut, dict[str, Any] | None]:
         project_id = prepared.project_id
         manifest = prepared.manifest
         payload = prepared.payload
@@ -617,19 +620,48 @@ class ActionExecutionMixin:
             manifest=manifest,
             credential_ref=resolved_ref,
         )
-        if manifest.enforce_budget and manifest.budget_kind and estimated_cost_cents:
-            IntegrationBudgetRepository(self._s).record_call(
-                project_id=project_id,
-                kind=manifest.budget_kind,
-                cost_usd=estimated_cost_cents / 100,
-            )
-        materialized_payload, sensitive_values = materialize_secret_refs(
-            payload,
-            resolve=lambda secret_ref: PayloadSecretRepository(self._s).resolve(
-                project_id=project_id,
-                secret_ref=secret_ref,
-            ),
+        reserve_foreground = (
+            action_call_id is None and idempotency_key is not None and manifest.risk_level != "read"
         )
+        try:
+            if reserve_foreground:
+                admission = self._reserve_foreground_call(prepared, credential)
+                if isinstance(admission, ActionExecutionOut):
+                    self._s.rollback()
+                    return admission, None
+                action_call_id = admission.id
+                assert action_call_id is not None
+            if manifest.enforce_budget and manifest.budget_kind and estimated_cost_cents:
+                IntegrationBudgetRepository(self._s).record_call(
+                    project_id=project_id,
+                    kind=manifest.budget_kind,
+                    cost_usd=estimated_cost_cents / 100,
+                    commit=not reserve_foreground,
+                )
+            materialized_payload, sensitive_values = materialize_secret_refs(
+                payload,
+                resolve=lambda secret_ref: PayloadSecretRepository(self._s).resolve(
+                    project_id=project_id,
+                    secret_ref=secret_ref,
+                ),
+            )
+            request = self._connector_request(
+                project_id=project_id,
+                manifest=manifest,
+                input_json=materialized_payload,
+                provider_context_json=provider_context,
+                credential=credential,
+                dry_run=False,
+                idempotency_key=idempotency_key,
+                progress_callback=progress_callback,
+                action_call_id=action_call_id,
+            )
+            if reserve_foreground:
+                self._s.commit()
+        except Exception:
+            if reserve_foreground:
+                self._s.rollback()
+            raise
         refs = ProviderObjectReferenceRepository(self._s, project_id=project_id)
 
         def redact_output(value: Any) -> Any:
@@ -642,17 +674,6 @@ class ActionExecutionMixin:
                 ),
             )
 
-        request = self._connector_request(
-            project_id=project_id,
-            manifest=manifest,
-            input_json=materialized_payload,
-            provider_context_json=provider_context,
-            credential=credential,
-            dry_run=False,
-            idempotency_key=idempotency_key,
-            progress_callback=progress_callback,
-            action_call_id=action_call_id,
-        )
         started = time.perf_counter()
         try:
             try:
@@ -752,7 +773,9 @@ class ActionExecutionMixin:
                     **transient_repair,
                 },
             ) from exc
-        except Exception as exc:
+        except (Exception, asyncio.CancelledError) as exc:
+            if isinstance(exc, asyncio.CancelledError) and not reserve_foreground:
+                raise
             duration_ms = int((time.perf_counter() - started) * 1000)
             self._s.rollback()
             transient = effective_output_policy["mode"] == "transient"
@@ -760,6 +783,11 @@ class ActionExecutionMixin:
                 "transient provider read failed"
                 if transient
                 else redact_secret_text(redact_output(str(exc)))
+            )
+            held_outcome = (
+                {"outcome_unknown": True, "retry_safe": False, "reconcile_before_retry": True}
+                if reserve_foreground
+                else None
             )
             row = self._record_call(
                 project_id=project_id,
@@ -780,7 +808,7 @@ class ActionExecutionMixin:
                     "retry_safe": True,
                 }
                 if transient
-                else None,
+                else held_outcome,
                 metadata_json=(redact_output(metadata_json) if metadata_json else None),
                 status=ActionCallStatus.FAILED,
                 dry_run=False,
@@ -789,6 +817,8 @@ class ActionExecutionMixin:
                 error=safe_error,
                 action_call_id=action_call_id,
             )
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             raise ConflictError(
                 "action connector failed",
                 data=_connector_failure_data(
@@ -796,7 +826,7 @@ class ActionExecutionMixin:
                     row_id=int(row.id),
                     connector_key=manifest.connector_key,
                     error=safe_error,
-                    output_json=None,
+                    output_json=held_outcome,
                 ),
             ) from exc
 
@@ -808,16 +838,21 @@ class ActionExecutionMixin:
             _redact_for_audit(redact_output(result.metadata_json)) if result.metadata_json else None
         )
         actual_cost_cents = max(0, result.cost_cents)
-        if (
-            manifest.enforce_budget
-            and manifest.budget_kind
-            and actual_cost_cents > estimated_cost_cents
-        ):
-            IntegrationBudgetRepository(self._s).record_call(
-                project_id=project_id,
-                kind=manifest.budget_kind,
-                cost_usd=(actual_cost_cents - estimated_cost_cents) / 100,
-            )
+
+        def record_reported_cost() -> None:
+            if (
+                manifest.enforce_budget
+                and manifest.budget_kind
+                and actual_cost_cents > estimated_cost_cents
+            ):
+                IntegrationBudgetRepository(self._s).record_call(
+                    project_id=project_id,
+                    kind=manifest.budget_kind,
+                    cost_usd=(actual_cost_cents - estimated_cost_cents) / 100,
+                )
+
+        if not reserve_foreground:
+            record_reported_cost()
         success_metadata = {
             **(_redact_for_audit(redact_output(metadata_json)) if metadata_json else {}),
             **(result_metadata or {}),
@@ -864,6 +899,8 @@ class ActionExecutionMixin:
                 )
             return row, output_json
         try:
+            if reserve_foreground:
+                record_reported_cost()
             if effective_output_policy["mode"] == "inline":
                 row = self._record_call(
                     project_id=project_id,

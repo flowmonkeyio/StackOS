@@ -186,9 +186,13 @@ actions, callers may pass `idempotency_key` or the more agent-friendly
 and workflow calls derive a stable run/step/action key before reaching the
 connector.
 
-If a foreground write records `retry_safe=false` after dispatch, submitting
-the same intent returns the original call ID and reconciliation guidance.
-Check the recorded outcome before deciding on another provider submission.
+A keyed foreground write reserves a `RUNNING` action call in the database
+before provider dispatch. An overlapping submission with the same resolved
+intent returns an in-flight conflict without reaching the provider. The action
+repository reports the original call ID for that conflict. When the original
+write records `retry_safe=false`, resubmission returns its call ID and
+reconciliation guidance. Check the recorded outcome before deciding on another
+provider submission.
 
 Actions declared with `execution_mode=background` first persist a `RUNNING`
 action call. The accepted `action.run` or `action.execute` response includes its
