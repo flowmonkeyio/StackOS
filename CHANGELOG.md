@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.1.46 - 2026-11-19
+
+- Add saved native accounts for Codex, Claude Code and Grok, with email-based
+  selection on Overview cards while preserving each harness's normal settings
+  and conversation history.
+- Resume StackOS Codex delivery and review workers in the same conversation
+  after an account switch, preserving their phase, repair allowance and usage
+  history. Show switching progress immediately and explain when personal Codex
+  processes need a manual restart.
+- Show available subscription plans, used-quota bars and reset times alongside
+  harness connection status. Keep quota responses tied to the selected account
+  and confirm account changes before refreshing quotas.
+- Expose ElevenLabs connections and twelve existing connector actions for
+  speech with timing, audio alignment, models, voices, settings, voice design,
+  shared voices, pronunciation dictionaries and subscription usage. Save
+  generated audio as project artifacts without automatically retrying charged
+  requests.
+- Discover the CFOBooth organization from a verified API key and bind its
+  actions to that organization, with consistent catalog replay and identity
+  validation.
+- Improve delivery recovery and stop diagnostics while preserving accepted
+  work, retained conversations and reporting receipts. Redact sensitive local
+  paths from exceptional outcomes and correct model attribution for large
+  native outputs.
+- Strengthen engineering proof handoffs, route changed areas to maintained
+  checks, and include a reusable pattern for improving delivery from run
+  evidence.
+
 ## 2.1.41 - 2026-10-28
 
 - Present Work in seven fixed, read-only status columns with inline Board and
