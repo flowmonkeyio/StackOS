@@ -221,6 +221,7 @@ def _exec_agent(
         stderr = process.stderr if process is not None else ""
         native_error = None
         terminal_error = None
+        turn_completed = False
         usage = None
         for line in stdout.splitlines():
             try:
@@ -230,6 +231,7 @@ def _exec_agent(
             if isinstance(event, dict) and event.get("type") == "thread.started":
                 thread_id = event.get("thread_id")
             if isinstance(event, dict) and event.get("type") == "turn.completed":
+                turn_completed = True
                 # Codex reports recoverable stream interruptions as error events.
                 # A later completion clears those, but never a terminal turn failure.
                 native_error = None
@@ -262,6 +264,10 @@ def _exec_agent(
             and native_error is None
             and process_control is not None
             and process_control.cancelled.is_set()
+            # A completed native turn may race a request to retire its handle.
+            # Preserve that result; the controller's explicit abort fence still
+            # owns acceptance, while account switching must not replay the turn.
+            and not (process_control.account_switch and exit_code == 0 and turn_completed)
         )
         execution_error = (
             execution_error

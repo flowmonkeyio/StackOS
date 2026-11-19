@@ -132,6 +132,11 @@ def _receipt_items(
         (f"upgrade_interruptions:{position}", item, "receipt")
         for position, item in enumerate(interruptions if isinstance(interruptions, list) else [])
     ]
+    interruptions = automatic.get("account_interruptions")
+    observations.extend(
+        (f"account_interruptions:{position}", item, "receipt")
+        for position, item in enumerate(interruptions if isinstance(interruptions, list) else [])
+    )
     corrections = automatic.get("reporting_corrections")
     observations.extend(
         (f"reporting_corrections:{position}:{receipt_key}", item, receipt_key)

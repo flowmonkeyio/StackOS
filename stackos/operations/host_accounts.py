@@ -68,19 +68,38 @@ def _accounts(inp: AccountConsoleInput, ctx: MCPContext) -> HostAccounts:
     return service.host_accounts(settings.data_dir)
 
 
-async def _call[T](fn: Callable[..., T], *args: str | int) -> T:
+async def _call[T](fn: Callable[..., T], *args: Any) -> T:
     try:
         return await to_thread(fn, *args)
     except HostAccountError as exc:
         error = (
             ConflictError
-            if exc.code in {"stale_selection", "enrollment_pending", "default_profile_changed"}
+            if exc.code
+            in {
+                "stale_selection",
+                "enrollment_pending",
+                "default_profile_changed",
+                "account_switch_busy",
+                "account_switch_unresumable_worker",
+                "account_switch_retirement_unconfirmed",
+            }
             else ValidationError
         )
         data = {"code": exc.code}
         if exc.status is not None:
             data["identity_status"] = exc.status
-        raise error("Harness account action could not complete.", data=data) from None
+        message = {
+            "account_switch_busy": "An account switch is already in progress. Try again shortly.",
+            "account_switch_unresumable_worker": (
+                "An automated Codex process cannot yet resume its saved conversation. "
+                "Let it finish before switching accounts."
+            ),
+            "account_switch_retirement_unconfirmed": (
+                "An automated Codex process has not stopped. The account was not changed. "
+                "Check the running task before trying again."
+            ),
+        }.get(exc.code, "Harness account action could not complete.")
+        raise error(message, data=data) from None
 
 
 async def _list(
@@ -120,7 +139,11 @@ async def _select(
     inp: AccountSelectInput, ctx: MCPContext, _p: ProgressEmitter
 ) -> WriteEnvelope[DesiredAccount]:
     data = await _call(
-        _accounts(inp, ctx).select, inp.host_key, inp.account_ref, inp.expected_revision
+        service.select_account,
+        _accounts(inp, ctx),
+        inp.host_key,
+        inp.account_ref,
+        inp.expected_revision,
     )
     return WriteEnvelope(data=data)
 
@@ -219,7 +242,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         _spec(
             "selectAccount",
-            "Activate the saved native login and record selection at the expected revision.",
+            "Activate the saved login and resume affected automated Codex conversations.",
             AccountSelectInput,
             WriteEnvelope[DesiredAccount],
             _select,

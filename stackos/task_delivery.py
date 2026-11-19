@@ -3360,6 +3360,35 @@ def _record_native_session(
         evidence.setdefault("sessions", {})[phase] = deepcopy(retained)
 
 
+def _retain_account_interruption(automatic: dict[str, Any], call: ActiveInvocation) -> None:
+    """Replace only the exact retired predecessor in this same assignment."""
+    phase = call.scope.phase
+    receipt = automatic.get(phase or "")
+    native = automatic.get("sessions", {}).get(phase, {})
+    if (
+        call.restart_of
+        and automatic.get("attempt") == call.scope.attempt
+        and isinstance(receipt, dict)
+        and receipt.get("execution", {}).get("invocation_id") == call.restart_of
+        and receipt.get("launch", {}).get("host_key") == call.host_key
+        and native.get("thread_id")
+        and "finished_at" in receipt
+        and "exit_code" not in receipt
+        and "result" not in receipt
+    ):
+        automatic.setdefault("account_interruptions", []).append(
+            {"attempt": call.scope.attempt, "phase": phase, "receipt": deepcopy(receipt)}
+        )
+        receipt.pop("finished_at", None)
+        receipt.pop("usage", None)
+        receipt["launch"] = {
+            **receipt["launch"],
+            "started_at": call.started_at,
+            "resume_thread_id": native["thread_id"],
+        }
+        receipt["execution"] = call.projection()
+
+
 def _record_execution_transition(
     session_factory: Callable[[], Session], call: ActiveInvocation, active: bool
 ) -> None:
@@ -3372,6 +3401,8 @@ def _record_execution_transition(
             ).ticket
             completion = deepcopy(ticket.completion_evidence_json or {})
             automatic = completion.get("automatic_delivery", {})
+            if active:
+                _retain_account_interruption(automatic, call)
             receipt = automatic.get(call.scope.phase)
             if (
                 automatic.get("attempt") == call.scope.attempt
@@ -3427,6 +3458,8 @@ def run_delivery(
 
     def execution_changed(call: ActiveInvocation, active: bool) -> None:
         nonlocal cancellation
+        if active:
+            _retain_account_interruption(evidence, call)
         receipt = evidence.get(call.scope.phase or "")
         if isinstance(receipt, dict) and (
             receipt.get("execution", {}).get("invocation_id") not in {None, call.invocation_id}
@@ -3962,10 +3995,20 @@ def run_delivery(
                 # The shared schema owner also protects controlled/injected harnesses.
                 result = validate_agent_result(result, schema, host_key)
                 observed = evidence[phase]
+                if restart_of := observed.get("execution", {}).get("restart_of"):
+                    previous = next(
+                        (
+                            item["receipt"].get("usage")
+                            for item in reversed(evidence.get("account_interruptions", []))
+                            if item["receipt"].get("execution", {}).get("invocation_id")
+                            == restart_of
+                        ),
+                        None,
+                    )
                 final_usage = normalize_usage(
                     result.usage,
                     session_id=result.thread_id,
-                    resumed=resume_thread_id is not None,
+                    resumed=bool(observed.get("launch", {}).get("resume_thread_id")),
                     previous=previous,
                 )
                 if (

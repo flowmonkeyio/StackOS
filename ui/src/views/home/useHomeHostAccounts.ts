@@ -1,6 +1,7 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { callOperation } from '@/lib/operations'
 import { ApiError, formatApiError } from '@/lib/client'
+import { useToastsStore } from '@/stores/toasts'
 import { useHomeSubscriptions } from './useHomeSubscriptions'
 
 export const accountHosts = new Set(['codex', 'claude-code', 'grok'])
@@ -19,9 +20,11 @@ export function useHomeHostAccounts() {
   const hosts = ref<Inventory['hosts']>({})
   const errors = ref<Record<string, string>>({})
   const busy = ref<Record<string, boolean>>({})
+  const switching = ref<Record<string, boolean>>({})
   const nativeCurrent = ref<Record<string, string>>({})
   const enrollment = ref<{ host: string; value: Enrollment } | null>(null)
   const quotas = useHomeSubscriptions()
+  const toasts = useToastsStore()
   let timer: ReturnType<typeof setTimeout> | undefined
   let disposed = false
   let loading: Promise<void> | undefined
@@ -86,12 +89,22 @@ export function useHomeHostAccounts() {
     const state = hosts.value[host]
     if (!state || state.desired.account_ref === account) return
     await action(host, async () => {
-      const result = await callOperation<Envelope<DesiredAccount>>('hostMcp.selectAccount', {
-        host_key: host, account_ref: account, expected_revision: state.desired.revision,
-      })
-      selectionGeneration++
-      if (hosts.value[host]) hosts.value[host].desired = result.data
-      await quotas.accountChanged(host, result.data)
+      switching.value[host] = true
+      try {
+        const result = await callOperation<Envelope<DesiredAccount>>('hostMcp.selectAccount', {
+          host_key: host, account_ref: account, expected_revision: state.desired.revision,
+        })
+        selectionGeneration++
+        const desired = { account_ref: result.data.account_ref, revision: result.data.revision }
+        if (hosts.value[host]) hosts.value[host].desired = desired
+        // Quota refresh has its own loading/error state and must not hold the switch open.
+        void quotas.accountChanged(host, desired)
+        const title = host === 'codex' ? 'Codex account switched' : 'Account switched'
+        const manualRestart = host === 'codex' ? 'Restart existing Codex processes to use this account.' : ''
+        toasts.success(title, host === 'codex'
+          ? `${manualRestart} StackOS automated processes will restart automatically.`
+          : undefined)
+      } finally { switching.value[host] = false }
     })
   }
 
@@ -144,5 +157,5 @@ export function useHomeHostAccounts() {
     })
   }
   onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
-  return { hosts, errors, busy, enrollment, load, select, add, complete, cancel, currentRef }
+  return { hosts, errors, busy, switching, enrollment, load, select, add, complete, cancel, currentRef }
 }

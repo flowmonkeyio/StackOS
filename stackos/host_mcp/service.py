@@ -16,7 +16,12 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
 from stackos import claude_mcp
-from stackos.host_mcp.accounts import HostAccounts, NativeAccountAdapter
+from stackos.host_mcp.accounts import (
+    DesiredAccount,
+    HostAccountError,
+    HostAccounts,
+    NativeAccountAdapter,
+)
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.adapters.claude_accounts import accounts as claude_accounts
 from stackos.host_mcp.adapters.grok_accounts import GrokAccounts
@@ -77,6 +82,12 @@ class AgentExecutionScope:
 
 
 @dataclass
+class _AccountSwitch:
+    released: Event = field(default_factory=Event)
+    resume: bool = True
+
+
+@dataclass
 class ActiveInvocation:
     invocation_id: str
     scope: AgentExecutionScope
@@ -104,6 +115,8 @@ class ActiveInvocation:
     cleanup_complete: bool = False
     # An early ownership rejection must also fence the terminal identity.
     session_error: str | None = None
+    account_switch: _AccountSwitch | None = None
+    restart_of: str | None = None
 
     def projection(self, *, include_usage: bool = True) -> dict[str, Any]:
         return {
@@ -112,6 +125,7 @@ class ActiveInvocation:
             "host_key": self.host_key,
             "model": self.model,
             "thread_id": self.thread_id,
+            **({"restart_of": self.restart_of} if self.restart_of else {}),
             "model_observation": deepcopy(self.model_observation),
             "started_at": self.started_at,
             "ticket_key": self.scope.ticket_key,
@@ -137,6 +151,7 @@ class ActiveInvocation:
 # One invocation registry owns identity, reader and bounded provisional counters.
 # Neither UI subscriptions nor tracker reads start collection.
 _active_invocations: dict[str, ActiveInvocation] = {}
+_account_switches: dict[str, _AccountSwitch] = {}
 _active_invocations_lock = RLock()
 _collector: Thread | None = None
 _collector_wake = Event()
@@ -605,6 +620,57 @@ def host_accounts(data_dir: Path) -> HostAccounts:
     return HostAccounts(data_dir, adapters)
 
 
+def select_account(
+    accounts: HostAccounts, host_key: str, account_ref: str, expected_revision: int
+) -> DesiredAccount:
+    """Switch native credentials between exact, resumable managed invocations."""
+    if host_key != "codex":
+        return accounts.select(host_key, account_ref, expected_revision)
+    with managed_launch_lock:
+        if host_key in _account_switches:
+            raise HostAccountError("account_switch_busy")
+        desired = accounts.resolve(host_key).desired
+        if desired.revision != expected_revision:
+            raise HostAccountError("stale_selection")
+        inventory = accounts.inventory().hosts.get(host_key)
+        if inventory is None or not any(
+            account.account_ref == account_ref for account in inventory.accounts
+        ):
+            raise HostAccountError("unknown_account")
+        with _active_invocations_lock:
+            calls = [call for call in _active_invocations.values() if call.host_key == host_key]
+        for call in calls:
+            if (
+                call.scope.request_id is not None
+                or call.scope.phase not in {"delivery", "review"}
+                or call.session_error is not None
+                or not call.thread_id
+            ):
+                raise HostAccountError("account_switch_unresumable_worker")
+        switch = _AccountSwitch()
+        _account_switches[host_key] = switch
+        for call in calls:
+            call.account_switch = switch
+            call.process_control.account_switch = True
+            call.process_control.cancelled.set()
+    try:
+        # Native exit and its callbacks must retire before credentials change.
+        # Never hold the launch lock while those callbacks persist their receipts.
+        for call in calls:
+            if retire_invocation(call) not in {"stopped", "prevented"} or not call.retired.wait(2):
+                raise HostAccountError("account_switch_retirement_unconfirmed")
+        try:
+            return accounts.select(host_key, account_ref, expected_revision)
+        except HostAccountError as error:
+            if error.code == "selection_restore_failed":
+                switch.resume = False
+            raise
+    finally:
+        with managed_launch_lock:
+            _account_switches.pop(host_key, None)
+            switch.released.set()
+
+
 def _read_subscription(binary: str | None, reader: Callable[[str], dict | None]) -> dict | None:
     return reader(binary) if binary else None
 
@@ -659,6 +725,84 @@ def run_agent(
     launch_allowed: Callable[[], bool] | None = None,
     request_execution: AgentRequestExecution | None = None,
 ) -> AgentRunResult:
+    """Keep the controller's assignment while restarting an account-switched child."""
+    restart_of = None
+    while True:
+        observed: ActiveInvocation | None = None
+        usage = None
+
+        def execution_changed(call: ActiveInvocation, active: bool) -> None:
+            nonlocal observed, usage
+            observed = call
+            if not active:
+                usage = deepcopy(call.usage)
+            if on_execution_change is not None:
+                on_execution_change(call, active)
+
+        result = _run_agent_once(
+            host_key,
+            project_dir,
+            instructions,
+            prompt,
+            output_schema,
+            sandbox=sandbox,
+            model=model,
+            model_reasoning_effort=model_reasoning_effort,
+            provider=provider,
+            profile=profile,
+            resume_thread_id=resume_thread_id,
+            execution_scope=execution_scope,
+            on_execution_change=execution_changed,
+            on_session_attached=on_session_attached,
+            previous_usage=previous_usage,
+            mcp_config_ref=mcp_config_ref,
+            native_settings=native_settings,
+            launch_allowed=launch_allowed,
+            request_execution=request_execution,
+            _restart_of=restart_of,
+        )
+        if observed is None or observed.account_switch is None:
+            return result
+        observed.account_switch.released.wait()
+        if (
+            not observed.account_switch.resume
+            or observed.cancelled.is_set()
+            or not observed.retired.is_set()
+            or not observed.thread_id
+            or observed.session_error is not None
+            or (result.ok and result.result is not None)
+            or (launch_allowed is not None and not launch_allowed())
+        ):
+            return result
+        resume_thread_id = observed.thread_id
+        previous_usage = usage
+        restart_of = observed.invocation_id
+        prompt = "proceed"
+
+
+def _run_agent_once(
+    host_key: str,
+    project_dir: str | Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    model_reasoning_effort: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+    resume_thread_id: str | None = None,
+    execution_scope: AgentExecutionScope | None = None,
+    on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
+    on_session_attached: Callable[[ActiveInvocation], None] | None = None,
+    previous_usage: Any = None,
+    mcp_config_ref: dict[str, str] | None = None,
+    native_settings: dict[str, Any] | None = None,
+    launch_allowed: Callable[[], bool] | None = None,
+    request_execution: AgentRequestExecution | None = None,
+    _restart_of: str | None = None,
+) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
     if not instructions.strip():
         return AgentRunResult(None, error="Project-agent instructions must not be empty.")
@@ -706,6 +850,7 @@ def run_agent(
             started_at=datetime.now(UTC).isoformat(),
             previous_usage=deepcopy(previous_usage),
             resumed=resume_thread_id is not None,
+            restart_of=_restart_of,
             process_control=ManagedProcessControl(launch_allowed),
         )
         if execution_scope is not None
@@ -735,33 +880,41 @@ def run_agent(
         progress_kwargs["process_control"] = call.process_control
     try:
         if call is not None:
-            with managed_launch_lock:
-                if launch_allowed is not None and not launch_allowed():
-                    return AgentRunResult(None, error="Invocation cancelled before registration")
-                _register(call)
-                registered = True
-                if request_execution is not None:
-                    request_execution.admit(
-                        call,
-                        {
-                            "host_key": host_key,
-                            "project_dir": str(Path(project_dir).expanduser().resolve()),
-                            "instructions": instructions,
-                            "prompt": prompt,
-                            "output_schema": output_schema,
-                            "sandbox": sandbox,
-                            "model": model,
-                            "model_reasoning_effort": model_reasoning_effort,
-                            "provider": provider,
-                            "profile": profile,
-                            "resume_thread_id": resume_thread_id,
-                            "mcp_config_ref": mcp_config_ref,
-                            "native_settings": native_settings,
-                        },
-                    )
-                    request_admitted = True
-                    call.request_execution = request_execution
-                _notify_execution(on_execution_change, call, True)
+            while True:
+                with managed_launch_lock:
+                    switch = _account_switches.get(host_key)
+                    if switch is None:
+                        if launch_allowed is not None and not launch_allowed():
+                            return AgentRunResult(
+                                None, error="Invocation cancelled before registration"
+                            )
+                        call.started_at = datetime.now(UTC).isoformat()
+                        _register(call)
+                        registered = True
+                        if request_execution is not None:
+                            request_execution.admit(
+                                call,
+                                {
+                                    "host_key": host_key,
+                                    "project_dir": str(Path(project_dir).expanduser().resolve()),
+                                    "instructions": instructions,
+                                    "prompt": prompt,
+                                    "output_schema": output_schema,
+                                    "sandbox": sandbox,
+                                    "model": model,
+                                    "model_reasoning_effort": model_reasoning_effort,
+                                    "provider": provider,
+                                    "profile": profile,
+                                    "resume_thread_id": resume_thread_id,
+                                    "mcp_config_ref": mcp_config_ref,
+                                    "native_settings": native_settings,
+                                },
+                            )
+                            request_admitted = True
+                            call.request_execution = request_execution
+                        _notify_execution(on_execution_change, call, True)
+                        break
+                switch.released.wait()
         result = definition.run_agent(
             Path(project_dir).expanduser().resolve(),
             instructions,

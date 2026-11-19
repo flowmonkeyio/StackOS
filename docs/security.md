@@ -460,6 +460,13 @@ inside native adapter file handling and never enter inventory or operation
 responses. Settings and transcripts stay in the same native home. A foreign
 native principal or unsupported credential backend prevents switching.
 
+Codex account selection can restart only registered StackOS delivery workers
+with an exact retained native session. It stops their owned process groups before
+credential replacement and resumes through the existing agent runner; it does
+not discover, signal or control personal terminal processes. Cancellation retains
+precedence over account-switch continuation. Unknown session ownership prevents
+the switch, and unconfirmed process retirement never counts as a successful swap.
+
 Claude selection changes only the native `claudeAiOauth` subscription object
 and its `oauthAccount` metadata. Other secure-store entries and native global
 configuration remain intact. macOS Keychain reads and stdin-only writes stay

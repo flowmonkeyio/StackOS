@@ -29,6 +29,7 @@ class ManagedProcessControl:
 
     def __init__(self, launch_allowed: Callable[[], bool] | None = None):
         self.cancelled = Event()
+        self.account_switch = False
         self._process: subprocess.Popen[str] | None = None
         self._launch_allowed = launch_allowed
         self._stop_lock = RLock()

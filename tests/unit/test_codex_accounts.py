@@ -90,6 +90,41 @@ def test_select_persists_native_login_and_preserves_refreshed_accounts(registry,
     assert config.read_text() == 'model = "operator-choice"'
 
 
+def test_selection_reuses_mode_check_but_rechecks_each_native_identity(
+    registry, homes, monkeypatch
+):
+    store, _, b = registry
+    regular, _ = homes
+    config_reads = []
+    identity_reads = []
+    read_identity = codex_accounts.native_identity
+
+    def config(_binary, env, **_kwargs):
+        config_reads.append(codex_accounts._home(env))
+        return {"cli_auth_credentials_store": "file"}
+
+    def identity(binary, env, **kwargs):
+        identity_reads.append((codex_accounts._home(env), kwargs.get("overrides", ())))
+        return read_identity(binary, env, **kwargs)
+
+    monkeypatch.setattr(codex_accounts, "_config", config)
+    monkeypatch.setattr(codex_accounts, "native_identity", identity)
+    store.select("codex", b, 0)
+
+    # Six native launches rather than eight: verification and activation each
+    # read config once; the target, outgoing and live identities stay fresh.
+    assert config_reads == [regular, regular]
+    assert len(identity_reads) == 4
+    assert identity_reads[0][0] == identity_reads[1][0]
+    assert len({home for home, _ in identity_reads}) == 3
+    assert identity_reads[-1] == (regular, ())
+    assert all(
+        overrides == ("-c", 'cli_auth_credentials_store="file"')
+        for _, overrides in identity_reads[:-1]
+    )
+    assert (regular / "auth.json").read_bytes() == b"original B"
+
+
 def test_failed_native_swap_retains_usable_login_and_selection(registry, homes, monkeypatch):
     store, a, b = registry
     home, _ = homes

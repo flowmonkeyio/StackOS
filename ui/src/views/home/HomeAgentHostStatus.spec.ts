@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import HomeAgentHostStatus from './HomeAgentHostStatus.vue'
 import { useHomeSubscriptions } from './useHomeSubscriptions'
+import { useToastsStore } from '@/stores/toasts'
 
 const originalFetch = globalThis.fetch
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
@@ -21,7 +22,51 @@ function panel() {
 
 describe('native account picker', () => {
   beforeEach(() => { setActivePinia(createPinia()) })
-  afterEach(() => { globalThis.fetch = originalFetch; document.body.innerHTML = ''; vi.useRealTimers() })
+  afterEach(() => { useToastsStore().clear(); globalThis.fetch = originalFetch; document.body.innerHTML = ''; vi.useRealTimers() })
+
+  it('shows switching immediately and confirms before a slow quota refresh finishes', async () => {
+    let finishSwitch!: (response: Response) => void
+    let finishQuota!: (response: Response) => void
+    globalThis.fetch = vi.fn(async url => {
+      if (String(url).includes('selectAccount')) return new Promise<Response>(resolve => { finishSwitch = resolve })
+      if (String(url).includes('subscriptions')) return new Promise<Response>(resolve => { finishQuota = resolve })
+      return json(inventory())
+    }) as typeof fetch
+    const store = useHomeSubscriptions()
+    store.subscriptions.readings.codex = { plan: 'A plan', meters: [] }
+    const wrapper = panel()
+    try {
+      await flushPromises()
+      await wrapper.get('[aria-label="Codex account: first@example.com"]').trigger('click')
+      await wrapper.findAll('[role="menuitem"]').find(item => item.text().includes(b.email))!.trigger('click')
+      const pending = wrapper.get<HTMLButtonElement>('[aria-label="Codex account: first@example.com"]')
+      expect(pending.element.disabled).toBe(true)
+      expect(pending.attributes('aria-busy')).toBe('true')
+      expect(pending.get('[role="status"]').text()).toBe('Switching account…')
+      expect(pending.find('.animate-spin').exists()).toBe(true)
+      expect(useToastsStore().items).toHaveLength(0)
+
+      finishSwitch(json({ data: { account_ref: 'b', revision: 1 } }))
+      await flushPromises()
+      const selected = wrapper.get<HTMLButtonElement>('[aria-label="Codex account: second-long-account-email@example.com"]')
+      expect(selected.element.disabled).toBe(false)
+      expect(selected.attributes('aria-busy')).toBeUndefined()
+      expect(store.subscriptions.loading).toBe(true)
+      expect(store.subscriptions.readings.codex).toBeNull()
+      expect(useToastsStore().items.at(-1)).toMatchObject({
+        kind: 'success', title: 'Codex account switched',
+        detail: 'Restart existing Codex processes to use this account. StackOS automated processes will restart automatically.',
+      })
+
+      finishQuota(json({ detail: 'Quota temporarily unavailable' }, 503))
+      await flushPromises()
+      await wrapper.setProps({ subscriptions: store.subscriptions })
+      expect(wrapper.find('[aria-label="Codex account: second-long-account-email@example.com"]').exists()).toBe(true)
+      expect(store.subscriptions.failed).toBe(true)
+      expect(wrapper.text()).toContain('Couldn’t refresh subscription quotas.')
+      expect(wrapper.get('li[aria-label="Codex"]').find('[role="alert"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
 
   it('uses the real operation caller, keyboard menu and successful selection even at zero quota', async () => {
     let finishOldRead!: (response: Response) => void
@@ -77,6 +122,8 @@ describe('native account picker', () => {
       expect(wrapper.get('[role="alert"]').text()).toContain('Native activation failed')
       expect(store.subscriptions.readings.codex?.plan).toBe('A plan')
       expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('subscriptions'))).toBe(false)
+      expect(useToastsStore().items).toHaveLength(0)
+      expect(wrapper.get<HTMLButtonElement>('[aria-label="Codex account: first@example.com"]').element.disabled).toBe(false)
     } finally { wrapper.unmount() }
   })
 

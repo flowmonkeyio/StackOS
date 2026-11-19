@@ -1183,6 +1183,39 @@ def test_codex_managed_cancellation_without_task_route(project, monkeypatch, pay
     assert ("Invalid Codex result" in result.error) is (payload in {"not JSON", "wrong schema"})
 
 
+@pytest.mark.parametrize("valid_final", [True, False])
+def test_codex_completed_turn_survives_retirement_racing_result_parsing(
+    project, monkeypatch, valid_final
+):
+    from stackos.host_mcp import progress
+    from stackos.host_mcp.agent_execution import ManagedProcessControl
+
+    control = ManagedProcessControl()
+    control.account_switch = True
+
+    def execute(command, **kwargs):
+        Path(command[command.index("-o") + 1]).write_text(
+            '{"summary":"already completed"}' if valid_final else "invalid"
+        )
+        control.stop()
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            '{"type":"thread.started","thread_id":"completed-thread"}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":20}}',
+            "",
+        )
+
+    monkeypatch.setattr(progress, "run_codex_process", execute)
+    result = codex.run_agent(project, "delivery", "Prompt", SCHEMA, process_control=control)
+    assert result.ok is valid_final
+    assert result.thread_id == "completed-thread" and result.exit_code == 0
+    if valid_final:
+        assert result.result == {"summary": "already completed"}
+    else:
+        assert "Invalid Codex result" in result.error
+
+
 @pytest.mark.parametrize("resume", [None, "failed-thread"])
 @pytest.mark.parametrize("payload", [None, "not JSON", '{"private-result-sentinel": true}'])
 def test_codex_task_routed_zero_exit_still_requires_valid_result(

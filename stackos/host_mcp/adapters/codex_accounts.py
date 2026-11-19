@@ -194,8 +194,20 @@ class CodexAccounts:
                 raise CodexAccountError("Adopt the current Codex login before switching accounts.")
             _private_directory(outgoing.directory, "unsafe_profile")
         binary, env = self._resolve()
-        expected = self.read_identity(profile) if profile is not None else None
-        previous = self.read_identity(outgoing) if outgoing is not None else None
+        # _file_home already verified the native credential mode for this swap.
+        # Probe each saved identity directly instead of launching another native
+        # config reader for each profile. Keep all identity checks fresh.
+        overrides = ("-c", 'cli_auth_credentials_store="file"')
+        expected = (
+            native_identity(binary, _profile_env(env, target), overrides=overrides)
+            if target is not None
+            else None
+        )
+        previous = (
+            native_identity(binary, _profile_env(env, outgoing.directory), overrides=overrides)
+            if outgoing is not None
+            else None
+        )
         active = native_identity(binary, env)
         if profile is not None and not isinstance(expected, NativeIdentity):
             raise CodexAccountError("Codex could not verify the account before switching.")

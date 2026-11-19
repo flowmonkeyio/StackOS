@@ -188,6 +188,46 @@ def test_console_select_activates_real_disposable_codex_store(
     assert config.read_text() == "original settings"
 
 
+def test_console_selection_uses_managed_worker_boundary(account_console, adapter, monkeypatch):
+    host = {"host_key": "codex"}
+    account = _account_data(account_console("adoptAccount", **host))["account_ref"]
+    calls = []
+
+    def select(store, host_key, account_ref, expected_revision):
+        calls.append((host_key, account_ref, expected_revision))
+        return store.select(host_key, account_ref, expected_revision)
+
+    monkeypatch.setattr(service, "select_account", select)
+    response = account_console("selectAccount", **host, account_ref=account, expected_revision=0)
+    assert _account_data(response) == {"account_ref": account, "revision": 1}
+    assert calls == [("codex", account, 0)]
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "account_switch_busy",
+        "account_switch_unresumable_worker",
+        "account_switch_retirement_unconfirmed",
+    ],
+)
+def test_console_worker_switch_conflict_retains_selection(
+    account_console, adapter, monkeypatch, code
+):
+    host = {"host_key": "codex"}
+    account = _account_data(account_console("adoptAccount", **host))["account_ref"]
+
+    def conflict(*_args):
+        raise HostAccountError(code)
+
+    monkeypatch.setattr(service, "select_account", conflict)
+    response = account_console("selectAccount", **host, account_ref=account, expected_revision=0)
+    assert response.status_code == 409
+    assert response.json()["data"]["code"] == code
+    state = account_console("listAccounts").json()["hosts"]["codex"]
+    assert state["desired"] == {"account_ref": None, "revision": 0}
+
+
 @pytest.mark.parametrize("recover_selected", [False, True])
 def test_console_recovers_expired_enrollment_profile(
     account_console, adapter, mcp_settings, recover_selected

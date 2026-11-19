@@ -131,9 +131,12 @@ function meterTone(used: number) {
               <template #trigger="{ open, toggle }">
                 <button type="button" data-dropdown-trigger class="focus-ring flex w-full min-w-0 items-center gap-1 text-left text-xs text-fg-muted"
                   aria-haspopup="menu" :aria-expanded="open" :aria-label="card.name + ' account: ' + email(card.key)"
+                  :aria-busy="accounts.switching.value[card.key] || undefined"
                   :title="email(card.key)" :disabled="accounts.busy.value[card.key]" @click="toggle">
-                  <HomeAccountEmail :key="email(card.key)" :email="email(card.key)" />
-                  <UiIcon name="chevron-down" class="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span v-if="accounts.switching.value[card.key]" role="status" class="truncate">Switching account…</span>
+                  <HomeAccountEmail v-else :key="email(card.key)" :email="email(card.key)" />
+                  <UiIcon :name="accounts.switching.value[card.key] ? 'loader' : 'chevron-down'"
+                    class="h-3 w-3 shrink-0" :class="{ 'animate-spin': accounts.switching.value[card.key] }" aria-hidden="true" />
                 </button>
               </template>
             </UiDropdownMenu>

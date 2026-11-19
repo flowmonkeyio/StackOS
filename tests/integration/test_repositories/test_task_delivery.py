@@ -2486,6 +2486,136 @@ def use_codex_native(monkeypatch, native):
     monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
 
 
+@pytest.mark.parametrize("interrupted_phase", ["delivery", "review"])
+def test_account_switch_resumes_same_phase_twice_without_spending_repair_budget(
+    native_task_session, project_id, tmp_path, monkeypatch, interrupted_phase
+):
+    from types import SimpleNamespace
+
+    from stackos.host_mcp import service
+    from stackos.host_mcp.accounts import DesiredAccount
+    from stackos.repositories.tracker.agent_stats import _receipt_items
+
+    session = native_task_session
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Account switch")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 2}}},
+    )
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    selected = DesiredAccount(account_ref="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", revision=1)
+    account_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    account_a = selected.account_ref
+    ready = [Event(), Event()]
+    calls, processes, retained = [], [], []
+    phase = None
+
+    def select(_host, ref, revision):
+        nonlocal selected
+        assert processes[-1].poll() is not None
+        selected = DesiredAccount(account_ref=ref, revision=revision + 1)
+        return selected
+
+    accounts = SimpleNamespace(
+        resolve=lambda _host: SimpleNamespace(desired=selected),
+        inventory=lambda: SimpleNamespace(
+            hosts={
+                "codex": SimpleNamespace(
+                    accounts=[
+                        SimpleNamespace(account_ref=account_a),
+                        SimpleNamespace(account_ref=account_b),
+                    ]
+                )
+            }
+        ),
+        select=select,
+    )
+
+    def native(_dir, _instructions, prompt, _schema, *, on_session, process_control, **kwargs):
+        nonlocal phase
+        if prompt != "proceed":
+            phase = json.loads(prompt)["phase"]
+        thread = f"account-{phase}"
+        on_session(thread)
+        calls.append((phase, prompt, kwargs.get("resume_thread_id"), selected.account_ref))
+        targeted = [call for call in calls if call[0] == interrupted_phase]
+        if phase == interrupted_phase and len(targeted) <= 2:
+            process = process_control.spawn(
+                [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(30)"],
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            processes.append(process)
+            assert process.stdout.readline().strip() == "ready"
+            process.stdout.close()
+            ready[len(targeted) - 1].set()
+            process.wait(timeout=10)
+            return AgentRunResult(
+                process.returncode,
+                thread_id=thread,
+                usage=usage_snapshot(
+                    "codex.turn", "session", 100 * len(targeted), 20 * len(targeted)
+                ),
+            )
+        return AgentRunResult(
+            0,
+            thread_id=thread,
+            result=generic_result(),
+            usage=usage_snapshot("codex.turn", "session", 300, 60)
+            if phase == interrupted_phase
+            else None,
+        )
+
+    use_codex_native(monkeypatch, native)
+    try:
+        with ThreadPoolExecutor() as pool:
+            work = pool.submit(scheduler.run)
+            for index, target in enumerate((account_b, account_a)):
+                assert ready[index].wait(5)
+                with Session(session.get_bind()) as reader:
+                    evidence = (
+                        TrackerRepository(reader)
+                        .brief(project_id=project_id, ticket_key="first")
+                        .ticket.completion_evidence_json["automatic_delivery"]
+                    )
+                    retained.append(deepcopy(evidence["sessions"][interrupted_phase]))
+                service.select_account(accounts, "codex", target, index + 1)
+            work.result(timeout=5)
+        session.expire_all()
+        ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+        evidence = ticket.completion_evidence_json["automatic_delivery"]
+        assert ticket.status == "complete", ticket.outcome
+        assert evidence["attempt"] == 1 and evidence["repair_count"] == 2
+        assert retained[0] == retained[1] == evidence["sessions"][interrupted_phase]
+        targeted = [call for call in calls if call[0] == interrupted_phase]
+        assert [call[1] for call in targeted[1:]] == ["proceed", "proceed"]
+        assert [call[2] for call in targeted] == [
+            None,
+            f"account-{interrupted_phase}",
+            f"account-{interrupted_phase}",
+        ]
+        assert [call[3] for call in targeted] == [account_a, account_b, account_a]
+        receipts = [
+            receipt
+            for (_, phase, _), receipt in _receipt_items(ticket.completion_evidence_json).items()
+            if phase == interrupted_phase
+        ]
+        assert len(receipts) == 3
+        assert len({receipt["execution"]["invocation_id"] for receipt in receipts}) == 3
+        assert sum(receipt["usage"]["measured"]["total"] for receipt in receipts) == 360
+        assert not service._active_invocations
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=3)
+        service.shutdown_usage()
+
+
 def stopped_review_fixture(
     session,
     project_id,
