@@ -15,6 +15,7 @@ from threading import Event, RLock, Thread
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
+from stackos import claude_mcp
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.agent_execution import (
     ManagedProcessControl,
@@ -33,6 +34,8 @@ from stackos.host_mcp.result import (
     normalize_model_observation,
     normalize_usage,
 )
+from stackos.host_mcp.subscription_claude import read_claude
+from stackos.host_mcp.subscription_native import read_codex, read_grok
 
 Action = Literal["inspect", "register", "repair", "remove"]
 if TYPE_CHECKING:
@@ -585,6 +588,15 @@ class HostMcpDefinition:
     register_profile: ProfileAdapterFn | None = None
     remove_profile: ProfileAdapterFn | None = None
     run_agent: AgentRunner | None = None
+    subscription: Callable[[], dict | None] | None = None
+
+
+def _read_subscription(binary: str | None, reader: Callable[[str], dict | None]) -> dict | None:
+    return reader(binary) if binary else None
+
+
+def subscription_readers() -> dict[str, Callable[[], dict | None]]:
+    return {item.policy.host_key: item.subscription for item in _definitions() if item.subscription}
 
 
 @dataclass(frozen=True)
@@ -1200,6 +1212,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             ),
             force_register=lambda home, force: codex.register(home, force=force),
             run_agent=codex.run_agent,
+            subscription=lambda: _read_subscription(codex.resolve_codex_bin(), read_codex),
         ),
         HostMcpDefinition(
             claude_code,
@@ -1227,6 +1240,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 ),
             ),
             run_agent=claude_code.run_agent,
+            subscription=lambda: _read_subscription(claude_mcp.resolve_claude_bin(), read_claude),
         ),
         HostMcpDefinition(
             claude_desktop,
@@ -1338,6 +1352,9 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 ),
             ),
             run_agent=grok.run_agent,
+            subscription=lambda: _read_subscription(
+                grok.resolve_grok_bin(default_home()), read_grok
+            ),
         ),
     )
 

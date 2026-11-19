@@ -502,7 +502,10 @@ manifest.
 Agent host marks have their own existing owner in
 `ui/src/lib/stackos/agentIdentity.ts`, shared by Overview connection cards and
 Work board owners. `HomeAgentHostStatus` renders the backend's host list and
-uses three columns on standard desktops and six on wide desktops. The Grok
+uses three columns on standard desktops and six on wide desktops. Each card
+keeps its first quota bar in the same position and anchors resets at the bottom.
+Overview reads subscription snapshots when opened or refreshed. The signed-in
+tool supplies the quota windows and plan. The Grok
 mark in `ui/public/images/grok.png` is the unchanged 192px icon published by
 [grok.com](https://grok.com/images/android-chrome-192x192.png), retrieved
 2026-10-29 (SHA-256

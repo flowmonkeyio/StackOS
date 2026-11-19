@@ -205,6 +205,14 @@ markers. All connection cards and Refresh are visible in both environments.
 Restart, Run doctor, and Install or repair remain native desktop controls;
 the browser shows them disabled with a desktop-only explanation.
 
+In **Overview → AI tool connections**, Codex, Claude Code and Grok Build can
+also show the signed-in plan, the percentage used in each reported quota
+window and its local reset time. Bars turn orange at 75% used and red at 95%.
+Returning to Overview within a minute reuses
+the last check. **Refresh** reads the native tools again. Gemini CLI currently
+shows **Quota unavailable**. Claude Desktop shows its MCP connection and Hermes shows its
+profile status. A missing quota reading does not affect the connection badge.
+
 This reports the canonical connection state for ChatGPT / Codex, Claude Code,
 Claude Desktop, Gemini CLI, Hermes, and Grok. **Repair needed** means a selected,
 StackOS-owned entry is stale and safely repairable. Unselected detected hosts

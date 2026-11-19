@@ -933,6 +933,12 @@ relevant object Details may expose safe contextual metadata.
 
 ## Agent activity reads
 
+Overview reads subscription data through the local-console REST operation
+`hostMcp.subscriptions`. Its timestamped snapshot contains each supported
+host's plan and quota windows with scope, percentage remaining and optional
+reset time. An unavailable host reading is null. Native registration, agent
+selection and Doctor do not invoke subscription checks.
+
 For Home connected tools, existing `account.list` and `connection.list` accept
 `summary_only=true` (also on their existing GET routes). This skips provider
 setup inventory construction and returns the exact same safe Account records:

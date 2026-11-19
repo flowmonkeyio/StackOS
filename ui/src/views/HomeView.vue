@@ -11,6 +11,7 @@ import HomeConnectionsSection from './home/HomeConnectionsSection.vue'
 import HomeSystemStatusCard from './home/HomeSystemStatusCard.vue'
 import { useHomeAgentHostStatuses } from './home/useHomeAgentHostStatuses'
 import { useHomeSystemStatus } from './home/useHomeSystemStatus'
+import { useHomeSubscriptions } from './home/useHomeSubscriptions'
 import AgentActivitySection from './home/AgentActivitySection.vue'
 import { useAgentStats } from './home/useAgentStats'
 
@@ -30,13 +31,18 @@ function setUsageVisibility(value: string | number): void {
 const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
 const { hostStatuses, hostStatusSummary, loadHostStatuses, applyHostStatuses } =
   useHomeAgentHostStatuses(isShell)
+const quotas = useHomeSubscriptions()
+async function refreshHostPanel(): Promise<void> {
+  await Promise.all([loadHostStatuses(), quotas.load(true)])
+}
 const { health, systemBusy, statusTone, statusLabel, systemFacts, loadHealth, runSystemAction } =
-  useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: loadHostStatuses })
+  useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: refreshHostPanel })
 
 onMounted(() => {
   void agents.load()
   void loadHealth()
   void loadHostStatuses()
+  void quotas.load()
   void catalog.refreshHomeAccounts()
 })
 
@@ -44,7 +50,7 @@ const refreshing = ref(false)
 async function refresh(): Promise<void> {
   refreshing.value = true
   try {
-    await Promise.all([projects.loadAll(), activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
+    await Promise.all([projects.loadAll(), activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), agents.load(), loadHealth(), refreshHostPanel()])
   } finally { refreshing.value = false }
 }
 function confirmRepair(): void {
@@ -92,10 +98,11 @@ function confirmRepair(): void {
       :system-busy="systemBusy"
       :host-statuses="hostStatuses"
       :host-status-summary="hostStatusSummary"
+      :subscriptions="quotas.subscriptions"
       @restart="runSystemAction('restart')"
       @doctor="runSystemAction('doctor')"
       @repair="repairOpen = true"
-      @refresh-hosts="loadHostStatuses"
+      @refresh-hosts="refreshHostPanel"
     />
     <ActiveTaskList ref="activeTasks" />
     <AgentActivitySection

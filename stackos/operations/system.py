@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from asyncio import to_thread
+from asyncio import gather, to_thread
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from stackos.artifacts import redact_secrets
 from stackos.host_mcp import service as host_mcp_service
@@ -17,10 +19,17 @@ from stackos.host_mcp.result import (
 )
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput
+from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools.sitemap import SitemapFetchInput, SitemapFetchOutput, _sitemap_fetch
 from stackos.operations._helpers import operation_spec
-from stackos.operations.spec import OperationExample, OperationResponsePolicy
+from stackos.operations.spec import (
+    OperationExample,
+    OperationResponsePolicy,
+    OperationSpec,
+    OperationSurface,
+    OperationSurfaces,
+)
 
 
 class HostMcpStatusInput(MCPInput):
@@ -84,6 +93,47 @@ class HostMcpStatusOut(BaseModel):
     items: list[HostMcpStatusItemOut]
 
 
+class SubscriptionMeter(BaseModel):
+    scope: str
+    remaining_percent: float = Field(ge=0, le=100)
+    resets_at: AwareDatetime | None
+
+
+class HostSubscription(BaseModel):
+    plan: str | None
+    meters: list[SubscriptionMeter]
+
+
+class HostSubscriptionsOut(BaseModel):
+    checked_at: AwareDatetime
+    readings: dict[str, HostSubscription | None]
+
+
+async def host_subscriptions(
+    inp: HostMcpStatusInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> HostSubscriptionsOut:
+    if (
+        ctx.extras.get("surface") != "rest"
+        or ctx.extras.get("trusted_local_admin") is not True
+        or inp.run_token is not None
+    ):
+        raise ToolNotGrantedError("Subscription readings require a local operator session.")
+
+    def read(reader: Callable[[], dict | None]) -> HostSubscription | None:
+        try:
+            result = reader()
+            return HostSubscription.model_validate(result) if result else None
+        except Exception:
+            # A native reader can fail independently. Never return raw tool diagnostics.
+            return None
+
+    readers = host_mcp_service.subscription_readers()
+    readings = await gather(*(to_thread(read, reader) for reader in readers.values()))
+    return HostSubscriptionsOut(
+        checked_at=datetime.now(UTC), readings=dict(zip(readers, readings, strict=True))
+    )
+
+
 async def host_mcp_status(
     _inp: HostMcpStatusInput, _ctx: MCPContext, _emit: ProgressEmitter
 ) -> HostMcpStatusOut:
@@ -110,6 +160,32 @@ async def host_mcp_status(
 
 def operation_specs():
     return [
+        OperationSpec(
+            name="hostMcp.subscriptions",
+            summary="Read subscription plans and remaining quotas from signed-in native tools.",
+            input_model=HostMcpStatusInput,
+            output_model=HostSubscriptionsOut,
+            handler=host_subscriptions,
+            mutating=False,
+            grant_policy="local-admin-console-read",
+            category="system",
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=False),
+                cli=OperationSurface(enabled=False),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/hostMcp.subscriptions/call",
+                ),
+            ),
+            purpose="Display native plan and quota readings independently of MCP registration.",
+            response_policy=OperationResponsePolicy(
+                default_mode="raw",
+                allowed_modes=("raw",),
+                raw_only_reason="Readings contain only plan, quota windows, and timestamps.",
+            ),
+            examples=(OperationExample(title="Refresh Home subscription readings", arguments={}),),
+        ),
         operation_spec(
             name="hostMcp.status",
             summary="Read local AI-tool connection status and safe native execution choices.",
