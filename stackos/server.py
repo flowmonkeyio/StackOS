@@ -77,12 +77,12 @@ _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
 )
 _OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 _SLOW_REQUEST_MS = 100
-_PRIVATE_GENERATED_ASSET_ROOTS = ("elevenlabs", "imap-transfers", "stripe-invoice-transfers")
+_PRIVATE_TRANSFER_STAGING_ROOTS = ("imap-transfers", "stripe-invoice-transfers")
 BACKUP_MAINTENANCE_JOB_ID = "background-encrypted-backups"
 
 
 class GeneratedAssetsStaticFiles(StaticFiles):
-    """Serve public generated media without exposing private asset trees."""
+    """Serve public generated media without exposing private staging trees."""
 
     @staticmethod
     def _is_within(candidate: Path, root: Path) -> bool:
@@ -92,19 +92,19 @@ class GeneratedAssetsStaticFiles(StaticFiles):
         return candidate_parts[: len(root_parts)] == root_parts
 
     def lookup_path(self, path: str) -> tuple[str, os.stat_result | None]:
-        # A public sibling can be a symlink into a private asset tree.
+        # A public sibling can be a symlink into the reserved staging tree.
         # Resolve both paths before StaticFiles stats or opens the candidate so
         # that an alias cannot bypass the normalized lexical check below.
         for directory in self.all_directories:
             try:
                 candidate = Path(os.path.realpath(os.path.join(directory, path)))
-                private_roots = [
+                staging_roots = [
                     Path(os.path.realpath(os.path.join(directory, name)))
-                    for name in _PRIVATE_GENERATED_ASSET_ROOTS
+                    for name in _PRIVATE_TRANSFER_STAGING_ROOTS
                 ]
             except (OSError, ValueError):
                 return "", None
-            if any(self._is_within(candidate, root) for root in private_roots):
+            if any(self._is_within(candidate, root) for root in staging_roots):
                 return "", None
         return super().lookup_path(path)
 
@@ -114,7 +114,7 @@ class GeneratedAssetsStaticFiles(StaticFiles):
         # normalized before we enforce the reserved top-level boundary. Keep
         # this check before super().get_response(), which performs file lookup.
         parts = Path(path).parts
-        if parts and parts[0].casefold() in _PRIVATE_GENERATED_ASSET_ROOTS:
+        if parts and parts[0].casefold() in _PRIVATE_TRANSFER_STAGING_ROOTS:
             raise HTTPException(status_code=404)
         return await super().get_response(path, scope)
 

@@ -244,7 +244,9 @@ async def action_validate(
     project_id = inp.project_id if inp.project_id is not None else ctx.project_id
     settings = ctx.extras.get("settings")
     return ActionRepository(
-        ctx.session, asset_dir=getattr(settings, "generated_assets_dir", None)
+        ctx.session,
+        asset_dir=getattr(settings, "generated_assets_dir", None),
+        data_dir=getattr(settings, "data_dir", None),
     ).validate(
         project_id=project_id,
         action_ref=inp.action_ref,

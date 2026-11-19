@@ -22,7 +22,14 @@ from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.actions.repository.utils import _redact_for_audit
 from stackos.config import Settings
 from stackos.db.connection import make_engine
-from stackos.db.models import Action, ActionCall, ActionCallStatus, IdempotencyKey, PayloadSecret
+from stackos.db.models import (
+    Action,
+    ActionCall,
+    ActionCallStatus,
+    Artifact,
+    IdempotencyKey,
+    PayloadSecret,
+)
 from tests.helpers.integration_clock import IntegrationClock, isolated_provider_clock
 
 from .conftest import MCPClient
@@ -1082,6 +1089,69 @@ def _mock_elevenlabs_audio(httpx_mock: HTTPXMock, operation: str) -> None:
         )
 
 
+def _stored_elevenlabs_audio(settings: Settings, artifact_id: int, project_id: int) -> Path:
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            artifact = session.get(Artifact, artifact_id)
+            assert artifact is not None and artifact.project_id == project_id
+            custody = artifact.managed_file_json
+            assert custody is not None and custody["owner_project_id"] == project_id
+            assert Path(custody["root"]) == settings.data_dir.resolve()
+            path = Path(custody["root"]) / custody["path"]
+            assert path.is_relative_to(settings.data_dir.resolve() / "projects" / str(project_id))
+            assert not path.is_relative_to(settings.generated_assets_dir.resolve())
+            info = path.stat()
+            assert (info.st_dev, info.st_ino) == (custody["device"], custody["inode"])
+            return path
+    finally:
+        engine.dispose()
+
+
+def _assert_foreign_slack_upload_denied(
+    mcp: MCPClient, project_id: int, opaque_uri: str, alias_uri: str
+) -> None:
+    credential_ref = _create_account(
+        mcp,
+        project_id,
+        provider_key="slack-bot",
+        auth_method_key="bot-token",
+        fields={"bot_token": "xoxb-1234567890-offline-upload", "signing_secret": "synthetic"},
+    )
+    profile = _call_tool_raw(
+        mcp,
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "offline-slack",
+            "identity": {"display_name": "Disposable Slack"},
+            "provider_facets": {"slack-bot": {"credential_ref": credential_ref}},
+        },
+    )
+    assert profile["data"]["key"] == "offline-slack"
+    for uri, expected in (
+        (opaque_uri, "must be a generated asset URI"),
+        (alias_uri, "must stay inside generated assets"),
+    ):
+        denied = mcp.call_tool_error(
+            "action.run",
+            {
+                "project_id": project_id,
+                "action_ref": "communications.slack-bot.file.upload",
+                "credential_ref": credential_ref,
+                "confirm_direct": True,
+                "intent_summary": "Verify a disposable project cannot upload foreign audio.",
+                "input_json": {
+                    "profile_ref": "communication-profile:offline-slack",
+                    "channel_ref": "slack-channel:C123",
+                    "file": {"artifact_ref": uri},
+                    "delete_after_upload": True,
+                },
+            },
+        )
+        assert expected in denied["data"]["error"]
+
+
 @pytest.mark.parametrize("operation", ["speech.generate", "voices.design"])
 @pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
 def test_elevenlabs_audio_outputs_cross_real_mcp_and_artifact_owners(
@@ -1201,12 +1271,19 @@ def test_elevenlabs_audio_outputs_cross_real_mcp_and_artifact_owners(
         assert artifact["kind"] == "audio"
         assert artifact["size_bytes"] == len(expected_bytes)
         assert artifact["metadata_json"].get("generated_voice_id") == voice_id
-        path = mcp_settings.generated_assets_dir / artifact["uri"].removeprefix(
-            "/generated-assets/"
+        read = _call_tool_raw(
+            mcp_client, "artifact.read", {"artifact_id": artifact_id, "project_id": project_id}
         )
+        assert read["artifact"] == artifact
+        assert read["content_available"] is False
+        assert read["content_type"] == mime
+        assert read["bytes"] == len(expected_bytes)
+        assert "path" not in read
+        assert "content" not in read
+        assert artifact["uri"].startswith("stackos://project-artifacts/")
+        path = _stored_elevenlabs_audio(mcp_settings, artifact_id, project_id)
         assert path.read_bytes() == expected_bytes
-        assert str(path) not in rendered
-        assert mcp_client.test_client.get(artifact["uri"]).status_code == 404
+        assert str(path) not in rendered + json.dumps(read)
     if speech and not granted:
         # A public-looking name must not bypass the private filesystem boundary.
         alias = mcp_settings.generated_assets_dir / "public-speech-alias.wav"
@@ -1226,10 +1303,16 @@ def test_elevenlabs_audio_outputs_cross_real_mcp_and_artifact_owners(
         )["data"]["id"]
         foreign_args = {"project_id": foreign, "artifact_id": files[0][0]}
         assert mcp_client.call_tool_error("artifact.get", foreign_args)["code"] == -32004
+        assert mcp_client.call_tool_error("artifact.read", foreign_args)["code"] == -32004
         assert (
             mcp_client.call_tool_structured("artifact.query", {"project_id": foreign})["items"]
             == []
         )
+        _assert_foreign_slack_upload_denied(
+            mcp_client, foreign, artifact["uri"], "/generated-assets/public-speech-alias.wav"
+        )
+        assert len(httpx_mock.get_requests()) == 1
+        assert path.read_bytes() == b"synthetic-wav"
 
 
 @pytest.mark.parametrize("operation", ["speech.generate", "voices.design"])
@@ -1261,19 +1344,19 @@ def test_elevenlabs_audio_storage_failure_retains_receipt_and_prevents_resend(
     }
     _mock_elevenlabs_audio(httpx_mock, operation)
     private_path = "/private/fixture/elevenlabs"
-    create_generated_file = ArtifactRepository.create_generated_file
+    create_project_file = ArtifactRepository.create_project_file
 
     def fail_first_artifact(repo, **kwargs):
         if kwargs["metadata_json"].get("generated_voice_id") != "preview-last":
             raise OSError(private_path)
-        return create_generated_file(repo, **kwargs)
+        return create_project_file(repo, **kwargs)
 
     def fail_response_file(*_args, **_kwargs):
         raise OSError(private_path)
 
     with monkeypatch.context() as scoped:
         if failure == "artifact":
-            scoped.setattr(ArtifactRepository, "create_generated_file", fail_first_artifact)
+            scoped.setattr(ArtifactRepository, "create_project_file", fail_first_artifact)
         else:
             scoped.setattr(ActionRepository, "_apply_output_policy", fail_response_file)
         first = mcp_client.call_tool_error("action.run", arguments)["data"]
@@ -1333,7 +1416,7 @@ def test_elevenlabs_audio_storage_failure_retains_receipt_and_prevents_resend(
 
     if failure == "artifact":
         # Project cleanup owns both registered files and files stranded by a failed save.
-        root = mcp_settings.generated_assets_dir / "elevenlabs" / f"project-{project_id}"
+        root = mcp_settings.data_dir / "projects" / str(project_id) / "elevenlabs"
         assert len([path for path in root.rglob("*") if path.is_file()]) == (1 if speech else 2)
         deletion = mcp_client.call_tool_structured(
             "project.delete",

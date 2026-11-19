@@ -19,6 +19,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
+def project_data_dir(data_dir: Path, project_id: int) -> Path:
+    """Return the daemon-managed private directory for a permanent project ID."""
+    return data_dir / "projects" / str(project_id)
+
+
 def _default_data_dir() -> Path:
     """Return the XDG-style data directory.
 

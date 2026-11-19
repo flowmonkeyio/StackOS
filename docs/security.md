@@ -187,14 +187,16 @@ held. Existing busy locks, symlinks and unsafe aliases remain failures.
 
 Ordinary generated media remains available from the loopback-local
 `/generated-assets/*` mount without bearer authentication. It returns HTTP 404
-before file lookup for the private `elevenlabs`, `imap-transfers`, and
+before file lookup for the private `imap-transfers` and
 `stripe-invoice-transfers` subtrees. The guard checks the normalized request
 path and the resolved filesystem target, including aliases beneath a public
 directory. The denial applies with either bearer token as well.
 
-ElevenLabs generated audio stays in project-owned files. The action returns
-artifact IDs, and `artifact.get` exposes metadata and the local storage locator
-through its project scope. The static mount returns 404 for these audio files.
+ElevenLabs generated audio stays beneath the daemon's project data directory,
+outside the generated-assets mount and file inputs that resolve within that
+mount. The action returns project artifact IDs. Artifact reads return metadata
+and an opaque reference. The artifact repository records the actual storage
+path and file identity privately for project-owned consumers and cleanup.
 
 An IMAP export `staging_uri` is therefore a host-filesystem-only locator under
 the daemon-owned generated-assets root, not an HTTP URL. A trusted local host

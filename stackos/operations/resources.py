@@ -196,6 +196,7 @@ def operation_specs():
                 "Artifact metadata, content availability, bounded content, and truncation state.",
                 "Only generated-assets JSON/text files are read; external or binary artifact "
                 "refs return instructions.",
+                "Private project files return metadata without exposing the file path or content.",
             ),
             mutating=False,
             grant_policy="direct-read",

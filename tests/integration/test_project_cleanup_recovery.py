@@ -335,13 +335,10 @@ async def test_custody_handoff_rolls_back_with_failed_project_purge(fixture):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("root_index", range(7))
-async def test_shared_leaf_from_each_derived_root_is_retired_by_final_reference(
-    fixture, root_index
-):
+async def test_shared_leaf_from_each_derived_root_is_retired_by_final_reference(fixture):
     s, settings, target, other = fixture
-    owned_root = ProjectCleanupService(s, settings)._roots(target.id)[root_index]
-    path = put(owned_root / "nested" / "shared.bin")
+    owned_roots = ProjectCleanupService(s, settings)._roots(target.id)
+    paths = [put(root / "nested" / "shared.bin") for root in owned_roots]
     unrelated = put(settings.data_dir / "unowned" / "must-survive")
     third = (
         ProjectRepository(s)
@@ -349,7 +346,8 @@ async def test_shared_leaf_from_each_derived_root_is_retired_by_final_reference(
         .data
     )
     for project in (other, third):
-        ArtifactRepository(s).create(project_id=project.id, kind="file", uri=path.as_uri())
+        for path in paths:
+            ArtifactRepository(s).create(project_id=project.id, kind="file", uri=path.as_uri())
         ArtifactRepository(s).create(project_id=project.id, kind="file", uri=unrelated.as_uri())
     for project in (target, other, third):
         with Session(s.get_bind()) as restarted:
@@ -358,9 +356,11 @@ async def test_shared_leaf_from_each_derived_root_is_retired_by_final_reference(
             )
             assert result.status == "deleted"
         if project.id != third.id:
-            assert path.exists()
+            for path in paths:
+                assert path.exists(), path
         assert unrelated.read_text() == "sentinel"
-    assert not path.exists() and not owned_root.exists()
+    for root, path in zip(owned_roots, paths, strict=True):
+        assert not path.exists() and not root.exists(), root
 
 
 @pytest.mark.asyncio

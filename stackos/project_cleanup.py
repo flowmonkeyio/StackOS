@@ -24,7 +24,7 @@ from sqlmodel import Session, col, select
 from stackos.actions import ActionRepository
 from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, BrowserRuntime, get_browser_runtime
-from stackos.config import Settings
+from stackos.config import Settings, project_data_dir
 from stackos.db.models import (
     ActionCall,
     ActionCallStatus,
@@ -317,18 +317,13 @@ class ProjectCleanupService:
     def _roots(self, project_id: int) -> list[Path]:
         data, assets = self.settings.data_dir, self.settings.generated_assets_dir
         return [
-            data / "projects" / str(project_id),
+            project_data_dir(data, project_id),
             data / "browser-profiles" / BROWSER_PROFILE_DIRNAME / f"project-{project_id}",
             data / "browser-state" / "gstack" / f"project-{project_id}",
             assets / "telegram" / str(project_id),
             *[
                 assets / kind / f"project-{project_id}"
-                for kind in (
-                    "action-outputs",
-                    "elevenlabs",
-                    "imap-transfers",
-                    "stripe-invoice-transfers",
-                )
+                for kind in ("action-outputs", "imap-transfers", "stripe-invoice-transfers")
             ],
         ]
 

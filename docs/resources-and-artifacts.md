@@ -84,7 +84,9 @@ Artifact rows live in `artifacts`:
   shared leaves from derived project directories;
   absent from public artifact inputs/outputs and immutable through artifact tools.
   It records the producer's root/path and filesystem identity for safe project
-  cleanup. Public provenance is descriptive metadata and cannot authorize file
+  cleanup. Private project files use opaque artifact URIs and keep their paths
+  in custody. `artifact.read` returns their metadata without opening the files.
+  Public provenance is descriptive metadata and cannot authorize file
   deletion. Verified custody passes to surviving shared references during
   project purge, so the last reference retains cleanup responsibility. Root-owned
   leaves such as action responses retain their original project boundary and

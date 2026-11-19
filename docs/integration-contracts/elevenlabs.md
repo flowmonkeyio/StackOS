@@ -55,8 +55,8 @@ after a failure. Failed rows keep any known generated ID and their
 and metadata. Use the selected preview's `generated_voice_id` for a separately
 confirmed `voices.create`. Audio bytes stay in managed project files, and
 reference audio supplied with voice design is redacted from the action audit.
-The artifact URI identifies private local storage. The public static mount
-returns 404 for these audio files.
+The artifact URI is an opaque reference. `artifact.read` returns metadata for
+these files. Compatible project actions use the artifact ID to select audio.
 
 Inspect the original call after a partial preview batch, ambiguous provider
 outcome, or local storage failure. A post-dispatch storage error carries the

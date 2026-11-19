@@ -1085,6 +1085,7 @@ class ActionExecutionMixin:
             credential_ref=credential.credential_ref if credential is not None else credential_ref,
             credential=credential,
             asset_dir=self._asset_dir,
+            data_dir=self._data_dir,
             session=self._s,
             dry_run=dry_run,
             idempotency_key=idempotency_key,

@@ -9,6 +9,7 @@ from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -18,6 +19,7 @@ from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from stackos.artifacts import redact_secrets
+from stackos.config import project_data_dir
 from stackos.db.models import (
     Artifact,
     DurableActionArtifact,
@@ -42,6 +44,7 @@ from stackos.repositories.base import (
 
 ARTIFACT_ACTIVE_STATUSES = frozenset({"draft", "approved"})
 ARTIFACT_STATUSES = frozenset({"draft", "approved", "superseded", "archived"})
+PROJECT_FILE_ARTIFACT_URI_PREFIX = "stackos://project-artifacts/"
 
 
 def _utcnow() -> datetime:
@@ -541,29 +544,47 @@ class ArtifactRepository:
         )
         return self._create(project_id=project_id, _managed_file_json=custody, **artifact)
 
+    def create_project_file(
+        self, *, data_dir: Path, path: Path, project_id: int, **artifact: Any
+    ) -> Envelope[ArtifactOut]:
+        """Register a private producer file beneath the existing project data root."""
+        root = data_dir.resolve()
+        if not path.is_relative_to(project_data_dir(root, project_id)):
+            raise ValidationError("private file must stay inside the owning project directory")
+        custody = self._regular_file_custody(root, path)
+        custody["owner_project_id"] = project_id
+        return self._create(
+            project_id=project_id,
+            uri=PROJECT_FILE_ARTIFACT_URI_PREFIX + uuid4().hex,
+            _managed_file_json=custody,
+            **artifact,
+        )
+
     @staticmethod
     def _generated_file_custody(
         *, asset_root: Path, path: Path, project_id: int, uri: str | None
     ) -> dict[str, Any]:
         root = asset_root.resolve()
+        custody = ArtifactRepository._regular_file_custody(root, path)
+        if uri != "/generated-assets/" + custody["path"]:
+            raise ValidationError("generated artifact URI must identify its actual file")
+        parts = Path(custody["path"]).parts
+        if parts[0] in {"action-outputs", "imap-transfers", "stripe-invoice-transfers"} and (
+            len(parts) < 3 or parts[1] != f"project-{project_id}"
+        ):
+            raise ValidationError("generated file belongs to another project root")
+        if parts[0] == "telegram" and (len(parts) < 3 or parts[1] != str(project_id)):
+            raise ValidationError("generated Telegram file belongs to another project root")
+        return custody
+
+    @staticmethod
+    def _regular_file_custody(root: Path, path: Path) -> dict[str, Any]:
         if path.is_symlink() or path.resolve() != path.absolute():
             raise ValidationError("generated file must not use filesystem aliases")
         relative = path.relative_to(root)
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise ValidationError("generated artifact must identify one regular file")
-        if uri != "/generated-assets/" + relative.as_posix():
-            raise ValidationError("generated artifact URI must identify its actual file")
-        parts = relative.parts
-        if parts[0] in {
-            "action-outputs",
-            "elevenlabs",
-            "imap-transfers",
-            "stripe-invoice-transfers",
-        } and (len(parts) < 3 or parts[1] != f"project-{project_id}"):
-            raise ValidationError("generated file belongs to another project root")
-        if parts[0] == "telegram" and (len(parts) < 3 or parts[1] != str(project_id)):
-            raise ValidationError("generated Telegram file belongs to another project root")
         return {
             "root": str(root),
             "path": relative.as_posix(),

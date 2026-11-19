@@ -21,7 +21,7 @@ from stackos.actions.provider_utils import (
     JsonObject,
     elevenlabs_audio_receipt,
 )
-from stackos.config import Settings
+from stackos.config import Settings, project_data_dir
 from stackos.repositories.resources import ArtifactRepository
 
 
@@ -32,7 +32,7 @@ class ElevenLabsActionConnector(PackageActionConnector):
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         if request.operation in ELEVENLABS_AUDIO_OPERATIONS:
             request = replace(
-                request, asset_dir=_output_dir(_asset_root(request), request.project_id)
+                request, asset_dir=_output_dir(_data_dir(request), request.project_id)
             )
         return super().validate(request)
 
@@ -45,10 +45,11 @@ class ElevenLabsActionConnector(PackageActionConnector):
             )
 
         try:
-            root = _asset_root(request)
+            root = _data_dir(request)
             output_dir = _output_dir(root, request.project_id)
-            if output_dir.resolve() != output_dir:
-                raise ValueError("output directory uses a filesystem alias")
+            public_root = (request.asset_dir or root / "generated-assets").resolve()
+            if output_dir.resolve() != output_dir or output_dir.is_relative_to(public_root):
+                raise ValueError("audio directory must stay in private project storage")
             output_dir.mkdir(mode=0o700, parents=True)
         except (OSError, RuntimeError, ValueError):
             raise ActionConnectorError(
@@ -68,12 +69,12 @@ class ElevenLabsActionConnector(PackageActionConnector):
                 output_dir.rmdir()
 
 
-def _asset_root(request: ActionConnectorRequest) -> Path:
-    return (request.asset_dir or Settings().generated_assets_dir).resolve()
+def _data_dir(request: ActionConnectorRequest) -> Path:
+    return (request.data_dir or Settings().data_dir).resolve()
 
 
 def _output_dir(root: Path, project_id: int) -> Path:
-    return root / "elevenlabs" / f"project-{project_id}" / uuid4().hex
+    return project_data_dir(root, project_id) / "elevenlabs" / uuid4().hex
 
 
 def _project_audio(
@@ -86,13 +87,12 @@ def _project_audio(
         path = Path(descriptor.path)
         if path.parent != output_dir or not descriptor.mime_type:
             raise ValueError("invalid native audio file descriptor")
-        return repository.create_generated_file(
-            asset_root=root,
+        return repository.create_project_file(
+            data_dir=root,
             path=path,
             project_id=request.project_id,
             plugin_slug=request.plugin_slug,
             kind="audio",
-            uri="/generated-assets/" + path.relative_to(root).as_posix(),
             name=path.name,
             mime_type=descriptor.mime_type,
             size_bytes=path.lstat().st_size,

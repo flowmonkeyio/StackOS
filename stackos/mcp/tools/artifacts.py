@@ -15,7 +15,11 @@ from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import NotFoundError, Page, ValidationError
-from stackos.repositories.resources import ArtifactOut, ArtifactRepository
+from stackos.repositories.resources import (
+    PROJECT_FILE_ARTIFACT_URI_PREFIX,
+    ArtifactOut,
+    ArtifactRepository,
+)
 
 
 class ArtifactCreateInput(MCPInput):
@@ -280,6 +284,14 @@ async def _artifact_read(
         "max_bytes": inp.max_bytes,
     }
     uri = artifact.uri
+    if uri.startswith(PROJECT_FILE_ARTIFACT_URI_PREFIX):
+        return {
+            **base,
+            "content_available": False,
+            "content_type": artifact.mime_type,
+            "bytes": artifact.size_bytes,
+            "read_instructions": "Pass the artifact ID to a compatible project action.",
+        }
     if not uri.startswith("/generated-assets/"):
         return {
             **base,
