@@ -152,16 +152,33 @@ def test_native_identity_requires_native_workspace_and_uses_email_for_display():
     assert identity.email == "same@example.invalid"
 
 
-@pytest.mark.parametrize("args", [("--remote", "unix://bad"), ("--model", "--last"), ("--last",)])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--remote", "unix://bad"),
+        ("--model", "--last"),
+        ("--last",),
+        ("-c", 'cli_auth_credentials_store="file"'),
+        ("-c", 'sandbox_mode.other="read-only"'),
+        ("-c", "approval_policy=true"),
+    ],
+)
 def test_foreground_refuses_alternate_routing_before_launch(args):
     with pytest.raises(ForegroundError, match="conflicts"):
         _native_flags(args)
 
 
-def test_foreground_keeps_permission_overrides_on_the_native_backend():
-    flags, settings = _native_flags(
-        ("--sandbox", "read-only", "--ask-for-approval=never", "--no-alt-screen")
-    )
+@pytest.mark.parametrize(
+    "permissions",
+    [
+        ("--sandbox", "read-only", "--ask-for-approval=never"),
+        ("-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"'),
+        ("--config=sandbox_mode=read-only", "--config=approval_policy=never"),
+        ("-s", "read-only", "-c", 'sandbox_mode="workspace-write"', "-c", "approval_policy=never"),
+    ],
+)
+def test_foreground_keeps_permission_overrides_on_the_native_backend(permissions):
+    flags, settings = _native_flags((*permissions, "--no-alt-screen"))
     assert flags == ("--no-alt-screen",)
     assert settings == {"sandbox": "read-only", "approvalPolicy": "never"}
 

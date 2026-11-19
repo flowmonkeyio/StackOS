@@ -48,6 +48,7 @@ _COMPATIBLE_CONFIG = {
     "web_search",
     "mcp_servers",
 }
+_PERMISSION_CONFIG = {"sandbox_mode": "sandbox", "approval_policy": "approvalPolicy"}
 
 
 def _native_flags(args: tuple[str, ...]) -> tuple[tuple[str, ...], dict[str, Any]]:
@@ -55,6 +56,7 @@ def _native_flags(args: tuple[str, ...]) -> tuple[tuple[str, ...], dict[str, Any
     flags = iter(args)
     tui: list[str] = []
     native: dict[str, Any] = {}
+    configured_permissions: dict[str, str] = {}
     for token in flags:
         flag, equal, value = token.partition("=")
         if token == "--no-alt-screen":
@@ -66,14 +68,22 @@ def _native_flags(args: tuple[str, ...]) -> tuple[tuple[str, ...], dict[str, Any
         if flag in ("-c", "--config"):
             expression = value if equal else next(flags, "")
             key, separator, raw = expression.partition("=")
-            if separator and key.strip().split(".", 1)[0] in _COMPATIBLE_CONFIG and raw:
+            key = key.strip()
+            compatible = key.split(".", 1)[0] in _COMPATIBLE_CONFIG
+            permission = _PERMISSION_CONFIG.get(key)
+            if separator and raw and (compatible or permission is not None):
                 try:
                     parsed = tomllib.loads("value = " + raw)
                 except tomllib.TOMLDecodeError:
                     parsed = {"value": raw}
                 if set(parsed) == {"value"}:
-                    native.setdefault("config", {})[key.strip()] = parsed["value"]
-                    continue
+                    setting = parsed["value"]
+                    if permission is not None and isinstance(setting, str) and setting:
+                        configured_permissions[permission] = setting
+                        continue
+                    if compatible:
+                        native.setdefault("config", {})[key] = setting
+                        continue
         if token == "--approve-for-me" and not (_AUTO_REVIEW.keys() & native.keys()):
             native.update(_AUTO_REVIEW)
             continue
@@ -84,7 +94,8 @@ def _native_flags(args: tuple[str, ...]) -> tuple[tuple[str, ...], dict[str, Any
                 native[key] = operand
                 continue
         raise ForegroundError("A Codex option conflicts with managed account or session routing.")
-    return tuple(tui), native
+    # Dedicated flags override configuration just as they do in the stock CLI.
+    return tuple(tui), {**configured_permissions, **native}
 
 
 class CodexForeground:
