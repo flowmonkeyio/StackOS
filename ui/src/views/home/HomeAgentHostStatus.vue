@@ -167,7 +167,7 @@ function meterTone(used: number) {
       @update:model-value="value => { if (!value) void accounts.cancel() }">
       <template v-if="accounts.enrollment.value">
         <p v-if="accounts.enrollment.value.value.status === 'pending'">Complete sign-in in the native browser or tool window. This account will be added after the tool confirms its identity.</p>
-        <p v-else-if="accounts.enrollment.value.value.status === 'enrolled'">Account added. Choose it from the account menu to use it for new sessions.</p>
+        <p v-else-if="accounts.enrollment.value.value.status === 'enrolled'">Account added. Choose it from the account menu to switch.</p>
         <p v-else-if="accounts.enrollment.value.value.status === 'duplicate'">This account is already saved.</p>
         <p v-else>Sign-in {{ accounts.enrollment.value.value.status }}. You can close this window and try again.</p>
         <p v-if="accounts.errors.value[accounts.enrollment.value.host]" role="alert" class="mt-2 text-danger-fg">{{ accounts.errors.value[accounts.enrollment.value.host] }}</p>
