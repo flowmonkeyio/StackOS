@@ -206,8 +206,9 @@ Restart, Run doctor, and Install or repair remain native desktop controls;
 the browser shows them disabled with a desktop-only explanation.
 
 In **Overview → AI tool connections**, Codex, Claude Code and Grok Build can
-also show the signed-in plan, the percentage left in each reported quota
-window and its local reset time. Returning to Overview within a minute reuses
+also show the signed-in plan, the percentage used in each reported quota
+window and its local reset time. Bars turn orange at 75% used and red at 95%.
+Returning to Overview within a minute reuses
 the last check. **Refresh** reads the native tools again. Gemini CLI currently
 shows **Quota unavailable**. Claude Desktop shows its MCP connection and Hermes shows its
 profile status. A missing quota reading does not affect the connection badge.
