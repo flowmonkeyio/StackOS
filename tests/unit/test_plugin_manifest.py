@@ -1143,7 +1143,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 61
+    assert len(providers) == 62
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -1169,7 +1169,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
             continue
         expected_verified_at = (
             None
-            if provider.key in {"quickbooks-online", "google-indexing"}
+            if provider.key in {"quickbooks-online", "google-indexing", "elevenlabs"}
             else "2026-09-22"
             if plugin_slug == "communications" and provider.key == "telegram"
             else "2026-09-12"

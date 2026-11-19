@@ -291,11 +291,13 @@ class ActionAuditMixin:
             dry_run=dry_run,
             idempotency_key=idempotency_key,
             credential_ref=credential_ref,
-            request_json=_redact_for_audit(request_json),
+            request_json=_redact_for_audit(request_json, action_ref=manifest.action_ref),
             provider_context_json=_redact_for_audit(provider_context_json)
             if provider_context_json is not None
             else None,
-            response_json=_redact_for_audit(response_json) if response_json is not None else None,
+            response_json=_redact_for_audit(response_json, action_ref=manifest.action_ref)
+            if response_json is not None
+            else None,
             metadata_json=_redact_for_audit(metadata_json) if metadata_json is not None else None,
             cost_cents=cost_cents,
             duration_ms=duration_ms,
@@ -551,9 +553,13 @@ class ActionAuditMixin:
             dry_run=row.dry_run,
             idempotency_key=row.idempotency_key,
             credential_ref=row.credential_ref,
-            request_json=_redact_for_audit(row.request_json),
+            request_json=_redact_for_audit(
+                row.request_json, action_ref=f"{row.plugin_slug}.{row.action_key}"
+            ),
             provider_context_json=_redact_for_audit(row.provider_context_json),
-            response_json=_redact_for_audit(row.response_json),
+            response_json=_redact_for_audit(
+                row.response_json, action_ref=f"{row.plugin_slug}.{row.action_key}"
+            ),
             metadata_json=_redact_for_audit(row.metadata_json),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
@@ -579,9 +585,13 @@ class ActionAuditMixin:
             status=row.status,
             dry_run=row.dry_run,
             credential_ref=row.credential_ref,
-            request_json=_redact_for_audit(row.request_json),
+            request_json=_redact_for_audit(
+                row.request_json, action_ref=f"{row.plugin_slug}.{row.action_key}"
+            ),
             provider_context_json=_redact_for_audit(row.provider_context_json),
-            response_json=_redact_for_audit(row.response_json),
+            response_json=_redact_for_audit(
+                row.response_json, action_ref=f"{row.plugin_slug}.{row.action_key}"
+            ),
             metadata_json=_redact_for_audit(metadata_json),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
@@ -616,7 +626,7 @@ class ActionAuditMixin:
             return None
         _require_generated_replay_scope(row, manifest)
         if (
-            row.request_json != _redact_for_audit(request_json)
+            row.request_json != _redact_for_audit(request_json, action_ref=manifest.action_ref)
             or row.provider_context_json != _redact_for_audit(provider_context_json)
             or row.credential_ref != credential_ref
             or row.dry_run != dry_run

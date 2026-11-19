@@ -799,7 +799,9 @@ class ActionExecutionMixin:
             ) from exc
 
         duration_ms = int((time.perf_counter() - started) * 1000)
-        output_json = _redact_for_audit(redact_output(result.output_json))
+        output_json = _redact_for_audit(
+            redact_output(result.output_json), action_ref=manifest.action_ref
+        )
         result_metadata = (
             _redact_for_audit(redact_output(result.metadata_json)) if result.metadata_json else None
         )
@@ -1466,7 +1468,7 @@ def _action_output_envelope(
             "risk_level": manifest.risk_level,
         },
         "request": {
-            "input_json": _redact_for_audit(input_json),
+            "input_json": _redact_for_audit(input_json, action_ref=manifest.action_ref),
             "provider_context_json": _redact_for_audit(provider_context_json)
             if provider_context_json is not None
             else None,
@@ -1474,7 +1476,7 @@ def _action_output_envelope(
             "context_ref": runtime_context.context_ref,
         },
         "response": {
-            "output_json": _redact_for_audit(output_json),
+            "output_json": _redact_for_audit(output_json, action_ref=manifest.action_ref),
             "metadata_json": _redact_for_audit(row.metadata_json),
             "cost_cents": row.cost_cents,
             "duration_ms": row.duration_ms,

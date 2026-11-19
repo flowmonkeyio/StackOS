@@ -71,6 +71,12 @@ def test_run_plan_schema_rejects_secrets_but_allows_credential_refs() -> None:
     assert "api_key" in result.errors[0].message
 
 
+@pytest.mark.parametrize("key", ["page_token", "next_page_token"])
+def test_generic_run_plan_inputs_treat_token_fields_as_sensitive(key: str) -> None:
+    scan = find_run_plan_secret_findings({key: "synthetic-value"})
+    assert [finding.kind for finding in scan.findings] == ["key_name"]
+
+
 def test_run_plan_schema_rejects_unknown_step_tool_grant() -> None:
     data = _plan_dict()
     data["grants"] = {

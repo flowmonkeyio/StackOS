@@ -293,6 +293,11 @@ class CredentialTestingMixin:
                             ),
                             context=native_probe.AuthMethodProbeContext(auth_method_key=method.key),
                         )
+                    if catalog_key == "elevenlabs" and raw_result.get("ok") is True:
+                        raw_result = {
+                            **raw_result,
+                            "summary": "ElevenLabs verified subscription read access for this key.",
+                        }
                 except NativeProbeError as exc:
                     raise host_probe_error(exc) from None
                 except NativeValidationError as exc:
