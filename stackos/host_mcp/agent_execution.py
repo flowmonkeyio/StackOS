@@ -6,7 +6,7 @@ import json
 import os
 import signal
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path
 from threading import Event, RLock
@@ -146,9 +146,13 @@ def execute_json_agent(
     schema: dict[str, Any],
     host: str,
     decode: Callable[[str], AgentRunResult],
+    env: Mapping[str, str] | None = None,
+    pass_fds: tuple[int, ...] = (),
+    /,
     *,
     process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
+    native_env = subprocess_env_for_cli(command[0]) if env is None else env
     try:
         if process_control is not None:
             child = process_control.spawn(
@@ -157,8 +161,9 @@ def execute_json_agent(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=project_dir,
-                env=subprocess_env_for_cli(command[0]),
+                env=native_env,
                 text=True,
+                pass_fds=pass_fds,
             )
             try:
                 stdout, stderr = child.communicate(prompt)
@@ -173,8 +178,9 @@ def execute_json_agent(
                 capture_output=True,
                 check=False,
                 cwd=project_dir,
-                env=subprocess_env_for_cli(command[0]),
+                env=native_env,
                 text=True,
+                pass_fds=pass_fds,
             )
     except InvocationCancelled as exc:
         return AgentRunResult(None, error=str(exc))

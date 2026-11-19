@@ -5,6 +5,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from .accounts import HostAccountError, ResolvedAccountSelection
+from .adapters.claude_accounts import ClaudeAccountError, selected_profile
 from .subscription_native import run_capture
 
 # The CLI added auth status in 2.1.41 and structured /usage in 2.1.273.
@@ -83,8 +85,17 @@ def _meters(stdout: str) -> list[dict[str, Any]]:
     return []
 
 
-def read_claude(binary: str) -> dict[str, Any] | None:
-    version = run_capture(binary, ["--version"])
+def read_claude(
+    binary: str,
+    selection: ResolvedAccountSelection | None = None,
+) -> dict[str, Any] | None:
+    env = None
+    if selection is not None and selection.desired.account_ref is not None:
+        try:
+            env, _ = selected_profile(binary, selection)
+        except (ClaudeAccountError, HostAccountError):
+            return None
+    version = run_capture(binary, ["--version"], env=env)
     if (
         version is None
         or version.returncode
@@ -94,7 +105,7 @@ def read_claude(binary: str) -> dict[str, Any] | None:
     patch = int(match[1])
     if patch < 41:
         return None
-    auth = run_capture(binary, ["auth", "status", "--json"])
+    auth = run_capture(binary, ["auth", "status", "--json"], env=env)
     if auth is None or auth.returncode:
         return None
     try:
@@ -111,7 +122,7 @@ def read_claude(binary: str) -> dict[str, Any] | None:
     plan = _PLANS.get(tier.lower()) if isinstance(tier, str) else None
     meters = []
     if patch >= 273:
-        result = run_capture(binary, _USAGE_ARGS)
+        result = run_capture(binary, _USAGE_ARGS, env=env)
         if result is not None and result.returncode == 0:
             meters = _meters(result.stdout)
     return {"plan": plan, "meters": meters} if plan or meters else None
