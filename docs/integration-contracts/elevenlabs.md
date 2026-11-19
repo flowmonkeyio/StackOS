@@ -55,23 +55,20 @@ index counts saved native files, so it can differ from the preview's position
 after a failure. Failed rows keep any known generated ID and their
 `reason_code`. Use `artifact.get` in the project for the stored audio MIME type
 and metadata. Use the selected preview's `generated_voice_id` for a separately
-confirmed `voices.create`. Audio bytes stay in managed project files, and
-reference audio supplied with voice design is redacted from the action audit.
-The artifact URI is an opaque reference. `artifact.read` returns metadata for
-these files. Compatible project actions use the artifact ID to select audio.
-Encrypted backups include saved audio. StackOS holds the project and audio
-store writer locks through file creation and artifact registration. An active
-backup or writer can stop generation before the provider request.
+confirmed `voices.create`. Audio bytes are saved in the existing loopback-local generated-assets store and registered
+as project artifacts. `artifact.get` returns the stored audio URI, MIME type and
+metadata. Reference audio supplied with voice design is redacted from the audit.
+Generated assets are excluded from backup unless separately enrolled as a target.
 
 To align saved speech or a preview, pass its returned `artifact_id` as
 `audio_artifact_id` and provide the transcript as `text`. The same input
 accepts audio saved by a project-scoped generated-file producer such as a
 Telegram download. StackOS verifies that the active artifact belongs to the
-selected project, has an audio MIME type, and still identifies the regular
-file recorded in the appropriate managed store.
+selected project, is active, references a file within generated-assets, and
+has a supported audio MIME type.
 The audio must be nonempty and under 1 GB. The public input accepts only the
 artifact ID and transcript. StackOS supplies the verified file and MIME type
-to the native connector. Missing, foreign, unmanaged, and replaced files fail
+to the native connector. Missing, foreign, unmanaged, and unsafe paths fail
 before upload.
 
 The result preserves the provider's `words` entries with `text`, `start`
@@ -81,13 +78,9 @@ The input audio path, upload staging path, and audio bytes stay out of the
 action result and audit.
 
 Inspect the original call after a partial preview batch, ambiguous provider
-outcome, or local storage failure. A post-dispatch storage error carries the
-original call ID, any available provider request or history ID, and any saved
-artifact or generated preview IDs. Replaying that intent returns the original
-result or recovery receipt. An authorized matching alignment intent can
-recover that receipt if the audio is removed or its stored MIME type becomes
-unsupported. A new intent requires an available verified artifact with a
-supported MIME type and can incur another charge.
+outcome, or local storage failure before explicitly trying again. The native
+transport performs no automatic retries for POSTs. Normal StackOS successful
+result replay applies; a new submission can incur another charge.
 
 MCP and REST provider action responses use the shared response file by default.
 The action audit records the execution and safe Account reference.

@@ -59,8 +59,6 @@ class ActionConnectorRequest:
     # Authoritative persisted manifest schema, supplied by the action repository.
     # Adapters may pass it to native validation without storing a second copy.
     input_schema_json: Mapping[str, Any] | None = field(default=None, repr=False)
-    # Daemon storage for private project files, separate from generated assets.
-    data_dir: Path | None = field(default=None, repr=False)
 
 
 class ActionConnectorResult(BaseModel):

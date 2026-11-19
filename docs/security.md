@@ -183,20 +183,17 @@ Finance publication cleanup may recreate a lock already removed by the same
 cleanup only after project admission is fenced and the parent writer locks are
 held. Existing busy locks, symlinks and unsafe aliases remain failures.
 
-## Generated asset and private file boundary
+## Generated asset and IMAP staging boundary
 
 Ordinary generated media remains available from the loopback-local
-`/generated-assets/*` mount without bearer authentication. It returns HTTP 404
-before file lookup for the private `imap-transfers` and
-`stripe-invoice-transfers` subtrees. The guard checks the normalized request
-path and the resolved filesystem target, including aliases beneath a public
-directory. The denial applies with either bearer token as well.
-
-ElevenLabs generated audio stays beneath the daemon's project data directory,
-outside the generated-assets mount and file inputs that resolve within that
-mount. The action returns project artifact IDs. Artifact reads return metadata
-and an opaque reference. The artifact repository records the actual storage
-path and file identity privately for project-owned consumers and cleanup.
+`/generated-assets/*` mount without bearer authentication. The reserved
+`imap-transfers` first path component is different: it contains temporary raw
+mail evidence, so the mount rejects that normalized subtree with HTTP 404
+before file lookup. Duplicate separators, dot segments, percent encoding, and
+supplying either the daemon or UI bearer token do not make the subtree
+HTTP-readable. The mount also checks the resolved filesystem target, so a
+symlink or other path alias beneath a public-looking generated-assets directory
+cannot expose a file inside `imap-transfers`.
 
 An IMAP export `staging_uri` is therefore a host-filesystem-only locator under
 the daemon-owned generated-assets root, not an HTTP URL. A trusted local host

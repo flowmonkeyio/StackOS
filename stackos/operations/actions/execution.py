@@ -138,9 +138,7 @@ async def action_execute(
     )
     settings = ctx.extras.get("settings")
     asset_dir = getattr(settings, "generated_assets_dir", None)
-    env = await ActionRepository(
-        ctx.session, asset_dir=asset_dir, data_dir=getattr(settings, "data_dir", None)
-    ).execute(
+    env = await ActionRepository(ctx.session, asset_dir=asset_dir).execute(
         project_id=inp.project_id,
         action_ref=inp.action_ref,
         plugin_slug=inp.plugin_slug,
@@ -308,9 +306,7 @@ async def action_run(
         metadata["dedupe_source"] = idempotency_key_source
     if inp.intent_summary:
         metadata["intent_summary"] = inp.intent_summary
-    env = await ActionRepository(
-        ctx.session, asset_dir=asset_dir, data_dir=getattr(settings, "data_dir", None)
-    ).execute(
+    env = await ActionRepository(ctx.session, asset_dir=asset_dir).execute(
         project_id=project_id,
         action_ref=described.manifest.action_ref,
         input_json=inp.input_json,

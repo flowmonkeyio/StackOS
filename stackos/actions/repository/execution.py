@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import math
@@ -26,12 +25,6 @@ from stackos.actions.connectors import (
     ActionProgressCallback,
 )
 from stackos.actions.manifest import ExecutableActionManifest
-from stackos.actions.provider_utils import (
-    ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE,
-    ELEVENLABS_ALIGNMENT_REF,
-    ELEVENLABS_AUDIO_OPERATIONS,
-    elevenlabs_audio_receipt,
-)
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository, ResolvedCredential
 from stackos.config import Settings
@@ -49,7 +42,7 @@ from stackos.secret_refs import (
 from .background import BACKGROUND_ACTION_TASKS
 from .durable import durable_action_schedule_snapshot
 from .schema import ActionExecutionOut
-from .utils import _connector_failure_data, _redact_for_audit, _write_failure_receipt, utcnow
+from .utils import _redact_for_audit, utcnow
 from .validation import RuntimeActionContext
 
 ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
@@ -162,7 +155,6 @@ class ActionExecutionMixin:
             idempotency_key=idempotency_key,
         )
         validation_issues = _dedupe_validation_issues([*runtime_context.issues, *validation.issues])
-        pending_validation_error = None
         if validation_issues:
             credential_repair_operation = manifest.config_json.get("credential_repair_operation")
             repair = (
@@ -178,7 +170,7 @@ class ActionExecutionMixin:
                 and any(issue.code == "credential_not_connected" for issue in validation_issues)
                 else {}
             )
-            validation_error = ValidationError(
+            raise ValidationError(
                 "action payload is invalid",
                 data={
                     "action_ref": manifest.action_ref,
@@ -189,18 +181,6 @@ class ActionExecutionMixin:
                     **repair,
                 },
             )
-            if (
-                manifest.action_ref == ELEVENLABS_ALIGNMENT_REF
-                and not dry_run
-                and idempotency_key is not None
-                and all(
-                    issue.code == ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE for issue in validation_issues
-                )
-            ):
-                # A matching authorized replay returns a receipt and never reads audio.
-                pending_validation_error = validation_error
-            else:
-                raise validation_error
         effective_output_policy = _effective_output_policy(
             manifest=manifest,
             runtime_context=runtime_context,
@@ -376,8 +356,6 @@ class ActionExecutionMixin:
             )
             if replay is not None:
                 return Envelope(data=replay, project_id=project_id, run_id=run_id)
-        if pending_validation_error is not None:
-            raise pending_validation_error
         connector = self._connectors.get(manifest.connector_key)
         projected_payload = project_secret_refs(payload)
         dry_request = self._connector_request(
@@ -597,8 +575,6 @@ class ActionExecutionMixin:
             project_id, lambda: self._require_project(project_id)
         ):
             row, transient_output = await self._execute_prepared(prepared)
-        if isinstance(row, ActionExecutionOut):
-            return Envelope(data=row, project_id=project_id, run_id=run_id)
         return Envelope(
             data=ActionExecutionOut(
                 action_call=self._call_audit_out(row),
@@ -620,7 +596,7 @@ class ActionExecutionMixin:
         *,
         action_call_id: int | None = None,
         progress_callback: ActionProgressCallback | None = None,
-    ) -> tuple[ActionCall | ActionExecutionOut, dict[str, Any] | None]:
+    ) -> Any:
         project_id = prepared.project_id
         manifest = prepared.manifest
         payload = prepared.payload
@@ -641,48 +617,19 @@ class ActionExecutionMixin:
             manifest=manifest,
             credential_ref=resolved_ref,
         )
-        reserve_foreground = (
-            action_call_id is None and idempotency_key is not None and manifest.risk_level != "read"
-        )
-        try:
-            if reserve_foreground:
-                admission = self._reserve_foreground_call(prepared, credential)
-                if isinstance(admission, ActionExecutionOut):
-                    self._s.rollback()
-                    return admission, None
-                action_call_id = admission.id
-                assert action_call_id is not None
-            if manifest.enforce_budget and manifest.budget_kind and estimated_cost_cents:
-                IntegrationBudgetRepository(self._s).record_call(
-                    project_id=project_id,
-                    kind=manifest.budget_kind,
-                    cost_usd=estimated_cost_cents / 100,
-                    commit=not reserve_foreground,
-                )
-            materialized_payload, sensitive_values = materialize_secret_refs(
-                payload,
-                resolve=lambda secret_ref: PayloadSecretRepository(self._s).resolve(
-                    project_id=project_id,
-                    secret_ref=secret_ref,
-                ),
-            )
-            request = self._connector_request(
+        if manifest.enforce_budget and manifest.budget_kind and estimated_cost_cents:
+            IntegrationBudgetRepository(self._s).record_call(
                 project_id=project_id,
-                manifest=manifest,
-                input_json=materialized_payload,
-                provider_context_json=provider_context,
-                credential=credential,
-                dry_run=False,
-                idempotency_key=idempotency_key,
-                progress_callback=progress_callback,
-                action_call_id=action_call_id,
+                kind=manifest.budget_kind,
+                cost_usd=estimated_cost_cents / 100,
             )
-            if reserve_foreground:
-                self._s.commit()
-        except Exception:
-            if reserve_foreground:
-                self._s.rollback()
-            raise
+        materialized_payload, sensitive_values = materialize_secret_refs(
+            payload,
+            resolve=lambda secret_ref: PayloadSecretRepository(self._s).resolve(
+                project_id=project_id,
+                secret_ref=secret_ref,
+            ),
+        )
         refs = ProviderObjectReferenceRepository(self._s, project_id=project_id)
 
         def redact_output(value: Any) -> Any:
@@ -695,6 +642,17 @@ class ActionExecutionMixin:
                 ),
             )
 
+        request = self._connector_request(
+            project_id=project_id,
+            manifest=manifest,
+            input_json=materialized_payload,
+            provider_context_json=provider_context,
+            credential=credential,
+            dry_run=False,
+            idempotency_key=idempotency_key,
+            progress_callback=progress_callback,
+            action_call_id=action_call_id,
+        )
         started = time.perf_counter()
         try:
             try:
@@ -750,8 +708,6 @@ class ActionExecutionMixin:
                 if exc.metadata_json and not transient
                 else {}
             )
-            if manifest.risk_level != "read":
-                output_json.update(_write_failure_receipt(connector_metadata))
             failed_metadata = {
                 **(_redact_for_audit(redact_output(metadata_json)) if metadata_json else {}),
                 **connector_metadata,
@@ -794,9 +750,7 @@ class ActionExecutionMixin:
                     **transient_repair,
                 },
             ) from exc
-        except (Exception, asyncio.CancelledError) as exc:
-            if isinstance(exc, asyncio.CancelledError) and not reserve_foreground:
-                raise
+        except Exception as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
             self._s.rollback()
             transient = effective_output_policy["mode"] == "transient"
@@ -804,11 +758,6 @@ class ActionExecutionMixin:
                 "transient provider read failed"
                 if transient
                 else redact_secret_text(redact_output(str(exc)))
-            )
-            held_outcome = (
-                {"outcome_unknown": True, "retry_safe": False, "reconcile_before_retry": True}
-                if reserve_foreground
-                else None
             )
             row = self._record_call(
                 project_id=project_id,
@@ -829,7 +778,7 @@ class ActionExecutionMixin:
                     "retry_safe": True,
                 }
                 if transient
-                else held_outcome,
+                else None,
                 metadata_json=(redact_output(metadata_json) if metadata_json else None),
                 status=ActionCallStatus.FAILED,
                 dry_run=False,
@@ -838,8 +787,6 @@ class ActionExecutionMixin:
                 error=safe_error,
                 action_call_id=action_call_id,
             )
-            if isinstance(exc, asyncio.CancelledError):
-                raise
             raise ConflictError(
                 "action connector failed",
                 data=_connector_failure_data(
@@ -847,7 +794,7 @@ class ActionExecutionMixin:
                     row_id=int(row.id),
                     connector_key=manifest.connector_key,
                     error=safe_error,
-                    output_json=held_outcome,
+                    output_json=None,
                 ),
             ) from exc
 
@@ -859,21 +806,16 @@ class ActionExecutionMixin:
             _redact_for_audit(redact_output(result.metadata_json)) if result.metadata_json else None
         )
         actual_cost_cents = max(0, result.cost_cents)
-
-        def record_reported_cost() -> None:
-            if (
-                manifest.enforce_budget
-                and manifest.budget_kind
-                and actual_cost_cents > estimated_cost_cents
-            ):
-                IntegrationBudgetRepository(self._s).record_call(
-                    project_id=project_id,
-                    kind=manifest.budget_kind,
-                    cost_usd=(actual_cost_cents - estimated_cost_cents) / 100,
-                )
-
-        if not reserve_foreground:
-            record_reported_cost()
+        if (
+            manifest.enforce_budget
+            and manifest.budget_kind
+            and actual_cost_cents > estimated_cost_cents
+        ):
+            IntegrationBudgetRepository(self._s).record_call(
+                project_id=project_id,
+                kind=manifest.budget_kind,
+                cost_usd=(actual_cost_cents - estimated_cost_cents) / 100,
+            )
         success_metadata = {
             **(_redact_for_audit(redact_output(metadata_json)) if metadata_json else {}),
             **(result_metadata or {}),
@@ -920,8 +862,6 @@ class ActionExecutionMixin:
                 )
             return row, output_json
         try:
-            if reserve_foreground:
-                record_reported_cost()
             if effective_output_policy["mode"] == "inline":
                 row = self._record_call(
                     project_id=project_id,
@@ -976,15 +916,7 @@ class ActionExecutionMixin:
                 )
         except Exception as exc:
             self._s.rollback()
-            elevenlabs_audio = (
-                manifest.connector_key == "elevenlabs"
-                and manifest.operation in ELEVENLABS_AUDIO_OPERATIONS
-            )
-            safe_error = (
-                "could not store the ElevenLabs action response"
-                if elevenlabs_audio
-                else redact_secret_text(redact_output(str(exc)))
-            )
+            safe_error = redact_secret_text(redact_output(str(exc)))
             # Dispatch already succeeded. Keep this distinction in the durable audit,
             # not only the immediate error, so a resumed agent cannot mistake a local
             # output failure for permission to repeat a provider mutation.
@@ -995,14 +927,7 @@ class ActionExecutionMixin:
                 "outcome_unknown": mutation,
                 "retry_safe": not mutation,
                 "reconcile_before_retry": mutation,
-                "side_effect": "provider_executed_output_not_persisted",
             }
-            if elevenlabs_audio:
-                persistence_diagnosis.update(elevenlabs_audio_receipt(output_json))
-                persistence_diagnosis["charge_possible"] = True
-                for key in ("provider_request_id", "history_item_id"):
-                    if result_metadata and key in result_metadata:
-                        persistence_diagnosis[key] = result_metadata[key]
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,
@@ -1033,6 +958,7 @@ class ActionExecutionMixin:
                     "action_ref": manifest.action_ref,
                     "action_call_id": row.id,
                     "connector": manifest.connector_key,
+                    "side_effect": "provider_executed_output_not_persisted",
                     "error": safe_error,
                 },
             ) from exc
@@ -1105,7 +1031,6 @@ class ActionExecutionMixin:
             credential_ref=credential.credential_ref if credential is not None else credential_ref,
             credential=credential,
             asset_dir=self._asset_dir,
-            data_dir=self._data_dir,
             session=self._s,
             dry_run=dry_run,
             idempotency_key=idempotency_key,
@@ -1394,6 +1319,32 @@ def _metadata_with_execution_context(
         if value not in (None, {}, [])
     }
     return base
+
+
+def _connector_failure_data(
+    *,
+    manifest: ExecutableActionManifest,
+    row_id: int,
+    connector_key: str | None,
+    error: str,
+    output_json: dict[str, Any] | None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "status": "failed",
+        "action_ref": manifest.action_ref,
+        "action_call_id": row_id,
+        "provider_key": manifest.provider_key,
+        "connector": connector_key,
+        "error": error,
+    }
+    if isinstance(output_json, dict):
+        provider_status_code = output_json.get("provider_status_code")
+        provider_error = output_json.get("provider_error")
+        if provider_status_code is not None:
+            data["provider_status_code"] = provider_status_code
+        if provider_error is not None:
+            data["provider_error"] = provider_error
+    return data
 
 
 def _effective_output_policy(

@@ -247,15 +247,6 @@ generation. Old queued requests remain historical. Missing or mismatched data
 requires repair and is never replaced with a fresh empty master. Automatic backups
 remain opt-in on the adopted installation; managed project files need no enrollment.
 
-For private project artifacts, a current archive records the file identity
-observed at snapshot time. Recovery verifies the member's bytes and updates
-custody in the recovered database only when the snapshot identity matches the
-artifact record. The recovered project files and database can be moved together
-back into their original data directory on the same filesystem. Earlier archives
-without the identity record still recover their files. Their private artifact
-records retain the original file identity and cannot authorize an upload from a
-different inode.
-
 Wrong keys, modified or truncated archives, unsafe members and hash failures
 leave no published recovery directory. Test recovery periodically with the
 actual private key; backup success alone does not prove that key is available.

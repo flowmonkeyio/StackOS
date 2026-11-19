@@ -5,12 +5,10 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, BinaryIO
-from uuid import uuid4
+from typing import Any
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -20,7 +18,6 @@ from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from stackos.artifacts import redact_secrets
-from stackos.config import project_data_dir
 from stackos.db.models import (
     Artifact,
     DurableActionArtifact,
@@ -45,7 +42,6 @@ from stackos.repositories.base import (
 
 ARTIFACT_ACTIVE_STATUSES = frozenset({"draft", "approved"})
 ARTIFACT_STATUSES = frozenset({"draft", "approved", "superseded", "archived"})
-PROJECT_FILE_ARTIFACT_URI_PREFIX = "stackos://project-artifacts/"
 
 
 def _utcnow() -> datetime:
@@ -545,106 +541,26 @@ class ArtifactRepository:
         )
         return self._create(project_id=project_id, _managed_file_json=custody, **artifact)
 
-    def create_project_file(
-        self, *, data_dir: Path, path: Path, project_id: int, **artifact: Any
-    ) -> Envelope[ArtifactOut]:
-        """Register a private producer file beneath the existing project data root."""
-        root = data_dir.resolve()
-        if not path.is_relative_to(project_data_dir(root, project_id)):
-            raise ValidationError("private file must stay inside the owning project directory")
-        custody = self._regular_file_custody(root, path)
-        custody["owner_project_id"] = project_id
-        return self._create(
-            project_id=project_id,
-            uri=PROJECT_FILE_ARTIFACT_URI_PREFIX + uuid4().hex,
-            _managed_file_json=custody,
-            **artifact,
-        )
-
-    @contextmanager
-    def open_project_file(
-        self, *, data_dir: Path, generated_assets_dir: Path, project_id: int, artifact_id: int
-    ) -> Iterator[tuple[BinaryIO, str | None]]:
-        """Open a checked producer file for a private, project-scoped consumer."""
-        row = self._artifact_row(artifact_id, project_id=project_id)
-        if row.status not in ARTIFACT_ACTIVE_STATUSES:
-            raise ValidationError("artifact is archived or superseded")
-        custody = row.managed_file_json or {}
-        raw_path = custody.get("path")
-        if not isinstance(raw_path, str):
-            raise ValidationError("artifact has no managed project file")
-        relative = Path(raw_path)
-        if row.uri.startswith(PROJECT_FILE_ARTIFACT_URI_PREFIX):
-            root = data_dir.resolve()
-            owner = Path("projects") / str(project_id)
-            owned = custody.get("owner_project_id") == project_id and relative.is_relative_to(owner)
-        else:
-            root = generated_assets_dir.resolve()
-            owned = row.uri == f"/generated-assets/{relative.as_posix()}" and relative.parts[
-                :2
-            ] in {
-                ("telegram", str(project_id)),
-                ("action-outputs", f"project-{project_id}"),
-            }
-        if (
-            not owned
-            or custody.get("root") != str(root)
-            or relative.is_absolute()
-            or ".." in relative.parts
-            or len(relative.parts) < 3
-        ):
-            raise ValidationError("artifact has no managed project file")
-
-        with ExitStack() as opened:
-            try:
-                directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-                parent = os.open(root, directory_flags)
-                opened.callback(os.close, parent)
-                for part in relative.parts[:-1]:
-                    parent = os.open(part, directory_flags, dir_fd=parent)
-                    opened.callback(os.close, parent)
-                fd = os.open(
-                    relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
-                )
-                opened.callback(os.close, fd)
-                info = os.fstat(fd)
-            except (OSError, ValueError):
-                raise ValidationError("managed project file is unavailable") from None
-            if (
-                not stat.S_ISREG(info.st_mode)
-                or info.st_nlink != 1
-                or (info.st_dev, info.st_ino) != (custody.get("device"), custody.get("inode"))
-                or (row.size_bytes is not None and info.st_size != row.size_bytes)
-            ):
-                raise ValidationError("managed project file no longer matches its artifact")
-            stream = opened.enter_context(os.fdopen(fd, "rb", closefd=False))
-            yield stream, row.mime_type
-
     @staticmethod
     def _generated_file_custody(
         *, asset_root: Path, path: Path, project_id: int, uri: str | None
     ) -> dict[str, Any]:
         root = asset_root.resolve()
-        custody = ArtifactRepository._regular_file_custody(root, path)
-        if uri != "/generated-assets/" + custody["path"]:
-            raise ValidationError("generated artifact URI must identify its actual file")
-        parts = Path(custody["path"]).parts
-        if parts[0] in {"action-outputs", "imap-transfers", "stripe-invoice-transfers"} and (
-            len(parts) < 3 or parts[1] != f"project-{project_id}"
-        ):
-            raise ValidationError("generated file belongs to another project root")
-        if parts[0] == "telegram" and (len(parts) < 3 or parts[1] != str(project_id)):
-            raise ValidationError("generated Telegram file belongs to another project root")
-        return custody
-
-    @staticmethod
-    def _regular_file_custody(root: Path, path: Path) -> dict[str, Any]:
         if path.is_symlink() or path.resolve() != path.absolute():
             raise ValidationError("generated file must not use filesystem aliases")
         relative = path.relative_to(root)
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise ValidationError("generated artifact must identify one regular file")
+        if uri != "/generated-assets/" + relative.as_posix():
+            raise ValidationError("generated artifact URI must identify its actual file")
+        parts = relative.parts
+        if parts[0] in {"action-outputs", "imap-transfers", "stripe-invoice-transfers"} and (
+            len(parts) < 3 or parts[1] != f"project-{project_id}"
+        ):
+            raise ValidationError("generated file belongs to another project root")
+        if parts[0] == "telegram" and (len(parts) < 3 or parts[1] != str(project_id)):
+            raise ValidationError("generated Telegram file belongs to another project root")
         return {
             "root": str(root),
             "path": relative.as_posix(),

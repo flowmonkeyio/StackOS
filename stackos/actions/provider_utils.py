@@ -20,36 +20,6 @@ from stackos.repositories.base import ValidationError
 JsonObject = dict[str, Any]
 ELEVENLABS_VOICES_LIST_REF = "utils.elevenlabs.voices.list"
 ELEVENLABS_VOICE_DESIGN_REF = "utils.elevenlabs.voices.design"
-ELEVENLABS_ALIGNMENT_REF = "utils.elevenlabs.alignment.create"
-ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE = "alignment_audio_unavailable"
-ELEVENLABS_AUDIO_OPERATIONS = frozenset({"speech.generate", "voices.design"})
-
-
-def elevenlabs_audio_receipt(output: JsonObject) -> JsonObject:
-    """Retain only useful audio identities when result persistence fails."""
-    if type(output.get("artifact_id")) is int:
-        return {"audio_result": {"artifact_id": output["artifact_id"]}}
-    previews = output.get("previews")
-    if isinstance(previews, list):
-        return {
-            "audio_result": {
-                "status": output["status"],
-                "previews": [
-                    {
-                        key: row[key]
-                        for key in (
-                            "generated_voice_id",
-                            "artifact_id",
-                            "file_index",
-                            "reason_code",
-                        )
-                        if key in row
-                    }
-                    for row in previews
-                ],
-            }
-        }
-    return {}
 
 
 def restore_public_voice_cursors(

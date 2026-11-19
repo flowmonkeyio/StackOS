@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from stackos.actions.connectors import ActionValidationIssue
 from stackos.actions.provider_utils import ELEVENLABS_VOICE_DESIGN_REF, restore_public_voice_cursors
 from stackos.artifacts import redact_secret_text
 from stackos.secret_refs import is_opaque_secret_ref, is_secret_ref_marker
-
-if TYPE_CHECKING:
-    from stackos.actions.manifest import ExecutableActionManifest
 
 
 def utcnow() -> datetime:
@@ -49,22 +44,14 @@ def _is_secret_key(key: str) -> bool:
     return any(part in normalized for part in _SECRET_KEY_PARTS)
 
 
-def _redact_for_audit(
-    value: Any, *, action_ref: str | None = None, retain_request_identity: bool = False
-) -> Any:
+def _redact_for_audit(value: Any, *, action_ref: str | None = None) -> Any:
     """Return a deep-redacted copy for agent-visible output and audit."""
     if isinstance(value, Mapping):
         redacted: dict[str, Any] = {}
         for raw_key, raw_value in value.items():
             key = str(raw_key)
             if action_ref == ELEVENLABS_VOICE_DESIGN_REF and key == "reference_audio_base64":
-                # The stored request identity must still detect a changed reference sample
-                # when callers reuse an explicit idempotency key.
-                redacted[key] = (
-                    hashlib.sha256(json.dumps(raw_value, sort_keys=True).encode()).hexdigest()
-                    if retain_request_identity
-                    else "[redacted]"
-                )
+                redacted[key] = "[redacted]"
                 continue
             opaque_secret_ref = key.lower().replace("-", "_") in {
                 "secret_ref",
@@ -75,7 +62,10 @@ def _redact_for_audit(
                 if _is_secret_key(key)
                 and not opaque_secret_ref
                 and not is_secret_ref_marker(raw_value)
-                else _redact_for_audit(raw_value)
+                else _redact_for_audit(
+                    raw_value,
+                    action_ref=action_ref if key in {"input_json", "output_json"} else None,
+                )
             )
         return restore_public_voice_cursors(action_ref, value, redacted)
     if isinstance(value, list):
@@ -85,69 +75,6 @@ def _redact_for_audit(
     if isinstance(value, str):
         return redact_secret_text(value)
     return value
-
-
-def _write_failure_receipt(connector_metadata: Mapping[str, Any]) -> dict[str, Any]:
-    """Carry connector-authored execution facts into the retained failure response."""
-    if (
-        connector_metadata.get("provider_executed") is not True
-        or connector_metadata.get("retry_safe") is not False
-    ):
-        return {}
-    return {
-        "reconcile_before_retry": True,
-        **{
-            key: connector_metadata[key]
-            for key in (
-                "provider_executed",
-                "retry_safe",
-                "outcome_unknown",
-                "provider_request_id",
-                "history_item_id",
-                "charge_possible",
-                "reason_code",
-            )
-            if key in connector_metadata
-        },
-    }
-
-
-def _connector_failure_data(
-    *,
-    manifest: ExecutableActionManifest,
-    row_id: int,
-    connector_key: str | None,
-    error: str,
-    output_json: dict[str, Any] | None,
-) -> dict[str, Any]:
-    receipt = output_json or {}
-    return {
-        "status": "failed",
-        "action_ref": manifest.action_ref,
-        "action_call_id": row_id,
-        "provider_key": manifest.provider_key,
-        "connector": connector_key,
-        "error": error,
-        **{
-            key: receipt[key]
-            for key in (
-                "provider_status_code",
-                "provider_error",
-                "provider_executed",
-                "provider_request_id",
-                "history_item_id",
-                "retry_safe",
-                "outcome_unknown",
-                "reconcile_before_retry",
-                "output_persistence_failed",
-                "side_effect",
-                "audio_result",
-                "charge_possible",
-                "reason_code",
-            )
-            if receipt.get(key) is not None
-        },
-    }
 
 
 def _json_type_name(value: Any) -> str:

@@ -11,9 +11,9 @@ import stat
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
-from sqlalchemy import ColumnElement, and_, or_, update
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
@@ -48,10 +48,7 @@ from .schema import (
     ActionCallOut,
     ActionExecutionOut,
 )
-from .utils import _connector_failure_data, _redact_for_audit, _write_failure_receipt, utcnow
-
-if TYPE_CHECKING:
-    from .execution import _PreparedActionExecution
+from .utils import _redact_for_audit, utcnow
 
 
 class ActionAuditMixin:
@@ -294,13 +291,13 @@ class ActionAuditMixin:
             dry_run=dry_run,
             idempotency_key=idempotency_key,
             credential_ref=credential_ref,
-            request_json=_redact_for_audit(
-                request_json, action_ref=manifest.action_ref, retain_request_identity=True
-            ),
+            request_json=_redact_for_audit(request_json, action_ref=manifest.action_ref),
             provider_context_json=_redact_for_audit(provider_context_json)
             if provider_context_json is not None
             else None,
-            response_json=_redact_for_audit(response_json, action_ref=manifest.action_ref),
+            response_json=_redact_for_audit(response_json, action_ref=manifest.action_ref)
+            if response_json is not None
+            else None,
             metadata_json=_redact_for_audit(metadata_json) if metadata_json is not None else None,
             cost_cents=cost_cents,
             duration_ms=duration_ms,
@@ -315,46 +312,6 @@ class ActionAuditMixin:
         self._s.commit()
         self._s.refresh(row)
         return row
-
-    def _reserve_foreground_call(
-        self, prepared: _PreparedActionExecution, credential: ResolvedCredential | None
-    ) -> ActionCall | ActionExecutionOut:
-        from stackos.repositories.projects import ProjectRepository
-
-        # Serialize the second lookup and RUNNING insert with the project writer fence.
-        # The caller commits the reservation before awaiting provider transport.
-        ProjectRepository(self._s).require_available(prepared.project_id, reserve=True)
-        assert prepared.idempotency_key is not None
-        replay = self._idempotency_replay(
-            project_id=prepared.project_id,
-            manifest=prepared.manifest,
-            idempotency_key=prepared.idempotency_key,
-            request_json=prepared.payload,
-            provider_context_json=prepared.provider_context_for_audit,
-            credential_ref=prepared.credential_ref,
-            dry_run=False,
-        )
-        if replay is not None:
-            return replay
-        return self._record_call(
-            project_id=prepared.project_id,
-            manifest=prepared.manifest,
-            credential=credential,
-            credential_ref=prepared.credential_ref,
-            run_id=prepared.run_id,
-            run_plan_id=prepared.run_plan_id,
-            run_plan_step_id=prepared.run_plan_step_id,
-            idempotency_key=prepared.idempotency_key,
-            request_json=prepared.payload,
-            provider_context_json=prepared.provider_context_for_audit,
-            response_json=None,
-            metadata_json=prepared.metadata_json,
-            status=ActionCallStatus.RUNNING,
-            dry_run=False,
-            cost_cents=prepared.estimated_cost_cents,
-            duration_ms=None,
-            commit=False,
-        )
 
     def _reserve_background_call(
         self,
@@ -539,7 +496,7 @@ class ActionAuditMixin:
         if result.rowcount != 1:
             self._s.rollback()
             raise ConflictError(
-                "action call is no longer running",
+                "background action call is no longer running",
                 data={"project_id": project_id, "action_call_id": action_call_id},
             )
         if commit:
@@ -552,11 +509,11 @@ class ActionAuditMixin:
         return row
 
     def reconcile_running_calls(self) -> int:
-        """Recover durable calls, then mark other orphaned calls as unknown.
+        """Recover durable calls, then hold other orphaned background calls unknown.
 
         A durable item's persisted lease is the only proof that an effect may
         already have started.  Its own recovery marks that item unknown-hold;
-        the generic reconciler must not finalize the parent first.
+        the generic background reconciler must not finalize the parent first.
         """
         self.reconcile_durable_action_jobs()
         durable_action_call_ids = select(DurableActionJob.action_call_id)
@@ -579,7 +536,6 @@ class ActionAuditMixin:
 
     def _call_out(self, row: ActionCall) -> ActionCallOut:
         assert row.id is not None
-        action_ref = f"{row.plugin_slug}.{row.action_key}"
         return ActionCallOut(
             id=row.id,
             project_id=row.project_id,
@@ -597,9 +553,13 @@ class ActionAuditMixin:
             dry_run=row.dry_run,
             idempotency_key=row.idempotency_key,
             credential_ref=row.credential_ref,
-            request_json=_redact_for_audit(row.request_json, action_ref=action_ref),
+            request_json=_redact_for_audit(
+                row.request_json, action_ref=f"{row.plugin_slug}.{row.action_key}"
+            ),
             provider_context_json=_redact_for_audit(row.provider_context_json),
-            response_json=_redact_for_audit(row.response_json, action_ref=action_ref),
+            response_json=_redact_for_audit(
+                row.response_json, action_ref=f"{row.plugin_slug}.{row.action_key}"
+            ),
             metadata_json=_redact_for_audit(row.metadata_json),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
@@ -611,7 +571,6 @@ class ActionAuditMixin:
     def _call_audit_out(self, row: ActionCall) -> ActionCallAuditOut:
         assert row.id is not None
         metadata_json = generated_action_public_audit_metadata(row.metadata_json)
-        action_ref = f"{row.plugin_slug}.{row.action_key}"
         return ActionCallAuditOut(
             id=row.id,
             project_id=row.project_id,
@@ -626,9 +585,13 @@ class ActionAuditMixin:
             status=row.status,
             dry_run=row.dry_run,
             credential_ref=row.credential_ref,
-            request_json=_redact_for_audit(row.request_json, action_ref=action_ref),
+            request_json=_redact_for_audit(
+                row.request_json, action_ref=f"{row.plugin_slug}.{row.action_key}"
+            ),
             provider_context_json=_redact_for_audit(row.provider_context_json),
-            response_json=_redact_for_audit(row.response_json, action_ref=action_ref),
+            response_json=_redact_for_audit(
+                row.response_json, action_ref=f"{row.plugin_slug}.{row.action_key}"
+            ),
             metadata_json=_redact_for_audit(metadata_json),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
@@ -648,30 +611,6 @@ class ActionAuditMixin:
         credential_ref: str | None,
         dry_run: bool,
     ) -> ActionExecutionOut | None:
-        eligible: ColumnElement[bool] = col(ActionCall.status).in_(
-            [ActionCallStatus.SUCCESS, ActionCallStatus.DRY_RUN]
-        )
-        if not dry_run and manifest.risk_level != "read":
-            unsafe: ColumnElement[bool] = (
-                col(ActionCall.response_json)["retry_safe"].as_boolean().is_(False)
-            )
-            if manifest.connector_key == "elevenlabs":
-                # Earlier native receipts recorded the post-dispatch facts in metadata.
-                metadata = col(ActionCall.metadata_json)
-                unsafe = or_(
-                    unsafe,
-                    and_(
-                        col(ActionCall.response_json)["status"].as_string() == "failed",
-                        metadata["retry_safe"].as_boolean().is_(False),
-                        metadata["provider_executed"].as_boolean().is_(True),
-                        metadata["automatic_retry_count"].as_integer() == 0,
-                    ),
-                )
-            eligible = or_(
-                eligible,
-                col(ActionCall.status) == ActionCallStatus.RUNNING,
-                and_(col(ActionCall.status) == ActionCallStatus.FAILED, unsafe),
-            )
         row = self._s.exec(
             select(ActionCall)
             .where(
@@ -679,7 +618,7 @@ class ActionAuditMixin:
                 ActionCall.plugin_slug == manifest.plugin_slug,
                 ActionCall.action_key == manifest.action_key,
                 ActionCall.idempotency_key == idempotency_key,
-                eligible,
+                ActionCall.status.in_([ActionCallStatus.SUCCESS, ActionCallStatus.DRY_RUN]),  # type: ignore[attr-defined]
             )
             .order_by(ActionCall.id.desc())  # type: ignore[union-attr]
         ).first()
@@ -687,10 +626,7 @@ class ActionAuditMixin:
             return None
         _require_generated_replay_scope(row, manifest)
         if (
-            row.request_json
-            != _redact_for_audit(
-                request_json, action_ref=manifest.action_ref, retain_request_identity=True
-            )
+            row.request_json != _redact_for_audit(request_json, action_ref=manifest.action_ref)
             or row.provider_context_json != _redact_for_audit(provider_context_json)
             or row.credential_ref != credential_ref
             or row.dry_run != dry_run
@@ -702,38 +638,6 @@ class ActionAuditMixin:
                     "action_ref": manifest.action_ref,
                     "idempotency_key": idempotency_key,
                     "action_call_id": row.id,
-                },
-            )
-        if row.status == ActionCallStatus.RUNNING:
-            raise ConflictError(
-                "action write intent is already in flight",
-                data={
-                    "project_id": project_id,
-                    "action_ref": manifest.action_ref,
-                    "action_call_id": row.id,
-                    "replay": True,
-                    "in_flight": True,
-                },
-            )
-        if row.status == ActionCallStatus.FAILED:
-            assert row.id is not None
-            receipt = dict(row.response_json or {})
-            if receipt.get("retry_safe") is not False:
-                receipt.update(_write_failure_receipt(row.metadata_json or {}))
-            raise ConflictError(
-                "action write requires reconciliation before another submission",
-                data={
-                    **_connector_failure_data(
-                        manifest=manifest,
-                        row_id=row.id,
-                        connector_key=row.connector_key,
-                        error=row.error or "write outcome requires reconciliation",
-                        output_json=receipt,
-                    ),
-                    "retry_safe": False,
-                    "reconcile_before_retry": True,
-                    "replayed": True,
-                    "next_action": "Inspect the original action call and reconcile provider state.",
                 },
             )
         if not dry_run and (manifest.connector_key, manifest.operation) == (

@@ -770,16 +770,11 @@ def _snapshot(
         "schema": MANIFEST_SCHEMA,
         "created_at": created_at,
         "stackos_version": __version__,
-        "source": {"data_dir": str(projects_root.parent), "state_dir": str(settings.state_dir)},
+        "source": {"data_dir": str(settings.data_dir), "state_dir": str(settings.state_dir)},
         "targets": [target.model_dump(mode="json") for target in policy.targets],
         "project_ids": sorted(
             {int(Path(name).parts[0]) for name in project_inventory if name != "/"}
         ),
-        "project_file_identities": {
-            f"data/projects/{name}": [info[0], info[1]]
-            for name, info in project_inventory.items()
-            if not name.endswith("/") and Path(name).name != ".writer.lock"
-        },
         "included": [
             {
                 "path": str(path.relative_to(payload)),

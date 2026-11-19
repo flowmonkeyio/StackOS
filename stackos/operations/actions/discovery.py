@@ -243,11 +243,8 @@ async def action_validate(
 ) -> ActionValidationOut:
     project_id = inp.project_id if inp.project_id is not None else ctx.project_id
     settings = ctx.extras.get("settings")
-    return ActionRepository(
-        ctx.session,
-        asset_dir=getattr(settings, "generated_assets_dir", None),
-        data_dir=getattr(settings, "data_dir", None),
-    ).validate(
+    asset_dir = getattr(settings, "generated_assets_dir", None)
+    return ActionRepository(ctx.session, asset_dir=asset_dir).validate(
         project_id=project_id,
         action_ref=inp.action_ref,
         plugin_slug=inp.plugin_slug,

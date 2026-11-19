@@ -7,10 +7,11 @@ restart. Only the final database transaction removes those sources and identity.
 from __future__ import annotations
 
 import errno
+import fcntl
 import json
 import os
 import stat
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -23,7 +24,7 @@ from sqlmodel import Session, col, select
 from stackos.actions import ActionRepository
 from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, BrowserRuntime, get_browser_runtime
-from stackos.config import Settings, project_data_dir
+from stackos.config import Settings
 from stackos.db.models import (
     ActionCall,
     ActionCallStatus,
@@ -48,7 +49,6 @@ from stackos.db.models import (
 )
 from stackos.host_mcp.agent_execution import managed_launch_lock
 from stackos.host_mcp.service import usage_executions
-from stackos.project_storage import managed_writer_lock
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.projects import ScheduledJobRepository
 
@@ -126,13 +126,13 @@ class ProjectCleanupService:
             cleanup_lock.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             blockers = []
             try:
-                locks.enter_context(managed_writer_lock(cleanup_lock, create=True))
+                locks.enter_context(_writer_lock(cleanup_lock, create=True))
                 # No DB writer transaction or global launch lock spans recursive
                 # discovery. This lock also serializes cleanup after managed
                 # writer lock files have themselves been removed.
                 self.session.rollback()
                 for path in self._writer_locks(project_id):
-                    locks.enter_context(managed_writer_lock(path))
+                    locks.enter_context(_writer_lock(path))
             except BlockingIOError:
                 self.session.rollback()
                 blockers.append("managed_storage_writer")
@@ -317,7 +317,7 @@ class ProjectCleanupService:
     def _roots(self, project_id: int) -> list[Path]:
         data, assets = self.settings.data_dir, self.settings.generated_assets_dir
         return [
-            project_data_dir(data, project_id),
+            data / "projects" / str(project_id),
             data / "browser-profiles" / BROWSER_PROFILE_DIRNAME / f"project-{project_id}",
             data / "browser-state" / "gstack" / f"project-{project_id}",
             assets / "telegram" / str(project_id),
@@ -697,3 +697,18 @@ def _owned_leaves(path: Path, root: Path) -> list[tuple[Path, os.stat_result]]:
             return []
         visit(parent, path.name, path)
     return leaves
+
+
+@contextmanager
+def _writer_lock(path: Path, *, create: bool = False):
+    fd = os.open(
+        path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | (os.O_CREAT if create else 0), 0o600
+    )
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError("unsafe managed writer lock")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(fd)

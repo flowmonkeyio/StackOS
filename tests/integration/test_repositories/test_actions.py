@@ -1196,88 +1196,6 @@ def test_action_connector_failure_rolls_back_pending_connector_writes(
     assert call.status.value == "failed"
 
 
-async def test_cancelled_foreground_write_retains_original_intent(
-    session: Session, project_id: int
-) -> None:
-    _seed_action(session)
-    entered = asyncio.Event()
-
-    class HeldConnector(_FakeConnector):
-        async def execute(self, _request: ActionConnectorRequest) -> ActionConnectorResult:
-            self.calls += 1
-            entered.set()
-            await asyncio.Future()
-            raise AssertionError("The fixture write should be cancelled.")
-
-    connector = HeldConnector()
-    registry = ActionConnectorRegistry()
-    registry.register(connector)
-    repo = ActionRepository(session, connectors=registry)
-    arguments = {
-        "project_id": project_id,
-        "action_ref": "test-actions.echo.run",
-        "input_json": {"name": "Ada"},
-        "credential_ref": _credential_ref(session, project_id),
-        "idempotency_key": "cancelled-write",
-    }
-    task = asyncio.create_task(repo.execute(**arguments))
-    try:
-        await asyncio.wait_for(entered.wait(), timeout=5)
-    finally:
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-    original = session.exec(select(ActionCall)).one()
-    assert original.status.value == "failed"
-    with pytest.raises(ConflictError, match="requires reconciliation") as exc_info:
-        await repo.execute(**arguments)
-    assert exc_info.value.data["action_call_id"] == original.id
-    assert exc_info.value.data["outcome_unknown"] is True
-    assert exc_info.value.data["retry_safe"] is False
-    assert connector.calls == 1
-
-
-async def test_reported_cost_failure_preserves_foreground_write_receipt(
-    session: Session, project_id: int
-) -> None:
-    _seed_action(session)
-    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
-    action.config_json = {
-        **(action.config_json or {}),
-        "enforce_budget": True,
-        "budget_kind": "fake-provider",
-    }
-    session.add(action)
-    session.commit()
-    IntegrationBudgetRepository(session).set(
-        project_id=project_id, kind="fake-provider", monthly_budget_usd=0.20
-    )
-    connector = _FakeConnector()
-    registry = ActionConnectorRegistry()
-    registry.register(connector)
-    repo = ActionRepository(session, connectors=registry)
-    arguments = {
-        "project_id": project_id,
-        "action_ref": "test-actions.echo.run",
-        "input_json": {"name": "Ada"},
-        "credential_ref": _credential_ref(session, project_id),
-        "idempotency_key": "reported-cost-failed",
-    }
-
-    with pytest.raises(ConflictError, match="output persistence failed") as first:
-        await repo.execute(**arguments)
-    with pytest.raises(ConflictError, match="requires reconciliation") as replay:
-        await repo.execute(**arguments)
-
-    call = session.exec(select(ActionCall)).one()
-    assert call.status.value == "failed"
-    assert first.value.data["action_call_id"] == replay.value.data["action_call_id"] == call.id
-    assert replay.value.data["provider_executed"] is True
-    assert replay.value.data["retry_safe"] is False
-    assert connector.calls == 1
-
-
 def test_builtin_action_connectors_describe_availability(session: Session) -> None:
     action_refs = {
         "utils.image.generate": ("openai-images", True, "unknown"),
@@ -2950,7 +2868,6 @@ def test_byteplus_seedream_multi_output_estimate_preempts_budget(
                     "max_images": 2,
                 },
                 credential_ref=credential_ref,
-                idempotency_key="budget-denied",
             )
         )
 
@@ -2960,7 +2877,6 @@ def test_byteplus_seedream_multi_output_estimate_preempts_budget(
     assert httpx_mock.get_requests() == []
     assert budget.current_month_spend == 0
     assert budget.current_month_calls == 0
-    assert session.exec(select(ActionCall)).all() == []
 
 
 def test_byteplus_seedream_edit_action_executes_and_registers_artifact(

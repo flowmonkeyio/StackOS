@@ -37,7 +37,6 @@ class ActionRepository(
         *,
         connectors: ActionConnectorRegistry | None = None,
         asset_dir: Path | None = None,
-        data_dir: Path | None = None,
     ) -> None:
         self._s = session
         self._connectors = (
@@ -46,4 +45,3 @@ class ActionRepository(
             or DEFAULT_ACTION_CONNECTORS
         )
         self._asset_dir = asset_dir
-        self._data_dir = data_dir
