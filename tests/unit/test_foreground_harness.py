@@ -60,6 +60,8 @@ class Terminal:
 
     def assert_safe_shell_recovery(self) -> None:
         self.read_until(f"stackos harness run codex --session {SESSION}".encode())
+        self.read_until(b"shell modes restored ")
+        assert self.read_until(b"\r\n") == b"True"
         self.read_until(b"shell returned 1\r\n")
         self.send("operator-marker")
         self.read_until(b"shell received ")
@@ -260,7 +262,8 @@ def test_rejected_destination_cannot_accept_terminal_input(tmp_path):
     harness.assert_status("failed", requested=2, confirmed=1)
 
 
-def test_withdrawn_switch_cannot_accept_terminal_input(tmp_path):
+@pytest.mark.parametrize("identity_replies", [True, False], ids=["reported", "withheld"])
+def test_withdrawn_switch_cannot_accept_terminal_input(tmp_path, identity_replies):
     harness = Harness(tmp_path)
     harness.select("a", 1)
     with harness.terminal(observe_shell=True) as terminal:
@@ -273,12 +276,14 @@ def test_withdrawn_switch_cannot_accept_terminal_input(tmp_path):
         harness.select("b", 2)
         terminal.send("finish")
         assert terminal.native_start()["principal"] == "b"
-        harness.select("a", 3)
-        harness.assert_status("pending", requested=3, confirmed=1)
+        harness.assert_status("pending", requested=2, confirmed=1)
         terminal.send("continue")
-        hold.unlink()
+        harness.select("a", 3)
+        if identity_replies:
+            hold.unlink()
         terminal.read_until(b"Account selection changed before terminal input could be enabled.")
         terminal.assert_safe_shell_recovery()
+        assert (harness.data / "retire-requested").is_file()
     assert (harness.data / f"{SESSION}.history").read_text() == "initial-marker\n"
     assert (harness.data / "effects").read_text() == "committed\n"
     assert len(list(harness.data.glob("observation-*"))) == 2
@@ -292,10 +297,13 @@ def test_admission_io_error_retires_unadmitted_child(tmp_path, retirement_error)
     hold = harness.data / "hold-a-observation"
     hold.touch()
     (harness.data / "fail-admission").touch()
+    (harness.data / "disable-echo-during-startup").touch()
     if retirement_error:
         (harness.data / "fail-retirement").touch()
     with harness.terminal(observe_shell=True) as terminal:
-        assert terminal.native_start()["session"] == SESSION
+        native = terminal.native_start()
+        assert native["session"] == SESSION
+        assert native["echo"] is False
         harness.assert_status("pending", requested=1, confirmed=None)
         terminal.send("continue")
         hold.unlink()
@@ -318,11 +326,11 @@ def test_signal_before_live_observation_retains_exact_recovery_id(tmp_path, targ
     with harness.terminal() as terminal:
         native = terminal.native_start()
         assert native["session"] == SESSION
-        harness.select("b", 2)
-        harness.assert_status("pending", requested=2, confirmed=None)
+        harness.assert_status("pending", requested=1, confirmed=None)
         os.kill(native["pid"] if target == "native" else terminal.pid, signal.SIGTERM)
         terminal.read_until(f"stackos harness run codex --session {SESSION}".encode())
         assert terminal.exit_code() == 143
+    harness.select("b", 2)
     status = json.loads(harness.call("cli", "harness", "status", "codex"))
     assert status == {
         "phase": "failed",

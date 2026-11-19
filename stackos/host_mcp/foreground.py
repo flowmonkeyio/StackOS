@@ -263,6 +263,10 @@ def _run_native(
     accounts: HostAccounts,
     host_key: str,
 ) -> tuple[int, bool]:
+    try:
+        terminal_modes = termios.tcgetattr(0)
+    except (OSError, termios.error):
+        raise ForegroundError("Unable to read the foreground terminal settings.") from None
     child: subprocess.Popen[bytes] | None = None
     input_admitted = False
     stopping: int | None = None
@@ -290,6 +294,9 @@ def _run_native(
                 code = child.wait(timeout=_OBSERVATION_INTERVAL_SECONDS)
             except subprocess.TimeoutExpired:
                 if status.phase == "pending" and stopping is None:
+                    # Withdrawal must retire a gated child even if it never reports identity.
+                    if accounts.resolve(host_key).desired != request.selection.desired:
+                        raise HostAccountError("stale_selection") from None
                     previous_session = status.session_id
                     observed = _read_native_observation(launch, child.pid, None, status)
                     if _matches_selection(observed, request) and stopping is None:
@@ -328,19 +335,26 @@ def _run_native(
                 notice("Unable to complete native startup with the current account selection.")
         finally:
             _retire_unadmitted(launch, child, notice)
-        with suppress(ForegroundError):
-            _read_native_observation(launch, child.pid, child.returncode, status)
+        if status.session_id is None:
+            with suppress(ForegroundError):
+                _read_native_observation(launch, child.pid, child.returncode, status)
         return (-stopping if stopping is not None else 1), False
     finally:
         try:
             if child is not None:
                 child.wait()
                 if not input_admitted:
-                    # Bytes typed into an unadmitted startup belong to that launch.
-                    # Discard them before returning the terminal to the shell.
-                    with suppress(OSError, termios.error):
+                    # The child may have changed TTY modes before it could accept input.
+                    # Restore them after retirement and discard input for the failed launch.
+                    with suppress(OSError):
                         if os.tcgetpgrp(0) == os.getpgrp():
-                            termios.tcflush(0, termios.TCIFLUSH)
+                            try:
+                                try:
+                                    termios.tcflush(0, termios.TCIFLUSH)
+                                finally:
+                                    termios.tcsetattr(0, termios.TCSANOW, terminal_modes)
+                            except (OSError, termios.error):
+                                notice("Unable to fully restore the foreground terminal.")
         finally:
             for sig, handler in original.items():
                 signal.signal(sig, handler)

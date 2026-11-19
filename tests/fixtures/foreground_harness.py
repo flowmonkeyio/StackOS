@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import atexit
 import fcntl
 import json
 import os
 import signal
 import subprocess
 import sys
+import termios
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -116,6 +118,12 @@ def native(session: str, *args: str) -> int:
     signal.signal(signal.SIGINT, interrupt)
     if (ROOT / "fail-retirement").exists():
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    if (ROOT / "disable-echo-during-startup").exists():
+        original_modes = termios.tcgetattr(0)
+        startup_modes = termios.tcgetattr(0)
+        startup_modes[3] &= ~termios.ECHO
+        termios.tcsetattr(0, termios.TCSANOW, startup_modes)
+        atexit.register(termios.tcsetattr, 0, termios.TCSANOW, original_modes)
     admission_fd = os.open(os.environ["FIXTURE_INPUT_DECISION"], os.O_RDWR)
     publish()
     print(
@@ -125,6 +133,7 @@ def native(session: str, *args: str) -> int:
                 **row,
                 "tty": os.ttyname(0),
                 "foreground": os.getpgrp() == os.tcgetpgrp(0),
+                "echo": bool(termios.tcgetattr(0)[3] & termios.ECHO),
                 "cwd": os.getcwd(),
                 "args": args,
                 "mcp": os.environ.get("FIXTURE_MCP"),
@@ -188,7 +197,9 @@ def main() -> None:
     if mode == "native":
         sys.exit(native(*args))
     if mode == "shell":
+        original_modes = termios.tcgetattr(0)
         result = subprocess.run([sys.executable, "-E", __file__, "cli", *args], check=False)
+        print(f"shell modes restored {termios.tcgetattr(0) == original_modes}", flush=True)
         print(f"shell returned {result.returncode}", flush=True)
         print("shell received " + sys.stdin.readline(), end="", flush=True)
         sys.exit(result.returncode)

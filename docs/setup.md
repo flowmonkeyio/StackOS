@@ -347,9 +347,10 @@ If you change the selection during startup, the previous startup retires with
 its input closed. Use the recovery command to open the conversation under the
 current selection.
 
-If reopening fails, the launcher discards input queued for that startup and
-prints the exact recovery command when the native session ID is known. Select
-the intended account and retry that ID with your original native options. The
+If reopening fails before input is enabled, the launcher restores the terminal
+settings and discards input queued for that startup. The launcher prints the
+exact recovery command when the native session ID is known. Select the intended
+account and retry that ID with your original native options. The
 launcher permits one managed foreground process per host in the configured
 StackOS data directory. For a host without managed switching, the launcher
 runs the stock CLI with native defaults when there is no selected account
