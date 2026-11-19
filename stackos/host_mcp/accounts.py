@@ -71,11 +71,12 @@ class NativeAccountAdapter(Protocol):
         ...
 
     def activate(
-        self, profile: NativeAccountProfile, outgoing: NativeAccountProfile | None
+        self, profile: NativeAccountProfile | None, outgoing: NativeAccountProfile | None
     ) -> None:
         """Persistently select the native login, saving outgoing credentials first.
 
-        Raise on failure; selection metadata is committed only after return.
+        A null target restores a previously signed-out native state after a failed
+        first selection. Raise on failure; metadata is committed only after return.
         """
         ...
 
@@ -420,6 +421,10 @@ class HostAccounts:
                     self._account_profile(account),
                     self._account_profile(outgoing) if outgoing is not None else None,
                 )
+            except HostAccountError as exc:
+                if exc.code == "selection_restore_failed":
+                    raise
+                raise HostAccountError("activation_failed") from None
             except Exception:
                 raise HostAccountError("activation_failed") from None
             if host.desired.account_ref != account_ref:
@@ -432,10 +437,9 @@ class HostAccounts:
                 # Activation saved the outgoing native credentials. Restore them
                 # if committing the selection fails, including a post-rename error.
                 try:
-                    if outgoing is None:
-                        raise HostAccountError("selection_restore_failed")
                     adapter.activate(
-                        self._account_profile(outgoing), self._account_profile(account)
+                        self._account_profile(outgoing) if outgoing is not None else None,
+                        self._account_profile(account),
                     )
                     host.desired = previous
                     if self._load().hosts[host_key].desired != previous:

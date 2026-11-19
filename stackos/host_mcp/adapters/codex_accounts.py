@@ -216,36 +216,48 @@ class CodexAccounts:
             _write_credential(profile.directory, _read_credential(home))
 
     def activate(
-        self, profile: NativeAccountProfile, outgoing: NativeAccountProfile | None
+        self, profile: NativeAccountProfile | None, outgoing: NativeAccountProfile | None
     ) -> None:
         home = self._file_home()
-        target = profile.directory
-        if target is None or outgoing is None or outgoing.directory is None:
-            raise CodexAccountError("Adopt the current Codex login before switching accounts.")
-        _private_directory(target, "unsafe_profile")
-        _private_directory(outgoing.directory, "unsafe_profile")
+        target = profile.directory if profile is not None else None
+        if profile is not None and target is None:
+            raise CodexAccountError("Select a saved Codex account.")
+        if target is not None:
+            _private_directory(target, "unsafe_profile")
+        if outgoing is not None:
+            if outgoing.directory is None:
+                raise CodexAccountError("Adopt the current Codex login before switching accounts.")
+            _private_directory(outgoing.directory, "unsafe_profile")
         binary, env = self._resolve()
-        expected = self.read_identity(profile)
-        previous = self.read_identity(outgoing)
+        expected = self.read_identity(profile) if profile is not None else None
+        previous = self.read_identity(outgoing) if outgoing is not None else None
         active = native_identity(binary, env)
-        if (
-            not isinstance(expected, NativeIdentity)
-            or not isinstance(previous, NativeIdentity)
-            or not isinstance(active, NativeIdentity)
-        ):
+        if profile is not None and not isinstance(expected, NativeIdentity):
             raise CodexAccountError("Codex could not verify the account before switching.")
-        if previous.principal_key != active.principal_key:
-            raise CodexAccountError("The native Codex login changed outside account selection.")
         original = _credential(home)
-        selected = _credential(target)
-        if original is None or selected is None:
+        if outgoing is None:
+            if active != "needs_sign_in" or original is not None or target is None:
+                raise CodexAccountError("Adopt the current Codex login before switching accounts.")
+        elif (
+            not isinstance(previous, NativeIdentity)
+            or not isinstance(active, NativeIdentity)
+            or previous.principal_key != active.principal_key
+        ):
+            raise CodexAccountError("The native Codex login changed outside account selection.")
+        selected = _credential(target) if target is not None else None
+        if target is not None and selected is None:
             raise CodexAccountError("Codex native credentials are unavailable.")
         with _native_lock(home):
-            if _credential(home) != original or _credential(target) != selected:
+            if _credential(home) != original or (
+                target is not None and _credential(target) != selected
+            ):
                 raise CodexAccountError("Codex credentials changed during selection. Retry.")
-            _write_credential(outgoing.directory, _read_credential(home))
+            if outgoing is not None and outgoing.directory is not None:
+                _write_credential(outgoing.directory, _read_credential(home))
+            if target is None:
+                (home / "auth.json").unlink()
             # Reselecting the active identity must retain its renewed credentials.
-            if expected.principal_key != active.principal_key:
+            elif not isinstance(active, NativeIdentity) or expected != active:
                 _write_credential(home, _read_credential(target))
 
     def read_identity(self, profile: NativeAccountProfile) -> NativeIdentity | NativeIdentityIssue:

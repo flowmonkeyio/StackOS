@@ -44,6 +44,8 @@ def registry(homes, tmp_path, monkeypatch):
     )
 
     def identity(_binary, env, **_kwargs):
+        if not (codex_accounts._home(env) / "auth.json").exists():
+            return "needs_sign_in"
         principal, workspace = fixture_principal(codex_accounts._home(env))
         return NativeIdentity(
             principal=principal, workspace=workspace, email=f"{principal}@example.invalid"
@@ -150,6 +152,35 @@ def test_failed_selection_save_restores_native_login_and_can_retry(
     assert (home / "auth.json").read_bytes() == b"original B"
     store.select("codex", a, 2)
     assert (home / "auth.json").read_bytes() == b"renewed A"
+
+
+@pytest.mark.parametrize("fail_save", [False, True])
+def test_first_enrolled_account_can_be_selected_and_failure_restores_signed_out_state(
+    registry, homes, tmp_path, monkeypatch, fail_save
+):
+    existing, _, _ = registry
+    home, _ = homes
+    (home / "auth.json").unlink()
+    data_dir = tmp_path / "first-login-store"
+    data_dir.mkdir()
+    store = HostAccounts(data_dir, {"codex": existing._adapter("codex")})
+    enrollment = str(uuid4())
+    store.add("codex", enrollment)
+    account = store.complete("codex", enrollment).account_ref
+    real_save = store._save
+    if fail_save:
+
+        def reject_save(_state):
+            raise OSError("disposable first selection failure")
+
+        monkeypatch.setattr(store, "_save", reject_save)
+        with pytest.raises(HostAccountError, match="account_store_unavailable"):
+            store.select("codex", account, 0)
+        assert not (home / "auth.json").exists()
+        assert store.resolve("codex").desired.account_ref is None
+        monkeypatch.setattr(store, "_save", real_save)
+    assert store.select("codex", account, 0).revision == 1
+    assert (home / "auth.json").read_bytes() == b"original B"
 
 
 @pytest.mark.parametrize("mode", ["keyring", "auto", "ephemeral"])
