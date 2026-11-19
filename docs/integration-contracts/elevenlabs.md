@@ -12,8 +12,9 @@ transport. [API authentication](https://elevenlabs.io/docs/api-reference/authent
 
 Use `integration.list` to find the provider and setup guidance. Once an Account
 is attached, use `action.list` and `action.describe` to select an action and its
-input schema. The Utilities plugin uses the pinned `stackos-connectors`
-ElevenLabs catalog for inputs and action effects.
+input schema. The Utilities plugin exposes twelve actions from the pinned
+`stackos-connectors` ElevenLabs catalog. The action effects are six reads,
+three writes, and three actions that may incur a charge.
 
 | Action ref | Effect | Official contract |
 | --- | --- | --- |
@@ -28,6 +29,7 @@ ElevenLabs catalog for inputs and action effects.
 | `utils.elevenlabs.dictionaries.create` | Create a dictionary from explicit rules and return its ID and version ID | [Create a dictionary from rules](https://elevenlabs.io/docs/api-reference/pronunciation-dictionaries/create-from-rules) |
 | `utils.elevenlabs.speech.generate` | Generate and save project audio with character timing. May incur a charge. | [Create speech with timing](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps) |
 | `utils.elevenlabs.voices.design` | Generate and save voice previews as project audio. May incur a charge. | [Design a voice](https://elevenlabs.io/docs/api-reference/text-to-voice/design) |
+| `utils.elevenlabs.alignment.create` | Align saved project audio to a transcript. May incur a charge. | [Create forced alignment](https://elevenlabs.io/docs/api-reference/forced-alignment/create) |
 
 Pass the returned `next_page_token` as `page_token` for another saved-voice
 page. These structured fields retain their native names for `voices.list`.
@@ -60,6 +62,20 @@ these files. Compatible project actions use the artifact ID to select audio.
 Encrypted backups include saved audio. StackOS holds the project and audio
 store writer locks through file creation and artifact registration. An active
 backup or writer can stop generation before the provider request.
+
+To align saved speech or a preview, pass its returned `artifact_id` as
+`audio_artifact_id` and provide the transcript as `text`. StackOS verifies the
+active artifact belongs to the selected project, has an audio MIME type, and
+still identifies the regular file recorded by the project artifact store.
+The audio must be nonempty and under 1 GB. The public input accepts only the
+artifact ID and transcript. StackOS supplies the verified file and MIME type
+to the native connector. Missing, foreign, unmanaged, and replaced files fail
+before upload.
+
+The result preserves the provider's `words` entries with `text`, `start`
+and `end` in seconds, plus character timings and loss when supplied.
+The input audio path, upload staging path, and audio bytes stay out of the
+action result and audit.
 
 Inspect the original call after a partial preview batch, ambiguous provider
 outcome, or local storage failure. A post-dispatch storage error carries the

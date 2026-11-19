@@ -1,10 +1,14 @@
-"""Project native ElevenLabs audio files into the owning project's artifacts."""
+"""Bridge native ElevenLabs audio actions to private project artifacts."""
 
 from __future__ import annotations
 
-from contextlib import ExitStack, suppress
+import os
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import BinaryIO
 from uuid import uuid4
 
 from stackos_connectors.contracts import ConnectorFile, ConnectorResult
@@ -23,7 +27,12 @@ from stackos.actions.provider_utils import (
 )
 from stackos.config import Settings, project_data_dir
 from stackos.project_storage import managed_writer_lock
+from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.resources import ArtifactRepository
+from stackos.secret_refs import redact_secret_values
+
+_ALIGNMENT_OPERATION = "alignment.create"
+_MAX_ALIGNMENT_AUDIO_BYTES = 1_000_000_000  # The pinned native action's exclusive limit.
 
 
 class ElevenLabsActionConnector(PackageActionConnector):
@@ -31,6 +40,18 @@ class ElevenLabsActionConnector(PackageActionConnector):
         super().__init__("elevenlabs")
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+        if request.operation == _ALIGNMENT_OPERATION:
+            try:
+                with _alignment_audio(request) as (_, mime_type):
+                    request = _native_alignment_request(request, Path("audio"), mime_type)
+            except ValidationError as exc:
+                return [ActionValidationIssue(path="$.audio_artifact_id", message=exc.detail)]
+            except OSError:
+                return [
+                    ActionValidationIssue(
+                        path="$.audio_artifact_id", message="managed project file is unavailable"
+                    )
+                ]
         if request.operation in ELEVENLABS_AUDIO_OPERATIONS:
             request = replace(
                 request, asset_dir=_output_dir(_data_dir(request), request.project_id)
@@ -38,6 +59,8 @@ class ElevenLabsActionConnector(PackageActionConnector):
         return super().validate(request)
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+        if request.operation == _ALIGNMENT_OPERATION:
+            return await self._execute_alignment(request)
         if request.operation not in ELEVENLABS_AUDIO_OPERATIONS:
             return await super().execute(request)
         if request.session is None or request.project_id <= 0:
@@ -77,6 +100,90 @@ class ElevenLabsActionConnector(PackageActionConnector):
             finally:
                 with suppress(OSError):
                     output_dir.rmdir()
+
+    async def _execute_alignment(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+        with ExitStack() as staging:
+            try:
+                with _alignment_audio(request) as (stream, mime_type):
+                    directory = staging.enter_context(
+                        TemporaryDirectory(prefix="stackos-alignment-", ignore_cleanup_errors=True)
+                    )
+                    path = Path(directory) / "audio"
+                    _stage_alignment_audio(stream, path)
+            except ValidationError as exc:
+                raise _alignment_input_error(exc.detail) from None
+            except OSError:
+                raise _alignment_input_error("project audio could not be staged") from None
+
+            native = await self.execute_native(_native_alignment_request(request, path, mime_type))
+            # The native result already scrubs credential echoes. Keep the temporary
+            # host path out of any provider-supplied response or metadata fields.
+            return host_result(
+                native.model_copy(
+                    update={
+                        "output_json": redact_secret_values(native.output_json, (directory,)),
+                        "metadata_json": redact_secret_values(native.metadata_json, (directory,)),
+                    }
+                ),
+                action_ref=request.action_ref,
+            )
+
+
+@contextmanager
+def _alignment_audio(request: ActionConnectorRequest) -> Iterator[tuple[BinaryIO, str]]:
+    artifact_id = request.input_json.get("audio_artifact_id")
+    if type(artifact_id) is not int or artifact_id <= 0 or request.session is None:
+        raise ValidationError("audio_artifact_id requires a stored project audio artifact")
+    try:
+        with ArtifactRepository(request.session).open_project_file(
+            data_dir=_data_dir(request), project_id=request.project_id, artifact_id=artifact_id
+        ) as (stream, mime_type):
+            if not mime_type or not mime_type.lower().startswith("audio/"):
+                raise ValidationError("artifact must have an audio MIME type")
+            if not 0 < os.fstat(stream.fileno()).st_size < _MAX_ALIGNMENT_AUDIO_BYTES:
+                raise ValidationError("audio file must be nonempty and under 1 GB")
+            yield stream, mime_type
+    except NotFoundError:
+        raise ValidationError("audio artifact not found in this project") from None
+
+
+def _native_alignment_request(
+    request: ActionConnectorRequest, path: Path, mime_type: str
+) -> ActionConnectorRequest:
+    return replace(
+        request,
+        input_json={
+            "audio_path": str(path),
+            "mime_type": mime_type,
+            "text": request.input_json.get("text"),
+        },
+    )
+
+
+def _stage_alignment_audio(stream: BinaryIO, path: Path) -> None:
+    # The native connector accepts a path and reopens it. Copy from the verified
+    # descriptor so a later change to the source path cannot change the upload.
+    before = os.fstat(stream.fileno())
+    if not 0 < before.st_size < _MAX_ALIGNMENT_AUDIO_BYTES:
+        raise ValidationError("audio file must be nonempty and under 1 GB")
+    with path.open("xb") as staged:
+        remaining = before.st_size
+        while remaining and (chunk := stream.read(min(remaining, 1024 * 1024))):
+            staged.write(chunk)
+            remaining -= len(chunk)
+    after = os.fstat(stream.fileno())
+    if remaining or (after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    ):
+        raise ValidationError("managed audio changed while it was being staged")
+
+
+def _alignment_input_error(message: str) -> ActionConnectorError:
+    return ActionConnectorError(
+        message, metadata_json={"provider_executed": False, "retry_safe": True}
+    )
 
 
 def _lock_writer_directory(locks: ExitStack, directory: Path) -> None:

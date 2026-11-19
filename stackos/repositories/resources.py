@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-from contextlib import ExitStack
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 from uuid import uuid4
 
 from jsonschema import Draft202012Validator
@@ -559,6 +560,54 @@ class ArtifactRepository:
             _managed_file_json=custody,
             **artifact,
         )
+
+    @contextmanager
+    def open_project_file(
+        self, *, data_dir: Path, project_id: int, artifact_id: int
+    ) -> Iterator[tuple[BinaryIO, str | None]]:
+        """Open a checked producer file for a private, project-scoped consumer."""
+        row = self._artifact_row(artifact_id, project_id=project_id)
+        if row.status not in ARTIFACT_ACTIVE_STATUSES:
+            raise ValidationError("artifact is archived or superseded")
+        root = data_dir.resolve()
+        custody = row.managed_file_json or {}
+        raw_path = custody.get("path")
+        if (
+            not row.uri.startswith(PROJECT_FILE_ARTIFACT_URI_PREFIX)
+            or custody.get("root") != str(root)
+            or custody.get("owner_project_id") != project_id
+            or not isinstance(raw_path, str)
+        ):
+            raise ValidationError("artifact has no managed project file")
+        relative = Path(raw_path)
+        owner = project_data_dir(root, project_id).relative_to(root)
+        if ".." in relative.parts or not relative.is_relative_to(owner) or relative == owner:
+            raise ValidationError("artifact has no managed project file")
+
+        with ExitStack() as opened:
+            try:
+                directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                parent = os.open(root, directory_flags)
+                opened.callback(os.close, parent)
+                for part in relative.parts[:-1]:
+                    parent = os.open(part, directory_flags, dir_fd=parent)
+                    opened.callback(os.close, parent)
+                fd = os.open(
+                    relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
+                )
+                opened.callback(os.close, fd)
+                info = os.fstat(fd)
+            except (OSError, ValueError):
+                raise ValidationError("managed project file is unavailable") from None
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+                or (info.st_dev, info.st_ino) != (custody.get("device"), custody.get("inode"))
+                or (row.size_bytes is not None and info.st_size != row.size_bytes)
+            ):
+                raise ValidationError("managed project file no longer matches its artifact")
+            stream = opened.enter_context(os.fdopen(fd, "rb", closefd=False))
+            yield stream, row.mime_type
 
     @staticmethod
     def _generated_file_custody(

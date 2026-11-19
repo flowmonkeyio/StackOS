@@ -19,6 +19,7 @@ _ACTIONS = (
     "dictionaries.create",
     "speech.generate",
     "voices.design",
+    "alignment.create",
 )
 
 
@@ -27,7 +28,9 @@ def elevenlabs_action_kwargs() -> list[dict[str, Any]]:
     actions = []
     for operation in _ACTIONS:
         native = registry.action("elevenlabs", f"elevenlabs.{operation}")
+        input_schema = thaw(native.input_schema)
         output_schema = thaw(native.output_schema)
+        description = native.description
         artifact_id = {"type": "integer", "minimum": 1, "description": "Project audio artifact ID."}
         if operation == "speech.generate":
             output_schema["properties"]["artifact_id"] = artifact_id
@@ -43,14 +46,23 @@ def elevenlabs_action_kwargs() -> list[dict[str, Any]]:
             preview["oneOf"][1]["not"] = {
                 "anyOf": [{"required": ["file_index"]}, {"required": ["artifact_id"]}]
             }
+        elif operation == "alignment.create":
+            properties = input_schema["properties"]
+            properties.pop("audio_path")
+            properties.pop("mime_type")
+            properties["audio_artifact_id"] = artifact_id
+            input_schema["required"] = ["audio_artifact_id", "text"]
+            description = (
+                "Align an existing managed project audio artifact to the supplied transcript."
+            )
         actions.append(
             {
                 "key": native.key,
                 "name": native.metadata["name"],
-                "description": native.description,
+                "description": description,
                 "provider": native.connector,
                 "risk_level": native.metadata["risk_level"],
-                "input_schema": thaw(native.input_schema),
+                "input_schema": input_schema,
                 "output_schema": output_schema,
                 "config": {
                     "schema_version": "stackos.action.v1",

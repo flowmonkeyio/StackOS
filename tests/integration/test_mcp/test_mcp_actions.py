@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import wave
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from pathlib import Path
 from threading import Event
 from typing import Any
@@ -20,7 +22,7 @@ from stackos_connectors import get_default_client
 
 from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.actions.repository.utils import _redact_for_audit
-from stackos.config import Settings
+from stackos.config import Settings, project_data_dir
 from stackos.db.connection import make_engine
 from stackos.db.models import (
     Action,
@@ -30,6 +32,7 @@ from stackos.db.models import (
     IdempotencyKey,
     PayloadSecret,
 )
+from stackos.repositories.resources import ArtifactRepository
 from tests.helpers.integration_clock import IntegrationClock, isolated_provider_clock
 
 from .conftest import MCPClient
@@ -667,9 +670,10 @@ def test_elevenlabs_discovery_projects_executable_actions_without_placeholders(
         "dictionaries.create": "write",
         "speech.generate": "cost",
         "voices.design": "cost",
+        "alignment.create": "cost",
     }
     expected_refs = {f"utils.elevenlabs.{operation}" for operation in expected_effects}
-    assert expected_refs <= {entry["action_ref"] for entry in listed["items"]}
+    assert expected_refs == {entry["action_ref"] for entry in listed["items"]}
     client = get_default_client()
     for operation, effect in expected_effects.items():
         key = f"elevenlabs.{operation}"
@@ -677,8 +681,21 @@ def test_elevenlabs_discovery_projects_executable_actions_without_placeholders(
         manifest = _call_tool_raw(
             mcp_client, "action.describe", {"project_id": project_id, "action_ref": f"utils.{key}"}
         )["manifest"]
-        assert manifest["input_schema_json"] == native["input_schema"]
-        if effect != "cost":
+        if operation == "alignment.create":
+            host_input = manifest["input_schema_json"]
+            assert host_input["additionalProperties"] is False
+            assert (
+                set(host_input["required"])
+                == set(host_input["properties"])
+                == {
+                    "audio_artifact_id",
+                    "text",
+                }
+            )
+            assert host_input["properties"]["text"] == native["input_schema"]["properties"]["text"]
+        else:
+            assert manifest["input_schema_json"] == native["input_schema"]
+        if operation not in {"speech.generate", "voices.design"}:
             assert manifest["output_schema_json"] == native["output_schema"]
         assert manifest["operation"] == native["operation"]
         assert manifest["risk_level"] == native["risk_level"] == effect
@@ -1106,6 +1123,313 @@ def _stored_elevenlabs_audio(settings: Settings, artifact_id: int, project_id: i
             return path
     finally:
         engine.dispose()
+
+
+_ALIGNMENT_REF = "utils.elevenlabs.alignment.create"
+_ALIGNMENT_TEXT = "  Caf\u00e9, go! "
+
+
+def _alignment_wav() -> bytes:
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as audio:
+        audio.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
+        audio.writeframes(b"offline-wave-sample-42")
+    return buffer.getvalue()
+
+
+def _seed_alignment_audio(
+    settings: Settings, project_id: int, *, mime_type: str = "audio/wav", managed: bool = True
+) -> tuple[int, Path]:
+    path = project_data_dir(settings.data_dir.resolve(), project_id) / "private-source.wav"
+    path.parent.mkdir(parents=True)
+    audio = _alignment_wav()
+    path.write_bytes(audio)
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            repository = ArtifactRepository(session)
+            fields = {
+                "kind": "audio",
+                "project_id": project_id,
+                "mime_type": mime_type,
+                "size_bytes": len(audio),
+            }
+            if managed:
+                artifact = repository.create_project_file(
+                    data_dir=settings.data_dir, path=path, **fields
+                )
+            else:
+                artifact = repository.create(uri=path.as_uri(), **fields)
+            return artifact.data.id, path
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
+def test_elevenlabs_alignment_uploads_owned_audio_once(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    granted: bool,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    artifact_id, source = _seed_alignment_audio(mcp_settings, project_id)
+    audio_bytes = source.read_bytes()
+    arguments = {
+        "project_id": project_id,
+        "action_ref": _ALIGNMENT_REF,
+        "credential_ref": elevenlabs_action_account,
+        "input_json": {"audio_artifact_id": artifact_id, "text": _ALIGNMENT_TEXT},
+    }
+    validated = _call_tool_raw(mcp_client, "action.validate", arguments)
+    assert validated["valid"] is True, validated
+    assert validated["manifest"]["risk_level"] == "cost"
+
+    if granted:
+        tool = "action.execute"
+        other = "utils.elevenlabs.speech.generate"
+        started, claimed = _start_elevenlabs_write_step(
+            mcp_client, project_id, other, _ALIGNMENT_REF
+        )
+        denied = mcp_client.call_tool_error(tool, {**arguments, "run_token": started["run_token"]})
+        assert denied["code"] == -32007
+        started, claimed = _start_elevenlabs_write_step(
+            mcp_client, project_id, _ALIGNMENT_REF, other
+        )
+        arguments["run_token"] = started["run_token"]
+    else:
+        tool = "action.run"
+        denied = mcp_client.call_tool_error(tool, arguments)
+        assert denied["data"]["risk_level"] == "cost"
+        arguments.update(
+            confirm_direct=True,
+            intent_summary="Align synthetic project audio.",
+            idempotency_key="elevenlabs-alignment-intent",
+        )
+    assert httpx_mock.get_requests() == []
+    timings = {
+        "words": [
+            {"text": "Caf\u00e9", "start": 0, "end": 0.375, "loss": None},
+            {"text": "go!", "start": 0.5, "end": 0.95},
+        ],
+        "characters": [{"text": "C", "start": 0, "end": 0.075}],
+        "loss": 0.125,
+    }
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/forced-alignment",
+        match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+        headers={"request-id": "alignment-fixture-request"},
+        json={**timings, "private_path": str(source)},
+    )
+    first = mcp_client.call_tool_structured(tool, arguments)["data"]
+    replay = _call_tool_raw(mcp_client, tool, arguments)["data"]
+    (sent,) = httpx_mock.get_requests()
+    assert sent.headers["content-type"].startswith("multipart/form-data;")
+    assert b'name="file"; filename="audio"' in sent.content
+    assert b"Content-Type: audio/wav\r\n\r\n" + audio_bytes + b"\r\n" in sent.content
+    assert b'name="text"\r\n\r\n' + _ALIGNMENT_TEXT.encode() + b"\r\n" in sent.content
+    assert first["action_call_id"] == replay["action_call"]["id"]
+    if granted:
+        assert replay["action_call"]["run_plan_step_id"] == claimed["id"]
+    pointer = replay["output_json"]["file"]
+    for key in ("path", "sha256", "schema_ref", "schema_operation"):
+        assert first["output"][key] == pointer[key]
+    content = json.loads(Path(pointer["path"]).read_text())
+    assert content["response"]["output_json"] == timings
+    Draft202012Validator(validated["manifest"]["output_schema_json"]).validate(timings)
+    assert (
+        content["response"]["metadata_json"]["provider_request_id"] == "alignment-fixture-request"
+    )
+    assert content["request"]["input_json"] == arguments["input_json"]
+    rendered = json.dumps([first, replay, content])
+    for private in (
+        str(source),
+        source.name,
+        "offline-wave-sample-42",
+        base64.b64encode(audio_bytes).decode(),
+        "synthetic-elevenlabs-action-key",
+        "stackos-alignment-",
+    ):
+        assert private not in rendered
+    assert source.read_bytes() == audio_bytes
+
+
+@pytest.mark.parametrize(
+    ("case", "granted"),
+    [
+        ("missing", False),
+        ("foreign", False),
+        ("foreign", True),
+        ("non-audio", False),
+        ("unmanaged", False),
+        ("removed", False),
+        ("replaced", False),
+        ("symlink", False),
+        ("parent-symlink", False),
+        ("hardlink", False),
+        ("caller-path", False),
+    ],
+)
+def test_elevenlabs_alignment_rejects_unsafe_inputs_before_transport(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    case: str,
+    granted: bool,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    owner = project_id
+    if case == "foreign":
+        owner = _call_tool_raw(
+            mcp_client,
+            "project.create",
+            {
+                "slug": "other-alignment-fixture",
+                "name": "Other alignment fixture",
+                "domain": "other-alignment.example",
+                "locale": "en-US",
+            },
+        )["data"]["id"]
+    artifact_id, source = _seed_alignment_audio(
+        mcp_settings,
+        owner,
+        mime_type="text/plain" if case == "non-audio" else "audio/wav",
+        managed=case != "unmanaged",
+    )
+    if case == "removed":
+        source.unlink()
+    if case in {"replaced", "symlink"}:
+        other = source.with_name("different-audio.wav")
+        other.write_bytes(_alignment_wav())
+        if case == "replaced":
+            other.replace(source)
+        else:
+            source.unlink()
+            source.symlink_to(other)
+    if case == "parent-symlink":
+        moved = source.parent.with_name("moved-project")
+        source.parent.rename(moved)
+        source.parent.symlink_to(moved, target_is_directory=True)
+    if case == "hardlink":
+        source.with_name("second-link.wav").hardlink_to(source)
+    payload = {
+        "audio_artifact_id": artifact_id + 1000 if case == "missing" else artifact_id,
+        "text": _ALIGNMENT_TEXT,
+    }
+    if case == "caller-path":
+        payload["audio_path"] = str(source)
+    arguments = {
+        "project_id": project_id,
+        "action_ref": _ALIGNMENT_REF,
+        "credential_ref": elevenlabs_action_account,
+        "input_json": payload,
+    }
+    validated = _call_tool_raw(mcp_client, "action.validate", arguments)
+    assert validated["valid"] is False
+    expected_path = "$.audio_path" if case == "caller-path" else "$.audio_artifact_id"
+    assert any(issue["path"] == expected_path for issue in validated["issues"])
+    if granted:
+        started, _ = _start_elevenlabs_write_step(
+            mcp_client, project_id, _ALIGNMENT_REF, "utils.elevenlabs.speech.generate"
+        )
+        denied = mcp_client.call_tool_error(
+            "action.execute", {**arguments, "run_token": started["run_token"]}
+        )
+    else:
+        denied = mcp_client.call_tool_error(
+            "action.run",
+            {
+                **arguments,
+                "confirm_direct": True,
+                "intent_summary": "Reject invalid alignment audio.",
+            },
+        )
+    assert denied["code"] == -32602
+    assert any(issue["path"] == expected_path for issue in denied["data"]["issues"])
+    assert str(source) not in json.dumps([validated, denied])
+    assert httpx_mock.get_requests() == []
+
+
+def test_elevenlabs_alignment_rechecks_file_after_preflight(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stackos.actions import ActionRepository
+
+    project_id = seeded_project["data"]["id"]
+    artifact_id, source = _seed_alignment_audio(mcp_settings, project_id)
+    replacement = source.with_name("new-audio.wav")
+    replacement.write_bytes(_alignment_wav())
+    resolve = ActionRepository._resolve_credential
+
+    async def replace_after_validation(self, **kwargs):
+        credential = await resolve(self, **kwargs)
+        replacement.replace(source)
+        return credential
+
+    monkeypatch.setattr(ActionRepository, "_resolve_credential", replace_after_validation)
+    denied = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": _ALIGNMENT_REF,
+            "credential_ref": elevenlabs_action_account,
+            "input_json": {"audio_artifact_id": artifact_id, "text": _ALIGNMENT_TEXT},
+            "confirm_direct": True,
+            "intent_summary": "Align audio with a changed local file.",
+            "idempotency_key": "alignment-race-intent",
+        },
+    )
+    assert not replacement.exists()
+    assert denied["code"] == -32008
+    assert denied["data"]["error"] == "managed project file no longer matches its artifact"
+    receipt = _call_tool_raw(
+        mcp_client,
+        "actionCall.get",
+        {"project_id": project_id, "action_call_id": denied["data"]["action_call_id"]},
+    )
+    assert receipt["status"] == "failed"
+    assert str(source) not in json.dumps([denied, receipt])
+    assert httpx_mock.get_requests() == []
+
+
+def test_elevenlabs_alignment_does_not_repeat_an_ambiguous_provider_failure(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    artifact_id, source = _seed_alignment_audio(mcp_settings, project_id)
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/forced-alignment",
+        status_code=503,
+        headers={"request-id": "failed-alignment-request"},
+        json={"detail": f"echo {source} synthetic-elevenlabs-action-key"},
+        is_reusable=True,
+    )
+    arguments = {
+        "project_id": project_id,
+        "action_ref": _ALIGNMENT_REF,
+        "credential_ref": elevenlabs_action_account,
+        "input_json": {"audio_artifact_id": artifact_id, "text": _ALIGNMENT_TEXT},
+        "confirm_direct": True,
+        "intent_summary": "Align synthetic project audio.",
+        "idempotency_key": "failed-alignment-intent",
+    }
+    _assert_elevenlabs_unsafe_replay(mcp_client, "action.run", arguments)
+    assert len(httpx_mock.get_requests()) == 1
 
 
 def _assert_foreign_slack_upload_denied(
