@@ -94,7 +94,7 @@ describe('HomeView', () => {
       '/api/v1/operations/backup.status/call', expect.anything(),
     )
     const service = wrapper.get('[aria-label="System status"]')
-    expect(service.findAll('button').map((button) => button.text())).toEqual([
+    expect(service.findAll('button').filter(button => !button.attributes('aria-haspopup')).map((button) => button.text())).toEqual([
       'Restart',
       'Refresh',
       'Run doctor',
@@ -186,9 +186,12 @@ describe('HomeView', () => {
       finish(json({ checked_at: '2091-11-18T18:48:00Z', readings: {
         codex: { plan: 'ChatGPT Pro', meters: [] },
         'claude-code': { plan: null, meters: [
-          { scope: 'First', remaining_percent: 15, resets_at: '2091-11-19T12:00:00Z' },
-          { scope: 'Second', remaining_percent: 35, resets_at: '2091-11-20T18:00:00Z' },
-          { scope: 'Third', remaining_percent: 36, resets_at: null },
+          { scope: 'First', remaining_percent: 25.1, resets_at: '2091-11-19T12:00:00Z' },
+          { scope: 'Second', remaining_percent: 25, resets_at: '2091-11-20T18:00:00Z' },
+          { scope: 'Third', remaining_percent: 5.1, resets_at: null },
+          { scope: 'Fourth', remaining_percent: 5, resets_at: null },
+          { scope: 'Fifth', remaining_percent: 100, resets_at: null },
+          { scope: 'Sixth', remaining_percent: 0, resets_at: null },
         ] },
         'claude-desktop': { plan: 'Wrong host plan', meters: [] },
         hermes: { plan: 'Wrong host plan', meters: [] },
@@ -200,9 +203,16 @@ describe('HomeView', () => {
       expect(connections.text()).not.toContain('Wrong host plan')
       const claude = connections.get('li[aria-label="Claude Code"]')
       const meters = claude.findAllComponents({ name: 'UiScoreMeter' })
-      for (const [index, tone] of ['danger', 'warning', 'success'].entries()) {
-        expect(meters[index]!.props('tone')).toBe(tone)
+      const expectedMeters = [
+        [74.9, 'success'], [75, 'warning'], [94.9, 'warning'], [95, 'danger'],
+        [0, 'success'], [100, 'danger'],
+      ] as const
+      for (const [index, [value, tone]] of expectedMeters.entries()) {
+        expect(meters[index]!.props()).toMatchObject({ value, tone })
       }
+      expect(claude.findAll('.tabular-nums').map(label => label.text())).toEqual([
+        '74.9%', '75%', '94.9%', '95%', '0%', '100%',
+      ])
       expect(claude.text()).toContain('First · Resets')
       expect(claude.text()).toContain('Second · Resets')
       expect(claude.text()).toContain('Third · Reset unavailable')
@@ -219,7 +229,7 @@ describe('HomeView', () => {
     try {
       const codex = wrapper.get('li[aria-label="Codex"]')
       expect(codex.text()).toContain('Status unavailable')
-      expect(codex.text()).toContain('76% left')
+      expect(codex.text()).toContain('24%')
       expect(codex.text()).not.toContain('Connected')
     } finally { wrapper.unmount() }
   })
@@ -323,9 +333,9 @@ describe('HomeView', () => {
     expect(claude.text()).toContain('Not detected')
     expect(claude.text()).toContain('Install the Claude Code CLI')
     expect(claude.text()).toContain('Claude Max')
-    expect(claude.text()).toContain('14% left')
+    expect(claude.text()).toContain('86%')
     expect(claude.findAll('time')).toHaveLength(1)
-    expect(claude.get('[aria-label="Claude Code Fable quota remaining (%)"]').attributes('aria-valuenow')).toBe('14')
+    expect(claude.get('[aria-label="Claude Code Fable quota used (%)"]').attributes('aria-valuenow')).toBe('86')
     expect(connections.get('li[aria-label="Claude Desktop"]').text()).toContain('Restart needed')
     expect(connections.get('li[aria-label="Hermes"]').text()).toContain('Choose a profile')
     for (const name of ['Claude Desktop', 'Gemini CLI', 'Hermes']) {
@@ -334,7 +344,7 @@ describe('HomeView', () => {
       expect(card.get('.host-resets').text()).toBe('N/A')
     }
     const service = wrapper.get('[aria-label="System status"]')
-    expect(service.findAll('button').map((button) => button.text())).toEqual([
+    expect(service.findAll('button').filter(button => !button.attributes('aria-haspopup')).map((button) => button.text())).toEqual([
       'Restart',
       'Refresh',
       'Run doctor',
@@ -370,6 +380,7 @@ async function mountHome() {
 }
 
 function defaultFetch(url: string): Response {
+  if (url.includes('hostMcp.listAccounts')) return json({ hosts: {} })
   if (url.includes('tracker.deliveryCapacity')) return json({ scope: 'project', projects: [1, 2].map(id => ({ project_id: id, project_name: `Project ${id}`, project_slug: `project-${id}`, configured_limit: 3, running_count: 1, queued_count: 0 })), supported_min: 1, supported_max: 32 })
   if (url === '/api/v1/operations/tracker.agentStatsAll/call') return json(agentStatsFixture({ project_id: null, is_active: true }))
   if (url.includes('tracker.activeTasksAll')) return json(activeTasksFixture())
