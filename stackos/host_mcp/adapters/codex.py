@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -13,9 +14,12 @@ from typing import Any, TypedDict
 
 from stackos.host_mcp.accounts import ResolvedAccountSelection
 from stackos.host_mcp.adapters.codex_accounts import (
+    AuthExchange,
     CodexAccountError,
     CodexAccounts,
+    _home,
     exact_thread,
+    exact_uuid,
     ordinary_launch,
     selected_launch,
 )
@@ -119,11 +123,37 @@ def run_agent(
                 overrides=overrides,
                 allowed=account_selection_current,
             )
-        with launch as (env, auth_lease_fd):
-            if account_selection is not None and resume_thread_id is not None:
-                exact_thread(codex_bin, env, resume_thread_id, overrides=overrides)
+        with launch as (env, auth_lease_fd), ExitStack() as writers:
+            store = AuthExchange(_home(env), lambda _: None)
+            inherited: tuple[int, ...] = (auth_lease_fd,)
+            reserved = None
+            if resume_thread_id is not None:
+                try:
+                    reserved = exact_uuid(resume_thread_id)
+                except CodexAccountError:
+                    if account_selection is not None:
+                        raise
+                if reserved is not None:
+                    inherited += (writers.enter_context(store.thread_lease(reserved)),)
+                if account_selection is not None:
+                    exact_thread(codex_bin, env, resume_thread_id, overrides=overrides)
             if account_selection_current is not None and not account_selection_current():
                 raise CodexAccountError("Codex account selection changed before launch.")
+
+            def track_session(session_id: str) -> None:
+                nonlocal reserved
+                if reserved is None:
+                    try:
+                        observed = exact_uuid(session_id)
+                    except CodexAccountError:
+                        if account_selection is not None:
+                            raise
+                    else:
+                        writers.enter_context(store.thread_lease(observed))
+                        reserved = observed
+                if on_session is not None:
+                    on_session(session_id)
+
             return _exec_agent(
                 codex_bin,
                 project_dir,
@@ -135,10 +165,10 @@ def run_agent(
                 provider=provider,
                 overrides=overrides,
                 resume_thread_id=resume_thread_id,
-                on_session=on_session,
+                on_session=track_session if on_session is not None or account_selection else None,
                 process_control=process_control,
                 env=env,
-                auth_lease_fd=auth_lease_fd,
+                inherited=inherited,
                 private_diagnostics=mcp_config_ref is not None or account_selection is not None,
             )
     except CodexAccountError as exc:
@@ -160,7 +190,7 @@ def _exec_agent(
     on_session: Callable[[str], None] | None,
     process_control: ManagedProcessControl | None,
     env: dict[str, str],
-    auth_lease_fd: int | None,
+    inherited: tuple[int, ...],
     private_diagnostics: bool,
 ) -> AgentRunResult:
     with TemporaryDirectory(prefix="stackos-agent-") as temporary:
@@ -198,7 +228,6 @@ def _exec_agent(
         execution_error = None
         routed_execution_error = None
         managed_cancellation = False
-        inherited = (auth_lease_fd,) if auth_lease_fd is not None else ()
 
         def record_session(session_id: str) -> None:
             nonlocal thread_id

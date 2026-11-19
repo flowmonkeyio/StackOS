@@ -58,11 +58,9 @@ class ForegroundLaunch:
     env: Mapping[str, str] | None = field(repr=False)
     observe: Callable[[int, int | None], ForegroundObservation] = field(repr=False)
     decide_input: Callable[[bool], None] = field(repr=False)
-    before_spawn: Callable[[], tuple[tuple[str, ...], ForegroundObservation]] | None = field(
-        default=None, repr=False
-    )
     close: Callable[[], None] | None = field(default=None, repr=False)
     inherited_fds: tuple[int, ...] = field(default=(), repr=False)
+    tracks_navigation: bool = False
 
 
 class ForegroundAdapter(Protocol):
@@ -76,6 +74,8 @@ class ForegroundAdapter(Protocol):
         is a bounded local read. Mark settled only after native retirement, with
         tool, approval and subagent work resolved and resumable input preserved.
         A terminal native error can qualify; process exit alone cannot.
+        If the adapter tracks navigation, replace the retained ID only after
+        initial admission and on a native acknowledgment from that child.
 
         Keep input and turn dispatch closed from process start until decide_input(True).
         A failed admission keeps the gate closed. A negative decision retires the
@@ -295,38 +295,19 @@ def _run_native(
     try:
         # Inherit the real TTY and process group. The child also retains the writer
         # fence if the supervisor unexpectedly disappears while it is still alive.
-        descriptors = (lock_fd, *launch.inherited_fds)
-        if launch.before_spawn is not None:
-            # A foreground client attached to an already verified private
-            # backend has no input channel until this exact native launch.
-            with accounts.guard_selection(host_key, request.selection.desired):
-                if stopping is not None:
-                    return -stopping, False
-                argv, preflight = launch.before_spawn()
-                if not argv or argv[0] != request.executable:
-                    raise ForegroundError("The native launch did not use the selected executable.")
-                observed = _retain_observation(preflight, status)
-                if not _matches_selection(observed, request):
-                    raise ForegroundError(
-                        "The prepared native conversation or account was not verified."
-                    )
-                _enable_input(launch)
-                # Keyboard input left over from a retired TUI must not reach
-                # the next authenticated process.
-                try:
-                    termios.tcflush(0, termios.TCIFLUSH)
-                except (OSError, termios.error):
-                    raise ForegroundError(
-                        "Unable to clear input before the native launch."
-                    ) from None
-                child = subprocess.Popen(argv, env=launch.env, pass_fds=descriptors)
-                input_admitted = True
-            status.confirmed_revision = status.requested_revision
-        else:
-            child = subprocess.Popen(launch.argv, env=launch.env, pass_fds=descriptors)
+        if request.reopening and launch.tracks_navigation:
+            try:
+                termios.tcflush(0, termios.TCIFLUSH)
+            except (OSError, termios.error):
+                raise ForegroundError("Unable to clear input before the native launch.") from None
+        child = subprocess.Popen(
+            launch.argv,
+            env=launch.env,
+            pass_fds=(lock_fd, *launch.inherited_fds),
+        )
         if stopping is not None:
             child.send_signal(stopping)
-        status.phase = "confirmed" if input_admitted else "pending"
+        status.phase = "pending"
         slot.publish(status)
         while True:
             try:
@@ -352,14 +333,31 @@ def _run_native(
                         status.phase = "confirmed"
                     if input_admitted or status.session_id != previous_session:
                         slot.publish(status)
+                elif launch.tracks_navigation and stopping is None:
+                    previous_session = status.session_id
+                    _read_native_observation(launch, child.pid, None, status, navigating=True)
+                    if status.session_id != previous_session:
+                        slot.publish(status)
                 continue
             if stopping is not None or code < 0:
                 # A signal can arrive before the first live observation. Capture a
                 # published ID for recovery without confirming or starting another child.
                 with suppress(ForegroundError):
-                    _read_native_observation(launch, child.pid, code, status)
+                    _read_native_observation(
+                        launch,
+                        child.pid,
+                        code,
+                        status,
+                        navigating=input_admitted and launch.tracks_navigation,
+                    )
                 return (-stopping if stopping is not None else code), False
-            observed = _read_native_observation(launch, child.pid, code, status)
+            observed = _read_native_observation(
+                launch,
+                child.pid,
+                code,
+                status,
+                navigating=input_admitted and launch.tracks_navigation,
+            )
             settled = input_admitted and _matches_selection(observed, request) and observed.settled
             return (-stopping, False) if stopping is not None else (code, settled)
     except (ForegroundError, HostAccountError, OSError) as exc:
@@ -435,6 +433,8 @@ def _read_native_observation(
     pid: int,
     code: int | None,
     status: ForegroundStatus,
+    *,
+    navigating: bool = False,
 ) -> ForegroundObservation:
     try:
         observed = launch.observe(pid, code)
@@ -442,17 +442,19 @@ def _read_native_observation(
         raise
     except Exception:
         raise ForegroundError("Native conversation observation failed.") from None
-    return _retain_observation(observed, status)
+    return _retain_observation(observed, status, navigating=navigating)
 
 
 def _retain_observation(
-    observed: ForegroundObservation, status: ForegroundStatus
+    observed: ForegroundObservation,
+    status: ForegroundStatus,
+    *,
+    navigating: bool = False,
 ) -> ForegroundObservation:
     if observed.session_id is None:
         return observed
-    if not _NATIVE_ID.fullmatch(observed.session_id) or status.session_id not in (
-        None,
-        observed.session_id,
+    if not _NATIVE_ID.fullmatch(observed.session_id) or (
+        not navigating and status.session_id not in (None, observed.session_id)
     ):
         raise ForegroundError("Native launch did not retain the exact conversation.")
     status.session_id = observed.session_id

@@ -10,6 +10,7 @@ from stackos.host_mcp.accounts import DesiredAccount, NativeAccountProfile, Reso
 from stackos.host_mcp.adapters import codex, codex_accounts
 from stackos.host_mcp.adapters.codex_accounts import AuthExchange, CodexAccountError
 from stackos.host_mcp.adapters.codex_foreground import _native_flags
+from stackos.host_mcp.adapters.codex_tui import TuiAttachment
 from stackos.host_mcp.foreground import ForegroundError
 
 
@@ -38,11 +39,13 @@ def test_exchange_preserves_native_refresh_and_original_login(homes):
         assert (isolated / "auth.json").read_bytes() == b"original A"
         assert exchange.profile_home(None) == isolated
         assert exchange.profile_home(isolated) == regular
+        with AuthExchange(regular, fixture_principal).selected(isolated, ("B", "workspace")):
+            assert (regular / "auth.json").read_bytes() == b"original B"
         with (
-            pytest.raises(CodexAccountError, match="in use"),
-            AuthExchange(regular, fixture_principal).selected(isolated, ("B", "workspace")),
+            pytest.raises(CodexAccountError, match="another account"),
+            AuthExchange(regular, fixture_principal).selected(None, ("A", "workspace")),
         ):
-            pytest.fail("another managed caller must not use a borrowed credential")
+            pytest.fail("another account must not change the credential in use")
         updated = regular / "refresh"
         updated.write_bytes(b"refreshed B")
         updated.chmod(0o600)
@@ -211,7 +214,8 @@ def test_enrollment_starts_native_first_party_signin_in_isolated_home(homes, mon
             return True
 
     @contextmanager
-    def backend(_binary, cwd, env, _control, *, overrides):
+    def backend(_binary, cwd, env, _control, *, overrides, pass_fds):
+        assert len(pass_fds) == 1
         observed["home"] = env["CODEX_HOME"]
         observed["cwd"] = cwd
         observed["mode"] = overrides
@@ -242,4 +246,75 @@ def test_enrollment_starts_native_first_party_signin_in_isolated_home(homes, mon
         "call": ("account/login/start", {"type": "chatgpt"}),
         "login": "native-login",
     }
+    assert (regular / "auth.json").read_bytes() == b"original A"
+
+
+def test_terminal_publication_follows_acknowledged_attachments_and_original_options(homes):
+    regular, _ = homes
+    exchange = AuthExchange(regular, fixture_principal)
+    first = "00000000-0000-4000-8000-000000000881"
+    second = "00000000-0000-4000-8000-000000000882"
+    temporary = "00000000-0000-4000-8000-000000000883"
+    settings = {
+        "approvalPolicy": "never",
+        "sandbox": "read-only",
+        "config": {"model_reasoning_effort": "low"},
+    }
+    relay = TuiAttachment("unix:///fixture", settings, exchange.thread_lease, first)
+    with relay.writers:
+        new = {"id": 2, "method": "thread/start", "params": {"sandbox": "workspace-write"}}
+        with pytest.raises(CodexAccountError, match="initial Codex conversation"):
+            relay.request(new)
+        resume = {"id": 1, "method": "thread/resume", "params": {"threadId": first}}
+        relay.request(resume)
+        assert relay.snapshot()[0] is None
+        relay.response({"id": 1, "result": {"thread": {"id": first}}})
+        assert relay.snapshot()[0] == first
+        relay.admit(True)
+        relay.request({"id": 3, "method": "thread/start", "params": {"ephemeral": True}})
+        relay.response({"id": 3, "result": {"thread": {"id": temporary}}})
+        relay.request({"id": 4, "method": "turn/start", "params": {"threadId": temporary}})
+        assert relay.snapshot() == (first, (first,))
+        relay.request(new)
+        assert relay.snapshot()[0] == first
+        assert new["params"] == settings
+        relay.response({"id": 2, "result": {"thread": {"id": second}}})
+        assert relay.snapshot()[0] == second
+        with (
+            pytest.raises(CodexAccountError, match="already has a managed writer"),
+            exchange.thread_lease(second),
+        ):
+            pytest.fail("a parallel invocation must not write the foreground thread")
+    with exchange.thread_lease(second):
+        pass
+
+
+def test_native_reasoning_option_keeps_routing_overrides_closed():
+    flags, settings = _native_flags(("-c", 'model_reasoning_effort="low"', "--no-alt-screen"))
+    assert flags == ("--no-alt-screen",)
+    assert settings == {"config": {"model_reasoning_effort": "low"}}
+    with pytest.raises(ForegroundError, match="conflicts"):
+        _native_flags(("-c", 'model_provider="a-different-provider"'))
+
+
+def test_login_thread_failure_is_cleanable_by_a_new_adapter(homes, monkeypatch):
+    regular, isolated = homes
+    monkeypatch.setattr(
+        codex_accounts, "subprocess_env_for_cli", lambda _: {"CODEX_HOME": str(regular)}
+    )
+    monkeypatch.setattr(
+        codex_accounts, "_config", lambda *_a, **_kw: {"cli_auth_credentials_store": "file"}
+    )
+
+    def interrupt_worker(_thread):
+        raise OSError("fixture interrupts before native launch")
+
+    monkeypatch.setattr(codex_accounts.Thread, "start", interrupt_worker)
+    adapter = codex_accounts.CodexAccounts(lambda: "codex")
+    profile = NativeAccountProfile("fixture", isolated)
+    with pytest.raises(OSError, match="interrupts before native launch"):
+        adapter.start_login(profile)
+    recovered = codex_accounts.CodexAccounts(lambda: "codex")
+    assert recovered.discard_login(profile)
+    assert not (isolated / ".stackos-native-login").exists()
     assert (regular / "auth.json").read_bytes() == b"original A"

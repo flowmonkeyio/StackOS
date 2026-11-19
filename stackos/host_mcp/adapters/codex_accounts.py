@@ -10,7 +10,7 @@ import stat
 import sys
 import webbrowser
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -186,9 +186,11 @@ def ordinary_launch(
     env = subprocess_env_for_cli(binary) if env is None else env
     exchange = AuthExchange(_home(env), lambda _: None)
     try:
-        with exchange.lease(shared=True) as fd:
-            if exchange.journal.exists():
-                raise CodexAccountError("The previous Codex credential exchange needs recovery.")
+        with ExitStack() as usage:
+            with exchange.admission():
+                fd = usage.enter_context(exchange.lease(shared=True))
+                if exchange.journal.exists():
+                    raise CodexAccountError("A managed Codex account owns the native home.")
             yield env, fd
     except (HostAccountError, OSError):
         raise CodexAccountError("The private Codex execution lease is unavailable.") from None
@@ -202,13 +204,18 @@ def _storage(config: dict) -> str:
     return mode
 
 
+def exact_uuid(value: object) -> str:
+    if isinstance(value, str):
+        try:
+            if str(UUID(value)) == value:
+                return value
+        except ValueError:
+            pass
+    raise CodexAccountError("An exact Codex conversation UUID is required.")
+
+
 def exact_thread(binary: str, env: dict[str, str], thread: str, *, overrides=()) -> None:
-    try:
-        exact = str(UUID(thread)) == thread
-    except (ValueError, AttributeError, TypeError):
-        exact = False
-    if not exact:
-        raise CodexAccountError("An exact Codex conversation UUID is required.")
+    exact_uuid(thread)
     responses = _rpc(
         binary,
         env,
@@ -263,10 +270,6 @@ def selected_launch(
                 "The previous file-backed Codex exchange needs operator recovery."
             )
         with exchange.selected(isolated, selection.principal_key, allowed=allowed) as fd:
-            if principal(home) != selection.principal_key:
-                raise CodexAccountError(
-                    "The regular Codex home did not confirm the selected account."
-                )
             yield env, fd
     except (HostAccountError, OSError):
         raise CodexAccountError("The private Codex credential store is unavailable.") from None
@@ -277,7 +280,7 @@ class CodexAccounts:
 
     def __init__(self, executable: Callable[[], str | None]):
         self.executable = executable
-        self.logins: dict[Path, ManagedProcessControl] = {}
+        self.logins: dict[Path, tuple[ManagedProcessControl, Event]] = {}
 
     def _resolve(self):
         binary = self.executable()
@@ -325,12 +328,14 @@ class CodexAccounts:
         if workspaces is not None:
             overrides += ("-c", "forced_chatgpt_workspace_id=" + json.dumps(workspaces))
         marker = directory / ".stackos-native-login"
-        fd = _private_fd(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-        os.close(fd)
+        fd = _private_fd(marker, os.O_RDWR | os.O_CREAT | os.O_EXCL)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.write(fd, b"owner-fenced-v1")
         control = ManagedProcessControl()
         settled = Event()
         ready = Event()
-        self.logins[directory] = control
+        done = Event()
+        self.logins[directory] = (control, done)
 
         def run_login() -> None:
             try:
@@ -340,6 +345,7 @@ class CodexAccounts:
                     _profile_env(env, directory),
                     control,
                     overrides=overrides,
+                    pass_fds=(fd,),
                 ) as (session, _):
                     result = session.call("account/login/start", {"type": "chatgpt"})
                     url = result.get("authUrl")
@@ -367,11 +373,20 @@ class CodexAccounts:
                 if control.retirement_status() in ("stopped", "prevented"):
                     marker.unlink(missing_ok=True)
                     self.logins.pop(directory, None)
+                os.close(fd)
+                done.set()
                 settled.set()
 
-        Thread(target=run_login, daemon=True, name="stackos-codex-login").start()
+        try:
+            Thread(target=run_login, daemon=True, name="stackos-codex-login").start()
+        except BaseException:
+            if control.stop(timeout=5) in ("stopped", "prevented"):
+                marker.unlink(missing_ok=True)
+                self.logins.pop(directory, None)
+                os.close(fd)
+            raise
         if not settled.wait(15) or not ready.is_set():
-            control.stop()
+            control.stop(timeout=5)
             raise CodexAccountError("Could not start the first-party Codex sign-in.")
 
     def discard_login(self, profile: NativeAccountProfile) -> bool:
@@ -379,13 +394,26 @@ class CodexAccounts:
         if directory is None:
             return False
         marker = directory / ".stackos-native-login"
-        control = self.logins.get(directory)
-        if control is not None:
-            if control.stop() != "stopped":
+        running = self.logins.get(directory)
+        if running is not None:
+            control, done = running
+            if control.stop(timeout=5) not in ("stopped", "prevented") or not done.wait(2):
                 return False
-            marker.unlink(missing_ok=True)
-        if marker.exists():
-            return False
+        try:
+            fd = _private_fd(marker, os.O_RDONLY)
+        except FileNotFoundError:
+            pass
+        else:
+            try:
+                if os.read(fd, 32) != b"owner-fenced-v1":
+                    return False
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return False
+                marker.unlink()
+            finally:
+                os.close(fd)
         # Removing the isolated file does not revoke or mutate any other
         # native session for a duplicate principal.
         _credential(directory)
@@ -487,8 +515,7 @@ class AuthExchange:
             raise CodexAccountError("A native Codex credential changed during the exchange.")
         return self.home if isolated is not None else parked_home
 
-    @contextmanager
-    def lease(self, *, shared: bool = False) -> Iterator[int]:
+    def _lock_path(self, suffix: str) -> Path:
         # Ordinary Stock Codex can start with no existing native home, and its
         # home configuration may be read-only. Keep the process fence separate
         # from credential storage and use the same owner-local path in every
@@ -497,7 +524,20 @@ class AuthExchange:
         directory.mkdir(mode=0o700, exist_ok=True)
         _private_directory(directory, "unsafe_profile")
         key = sha256(os.fsencode(self.home.resolve())).hexdigest()
-        fd = _private_fd(directory / key, os.O_RDWR | os.O_CREAT)
+        return directory / (key + suffix)
+
+    @contextmanager
+    def admission(self) -> Iterator[None]:
+        fd = _private_fd(self._lock_path(".admission"), os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+
+    @contextmanager
+    def lease(self, *, shared: bool = False, suffix: str = "") -> Iterator[int]:
+        fd = _private_fd(self._lock_path(suffix), os.O_RDWR | os.O_CREAT)
         try:
             try:
                 mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
@@ -517,34 +557,11 @@ class AuthExchange:
         allowed: Callable[[], bool] | None = None,
     ) -> Iterator[int]:
         try:
-            with self.lease() as fd:
-                self._prepare_state()
-                self._recover()
-                if allowed is not None and not allowed():
-                    raise CodexAccountError("Codex account selection changed before launch.")
-                if isolated is None:
-                    yield fd
-                    return
-                _private_directory(isolated, "unsafe_profile")
-                if isolated.resolve() == self.home.resolve():
-                    raise CodexAccountError(
-                        "The enrolled and regular Codex homes must be distinct."
-                    )
-                if expected is None:
-                    raise CodexAccountError("Codex has no verified principal for this selection.")
-                original = _credential(self.home)
-                selected = _credential(isolated)
-                if selected is None or self.principal(isolated) != expected:
-                    raise CodexAccountError(
-                        "Codex could not confirm the selected enrolled account."
-                    )
-                if _credential(isolated) != selected:
-                    raise CodexAccountError(
-                        "The selected Codex credential changed during preflight."
-                    )
-                self._swap_in(isolated, original, selected, expected, allowed)
+            with ExitStack() as usage:
+                with self.admission():
+                    fd = self._join_or_switch(usage, isolated, expected, allowed)
                 try:
-                    if self.principal(self.home) != expected:
+                    if expected is not None and self.principal(self.home) != expected:
                         raise CodexAccountError(
                             "The regular Codex home did not confirm the selected account."
                         )
@@ -552,11 +569,84 @@ class AuthExchange:
                         raise CodexAccountError("Codex account selection changed before launch.")
                     yield fd
                 finally:
-                    self._recover()
+                    usage.close()
+                    self._recover_if_idle()
         except OSError:
             raise CodexAccountError(
                 "Could not access the private Codex credential transaction."
             ) from None
+
+    def _join_or_switch(
+        self,
+        usage: ExitStack,
+        isolated: Path | None,
+        expected: Principal | None,
+        allowed: Callable[[], bool] | None,
+    ) -> int:
+        if allowed is not None and not allowed():
+            raise CodexAccountError("Codex account selection changed before launch.")
+        try:
+            fd = usage.enter_context(self.lease())
+        except CodexAccountError:
+            fd = usage.enter_context(self.lease(shared=True))
+            journal = self._read_journal()
+            active = journal[0] if journal is not None else None
+            if (isolated is None) != (active is None) or (
+                isolated is not None
+                and active is not None
+                and isolated.resolve() != active.resolve()
+            ):
+                raise CodexAccountError(
+                    "The managed Codex home is in use by another account."
+                ) from None
+        else:
+            self._prepare_state()
+            self._recover()
+            if isolated is not None:
+                self._stage_account(isolated, expected, allowed)
+            fcntl.flock(fd, fcntl.LOCK_SH)
+        return fd
+
+    def _stage_account(
+        self,
+        isolated: Path,
+        expected: Principal | None,
+        allowed: Callable[[], bool] | None,
+    ) -> None:
+        _private_directory(isolated, "unsafe_profile")
+        if isolated.resolve() == self.home.resolve():
+            raise CodexAccountError("The enrolled and regular Codex homes must be distinct.")
+        if expected is None:
+            raise CodexAccountError("Codex has no verified principal for this selection.")
+        original = _credential(self.home)
+        selected = _credential(isolated)
+        if selected is None or self.principal(isolated) != expected:
+            raise CodexAccountError("Codex could not confirm the selected enrolled account.")
+        if _credential(isolated) != selected:
+            raise CodexAccountError("The selected Codex credential changed during preflight.")
+        self._swap_in(isolated, original, selected, expected, allowed)
+
+    def _recover_if_idle(self) -> None:
+        with self.admission(), ExitStack() as idle:
+            if not self.journal.exists():
+                return
+            try:
+                idle.enter_context(self.lease())
+            except CodexAccountError:
+                return
+            self._recover()
+
+    @contextmanager
+    def thread_lease(self, thread_id: str) -> Iterator[int]:
+        exact_uuid(thread_id)
+        with ExitStack() as ownership:
+            try:
+                fd = ownership.enter_context(self.lease(suffix=f".thread-{thread_id}"))
+            except CodexAccountError:
+                raise CodexAccountError(
+                    "This Codex conversation already has a managed writer."
+                ) from None
+            yield fd
 
     def _prepare_state(self) -> None:
         # The regular home may be readable by other users. Its transaction state
