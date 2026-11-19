@@ -84,13 +84,13 @@ def run_agent(
     )
 
 
-def _native_version(cli: str, project_dir: Path) -> str | None:
+def _native_version(cli: str, project_dir: Path, env: dict[str, str] | None = None) -> str | None:
     """Optional evidence from the selected executable; never an execution gate."""
     try:
         process = subprocess.run(
             [cli, "--version"],
             cwd=project_dir,
-            env=subprocess_env_for_cli(cli),
+            env=subprocess_env_for_cli(cli) if env is None else env,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,

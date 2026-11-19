@@ -83,8 +83,11 @@ def _meters(stdout: str) -> list[dict[str, Any]]:
     return []
 
 
-def read_claude(binary: str) -> dict[str, Any] | None:
-    version = run_capture(binary, ["--version"])
+def read_claude(
+    binary: str,
+) -> dict[str, Any] | None:
+    env = None
+    version = run_capture(binary, ["--version"], env=env)
     if (
         version is None
         or version.returncode
@@ -94,7 +97,7 @@ def read_claude(binary: str) -> dict[str, Any] | None:
     patch = int(match[1])
     if patch < 41:
         return None
-    auth = run_capture(binary, ["auth", "status", "--json"])
+    auth = run_capture(binary, ["auth", "status", "--json"], env=env)
     if auth is None or auth.returncode:
         return None
     try:
@@ -111,7 +114,7 @@ def read_claude(binary: str) -> dict[str, Any] | None:
     plan = _PLANS.get(tier.lower()) if isinstance(tier, str) else None
     meters = []
     if patch >= 273:
-        result = run_capture(binary, _USAGE_ARGS)
+        result = run_capture(binary, _USAGE_ARGS, env=env)
         if result is not None and result.returncode == 0:
             meters = _meters(result.stdout)
     return {"plan": plan, "meters": meters} if plan or meters else None

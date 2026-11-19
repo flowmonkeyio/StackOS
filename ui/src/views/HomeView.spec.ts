@@ -94,7 +94,7 @@ describe('HomeView', () => {
       '/api/v1/operations/backup.status/call', expect.anything(),
     )
     const service = wrapper.get('[aria-label="System status"]')
-    expect(service.findAll('button').map((button) => button.text())).toEqual([
+    expect(service.findAll('button').filter(button => !button.attributes('aria-haspopup')).map((button) => button.text())).toEqual([
       'Restart',
       'Refresh',
       'Run doctor',
@@ -344,7 +344,7 @@ describe('HomeView', () => {
       expect(card.get('.host-resets').text()).toBe('N/A')
     }
     const service = wrapper.get('[aria-label="System status"]')
-    expect(service.findAll('button').map((button) => button.text())).toEqual([
+    expect(service.findAll('button').filter(button => !button.attributes('aria-haspopup')).map((button) => button.text())).toEqual([
       'Restart',
       'Refresh',
       'Run doctor',
@@ -380,6 +380,7 @@ async function mountHome() {
 }
 
 function defaultFetch(url: string): Response {
+  if (url.includes('hostMcp.listAccounts')) return json({ hosts: {} })
   if (url.includes('tracker.deliveryCapacity')) return json({ scope: 'project', projects: [1, 2].map(id => ({ project_id: id, project_name: `Project ${id}`, project_slug: `project-${id}`, configured_limit: 3, running_count: 1, queued_count: 0 })), supported_min: 1, supported_max: 32 })
   if (url === '/api/v1/operations/tracker.agentStatsAll/call') return json(agentStatsFixture({ project_id: null, is_active: true }))
   if (url.includes('tracker.activeTasksAll')) return json(activeTasksFixture())

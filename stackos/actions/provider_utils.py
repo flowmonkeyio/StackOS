@@ -18,6 +18,21 @@ from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 from stackos.repositories.base import ValidationError
 
 JsonObject = dict[str, Any]
+ELEVENLABS_VOICES_LIST_REF = "utils.elevenlabs.voices.list"
+ELEVENLABS_VOICE_DESIGN_REF = "utils.elevenlabs.voices.design"
+
+
+def restore_public_voice_cursors(
+    action_ref: str | None, original: Mapping[str, Any], redacted: JsonObject
+) -> JsonObject:
+    """Preserve only the reviewed top-level cursor fields on the bound voice list."""
+    if action_ref == ELEVENLABS_VOICES_LIST_REF:
+        for key in ("page_token", "next_page_token"):
+            if key in original:
+                value = original[key]
+                if value is None or isinstance(value, str):
+                    redacted[key] = redact_secret_text(value) if isinstance(value, str) else None
+    return redacted
 
 
 def issue(path: str, message: str, code: str = "validation_error") -> ActionValidationIssue:

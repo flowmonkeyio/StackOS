@@ -9,8 +9,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, TypedDict
 
+from stackos.host_mcp.adapters.codex_accounts import CodexAccounts
 from stackos.host_mcp.agent_execution import InvocationCancelled, ManagedProcessControl
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
@@ -59,6 +60,11 @@ MACOS_CODEX_APP_BUNDLE_CANDIDATES = (
 )
 
 
+class _StreamOptions(TypedDict, total=False):
+    pass_fds: tuple[int, ...]
+    process_control: ManagedProcessControl
+
+
 def run_agent(
     project_dir: Path,
     instructions: str,
@@ -92,6 +98,43 @@ def run_agent(
         sandbox = native_agent_sandbox(sandbox, native_settings or {})
     except ValueError as error:
         return AgentRunResult(None, error=str(error))
+    return _exec_agent(
+        codex_bin,
+        project_dir,
+        instructions,
+        prompt,
+        output_schema,
+        sandbox=sandbox,
+        model=model,
+        provider=provider,
+        overrides=overrides,
+        resume_thread_id=resume_thread_id,
+        on_session=on_session,
+        process_control=process_control,
+        env=subprocess_env_for_cli(codex_bin),
+        inherited=(),
+        private_diagnostics=mcp_config_ref is not None,
+    )
+
+
+def _exec_agent(
+    codex_bin: str,
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox,
+    model: str | None,
+    provider: str | None,
+    overrides: list[str],
+    resume_thread_id: str | None,
+    on_session: Callable[[str], None] | None,
+    process_control: ManagedProcessControl | None,
+    env: dict[str, str],
+    inherited: tuple[int, ...],
+    private_diagnostics: bool,
+) -> AgentRunResult:
     with TemporaryDirectory(prefix="stackos-agent-") as temporary:
         schema_path = Path(temporary) / "schema.json"
         result_path = Path(temporary) / "result.json"
@@ -136,23 +179,27 @@ def run_agent(
 
         try:
             if on_session is not None or process_control is not None:
+                streaming: _StreamOptions = {"pass_fds": inherited}
+                if process_control is not None:
+                    streaming["process_control"] = process_control
                 process = run_codex_process(
                     command,
                     input=prompt,
                     cwd=project_dir,
-                    env=subprocess_env_for_cli(codex_bin),
+                    env=env,
                     on_session=record_session,
-                    **({"process_control": process_control} if process_control else {}),
+                    **streaming,
                 )
             else:
                 process = subprocess.run(
                     command,
                     input=prompt,
                     cwd=project_dir,
-                    env=subprocess_env_for_cli(codex_bin),
+                    env=env,
                     capture_output=True,
                     text=True,
                     check=False,
+                    pass_fds=inherited,
                 )
         except CodexStreamError as exc:
             process = exc.process
@@ -228,7 +275,7 @@ def run_agent(
         )
         if managed_cancellation and routed_execution_error is None:
             execution_error = "Codex invocation cancelled by managed process control."
-        if mcp_config_ref is not None:
+        if private_diagnostics:
             if routed_execution_error is not None:
                 # Stream failure cleanup may set cancelled; retain the initiating failure.
                 execution_error = routed_execution_error
@@ -254,7 +301,7 @@ def run_agent(
                 return AgentRunResult(
                     exit_code, thread_id=thread_id, usage=usage, error=execution_error
                 )
-            if mcp_config_ref is not None:
+            if private_diagnostics:
                 return AgentRunResult(
                     exit_code,
                     thread_id=thread_id,
@@ -284,7 +331,7 @@ def run_agent(
             output_schema,
             "Codex",
         )
-        if mcp_config_ref is not None and validated.result is None:
+        if private_diagnostics and validated.result is None:
             # Schema errors can echo private final values just like JSON-read errors.
             return replace(
                 validated,
@@ -647,6 +694,9 @@ def _absent(
 def resolve_codex_bin(codex_bin: str | None = None) -> str | None:
     candidates = resolve_codex_bins(codex_bin)
     return candidates[0] if candidates else None
+
+
+accounts = CodexAccounts(resolve_codex_bin)
 
 
 def resolve_codex_bins(codex_bin: str | None = None) -> list[str]:

@@ -16,7 +16,10 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
 from stackos import claude_mcp
+from stackos.host_mcp.accounts import HostAccounts, NativeAccountAdapter
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.adapters.claude_accounts import accounts as claude_accounts
+from stackos.host_mcp.adapters.grok_accounts import GrokAccounts
 from stackos.host_mcp.agent_execution import (
     ManagedProcessControl,
     managed_launch_lock,
@@ -35,7 +38,8 @@ from stackos.host_mcp.result import (
     normalize_usage,
 )
 from stackos.host_mcp.subscription_claude import read_claude
-from stackos.host_mcp.subscription_native import read_codex, read_grok
+from stackos.host_mcp.subscription_codex import read_codex
+from stackos.host_mcp.subscription_grok import read_grok
 
 Action = Literal["inspect", "register", "repair", "remove"]
 if TYPE_CHECKING:
@@ -589,6 +593,16 @@ class HostMcpDefinition:
     remove_profile: ProfileAdapterFn | None = None
     run_agent: AgentRunner | None = None
     subscription: Callable[[], dict | None] | None = None
+    account_adapter: NativeAccountAdapter | None = None
+
+
+def host_accounts(data_dir: Path) -> HostAccounts:
+    adapters = {
+        item.policy.host_key: item.account_adapter
+        for item in _definitions()
+        if item.account_adapter is not None
+    }
+    return HostAccounts(data_dir, adapters)
 
 
 def _read_subscription(binary: str | None, reader: Callable[[str], dict | None]) -> dict | None:
@@ -1159,6 +1173,9 @@ def _single(
     )
 
 
+_grok_accounts = GrokAccounts(lambda: grok.resolve_grok_bin(default_home()))
+
+
 def _definitions() -> tuple[HostMcpDefinition, ...]:
     codex_reasoning: dict[str, tuple[str, ...]] = {
         model: ("low", "medium", "high", "xhigh", "max")
@@ -1213,6 +1230,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             force_register=lambda home, force: codex.register(home, force=force),
             run_agent=codex.run_agent,
             subscription=lambda: _read_subscription(codex.resolve_codex_bin(), read_codex),
+            account_adapter=codex.accounts,
         ),
         HostMcpDefinition(
             claude_code,
@@ -1241,6 +1259,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             ),
             run_agent=claude_code.run_agent,
             subscription=lambda: _read_subscription(claude_mcp.resolve_claude_bin(), read_claude),
+            account_adapter=claude_accounts,
         ),
         HostMcpDefinition(
             claude_desktop,
@@ -1352,6 +1371,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 ),
             ),
             run_agent=grok.run_agent,
+            account_adapter=_grok_accounts,
             subscription=lambda: _read_subscription(
                 grok.resolve_grok_bin(default_home()), read_grok
             ),

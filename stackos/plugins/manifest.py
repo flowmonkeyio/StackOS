@@ -33,6 +33,7 @@ from stackos.integrations.aignc_contract import (
     MAX_TEXT_LENGTH,
     MIN_READ_TIMEOUT_SECONDS,
 )
+from stackos.plugins.builtin_utils_elevenlabs import elevenlabs_action_kwargs
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
 from stackos.plugins.builtin_utils_s3 import s3_action_kwargs, s3_provider_kwargs
 from stackos.provider_setup import find_provider_setup_secret_paths
@@ -2249,6 +2250,15 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         },
                     },
                 },
+            ),
+            ProviderManifest(
+                key="elevenlabs",
+                name="ElevenLabs",
+                description=(
+                    "Read subscription usage, models and voices, manage voices, and create "
+                    "pronunciation dictionaries."
+                ),
+                auth_catalog_ref="elevenlabs",
             ),
             ProviderManifest(**ftp_provider_kwargs()),
             ProviderManifest(**s3_provider_kwargs()),
@@ -5374,6 +5384,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "allows_credential": False,
                 },
             ),
+            *[ActionManifest(**kwargs) for kwargs in elevenlabs_action_kwargs()],
             *[ActionManifest(**kwargs) for kwargs in ftp_action_kwargs()],
             *[ActionManifest(**kwargs) for kwargs in s3_action_kwargs()],
             ActionManifest(

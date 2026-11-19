@@ -61,6 +61,57 @@ def _credential_ref(mcp: MCPClient, *, project_id: int, provider_key: str) -> st
     return status["accounts"][0]["credential_ref"]
 
 
+@pytest.mark.parametrize("provider_status", [200, 401, 403])
+def test_elevenlabs_account_test_checks_only_subscription(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    provider_status: int,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    key = "synthetic-elevenlabs-probe-key"
+    _create_integration_credential(
+        mcp_client, project_id=project_id, kind="elevenlabs", payload=key.encode()
+    )
+    credential_ref = _credential_ref(mcp_client, project_id=project_id, provider_key="elevenlabs")
+    other_project = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "elevenlabs-foreign",
+            "name": "Foreign project",
+            "domain": "foreign.example",
+            "locale": "en-US",
+        },
+    )["data"]["id"]
+    arguments = {"credential_ref": credential_ref, "response_mode": "raw"}
+    denied = mcp_client.call_tool_error("account.test", {**arguments, "project_id": other_project})
+    assert "not attached" in denied["data"]["detail"]
+    assert httpx_mock.get_requests() == []
+
+    subscription = {"tier": "free", "character_count": 0, "character_limit": 0}
+    httpx_mock.add_response(
+        method="GET",
+        url="https://api.elevenlabs.io/v1/user/subscription",
+        match_headers={"xi-api-key": key},
+        status_code=provider_status,
+        json={**subscription, "detail": key, "scopes": ["unverified-write"]},
+    )
+    result = mcp_client.call_tool_structured(
+        "account.test", {**arguments, "project_id": project_id}
+    )["data"]
+
+    assert result["provider_key"] == "elevenlabs"
+    assert result["ok"] is (provider_status == 200)
+    if provider_status == 200:
+        assert "subscription read access" in result["summary"]
+        assert result["metadata"] == subscription
+    else:
+        assert result["metadata"]["provider_status_code"] == provider_status
+        assert result["next_action"]
+    assert key not in json.dumps(result)
+    assert len(httpx_mock.get_requests()) == 1
+
+
 def test_auth_test_dispatches_to_firecrawl(
     mcp_client: MCPClient,
     seeded_project: dict,

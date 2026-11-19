@@ -49,7 +49,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 266
+    assert len(names) == 273
     assert {
         "maintenance.prepareUpgrade",
         "maintenance.upgradeStatus",
@@ -87,6 +87,13 @@ def test_operation_registry_documents_core_operations() -> None:
         "tracker.configureDelivery",
         "hostMcp.status",
         "hostMcp.subscriptions",
+        "hostMcp.listAccounts",
+        "hostMcp.adoptAccount",
+        "hostMcp.addAccount",
+        "hostMcp.completeAccountEnrollment",
+        "hostMcp.cancelAccountEnrollment",
+        "hostMcp.selectAccount",
+        "hostMcp.refreshAccount",
         "project.portfolio",
         "project.delete",
         "project.reconcileFileOwnership",
@@ -603,6 +610,13 @@ def test_operation_registry_surface_filter() -> None:
     cli_names = {item.name for item in registry.by_surface("cli")}
     assert cli_names == {item.name for item in registry.all()} - {
         "hostMcp.subscriptions",
+        "hostMcp.listAccounts",
+        "hostMcp.adoptAccount",
+        "hostMcp.addAccount",
+        "hostMcp.completeAccountEnrollment",
+        "hostMcp.cancelAccountEnrollment",
+        "hostMcp.selectAccount",
+        "hostMcp.refreshAccount",
         "projectSetup.start",
         "projectSetup.report",
         "projectSetup.answer",

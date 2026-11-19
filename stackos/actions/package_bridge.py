@@ -33,6 +33,7 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from stackos.actions.provider_utils import restore_public_voice_cursors
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.mcp.errors import IntegrationDownError, RateLimitedError
 
@@ -114,7 +115,7 @@ def host_probe_error(error: NativeIntegrationDownError) -> IntegrationDownError 
     return kind(redact_secret_text(error.detail), data=redact_secrets(error.data))
 
 
-def host_result(result: ConnectorResult) -> ActionConnectorResult:
+def host_result(result: ConnectorResult, *, action_ref: str | None = None) -> ActionConnectorResult:
     """Redact the public envelope; private file custody/projection is caller-owned."""
     if result.files:
         # File-producing host wrappers must register/project files explicitly.
@@ -128,7 +129,9 @@ def host_result(result: ConnectorResult) -> ActionConnectorResult:
             },
         )
     return ActionConnectorResult(
-        output_json=redact_secrets(result.output_json),
+        output_json=restore_public_voice_cursors(
+            action_ref, result.output_json, redact_secrets(result.output_json)
+        ),
         metadata_json=redact_secrets(result.metadata_json),
         cost_cents=result.cost_cents,
     )
@@ -234,6 +237,7 @@ class PackageActionConnector:
                     definition.operation,
                     thaw(prepared.input_json),
                     definition.config,
+                    options=self._options(prepared),
                 )
                 provider_issues = self.client.registry.implementation(self.key).validate(native)
                 if provider_issues:
@@ -280,4 +284,4 @@ class PackageActionConnector:
             raise _translate_error(exc) from None
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
-        return host_result(await self.execute_native(request))
+        return host_result(await self.execute_native(request), action_ref=request.action_ref)

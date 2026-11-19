@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { UiBadge, UiButton, UiCallout, UiScoreMeter, UiSkeleton } from '@/components/ui'
+import { computed, onMounted } from 'vue'
+import { UiBadge, UiButton, UiCallout, UiDialog, UiDropdownMenu, UiIcon, UiScoreMeter, UiSkeleton } from '@/components/ui'
+import { accountHosts, useHomeHostAccounts } from './useHomeHostAccounts'
+import HomeAccountEmail from './HomeAccountEmail.vue'
 
 import { agentHostLabel, agentHostLogo, agentHostPresentation } from './agentHostPresentation'
 import type { HostStatusState } from './useHomeAgentHostStatuses'
@@ -8,6 +10,26 @@ import type { HomeSubscriptions } from './useHomeSubscriptions'
 
 const props = defineProps<{ state: HostStatusState; summary: string; subscriptions: HomeSubscriptions }>()
 defineEmits<{ refresh: [] }>()
+const accounts = useHomeHostAccounts()
+onMounted(() => { void accounts.load() })
+function email(host: string) {
+  const state = accounts.hosts.value[host]
+  const current = state?.accounts.find(account => account.account_ref === accounts.currentRef(host))
+  return current?.email || 'Choose account'
+}
+function accountItems(host: string) {
+  const state = accounts.hosts.value[host]
+  return [
+    ...(state?.accounts ?? []).map(account => ({
+      key: account.account_ref, label: account.email,
+      shortcut: account.account_ref === accounts.currentRef(host) ? 'Current' : undefined,
+      disabled: accounts.busy.value[host],
+      onSelect: () => { void accounts.select(host, account.account_ref) },
+    })),
+    { key: 'add', label: 'Add account', disabled: accounts.busy.value[host] || !!accounts.enrollment.value,
+      onSelect: () => { void accounts.add(host) } },
+  ]
+}
 
 type Meter = NonNullable<HomeSubscriptions['readings'][string]>['meters'][number]
 const resetFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -78,7 +100,7 @@ function meterTone(used: number) {
         <p class="text-xs text-fg-muted">{{ summary }}</p>
       </div>
       <UiButton variant="ghost" size="sm" icon-left="refresh"
-        :loading="state.kind === 'loading' || subscriptions.loading" @click="$emit('refresh')">
+        :loading="state.kind === 'loading' || subscriptions.loading" @click="$emit('refresh'); accounts.load()">
         Refresh
       </UiButton>
     </div>
@@ -99,12 +121,27 @@ function meterTone(used: number) {
     <ul v-else-if="cards.length" class="host-grid">
       <li v-for="card in cards" :key="card.key" :aria-label="card.name"
         class="host-card min-w-0 rounded-lg border border-subtle bg-bg-surface-alt p-3">
-        <div class="flex min-w-0 items-center gap-1.5">
-          <img :src="card.logo" alt="" class="h-6 w-6 shrink-0 rounded-md object-contain">
-          <h4 class="min-w-0 flex-1 text-xs font-semibold leading-tight text-fg-strong">{{ card.name }}</h4>
-          <UiBadge :tone="card.status.tone" size="sm" class="shrink-0" :title="card.message">{{ card.status.label }}</UiBadge>
+        <div class="min-w-0 items-center" :class="accountHosts.has(card.key) ? 'host-account-header min-h-9 gap-x-1' : 'flex gap-1.5'">
+          <img :src="card.logo" alt="" :class="accountHosts.has(card.key) ? 'row-span-2 h-8 w-8' : 'h-6 w-6'" class="shrink-0 rounded-md object-contain">
+          <div class="flex min-w-0 flex-1 items-center gap-1">
+            <h4 class="min-w-0 flex-1 text-xs font-semibold leading-tight text-fg-strong" :class="{ 'whitespace-nowrap': accountHosts.has(card.key) }">{{ card.name }}</h4>
+            <UiBadge :tone="card.status.tone" size="sm" class="shrink-0" :title="card.message">{{ card.status.label }}</UiBadge>
+          </div>
+            <UiDropdownMenu v-if="accountHosts.has(card.key)" :items="accountItems(card.key)" :aria-label="card.name + ' accounts'" class="account-picker col-start-2 w-full min-w-0">
+              <template #trigger="{ open, toggle }">
+                <button type="button" data-dropdown-trigger class="focus-ring flex w-full min-w-0 items-center gap-1 text-left text-xs text-fg-muted"
+                  aria-haspopup="menu" :aria-expanded="open" :aria-label="card.name + ' account: ' + email(card.key)"
+                  :title="email(card.key)" :disabled="accounts.busy.value[card.key]" @click="toggle">
+                  <HomeAccountEmail :key="email(card.key)" :email="email(card.key)" />
+                  <UiIcon name="chevron-down" class="h-3 w-3 shrink-0" aria-hidden="true" />
+                </button>
+              </template>
+            </UiDropdownMenu>
         </div>
-        <p class="mt-3 text-xs text-fg-muted" :title="card.message">{{ card.primary }}</p>
+        <div class="text-xs text-fg-muted">
+          <p :title="card.message">{{ card.primary }}</p>
+          <p v-if="accounts.errors.value[card.key]" role="alert" class="text-danger-fg">{{ accounts.errors.value[card.key] }}</p>
+        </div>
         <div class="space-y-2 pt-3">
           <div v-for="meter in card.meters" :key="meter.scope">
             <div class="mb-1 flex items-baseline justify-between gap-x-1 text-xs">
@@ -126,11 +163,26 @@ function meterTone(used: number) {
         </div>
       </li>
     </ul>
+    <UiDialog :model-value="!!accounts.enrollment.value" title="Add account" size="sm" static-backdrop
+      @update:model-value="value => { if (!value) void accounts.cancel() }">
+      <template v-if="accounts.enrollment.value">
+        <p v-if="accounts.enrollment.value.value.status === 'pending'">Complete sign-in in the native browser or tool window. This account will be added after the tool confirms its identity.</p>
+        <p v-else-if="accounts.enrollment.value.value.status === 'enrolled'">Account added. Choose it from the account menu to use it for new sessions.</p>
+        <p v-else-if="accounts.enrollment.value.value.status === 'duplicate'">This account is already saved.</p>
+        <p v-else>Sign-in {{ accounts.enrollment.value.value.status }}. You can close this window and try again.</p>
+        <p v-if="accounts.errors.value[accounts.enrollment.value.host]" role="alert" class="mt-2 text-danger-fg">{{ accounts.errors.value[accounts.enrollment.value.host] }}</p>
+      </template>
+      <template #footer>
+        <UiButton v-if="accounts.enrollment.value?.value.status === 'pending'" variant="secondary" :loading="accounts.busy.value[accounts.enrollment.value.host]" @click="accounts.complete()">Check sign-in</UiButton>
+        <UiButton variant="ghost" :disabled="!!accounts.enrollment.value && accounts.busy.value[accounts.enrollment.value.host]" @click="accounts.cancel()">{{ accounts.enrollment.value?.value.status === 'pending' ? 'Cancel' : 'Close' }}</UiButton>
+      </template>
+    </UiDialog>
   </section>
 </template>
 
 <style scoped>
 .host-section { container-type: inline-size; }
+.host-account-header { display: grid; grid-template-columns: 2rem minmax(0, 1fr); }
 .host-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; list-style: none; padding: 0; margin: 0; }
 .host-card { display: grid; grid-row: span 4; grid-template-rows: subgrid; row-gap: 0; overflow-wrap: anywhere; }
 @container (min-width: 24rem) { .host-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

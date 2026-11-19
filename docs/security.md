@@ -442,6 +442,38 @@ apply. These operations do not create runs or grant actions, are not run-step
 tools, and remain unavailable to the browser console token. Their CLI path uses
 the ordinary authenticated operation route, not a caller-asserted admin bypass.
 
+### Native harness account custody
+
+Native harness sign-in and reusable credential storage belong to the native
+CLI and its configured secure backend. StackOS keeps an opaque profile
+reference, native principal and workspace, last verified display email, and
+desired selection generation in private user-local host metadata. The store
+serializes writes and atomically replaces metadata. StackOS creates isolated
+profile roots and checks ownership, permissions and symlinks before use.
+Native adapters own credential files or keychain entries within their
+profile contract.
+
+Codex adoption saves its file-backed native credentials into an existing private
+host profile. Selection saves outgoing native refreshes to that profile before
+atomically replacing the regular `CODEX_HOME/auth.json`. Credentials remain
+inside native adapter file handling and never enter inventory or operation
+responses. Settings and transcripts stay in the same native home. A foreign
+native principal or unsupported credential backend prevents switching.
+
+Claude selection changes only the native `claudeAiOauth` subscription object
+and its `oauthAccount` metadata. Other secure-store entries and native global
+configuration remain intact. macOS Keychain reads and stdin-only writes stay
+inside the provider adapter; a locked primary item cannot silently fall back
+to file storage. Isolated enrollment overrides both native configuration and
+secure-storage directories so inherited settings cannot target another login.
+
+The exact registered `hostMcp` account operation routes require local operator
+REST authority. The account inventory is separate from the general
+`hostMcp.status` feed. Provider replies stay inside the adapter. The local
+console receives enrolled account references, display email, verification
+status and enrollment or selection receipts. Account management stays on the
+local-console routes. See [the operation contract](operations.md#native-harness-account-controls).
+
 ### Private finance console
 
 The exact registered MCP-disabled Finance REST operations use

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from stackos.actions.connectors import ActionValidationIssue
+from stackos.actions.provider_utils import ELEVENLABS_VOICE_DESIGN_REF, restore_public_voice_cursors
 from stackos.artifacts import redact_secret_text
 from stackos.secret_refs import is_opaque_secret_ref, is_secret_ref_marker
 
@@ -43,12 +44,15 @@ def _is_secret_key(key: str) -> bool:
     return any(part in normalized for part in _SECRET_KEY_PARTS)
 
 
-def _redact_for_audit(value: Any) -> Any:
+def _redact_for_audit(value: Any, *, action_ref: str | None = None) -> Any:
     """Return a deep-redacted copy for agent-visible output and audit."""
     if isinstance(value, Mapping):
         redacted: dict[str, Any] = {}
         for raw_key, raw_value in value.items():
             key = str(raw_key)
+            if action_ref == ELEVENLABS_VOICE_DESIGN_REF and key == "reference_audio_base64":
+                redacted[key] = "[redacted]"
+                continue
             opaque_secret_ref = key.lower().replace("-", "_") in {
                 "secret_ref",
                 "$secret_ref",
@@ -58,9 +62,12 @@ def _redact_for_audit(value: Any) -> Any:
                 if _is_secret_key(key)
                 and not opaque_secret_ref
                 and not is_secret_ref_marker(raw_value)
-                else _redact_for_audit(raw_value)
+                else _redact_for_audit(
+                    raw_value,
+                    action_ref=action_ref if key in {"input_json", "output_json"} else None,
+                )
             )
-        return redacted
+        return restore_public_voice_cursors(action_ref, value, redacted)
     if isinstance(value, list):
         return [_redact_for_audit(item) for item in value]
     if isinstance(value, tuple):
