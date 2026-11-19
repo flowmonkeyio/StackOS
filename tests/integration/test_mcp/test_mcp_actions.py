@@ -1193,10 +1193,30 @@ def _seed_alignment_audio(
         engine.dispose()
 
 
+def _change_alignment_mime(settings: Settings, project_id: int, artifact_id: int) -> None:
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            ArtifactRepository(session).update(
+                artifact_id,
+                project_id=project_id,
+                fields={"mime_type"},
+                mime_type="audio/wav; codecs=1",
+            )
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.parametrize(
-    ("granted", "generated", "mode"),
-    [(False, False, "file"), (True, False, "file"), (False, True, "inline")],
-    ids=["direct-file", "granted-file", "generated-inline"],
+    ("granted", "generated", "mode", "source_change"),
+    [
+        (False, False, "file", "removed"),
+        (True, False, "file", "removed"),
+        (False, True, "inline", "removed"),
+        (False, False, "file", "mime"),
+        (True, False, "file", "mime"),
+    ],
+    ids=["direct-file", "granted-file", "generated-inline", "direct-mime", "granted-mime"],
 )
 def test_elevenlabs_alignment_uploads_owned_audio_once(
     mcp_client: MCPClient,
@@ -1207,6 +1227,7 @@ def test_elevenlabs_alignment_uploads_owned_audio_once(
     granted: bool,
     generated: bool,
     mode: str,
+    source_change: str,
 ) -> None:
     project_id = seeded_project["data"]["id"]
     artifact_id, source = _seed_alignment_audio(mcp_settings, project_id, generated=generated)
@@ -1243,8 +1264,11 @@ def test_elevenlabs_alignment_uploads_owned_audio_once(
         arguments.update(
             confirm_direct=True,
             intent_summary="Align synthetic project audio.",
-            idempotency_key="elevenlabs-alignment-intent",
         )
+        if source_change == "mime":
+            arguments["intent_id"] = "elevenlabs-alignment-intent"
+        else:
+            arguments["idempotency_key"] = "elevenlabs-alignment-intent"
     assert httpx_mock.get_requests() == []
     timings = {
         "words": [
@@ -1271,13 +1295,27 @@ def test_elevenlabs_alignment_uploads_owned_audio_once(
     )
     first = mcp_client.call_tool_structured(tool, arguments)["data"]
     assert source.read_bytes() == audio_bytes
-    source.unlink()
-    assert _call_tool_raw(mcp_client, "action.validate", validation_arguments)["valid"] is False
+    if source_change == "mime":
+        _change_alignment_mime(mcp_settings, project_id, artifact_id)
+        assert source.read_bytes() == audio_bytes
+    else:
+        source.unlink()
+    rejected = _call_tool_raw(mcp_client, "action.validate", validation_arguments)
+    assert rejected["valid"] is False
+    assert all(issue["path"] == "$.audio_artifact_id" for issue in rejected["issues"])
     replay = _call_tool_raw(mcp_client, tool, arguments)["data"]
     invalid = mcp_client.call_tool_error(
-        tool, {**arguments, "idempotency_key": "alignment-new-intent-with-missing-source"}
+        tool, {**arguments, "idempotency_key": "alignment-new-intent-with-unusable-source"}
     )
     assert invalid["code"] == -32602
+    if source_change == "mime" and not granted:
+        different_request = mcp_client.call_tool_error(
+            tool, {**arguments, "input_json": {**arguments["input_json"], "text": "Different text"}}
+        )
+        assert different_request["code"] == -32602
+        assert any(
+            issue["path"] == "$.audio_artifact_id" for issue in different_request["data"]["issues"]
+        )
     (sent,) = httpx_mock.get_requests()
     assert sent.headers["content-type"].startswith("multipart/form-data;")
     assert b'name="file"; filename="audio"' in sent.content
@@ -1463,6 +1501,7 @@ def test_elevenlabs_alignment_rechecks_file_after_preflight(
 
 
 @pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
+@pytest.mark.parametrize("source_change", ["removed", "mime"])
 def test_elevenlabs_alignment_does_not_repeat_an_ambiguous_provider_failure(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -1470,6 +1509,7 @@ def test_elevenlabs_alignment_does_not_repeat_an_ambiguous_provider_failure(
     mcp_settings: Settings,
     elevenlabs_action_account: str,
     granted: bool,
+    source_change: str,
 ) -> None:
     project_id = seeded_project["data"]["id"]
     artifact_id, source = _seed_alignment_audio(mcp_settings, project_id)
@@ -1500,7 +1540,21 @@ def test_elevenlabs_alignment_does_not_repeat_an_ambiguous_provider_failure(
             intent_summary="Align synthetic project audio.",
             idempotency_key="failed-alignment-intent",
         )
-    _assert_elevenlabs_unsafe_replay(mcp_client, tool, arguments, before_replay=source.unlink)
+
+    def change_source() -> None:
+        if source_change == "mime":
+            _change_alignment_mime(mcp_settings, project_id, artifact_id)
+            assert source.is_file()
+        else:
+            source.unlink()
+
+    _assert_elevenlabs_unsafe_replay(mcp_client, tool, arguments, before_replay=change_source)
+    if source_change == "mime":
+        fresh = mcp_client.call_tool_error(
+            tool, {**arguments, "idempotency_key": "ambiguous-alignment-new-intent"}
+        )
+        assert fresh["code"] == -32602
+        assert any(issue["path"] == "$.audio_artifact_id" for issue in fresh["data"]["issues"])
     assert len(httpx_mock.get_requests()) == 1
 
 

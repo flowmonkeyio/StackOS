@@ -44,9 +44,21 @@ class ElevenLabsActionConnector(PackageActionConnector):
         if request.operation == _ALIGNMENT_OPERATION:
             try:
                 with _alignment_audio(request) as (_, mime_type):
-                    return super().validate(
+                    issues = super().validate(
                         _native_alignment_request(request, Path("audio"), mime_type)
                     )
+                    # The artifact supplies the MIME type. Keep its validation
+                    # separate from errors in the caller's transcript or input.
+                    return [
+                        ActionValidationIssue(
+                            path="$.audio_artifact_id",
+                            message="artifact has an unsupported audio MIME type",
+                            code=ELEVENLABS_ALIGNMENT_ARTIFACT_ISSUE,
+                        )
+                        if issue.path == "$.mime_type"
+                        else issue
+                        for issue in issues
+                    ]
             except ValidationError as exc:
                 message = exc.detail
             except OSError:

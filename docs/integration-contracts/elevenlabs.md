@@ -85,8 +85,9 @@ outcome, or local storage failure. A post-dispatch storage error carries the
 original call ID, any available provider request or history ID, and any saved
 artifact or generated preview IDs. Replaying that intent returns the original
 result or recovery receipt. An authorized matching alignment intent can
-recover that receipt after the audio is removed. A new intent requires an
-available verified artifact and can incur another charge.
+recover that receipt if the audio is removed or its stored MIME type becomes
+unsupported. A new intent requires an available verified artifact with a
+supported MIME type and can incur another charge.
 
 MCP and REST provider action responses use the shared response file by default.
 The action audit records the execution and safe Account reference.
