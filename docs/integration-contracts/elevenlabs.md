@@ -57,6 +57,9 @@ confirmed `voices.create`. Audio bytes stay in managed project files, and
 reference audio supplied with voice design is redacted from the action audit.
 The artifact URI is an opaque reference. `artifact.read` returns metadata for
 these files. Compatible project actions use the artifact ID to select audio.
+Encrypted backups include saved audio. StackOS holds the project and audio
+store writer locks through file creation and artifact registration. An active
+backup or writer can stop generation before the provider request.
 
 Inspect the original call after a partial preview batch, ambiguous provider
 outcome, or local storage failure. A post-dispatch storage error carries the

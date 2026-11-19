@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -22,6 +22,7 @@ from stackos.actions.provider_utils import (
     elevenlabs_audio_receipt,
 )
 from stackos.config import Settings, project_data_dir
+from stackos.project_storage import managed_writer_lock
 from stackos.repositories.resources import ArtifactRepository
 
 
@@ -44,29 +45,55 @@ class ElevenLabsActionConnector(PackageActionConnector):
                 "project artifact storage is required before generating audio"
             )
 
-        try:
-            root = _data_dir(request)
-            output_dir = _output_dir(root, request.project_id)
-            public_root = (request.asset_dir or root / "generated-assets").resolve()
-            if output_dir.resolve() != output_dir or output_dir.is_relative_to(public_root):
-                raise ValueError("audio directory must stay in private project storage")
-            output_dir.mkdir(mode=0o700, parents=True)
-        except (OSError, RuntimeError, ValueError):
-            raise ActionConnectorError(
-                "project audio output directory is unavailable",
-                metadata_json={"provider_executed": False, "retry_safe": True},
-            ) from None
+        with ExitStack() as locks:
+            try:
+                root = _data_dir(request)
+                project_dir = project_data_dir(root, request.project_id)
+                output_dir = _output_dir(root, request.project_id)
+                public_root = (request.asset_dir or root / "generated-assets").resolve()
+                if output_dir.resolve() != output_dir or output_dir.is_relative_to(public_root):
+                    raise ValueError("audio directory must stay in private project storage")
+                project_dir.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                _lock_writer_directory(locks, project_dir)
+                _lock_writer_directory(locks, output_dir.parent)
+                output_dir.mkdir(mode=0o700)
+            except (OSError, RuntimeError, ValueError) as exc:
+                message = (
+                    "project audio storage is busy. Retry after the active backup or writer ends."
+                    if isinstance(exc, BlockingIOError)
+                    else "project audio output directory is unavailable"
+                )
+                raise ActionConnectorError(
+                    message, metadata_json={"provider_executed": False, "retry_safe": True}
+                ) from None
 
-        try:
-            native = await self.execute_native(replace(request, asset_dir=output_dir))
-            output = _project_audio(request, native, root, output_dir)
-            return host_result(
-                native.model_copy(update={"files": [], "output_json": output}),
-                action_ref=request.action_ref,
-            )
-        finally:
+            try:
+                native = await self.execute_native(replace(request, asset_dir=output_dir))
+                output = _project_audio(request, native, root, output_dir)
+                return host_result(
+                    native.model_copy(update={"files": [], "output_json": output}),
+                    action_ref=request.action_ref,
+                )
+            finally:
+                with suppress(OSError):
+                    output_dir.rmdir()
+
+
+def _lock_writer_directory(locks: ExitStack, directory: Path) -> None:
+    created = False
+    try:
+        directory.mkdir(mode=0o700)
+        created = True
+    except FileExistsError:
+        pass
+    try:
+        locks.enter_context(managed_writer_lock(directory / ".writer.lock", create=True))
+    except (OSError, ValueError):
+        if created:
+            # Failed initialization must not leave a new empty directory without a lock.
             with suppress(OSError):
-                output_dir.rmdir()
+                directory.rmdir()
+        raise
 
 
 def _data_dir(request: ActionConnectorRequest) -> Path:

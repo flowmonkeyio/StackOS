@@ -1315,6 +1315,108 @@ def test_elevenlabs_audio_outputs_cross_real_mcp_and_artifact_owners(
         assert path.read_bytes() == b"synthetic-wav"
 
 
+@pytest.mark.parametrize(
+    ("operation", "existing_project_lock"),
+    [("speech.generate", False), ("voices.design", True)],
+)
+def test_elevenlabs_audio_is_backed_up_with_its_artifact_and_excludes_active_writer(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    operation: str,
+    existing_project_lock: bool,
+) -> None:
+    from stackos.backups import BackupError, create_backup, generate_recovery_key, restore_backup
+    from stackos.backups.filesystem import source_lock
+    from stackos.repositories.resources import ArtifactRepository
+
+    project_id = seeded_project["data"]["id"]
+    project_dir = mcp_settings.data_dir / "projects" / str(project_id)
+    audio_dir = project_dir / "elevenlabs"
+    if existing_project_lock:
+        project_dir.mkdir(parents=True)
+        (project_dir / ".writer.lock").touch()
+    private, public = tmp_path / "keys" / "private.pem", tmp_path / "keys" / "public.pem"
+    generate_recovery_key(mcp_settings, private, public)
+
+    def backup(name: str) -> Path:
+        archive = tmp_path / "archives" / f"{name}.sbak"
+        create_backup(mcp_settings, output=archive, recipient_public_key=public.read_text())
+        return archive
+
+    assert backup("before-generation").is_file()
+    register = ArtifactRepository.create_project_file
+    observations = []
+
+    def observe_registration(repo, **kwargs):
+        path = kwargs["path"]
+        assert path.is_file() and path.is_relative_to(audio_dir)
+        blocked_locks = []
+        for directory in (project_dir, audio_dir):
+            try:
+                with source_lock(directory / ".writer.lock"):
+                    blocked_locks.append("acquired")
+            except BackupError as error:
+                blocked_locks.append(error.code)
+        try:
+            backup(f"during-registration-{len(observations)}")
+        except BackupError as error:
+            observations.append((*blocked_locks, error.code))
+        else:
+            observations.append((*blocked_locks, "created"))
+        return register(repo, **kwargs)
+
+    _mock_elevenlabs_audio(httpx_mock, operation)
+    monkeypatch.setattr(ArtifactRepository, "create_project_file", observe_registration)
+    speech = operation == "speech.generate"
+    arguments = {
+        "project_id": project_id,
+        "action_ref": f"utils.elevenlabs.{operation}",
+        "credential_ref": elevenlabs_action_account,
+        "input_json": _ELEVENLABS_SPEECH if speech else _ELEVENLABS_DESIGN,
+        "confirm_direct": True,
+        "intent_summary": "Verify encrypted backup of synthetic project audio.",
+        "output_policy_json": {"mode": "inline"},
+    }
+    out = _call_tool_raw(mcp_client, "action.run", arguments)["data"]["output_json"]
+    if speech:
+        artifact_ids = [out["artifact_id"]]
+    else:
+        artifact_ids = [row["artifact_id"] for row in out["previews"] if "artifact_id" in row]
+    assert len(artifact_ids) == (1 if speech else 2)
+    archive = backup("after-generation")
+    assert observations == [("source_busy", "source_busy", "source_busy")] * len(artifact_ids)
+    assert not list(archive.parent.glob("during-registration-*.sbak"))
+    existing_files = set(audio_dir.rglob("*"))
+    for directory in (project_dir, audio_dir):
+        with source_lock(directory / ".writer.lock"):
+            blocked = mcp_client.call_tool_error(
+                "action.run", {**arguments, "idempotency_key": f"busy-audio-{directory.name}"}
+            )
+        assert "project audio storage is busy" in blocked["data"]["error"]
+        assert set(audio_dir.rglob("*")) == existing_files
+    assert len(httpx_mock.get_requests()) == 1
+
+    recovered = tmp_path / "recovered"
+    restore_backup(mcp_settings, archive, private, recovered)
+    engine = make_engine(recovered / "data/stackos.db")
+    try:
+        with Session(engine) as session:
+            for artifact_id in artifact_ids:
+                path = _stored_elevenlabs_audio(mcp_settings, artifact_id, project_id)
+                relative = path.relative_to(mcp_settings.data_dir.resolve())
+                assert (recovered / "data" / relative).read_bytes() == path.read_bytes()
+                row = session.get(Artifact, artifact_id)
+                assert row is not None and row.project_id == project_id
+                assert Path(row.managed_file_json["path"]) == relative
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.parametrize("operation", ["speech.generate", "voices.design"])
 @pytest.mark.parametrize("failure", ["artifact", "response"])
 def test_elevenlabs_audio_storage_failure_retains_receipt_and_prevents_resend(
@@ -1328,6 +1430,7 @@ def test_elevenlabs_audio_storage_failure_retains_receipt_and_prevents_resend(
     failure: str,
 ) -> None:
     from stackos.actions import ActionRepository
+    from stackos.backups.filesystem import source_lock
     from stackos.repositories.resources import ArtifactRepository
 
     project = seeded_project["data"]
@@ -1417,7 +1520,9 @@ def test_elevenlabs_audio_storage_failure_retains_receipt_and_prevents_resend(
     if failure == "artifact":
         # Project cleanup owns both registered files and files stranded by a failed save.
         root = mcp_settings.data_dir / "projects" / str(project_id) / "elevenlabs"
-        assert len([path for path in root.rglob("*") if path.is_file()]) == (1 if speech else 2)
+        with source_lock(root.parent / ".writer.lock"), source_lock(root / ".writer.lock"):
+            audio_files = [path for path in root.glob("*/*") if path.is_file()]
+            assert len(audio_files) == (1 if speech else 2)
         deletion = mcp_client.call_tool_structured(
             "project.delete",
             {
