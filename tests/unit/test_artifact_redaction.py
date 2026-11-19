@@ -10,6 +10,22 @@ def test_exact_public_revision_field_retains_source_text():
     assert redact_secrets({"raw_json": source}) == {"raw_json": source}
 
 
+def test_public_pagination_fields_preserve_cursors_and_still_redact_secrets():
+    assert redact_secrets(
+        {
+            "page_token": "voice-cursor",
+            "next_page_token": "api_key=example",
+            "account_page_token": "example",
+            "access_token": "example",
+        }
+    ) == {
+        "page_token": "voice-cursor",
+        "next_page_token": "api_key=[redacted]",
+        "account_page_token": "[redacted]",
+        "access_token": "[redacted]",
+    }
+
+
 @pytest.mark.parametrize(
     "key",
     [

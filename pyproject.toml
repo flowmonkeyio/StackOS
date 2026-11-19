@@ -56,7 +56,7 @@ Repository = "https://github.com/flowmonkeyio/stackos"
 # Accepted connector source while 0.2.9 awaits separate PyPI publication.
 # Wheel metadata keeps the exact version dependency; uv owns source resolution.
 [tool.uv.sources]
-stackos-connectors = { git = "https://github.com/flowmonkeyio/StackOSConnectors.git", rev = "32416f21d53771e25ec52e357260b081db1e9887" }
+stackos-connectors = { git = "https://github.com/flowmonkeyio/StackOSConnectors.git", rev = "d0844a6a3c46c98105035361ba67a85ae0c44695" }
 
 [dependency-groups]
 dev = [

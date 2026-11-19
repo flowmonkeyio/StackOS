@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
+from stackos_connectors import get_default_client
 
 from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.config import Settings
@@ -601,6 +602,376 @@ def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
         auth_method_key="api_key",
         fields={"api_key": "sk-openai"},
     )
+
+
+def test_elevenlabs_discovery_projects_native_data_actions_without_placeholders(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    filters = {"project_id": project_id, "provider_key": "elevenlabs"}
+    inventory = mcp_client.call_tool_structured("integration.list", filters)
+    (setup,) = inventory["items"]
+    assert setup["state"] == "not_connected"
+    assert setup["setup"]["credential_label"] == "ElevenLabs API key"
+    assert setup["setup"]["local_setup_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=elevenlabs"
+    )
+    assert mcp_client.call_tool_structured("action.list", filters)["items"] == []
+    catalog = mcp_client.call_tool_structured(
+        "action.list", {**filters, "include_unavailable_integrations": True}
+    )["items"]
+    assert len(catalog) == setup["hidden_action_count"]
+    assert all(entry["connector_key"] for entry in catalog)
+    denied = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.elevenlabs.subscription.get",
+            "input_json": {},
+        },
+    )
+    assert denied["data"]["status"] == "missing_credential"
+
+    credential_ref = _create_account(
+        mcp_client,
+        project_id,
+        provider_key="elevenlabs",
+        auth_method_key="api_key",
+        fields={"api_key": "synthetic-elevenlabs-action-key"},
+    )
+    listed = mcp_client.call_tool_structured("action.list", filters)
+    expected_effects = {
+        "subscription.get": "read",
+        "models.list": "read",
+        "voices.list": "read",
+        "voices.settings.default.get": "read",
+        "voices.settings.get": "read",
+        "library.search": "read",
+        "library.add": "write",
+        "voices.create": "write",
+        "dictionaries.create": "write",
+    }
+    expected_refs = {f"utils.elevenlabs.{operation}" for operation in expected_effects}
+    assert expected_refs <= {entry["action_ref"] for entry in listed["items"]}
+    client = get_default_client()
+    for operation, effect in expected_effects.items():
+        key = f"elevenlabs.{operation}"
+        (native,) = client.describe("elevenlabs", key)["actions"]
+        manifest = _call_tool_raw(
+            mcp_client, "action.describe", {"project_id": project_id, "action_ref": f"utils.{key}"}
+        )["manifest"]
+        assert manifest["input_schema_json"] == native["input_schema"]
+        assert manifest["output_schema_json"] == native["output_schema"]
+        assert manifest["operation"] == native["operation"]
+        assert manifest["risk_level"] == native["risk_level"] == effect
+        assert manifest["requires_credential"] is True
+    arguments = {
+        "project_id": project_id,
+        "action_ref": "utils.elevenlabs.dictionaries.create",
+        "credential_ref": credential_ref,
+        "input_json": {
+            "name": "Test",
+            "rules": [{"type": "phoneme", "string_to_replace": "test", "phoneme": "test"}],
+        },
+    }
+    assert _call_tool_raw(mcp_client, "action.validate", arguments)["valid"] is False
+    invalid = mcp_client.call_tool_error(
+        "action.run", {**arguments, "confirm_direct": True, "intent_summary": "Test invalid rules."}
+    )
+    assert invalid["code"] == -32602
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.fixture
+def elevenlabs_action_account(mcp_client: MCPClient, seeded_project: dict) -> str:
+    return _create_account(
+        mcp_client,
+        seeded_project["data"]["id"],
+        provider_key="elevenlabs",
+        auth_method_key="api_key",
+        fields={"api_key": "synthetic-elevenlabs-action-key"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("operation", "path", "inputs", "query", "response", "expected"),
+    [
+        (
+            "subscription.get",
+            "/v1/user/subscription",
+            {},
+            {},
+            {"tier": "free", "character_count": 0, "character_limit": 0, "extra": "ignored"},
+            {"tier": "free", "character_count": 0, "character_limit": 0},
+        ),
+        (
+            "models.list",
+            "/v1/models",
+            {},
+            {},
+            [{"model_id": "test-model"}],
+            {"models": [{"model_id": "test-model"}]},
+        ),
+        (
+            "voices.list",
+            "/v2/voices",
+            {"page_token": "cursor", "page_size": 3},
+            {"next_page_token": "cursor", "page_size": "3"},
+            {"voices": [{"voice_id": "saved-id"}], "has_more": True, "next_page_token": "next"},
+            {
+                "voices": [{"voice_id": "saved-id"}],
+                "has_more": True,
+                "page_size": 3,
+                "page_token": "cursor",
+                "next_page_token": "next",
+            },
+        ),
+        (
+            "voices.settings.default.get",
+            "/v1/voices/settings/default",
+            {},
+            {},
+            {"stability": 0, "use_speaker_boost": False},
+            {"stability": 0, "use_speaker_boost": False},
+        ),
+        (
+            "voices.settings.get",
+            "/v1/voices/saved-id/settings",
+            {"voice_id": "saved-id"},
+            {},
+            {"speed": None},
+            {"speed": None},
+        ),
+        (
+            "library.search",
+            "/v1/shared-voices",
+            {"search": "narrator"},
+            {"search": "narrator", "page": "0", "page_size": "30"},
+            {
+                "voices": [
+                    {"voice_id": "shared-id", "public_owner_id": "owner-id", "name": "Voice"}
+                ],
+                "has_more": False,
+            },
+            {
+                "voices": [
+                    {"voice_id": "shared-id", "public_owner_id": "owner-id", "name": "Voice"}
+                ],
+                "has_more": False,
+            },
+        ),
+    ],
+)
+def test_elevenlabs_direct_reads_cross_native_transport(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+    operation: str,
+    path: str,
+    inputs: dict,
+    query: dict,
+    response: object,
+    expected: dict,
+) -> None:
+    httpx_mock.add_response(
+        method="GET",
+        url=f"https://api.elevenlabs.io{path}",
+        match_params=query,
+        match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+        json=response,
+    )
+    out = _call_tool_raw(
+        mcp_client,
+        "action.run",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "action_ref": f"utils.elevenlabs.{operation}",
+            "input_json": inputs,
+            "credential_ref": elevenlabs_action_account,
+            "output_policy_json": {"mode": "inline"},
+        },
+    )
+    assert out["data"]["output_json"] == expected
+    assert out["data"]["action_call"]["response_json"] == expected
+    assert len(httpx_mock.get_requests()) == 1
+
+
+_ELEVENLABS_LIBRARY_ADD = {
+    "public_owner_id": "owner-id",
+    "voice_id": "shared-id",
+    "new_name": "Reference narrator",
+}
+_ELEVENLABS_VOICE_CREATE = {
+    "generated_voice_id": "preview-id",
+    "voice_name": "Test narrator",
+    "voice_description": "A fictional narrator for product tests",
+}
+_ELEVENLABS_DICTIONARY_CREATE = {
+    "name": "Test names",
+    "rules": [{"type": "alias", "string_to_replace": "UN", "alias": "United Nations"}],
+}
+
+
+@pytest.mark.parametrize(
+    ("operation", "path", "inputs", "body", "result"),
+    [
+        (
+            "library.add",
+            "/v1/voices/add/owner-id/shared-id",
+            _ELEVENLABS_LIBRARY_ADD,
+            {"new_name": "Reference narrator"},
+            {"voice_id": "added-id"},
+        ),
+        (
+            "voices.create",
+            "/v1/text-to-voice",
+            _ELEVENLABS_VOICE_CREATE,
+            _ELEVENLABS_VOICE_CREATE,
+            {"voice_id": "created-id"},
+        ),
+        (
+            "dictionaries.create",
+            "/v1/pronunciation-dictionaries/add-from-rules",
+            _ELEVENLABS_DICTIONARY_CREATE,
+            _ELEVENLABS_DICTIONARY_CREATE,
+            {"id": "dict-id", "version_id": "version-id"},
+        ),
+    ],
+)
+def test_elevenlabs_direct_writes_require_confirmation_and_replay_once(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+    operation: str,
+    path: str,
+    inputs: dict,
+    body: dict,
+    result: dict,
+) -> None:
+    arguments = {
+        "project_id": seeded_project["data"]["id"],
+        "action_ref": f"utils.elevenlabs.{operation}",
+        "input_json": inputs,
+        "credential_ref": elevenlabs_action_account,
+    }
+    checked = _call_tool_raw(mcp_client, "action.validate", arguments)
+    assert checked["valid"] is True
+    denied = mcp_client.call_tool_error("action.run", arguments)
+    assert denied["code"] == -32602
+    assert "confirm_direct=true" in denied["data"]["detail"]
+    assert httpx_mock.get_requests() == []
+
+    httpx_mock.add_response(
+        method="POST",
+        url=f"https://api.elevenlabs.io{path}",
+        match_json=body,
+        match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+        json={**result, "provider_echo": "synthetic-elevenlabs-action-key"},
+    )
+    confirmed = {
+        **arguments,
+        "confirm_direct": True,
+        "intent_summary": "Create one synthetic fixture.",
+        "idempotency_key": "elevenlabs-test-mutation",
+        "output_policy_json": {"mode": "inline"},
+    }
+    first = _call_tool_raw(mcp_client, "action.run", confirmed)["data"]
+    replay = _call_tool_raw(mcp_client, "action.run", confirmed)["data"]
+    assert first["output_json"] == result
+    assert replay["action_call"]["id"] == first["action_call"]["id"]
+    assert first["action_call"]["connector_key"] == "elevenlabs"
+    assert "synthetic-elevenlabs-action-key" not in json.dumps(first)
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    add_ref = "utils.elevenlabs.library.add"
+    create_ref = "utils.elevenlabs.voices.create"
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "elevenlabs-grant-test",
+                "title": "ElevenLabs grant test",
+                "grants": {
+                    "mcp_tool_grants": [
+                        {
+                            "step_id": "add-voice",
+                            "tool": "action.execute",
+                            "action_refs": [add_ref],
+                        },
+                    ]
+                },
+                "steps": [
+                    {
+                        "id": "add-voice",
+                        "title": "Add a voice",
+                        "action_refs": [add_ref, create_ref],
+                    }
+                ],
+            },
+        },
+    )["data"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start", {"project_id": project_id, "run_plan_id": plan["id"]}
+    )["data"]
+    run_scope = {"run_plan_id": plan["id"], "run_token": started["run_token"]}
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            **run_scope,
+            "step_id": "add-voice",
+        },
+    )["data"]
+    arguments = {
+        "project_id": project_id,
+        "credential_ref": elevenlabs_action_account,
+        "run_token": started["run_token"],
+    }
+    denied = mcp_client.call_tool_error(
+        "action.execute",
+        {
+            **arguments,
+            "action_ref": create_ref,
+            "input_json": _ELEVENLABS_VOICE_CREATE,
+        },
+    )
+    assert denied["code"] == -32007
+    assert "arguments do not match" in denied["data"]["detail"]
+    assert httpx_mock.get_requests() == []
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/voices/add/owner-id/shared-id",
+        match_json={"new_name": "Reference narrator"},
+        json={"voice_id": "granted-id"},
+    )
+    out = _call_tool_raw(
+        mcp_client,
+        "action.execute",
+        {**arguments, "action_ref": add_ref, "input_json": _ELEVENLABS_LIBRARY_ADD},
+    )["data"]
+    pointer = out["output_json"]["file"]
+    assert pointer["schema_ref"] == "stackos.action-output.v1"
+    assert pointer["schema_operation"] == "schema.get"
+    receipt = json.loads(Path(pointer["path"]).read_text(encoding="utf-8"))
+    assert receipt["request"]["input_json"] == _ELEVENLABS_LIBRARY_ADD
+    assert receipt["response"]["output_json"] == {"voice_id": "granted-id"}
+    assert out["action_call"]["run_id"] == started["run_id"]
+    assert out["action_call"]["run_plan_step_id"] == claimed["id"]
+    assert len(httpx_mock.get_requests()) == 1
 
 
 def _create_xai_credential(mcp: MCPClient, project_id: int) -> str:

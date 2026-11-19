@@ -8,7 +8,7 @@ from typing import Any
 
 from stackos.actions.connectors import ActionValidationIssue
 from stackos.artifacts import redact_secret_text
-from stackos.secret_refs import is_opaque_secret_ref, is_secret_ref_marker
+from stackos.secret_refs import PUBLIC_PAGINATION_FIELDS, is_opaque_secret_ref, is_secret_ref_marker
 
 
 def utcnow() -> datetime:
@@ -37,6 +37,8 @@ _SECRET_KEY_PARTS = (
 
 
 def _is_secret_key(key: str) -> bool:
+    if key in PUBLIC_PAGINATION_FIELDS:
+        return False
     normalized = key.lower().replace("-", "_")
     if normalized in _TEXT_REDACT_KEYS or normalized.endswith("_credential_ref"):
         return False
