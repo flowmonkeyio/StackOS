@@ -42,7 +42,7 @@ from stackos.secret_refs import (
 from .background import BACKGROUND_ACTION_TASKS
 from .durable import durable_action_schedule_snapshot
 from .schema import ActionExecutionOut
-from .utils import _redact_for_audit, utcnow
+from .utils import _connector_failure_data, _redact_for_audit, _write_failure_receipt, utcnow
 from .validation import RuntimeActionContext
 
 ACTION_OUTPUT_SCHEMA_VERSION = ACTION_OUTPUT_SCHEMA_REF
@@ -708,6 +708,8 @@ class ActionExecutionMixin:
                 if exc.metadata_json and not transient
                 else {}
             )
+            if manifest.risk_level != "read":
+                output_json.update(_write_failure_receipt(connector_metadata))
             failed_metadata = {
                 **(_redact_for_audit(redact_output(metadata_json)) if metadata_json else {}),
                 **connector_metadata,
@@ -799,7 +801,9 @@ class ActionExecutionMixin:
             ) from exc
 
         duration_ms = int((time.perf_counter() - started) * 1000)
-        output_json = _redact_for_audit(redact_output(result.output_json))
+        output_json = _redact_for_audit(
+            redact_output(result.output_json), action_ref=manifest.action_ref
+        )
         result_metadata = (
             _redact_for_audit(redact_output(result.metadata_json)) if result.metadata_json else None
         )
@@ -925,6 +929,7 @@ class ActionExecutionMixin:
                 "outcome_unknown": mutation,
                 "retry_safe": not mutation,
                 "reconcile_before_retry": mutation,
+                "side_effect": "provider_executed_output_not_persisted",
             }
             row = self._record_call(
                 project_id=project_id,
@@ -956,7 +961,6 @@ class ActionExecutionMixin:
                     "action_ref": manifest.action_ref,
                     "action_call_id": row.id,
                     "connector": manifest.connector_key,
-                    "side_effect": "provider_executed_output_not_persisted",
                     "error": safe_error,
                 },
             ) from exc
@@ -1319,32 +1323,6 @@ def _metadata_with_execution_context(
     return base
 
 
-def _connector_failure_data(
-    *,
-    manifest: ExecutableActionManifest,
-    row_id: int,
-    connector_key: str | None,
-    error: str,
-    output_json: dict[str, Any] | None,
-) -> dict[str, Any]:
-    data: dict[str, Any] = {
-        "status": "failed",
-        "action_ref": manifest.action_ref,
-        "action_call_id": row_id,
-        "provider_key": manifest.provider_key,
-        "connector": connector_key,
-        "error": error,
-    }
-    if isinstance(output_json, dict):
-        provider_status_code = output_json.get("provider_status_code")
-        provider_error = output_json.get("provider_error")
-        if provider_status_code is not None:
-            data["provider_status_code"] = provider_status_code
-        if provider_error is not None:
-            data["provider_error"] = provider_error
-    return data
-
-
 def _effective_output_policy(
     *,
     manifest: ExecutableActionManifest,
@@ -1466,7 +1444,7 @@ def _action_output_envelope(
             "risk_level": manifest.risk_level,
         },
         "request": {
-            "input_json": _redact_for_audit(input_json),
+            "input_json": _redact_for_audit(input_json, action_ref=manifest.action_ref),
             "provider_context_json": _redact_for_audit(provider_context_json)
             if provider_context_json is not None
             else None,
@@ -1474,7 +1452,7 @@ def _action_output_envelope(
             "context_ref": runtime_context.context_ref,
         },
         "response": {
-            "output_json": _redact_for_audit(output_json),
+            "output_json": _redact_for_audit(output_json, action_ref=manifest.action_ref),
             "metadata_json": _redact_for_audit(row.metadata_json),
             "cost_cents": row.cost_cents,
             "duration_ms": row.duration_ms,

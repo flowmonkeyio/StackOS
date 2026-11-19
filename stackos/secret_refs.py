@@ -9,9 +9,6 @@ from typing import Any
 
 SECRET_REF_KEY = "$secret_ref"
 SECRET_REF_SENTINEL = "__stackos_payload_secret__"
-# Provider pagination data can be carried between calls. These fields confer
-# no access on their own and their values still go through secret-text scanning.
-PUBLIC_PAGINATION_FIELDS = frozenset({"page_token", "next_page_token"})
 
 _SECRET_REF_RE = re.compile(r"^secret_[A-Za-z0-9_-]{16,}$")
 
@@ -138,7 +135,6 @@ def redact_secret_values(
 
 
 __all__ = [
-    "PUBLIC_PAGINATION_FIELDS",
     "SECRET_REF_KEY",
     "SECRET_REF_SENTINEL",
     "SecretRefOccurrence",

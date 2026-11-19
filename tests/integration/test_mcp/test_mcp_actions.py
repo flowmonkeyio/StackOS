@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 from stackos_connectors import get_default_client
 
 from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
+from stackos.actions.repository.utils import _redact_for_audit
 from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.models import Action, ActionCall, ActionCallStatus, IdempotencyKey, PayloadSecret
@@ -715,20 +716,6 @@ def elevenlabs_action_account(mcp_client: MCPClient, seeded_project: dict) -> st
             {"models": [{"model_id": "test-model"}]},
         ),
         (
-            "voices.list",
-            "/v2/voices",
-            {"page_token": "cursor", "page_size": 3},
-            {"next_page_token": "cursor", "page_size": "3"},
-            {"voices": [{"voice_id": "saved-id"}], "has_more": True, "next_page_token": "next"},
-            {
-                "voices": [{"voice_id": "saved-id"}],
-                "has_more": True,
-                "page_size": 3,
-                "page_token": "cursor",
-                "next_page_token": "next",
-            },
-        ),
-        (
             "voices.settings.default.get",
             "/v1/voices/settings/default",
             {},
@@ -799,6 +786,71 @@ def test_elevenlabs_direct_reads_cross_native_transport(
     assert len(httpx_mock.get_requests()) == 1
 
 
+def test_elevenlabs_returned_voice_cursor_fetches_next_page(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+) -> None:
+    arguments = {
+        "project_id": seeded_project["data"]["id"],
+        "action_ref": "utils.elevenlabs.voices.list",
+        "credential_ref": elevenlabs_action_account,
+    }
+    url = "https://api.elevenlabs.io/v2/voices"
+    httpx_mock.add_response(
+        method="GET",
+        url=url,
+        match_params={"page_size": "10"},
+        json={"voices": [{"voice_id": "first"}], "has_more": True, "next_page_token": "page-2"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=url,
+        match_params={"page_size": "10", "next_page_token": "page-2"},
+        json={"voices": [{"voice_id": "second"}], "has_more": False},
+    )
+    first = _call_tool_raw(mcp_client, "action.run", arguments)["data"]
+    path = Path(first["output_json"]["file"]["path"])
+    page = json.loads(path.read_text(encoding="utf-8"))["response"]["output_json"]
+    assert page["voices"] == [{"voice_id": "first"}]
+    assert page["page_token"] is None and page["has_more"] is True
+    cursor = page["next_page_token"]
+    assert cursor == "page-2"
+
+    second = _call_tool_raw(
+        mcp_client,
+        "action.run",
+        {
+            **arguments,
+            "input_json": {"page_token": cursor},
+            "output_policy_json": {"mode": "inline"},
+        },
+    )["data"]
+    assert second["output_json"] == {
+        "voices": [{"voice_id": "second"}],
+        "has_more": False,
+        "page_size": 10,
+        "page_token": cursor,
+        "next_page_token": None,
+    }
+    assert second["action_call"]["request_json"] == {"page_token": cursor}
+    assert second["action_call"]["response_json"] == second["output_json"]
+    denied = mcp_client.call_tool_error(
+        "action.validate",
+        {**arguments, "input_json": {"page_token": "api_key=synthetic-value"}},
+    )
+    assert denied["data"]["paths"] == ["$.page_token"]
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_elevenlabs_cursor_policy_keeps_generic_audit_protection() -> None:
+    assert _redact_for_audit({"page_token": "secret", "next_page_token": "secret"}) == {
+        "page_token": "[redacted]",
+        "next_page_token": "[redacted]",
+    }
+
+
 _ELEVENLABS_LIBRARY_ADD = {
     "public_owner_id": "owner-id",
     "voice_id": "shared-id",
@@ -815,6 +867,7 @@ _ELEVENLABS_DICTIONARY_CREATE = {
 }
 
 
+@pytest.mark.parametrize("status_code", [200, 503])
 @pytest.mark.parametrize(
     ("operation", "path", "inputs", "body", "result"),
     [
@@ -851,6 +904,7 @@ def test_elevenlabs_direct_writes_require_confirmation_and_replay_once(
     inputs: dict,
     body: dict,
     result: dict,
+    status_code: int,
 ) -> None:
     arguments = {
         "project_id": seeded_project["data"]["id"],
@@ -870,7 +924,10 @@ def test_elevenlabs_direct_writes_require_confirmation_and_replay_once(
         url=f"https://api.elevenlabs.io{path}",
         match_json=body,
         match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+        status_code=status_code,
+        headers={"request-id": "synthetic-provider-request"},
         json={**result, "provider_echo": "synthetic-elevenlabs-action-key"},
+        is_reusable=status_code == 503,
     )
     confirmed = {
         **arguments,
@@ -879,6 +936,10 @@ def test_elevenlabs_direct_writes_require_confirmation_and_replay_once(
         "idempotency_key": "elevenlabs-test-mutation",
         "output_policy_json": {"mode": "inline"},
     }
+    if status_code == 503:
+        _assert_elevenlabs_unsafe_replay(mcp_client, "action.run", confirmed)
+        assert len(httpx_mock.get_requests()) == 1
+        return
     first = _call_tool_raw(mcp_client, "action.run", confirmed)["data"]
     replay = _call_tool_raw(mcp_client, "action.run", confirmed)["data"]
     assert first["output_json"] == result
@@ -886,6 +947,21 @@ def test_elevenlabs_direct_writes_require_confirmation_and_replay_once(
     assert first["action_call"]["connector_key"] == "elevenlabs"
     assert "synthetic-elevenlabs-action-key" not in json.dumps(first)
     assert len(httpx_mock.get_requests()) == 1
+
+
+def _assert_elevenlabs_unsafe_replay(mcp_client: MCPClient, tool: str, arguments: dict) -> None:
+    first = mcp_client.call_tool_error(tool, arguments)["data"]
+    replay = mcp_client.call_tool_error(tool, arguments)["data"]
+    for receipt in (first, replay):
+        assert receipt["provider_status_code"] == 503
+        assert receipt["retry_safe"] is False
+        assert receipt["provider_executed"] is True
+        assert receipt["outcome_unknown"] is True
+        assert receipt["reconcile_before_retry"] is True
+        assert "synthetic-elevenlabs-action-key" not in json.dumps(receipt)
+    assert replay["action_call_id"] == first["action_call_id"]
+    assert replay["provider_error"] == first["provider_error"]
+    assert replay["replayed"] is True
 
 
 def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(
@@ -971,6 +1047,112 @@ def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(
     assert receipt["response"]["output_json"] == {"voice_id": "granted-id"}
     assert out["action_call"]["run_id"] == started["run_id"]
     assert out["action_call"]["run_plan_step_id"] == claimed["id"]
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/voices/add/owner-id/shared-id",
+        match_json={"new_name": "Reference narrator"},
+        status_code=503,
+        json={"detail": "provider failed"},
+        is_reusable=True,
+    )
+    _assert_elevenlabs_unsafe_replay(
+        mcp_client,
+        "action.execute",
+        {
+            **arguments,
+            "action_ref": add_ref,
+            "input_json": _ELEVENLABS_LIBRARY_ADD,
+            "idempotency_key": "another-granted-evidence-intent",
+        },
+    )
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_elevenlabs_storage_recovery_preserves_write_receipt(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stackos.actions import ActionRepository
+
+    arguments = {
+        "project_id": seeded_project["data"]["id"],
+        "action_ref": "utils.elevenlabs.library.add",
+        "input_json": _ELEVENLABS_LIBRARY_ADD,
+        "credential_ref": elevenlabs_action_account,
+        "confirm_direct": True,
+        "intent_summary": "Add a synthetic shared voice.",
+        "idempotency_key": "elevenlabs-storage-recovery",
+    }
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/voices/add/owner-id/shared-id",
+        json={"voice_id": "accepted-by-provider"},
+        is_reusable=True,
+    )
+
+    def fail_response_storage(*_args, **_kwargs):
+        raise OSError("simulated response storage failure")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(ActionRepository, "_apply_output_policy", fail_response_storage)
+        first = mcp_client.call_tool_error("action.run", arguments)["data"]
+    replay = mcp_client.call_tool_error("action.run", arguments)["data"]
+    for receipt in (first, replay):
+        assert receipt["output_persistence_failed"] is True
+        assert receipt["provider_executed"] is True
+        assert receipt["retry_safe"] is False
+        assert receipt["reconcile_before_retry"] is True
+    assert replay["action_call_id"] == first["action_call_id"]
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_elevenlabs_replays_failure_recorded_in_legacy_metadata(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+    mcp_settings: Settings,
+) -> None:
+    arguments = {
+        "project_id": seeded_project["data"]["id"],
+        "action_ref": "utils.elevenlabs.library.add",
+        "input_json": _ELEVENLABS_LIBRARY_ADD,
+        "credential_ref": elevenlabs_action_account,
+        "confirm_direct": True,
+        "intent_summary": "Add a synthetic shared voice.",
+        "idempotency_key": "elevenlabs-legacy-failure",
+    }
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/voices/add/owner-id/shared-id",
+        status_code=503,
+        json={"detail": "provider failed"},
+        is_reusable=True,
+    )
+    first = mcp_client.call_tool_error("action.run", arguments)["data"]
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            row = session.get(ActionCall, first["action_call_id"])
+            assert row is not None and row.metadata_json["retry_safe"] is False
+            row.response_json = {
+                "status": "failed",
+                "provider_status_code": 503,
+                "provider_error": first["provider_error"],
+            }
+            session.add(row)
+            session.commit()
+    finally:
+        engine.dispose()
+
+    replay = mcp_client.call_tool_error("action.run", arguments)["data"]
+    assert replay["action_call_id"] == first["action_call_id"]
+    assert replay["outcome_unknown"] is True
+    assert replay["retry_safe"] is False
+    assert replay["reconcile_before_retry"] is True
     assert len(httpx_mock.get_requests()) == 1
 
 

@@ -28,7 +28,8 @@ from the pinned `stackos-connectors` ElevenLabs catalog.
 | `utils.elevenlabs.dictionaries.create` | Create a dictionary from explicit rules and return its ID and version ID | [Create a dictionary from rules](https://elevenlabs.io/docs/api-reference/pronunciation-dictionaries/create-from-rules) |
 
 Pass the returned `next_page_token` as `page_token` for another saved-voice
-page. Increment the zero-based `page` for another Voice Library page when
+page. These structured fields retain their native names for `voices.list`.
+Increment the zero-based `page` for another Voice Library page when
 `has_more` is true. Library search preserves the owner ID and voice ID needed
 by the add action.
 
@@ -36,9 +37,10 @@ Direct writes require `confirm_direct=true` and an `intent_summary`. Workflow
 actions use `action.execute` with the exact action granted to the active step.
 Use the same idempotency key for a retry of the same write intent. Each native
 write sends at most one POST per dispatch. Check the action audit and provider
-receipt before starting another intent after an ambiguous result. ElevenLabs
-enforces quota and rate limits, and these data actions have no StackOS budget
-enforcement. [Provider errors](https://elevenlabs.io/docs/eleven-api/resources/errors)
+receipt before starting another intent after an ambiguous result. Repeating the
+same intent after an unsafe-to-retry failure returns the original call ID and
+reconciliation guidance. ElevenLabs enforces quota and rate limits. These data
+actions have no StackOS budget enforcement. [Provider errors](https://elevenlabs.io/docs/eleven-api/resources/errors)
 
 MCP and REST provider action responses use the shared response file by default.
 The action audit records the execution and safe Account reference.

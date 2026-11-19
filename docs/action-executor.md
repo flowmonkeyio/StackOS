@@ -186,6 +186,10 @@ actions, callers may pass `idempotency_key` or the more agent-friendly
 and workflow calls derive a stable run/step/action key before reaching the
 connector.
 
+If a foreground write records `retry_safe=false` after dispatch, submitting
+the same intent returns the original call ID and reconciliation guidance.
+Check the recorded outcome before deciding on another provider submission.
+
 Actions declared with `execution_mode=background` first persist a `RUNNING`
 action call. The accepted `action.run` or `action.execute` response includes its
 `action_call_id`, `poll_operation=actionCall.get`, the exact poll arguments, and
@@ -705,7 +709,9 @@ raw mode.
 Do not silently discard completeness information: preserve page continuation,
 partial results and provider truncation indicators. Nonsecret provider cursor
 names that collide with credential redaction should follow existing GA4/GTM
-connector-owned normalization (`next_page_cursor`), not a global token exemption.
+connector-owned normalization (`next_page_cursor`). When preserving native names
+is part of the public contract, scope the permission to reviewed action fields
+and keep scanning the values. Shared credential filtering remains in force.
 
 Business details and customer-facing document URLs are sensitive task data, not
 authentication credentials. Selected Stripe reads use the explicit

@@ -6,8 +6,6 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from stackos.secret_refs import PUBLIC_PAGINATION_FIELDS
-
 _SECRET_KEY_PARTS = (
     "service_account_json",
     "assertion",
@@ -45,8 +43,6 @@ _SIGNED_URL_PARAM_RE = re.compile(
 
 
 def _is_sensitive_key(key: str) -> bool:
-    if key in PUBLIC_PAGINATION_FIELDS:
-        return False
     normalized = key.lower().replace("-", "_")
     if (
         normalized in {"credential_ref", "credential_refs", "credential_id", "credential_ids"}

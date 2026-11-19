@@ -71,11 +71,9 @@ def test_run_plan_schema_rejects_secrets_but_allows_credential_refs() -> None:
     assert "api_key" in result.errors[0].message
 
 
-def test_structured_pagination_tokens_allow_cursors_and_scan_secret_values() -> None:
-    assert find_run_plan_secret_paths({"page_token": "cursor", "next_page_token": None}) == []
-    scan = find_run_plan_secret_findings({"page_token": "api_key=example"})
-    assert [finding.kind for finding in scan.findings] == ["value_pattern"]
-    scan = find_run_plan_secret_findings({"account_page_token": "example"})
+@pytest.mark.parametrize("key", ["page_token", "next_page_token"])
+def test_generic_run_plan_inputs_treat_token_fields_as_sensitive(key: str) -> None:
+    scan = find_run_plan_secret_findings({key: "synthetic-value"})
     assert [finding.kind for finding in scan.findings] == ["key_name"]
 
 

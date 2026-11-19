@@ -23,7 +23,7 @@ from pydantic import (
 
 from stackos.artifacts import redact_secret_text
 from stackos.plugins.manifest import get_builtin_plugin_manifest_snapshot
-from stackos.secret_refs import PUBLIC_PAGINATION_FIELDS, is_opaque_secret_ref, is_secret_ref_marker
+from stackos.secret_refs import is_opaque_secret_ref, is_secret_ref_marker
 from stackos.workflows.run_plan_grants import (
     RunPlanMcpToolGrant,
     parse_run_plan_mcp_tool_grants,
@@ -117,8 +117,6 @@ def _validate_key(value: str) -> str:
 
 
 def _is_secret_key(key: str) -> bool:
-    if key in PUBLIC_PAGINATION_FIELDS:
-        return False
     normalized = key.lower().replace("-", "_")
     if normalized in _OPAQUE_REF_KEYS or normalized.endswith("_credential_ref"):
         return False

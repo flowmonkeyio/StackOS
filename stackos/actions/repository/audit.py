@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from sqlalchemy import update
+from sqlalchemy import ColumnElement, and_, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
@@ -48,7 +48,7 @@ from .schema import (
     ActionCallOut,
     ActionExecutionOut,
 )
-from .utils import _redact_for_audit, utcnow
+from .utils import _connector_failure_data, _redact_for_audit, _write_failure_receipt, utcnow
 
 
 class ActionAuditMixin:
@@ -291,11 +291,11 @@ class ActionAuditMixin:
             dry_run=dry_run,
             idempotency_key=idempotency_key,
             credential_ref=credential_ref,
-            request_json=_redact_for_audit(request_json),
+            request_json=_redact_for_audit(request_json, action_ref=manifest.action_ref),
             provider_context_json=_redact_for_audit(provider_context_json)
             if provider_context_json is not None
             else None,
-            response_json=_redact_for_audit(response_json) if response_json is not None else None,
+            response_json=_redact_for_audit(response_json, action_ref=manifest.action_ref),
             metadata_json=_redact_for_audit(metadata_json) if metadata_json is not None else None,
             cost_cents=cost_cents,
             duration_ms=duration_ms,
@@ -534,6 +534,7 @@ class ActionAuditMixin:
 
     def _call_out(self, row: ActionCall) -> ActionCallOut:
         assert row.id is not None
+        action_ref = f"{row.plugin_slug}.{row.action_key}"
         return ActionCallOut(
             id=row.id,
             project_id=row.project_id,
@@ -551,9 +552,9 @@ class ActionAuditMixin:
             dry_run=row.dry_run,
             idempotency_key=row.idempotency_key,
             credential_ref=row.credential_ref,
-            request_json=_redact_for_audit(row.request_json),
+            request_json=_redact_for_audit(row.request_json, action_ref=action_ref),
             provider_context_json=_redact_for_audit(row.provider_context_json),
-            response_json=_redact_for_audit(row.response_json),
+            response_json=_redact_for_audit(row.response_json, action_ref=action_ref),
             metadata_json=_redact_for_audit(row.metadata_json),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
@@ -565,6 +566,7 @@ class ActionAuditMixin:
     def _call_audit_out(self, row: ActionCall) -> ActionCallAuditOut:
         assert row.id is not None
         metadata_json = generated_action_public_audit_metadata(row.metadata_json)
+        action_ref = f"{row.plugin_slug}.{row.action_key}"
         return ActionCallAuditOut(
             id=row.id,
             project_id=row.project_id,
@@ -579,9 +581,9 @@ class ActionAuditMixin:
             status=row.status,
             dry_run=row.dry_run,
             credential_ref=row.credential_ref,
-            request_json=_redact_for_audit(row.request_json),
+            request_json=_redact_for_audit(row.request_json, action_ref=action_ref),
             provider_context_json=_redact_for_audit(row.provider_context_json),
-            response_json=_redact_for_audit(row.response_json),
+            response_json=_redact_for_audit(row.response_json, action_ref=action_ref),
             metadata_json=_redact_for_audit(metadata_json),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
@@ -601,6 +603,28 @@ class ActionAuditMixin:
         credential_ref: str | None,
         dry_run: bool,
     ) -> ActionExecutionOut | None:
+        terminal: ColumnElement[bool] = col(ActionCall.status).in_(
+            [ActionCallStatus.SUCCESS, ActionCallStatus.DRY_RUN]
+        )
+        if not dry_run and manifest.risk_level != "read":
+            unsafe: ColumnElement[bool] = (
+                col(ActionCall.response_json)["retry_safe"].as_boolean().is_(False)
+            )
+            if manifest.connector_key == "elevenlabs":
+                # Earlier native receipts recorded the post-dispatch facts in metadata.
+                metadata = col(ActionCall.metadata_json)
+                unsafe = or_(
+                    unsafe,
+                    and_(
+                        col(ActionCall.response_json)["status"].as_string() == "failed",
+                        metadata["retry_safe"].as_boolean().is_(False),
+                        metadata["provider_executed"].as_boolean().is_(True),
+                        metadata["automatic_retry_count"].as_integer() == 0,
+                    ),
+                )
+            terminal = or_(
+                terminal, and_(col(ActionCall.status) == ActionCallStatus.FAILED, unsafe)
+            )
         row = self._s.exec(
             select(ActionCall)
             .where(
@@ -608,7 +632,7 @@ class ActionAuditMixin:
                 ActionCall.plugin_slug == manifest.plugin_slug,
                 ActionCall.action_key == manifest.action_key,
                 ActionCall.idempotency_key == idempotency_key,
-                ActionCall.status.in_([ActionCallStatus.SUCCESS, ActionCallStatus.DRY_RUN]),  # type: ignore[attr-defined]
+                terminal,
             )
             .order_by(ActionCall.id.desc())  # type: ignore[union-attr]
         ).first()
@@ -616,7 +640,7 @@ class ActionAuditMixin:
             return None
         _require_generated_replay_scope(row, manifest)
         if (
-            row.request_json != _redact_for_audit(request_json)
+            row.request_json != _redact_for_audit(request_json, action_ref=manifest.action_ref)
             or row.provider_context_json != _redact_for_audit(provider_context_json)
             or row.credential_ref != credential_ref
             or row.dry_run != dry_run
@@ -628,6 +652,27 @@ class ActionAuditMixin:
                     "action_ref": manifest.action_ref,
                     "idempotency_key": idempotency_key,
                     "action_call_id": row.id,
+                },
+            )
+        if row.status == ActionCallStatus.FAILED:
+            assert row.id is not None
+            receipt = dict(row.response_json or {})
+            if receipt.get("retry_safe") is not False:
+                receipt.update(_write_failure_receipt(row.metadata_json or {}))
+            raise ConflictError(
+                "action write requires reconciliation before another submission",
+                data={
+                    **_connector_failure_data(
+                        manifest=manifest,
+                        row_id=row.id,
+                        connector_key=row.connector_key,
+                        error=row.error or "write outcome requires reconciliation",
+                        output_json=receipt,
+                    ),
+                    "retry_safe": False,
+                    "reconcile_before_retry": True,
+                    "replayed": True,
+                    "next_action": "Inspect the original action call and reconcile provider state.",
                 },
             )
         if not dry_run and (manifest.connector_key, manifest.operation) == (
