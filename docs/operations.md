@@ -1065,6 +1065,26 @@ conversation navigation. At a switch it reopens the conversation the terminal
 last attached to and preserves the admitted native model and permission
 options.
 
+Managed Claude Code starts first-party subscription sign-in in a separate
+`CLAUDE_CONFIG_DIR`. Claude keeps its native Keychain or file-backed login.
+The enrolled profile shares the native local transcript tree and user settings,
+and inherits the existing user and workspace MCP definitions at enrollment.
+Project settings and tools still load through Claude's native startup.
+
+Run `stackos harness run claude-code` in the original working directory. Use
+`--session <uuid>` for an existing saved local conversation. With an account
+selected, StackOS starts Claude on the same terminal, keeps the terminal input
+closed until the selected profile and exact native session are confirmed, and
+holds the conversation's writer lease. After selecting another account, finish
+any current work and use `/exit` in Claude. The launcher waits for native
+shutdown and reopens the original local transcript by absolute path in the same
+terminal. Keep one conversation per managed launch and exit before choosing
+another conversation. Remote sessions, missing or ambiguous transcripts,
+competing authentication, and options that dispatch work during startup are
+rejected. A failed or withdrawn handoff shows the exact session for recovery.
+With no selected account or explicit session, the launcher starts the ordinary
+unmanaged Claude CLI and passes through its native arguments.
+
 ## Browser Operations
 
 The browser operation surface owns runtime status, profile create/list, and

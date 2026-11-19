@@ -198,7 +198,7 @@ def _private_directory(path: Path, code: str) -> None:
         raise HostAccountError(code)
 
 
-def _private_fd(path: Path, flags: int) -> int:
+def _private_fd(path: Path, flags: int, *, atomic_snapshot: bool = False) -> int:
     fd = os.open(path, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
     try:
         info = os.fstat(fd)
@@ -206,7 +206,9 @@ def _private_fd(path: Path, flags: int) -> int:
             not stat.S_ISREG(info.st_mode)
             or info.st_uid != os.getuid()
             or info.st_mode & 0o077
-            or info.st_nlink != 1
+            # An atomic writer may replace an opened read-only snapshot before
+            # this stat. A retired inode stays readable through our descriptor.
+            or (info.st_nlink != 1 and not (atomic_snapshot and info.st_nlink == 0))
         ):
             raise HostAccountError("account_store_unavailable")
     except BaseException:
@@ -526,7 +528,7 @@ class HostAccounts:
     def _load(self) -> _State:
         try:
             _private_directory(self._root, "account_store_unavailable")
-            fd = _private_fd(self._state_path, os.O_RDONLY)
+            fd = _private_fd(self._state_path, os.O_RDONLY, atomic_snapshot=True)
         except FileNotFoundError:
             return _State()
         except OSError:

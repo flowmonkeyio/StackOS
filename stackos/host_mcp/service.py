@@ -18,6 +18,8 @@ from uuid import uuid4
 from stackos import claude_mcp
 from stackos.host_mcp.accounts import HostAccounts, NativeAccountAdapter
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.adapters.claude_accounts import accounts as claude_accounts
+from stackos.host_mcp.adapters.claude_foreground import ClaudeForeground
 from stackos.host_mcp.adapters.codex_foreground import CodexForeground
 from stackos.host_mcp.agent_execution import (
     ManagedProcessControl,
@@ -1266,7 +1268,9 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             ),
             run_agent=claude_code.run_agent,
             subscription=lambda: _read_subscription(claude_mcp.resolve_claude_bin(), read_claude),
+            account_adapter=claude_accounts,
             foreground_binary=claude_mcp.resolve_claude_bin,
+            foreground_adapter=ClaudeForeground(),
         ),
         HostMcpDefinition(
             claude_desktop,

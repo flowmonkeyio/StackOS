@@ -92,8 +92,7 @@ def _identity_env(binary: str, profile: NativeAccountProfile) -> dict[str, str]:
 
 
 def _status(binary: str, env: dict[str, str], cwd: Path | None = None) -> dict:
-    if any(env.get(key) for key in _COMPETING_ENV):
-        raise ClaudeAccountError("Competing Claude Code authentication is configured.")
+    check_auth_settings(env, cwd)
     result = run_capture(binary, ["auth", "status", "--json"], env=env, cwd=cwd)
     if result is None:
         raise ClaudeAccountError("Claude Code could not report its native authentication status.")
@@ -107,6 +106,31 @@ def _status(binary: str, env: dict[str, str], cwd: Path | None = None) -> dict:
         raise ClaudeAccountError(
             "Claude Code returned an unreadable authentication status."
         ) from None
+
+
+def check_auth_settings(env: dict[str, str], cwd: Path | None) -> None:
+    if any(env.get(key) for key in _COMPETING_ENV):
+        raise ClaudeAccountError("Competing Claude Code authentication is configured.")
+    home = Path(env.get("HOME") or Path.home())
+    config = Path(env.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser()
+    files = [config / "settings.json"]
+    if cwd is not None:
+        files.extend(cwd / ".claude" / name for name in ("settings.json", "settings.local.json"))
+    for file in files:
+        try:
+            settings = read_native_object(file.resolve(), _MAX_CONFIG_BYTES)
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError, RecursionError, RuntimeError):
+            raise ClaudeAccountError(
+                "Claude Code authentication settings could not be verified."
+            ) from None
+        overrides = settings.get("env")
+        if settings.get("apiKeyHelper") or (
+            isinstance(overrides, dict)
+            and any(overrides.get(key) for key in _COMPETING_ENV | {"CLAUDE_CONFIG_DIR"})
+        ):
+            raise ClaudeAccountError("Competing Claude Code authentication is configured.")
 
 
 def _paths(status: dict, env: dict[str, str]) -> ClaudeProfile:
@@ -133,6 +157,11 @@ def _read_oauth_account_metadata(path: Path) -> tuple[str, str, str]:
     # Native auth status verifies the login and reports the email and organization.
     # It omits the person UUID, which Claude stores in this separate metadata object.
     # Do not open .credentials.json, query Keychain, or retain the config payload.
+    row = read_native_object(path, _MAX_CONFIG_BYTES)["oauthAccount"]
+    return _uuid(row["accountUuid"]), _uuid(row["organizationUuid"]), row["emailAddress"]
+
+
+def read_native_object(path: Path, limit: int = 4096) -> dict:
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as file:
         info = os.fstat(file.fileno())
@@ -141,11 +170,42 @@ def _read_oauth_account_metadata(path: Path) -> tuple[str, str, str]:
             or info.st_uid != os.getuid()
             or info.st_nlink != 1
             or info.st_mode & 0o022
-            or info.st_size > _MAX_CONFIG_BYTES
+            or info.st_size > limit
         ):
             raise ValueError("Unreadable native metadata")
-        row = json.loads(file.read(_MAX_CONFIG_BYTES + 1))["oauthAccount"]
-    return _uuid(row["accountUuid"]), _uuid(row["organizationUuid"]), row["emailAddress"]
+        value = json.loads(file.read(limit + 1))
+    if not isinstance(value, dict):
+        raise ValueError("Expected native metadata object")
+    return value
+
+
+def _seed_tool_config(default: ClaudeProfile, directory: Path) -> None:
+    # Claude keeps user/local MCP definitions and workspace trust in the same
+    # native file as its account metadata. Carry over only tool configuration
+    # and existing local choices. OAuth and other native state stay behind.
+    try:
+        original = read_native_object(default.metadata, _MAX_CONFIG_BYTES)
+    except FileNotFoundError:
+        return
+    result = {key: original[key] for key in ("mcpServers",) if key in original}
+    if original.get("hasCompletedOnboarding") is True:
+        result["hasCompletedOnboarding"] = True
+    if isinstance(projects := original.get("projects"), dict):
+        keys = {
+            "mcpServers",
+            "hasTrustDialogAccepted",
+            "enabledMcpjsonServers",
+            "disabledMcpjsonServers",
+        }
+        result["projects"] = {
+            path: {key: row[key] for key in keys & row.keys()}
+            for path, row in projects.items()
+            if isinstance(row, dict) and keys & row.keys()
+        }
+    if result:
+        fd = _private_fd(directory / ".claude.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        with os.fdopen(fd, "w") as stream:
+            json.dump(result, stream)
 
 
 def _identity(status: dict, paths: ClaudeProfile) -> NativeIdentity | NativeIdentityIssue:
@@ -178,16 +238,16 @@ def selected_profile(
     selection: ResolvedAccountSelection,
     cwd: Path | None = None,
 ) -> tuple[dict[str, str], ClaudeProfile]:
+    selected = selection.desired.account_ref is not None
     profile = selection.profile
-    if profile is None or selection.principal_key is None:
+    if selected and (profile is None or selection.principal_key is None):
         raise ClaudeAccountError("Claude Code has no verified profile for this account.")
-    env = _identity_env(binary, profile)
+    env = _identity_env(binary, profile or NativeAccountProfile(None, None))
     status = _status(binary, env, cwd)
     paths = _paths(status, env)
     identity = _identity(status, paths)
-    if (
-        not isinstance(identity, NativeIdentity)
-        or identity.principal_key != selection.principal_key
+    if not isinstance(identity, NativeIdentity) or (
+        selected and identity.principal_key != selection.principal_key
     ):
         raise ClaudeAccountError("Claude Code did not confirm the selected subscription account.")
     # An implicit default and an explicit override of the same directory use
@@ -303,6 +363,7 @@ class ClaudeAccounts:
             source = default.config / name
             if source.exists():
                 (directory / name).symlink_to(source, target_is_directory=source.is_dir())
+        _seed_tool_config(default, directory)
         _paths(_status(binary, env), env)
         fd = _private_fd(directory / _LOGIN_LEASE, os.O_RDWR | os.O_CREAT | os.O_EXCL)
         control = ManagedProcessControl()

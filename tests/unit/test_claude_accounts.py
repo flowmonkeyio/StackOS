@@ -303,3 +303,23 @@ def test_conflicting_environment_does_not_probe_or_run_native(monkeypatch, profi
     assert claude_accounts.accounts.read_identity(selection.profile) == "conflicting_credentials"
     assert subscription_claude.read_claude("/native/claude", selection) is None
     assert calls == []
+
+
+@pytest.mark.parametrize("scope", ["user", "project"])
+def test_competing_settings_block_the_managed_turn_before_native_probe(tmp_path, profile, scope):
+    selection, original, _, calls = profile
+    directory = selection.profile.directory if scope == "user" else tmp_path / ".claude"
+    directory.mkdir(exist_ok=True)
+    (directory / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://fixture.invalid"}})
+    )
+    result = claude_code.run_agent(
+        tmp_path,
+        "role",
+        "prompt",
+        SCHEMA,
+        resume_thread_id=original.stem,
+        account_selection=selection,
+    )
+    assert not result.ok and "Competing Claude Code authentication" in result.error
+    assert calls == []

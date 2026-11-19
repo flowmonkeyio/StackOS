@@ -13,6 +13,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from time import monotonic
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -28,6 +29,7 @@ from stackos.host_mcp.accounts import (
 _NATIVE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}\Z")
 _OBSERVATION_INTERVAL_SECONDS = 0.25
 _STARTUP_RETIRE_TIMEOUT_SECONDS = 1.5
+_TTY_ADMISSION_TIMEOUT_SECONDS = 15
 Phase = Literal["closed", "requested", "pending", "confirmed", "failed"]
 
 
@@ -61,6 +63,7 @@ class ForegroundLaunch:
     close: Callable[[], None] | None = field(default=None, repr=False)
     inherited_fds: tuple[int, ...] = field(default=(), repr=False)
     tracks_navigation: bool = False
+    tty_job_control: bool = False
 
 
 class ForegroundAdapter(Protocol):
@@ -77,7 +80,9 @@ class ForegroundAdapter(Protocol):
         If the adapter tracks navigation, replace the retained ID only after
         initial admission and on a native acknowledgment from that child.
 
-        Keep input and turn dispatch closed from process start until decide_input(True).
+        Keep input and turn dispatch closed from process start until admission. With
+        tty_job_control, the supervisor withholds terminal reads and the adapter must
+        start without a prompt or other automatic turn source.
         A failed admission keeps the gate closed. A negative decision retires the
         gated startup without starting any work. The decision must be bounded and
         must not mutate the account store.
@@ -138,7 +143,8 @@ class ForegroundSlot:
         try:
             _private_directory(self.root, "unsafe_foreground_state")
             active = self._active()
-            with os.fdopen(_private_fd(self.status_path, os.O_RDONLY), "rb") as file:
+            fd = _private_fd(self.status_path, os.O_RDONLY, atomic_snapshot=True)
+            with os.fdopen(fd, "rb") as file:
                 status = ForegroundStatus.model_validate_json(file.read(4096))
         except FileNotFoundError:
             return ForegroundStatus(requested_revision=requested_revision)
@@ -281,20 +287,31 @@ def _run_native(
     child: subprocess.Popen[bytes] | None = None
     input_admitted = False
     stopping: int | None = None
+    supervisor_group = os.getpgrp()
+    tty_job_control = launch.tty_job_control
 
     def on_signal(signum: int, _frame: object) -> None:
         nonlocal stopping
         # The foreground process group already delivers terminal interrupts to the child.
-        if signum in (signal.SIGTERM, signal.SIGHUP):
+        if tty_job_control or signum in (signal.SIGTERM, signal.SIGHUP):
             stopping = signum
             if child is not None:
-                child.send_signal(signum)
+                if tty_job_control:
+                    with suppress(ProcessLookupError):
+                        os.killpg(child.pid, signum)
+                        if signum in (signal.SIGHUP, signal.SIGTERM):
+                            os.killpg(child.pid, signal.SIGCONT)
+                else:
+                    child.send_signal(signum)
 
     signals = (signal.SIGINT, signal.SIGQUIT, signal.SIGTERM, signal.SIGHUP)
     original = {sig: signal.signal(sig, on_signal) for sig in signals}
     try:
-        # Inherit the real TTY and process group. The child also retains the writer
-        # fence if the supervisor unexpectedly disappears while it is still alive.
+        if tty_job_control:
+            # Stock TUIs may initialize the TTY in the background. The kernel
+            # still stops this separate process group if it tries to read it.
+            original[signal.SIGTTOU] = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+            original[signal.SIGTTIN] = signal.signal(signal.SIGTTIN, signal.SIG_DFL)
         if request.reopening and launch.tracks_navigation:
             try:
                 termios.tcflush(0, termios.TCIFLUSH)
@@ -304,12 +321,16 @@ def _run_native(
             launch.argv,
             env=launch.env,
             pass_fds=(lock_fd, *launch.inherited_fds),
+            process_group=0 if tty_job_control else None,
         )
-        if stopping is not None:
+        if stopping is not None and not tty_job_control:
             child.send_signal(stopping)
         status.phase = "pending"
         slot.publish(status)
+        admission_deadline = monotonic() + _TTY_ADMISSION_TIMEOUT_SECONDS
         while True:
+            if tty_job_control and stopping is not None and not input_admitted:
+                raise ForegroundError("Native terminal startup was interrupted.")
             try:
                 code = child.wait(timeout=_OBSERVATION_INTERVAL_SECONDS)
             except subprocess.TimeoutExpired:
@@ -317,6 +338,10 @@ def _run_native(
                     # Withdrawal must retire a gated child even if it never reports identity.
                     if accounts.resolve(host_key).desired != request.selection.desired:
                         raise HostAccountError("stale_selection") from None
+                    if tty_job_control and monotonic() >= admission_deadline:
+                        raise ForegroundError(
+                            "Native terminal startup did not confirm the session."
+                        ) from None
                     previous_session = status.session_id
                     observed = _read_native_observation(launch, child.pid, None, status)
                     if _matches_selection(observed, request) and stopping is None:
@@ -324,6 +349,10 @@ def _run_native(
                             with accounts.guard_selection(host_key, request.selection.desired):
                                 if stopping is None:
                                     _enable_input(launch)
+                                    if tty_job_control:
+                                        termios.tcflush(0, termios.TCIFLUSH)
+                                        os.tcsetpgrp(0, child.pid)
+                                        os.killpg(child.pid, signal.SIGCONT)
                                     input_admitted = True
                         except HostAccountError as exc:
                             if exc.code != "account_store_busy":
@@ -359,6 +388,8 @@ def _run_native(
                 navigating=input_admitted and launch.tracks_navigation,
             )
             settled = input_admitted and _matches_selection(observed, request) and observed.settled
+            if tty_job_control and not _group_retired(child.pid):
+                settled = False
             return (-stopping, False) if stopping is not None else (code, settled)
     except (ForegroundError, HostAccountError, OSError) as exc:
         if child is None or input_admitted:
@@ -371,7 +402,10 @@ def _run_native(
             else:
                 notice("Unable to complete native startup with the current account selection.")
         finally:
-            _retire_unadmitted(launch, child, notice)
+            if tty_job_control:
+                _retire_unadmitted_group(child)
+            else:
+                _retire_unadmitted(launch, child, notice)
         if status.session_id is None:
             with suppress(ForegroundError):
                 _read_native_observation(launch, child.pid, child.returncode, status)
@@ -380,7 +414,15 @@ def _run_native(
         try:
             if child is not None:
                 child.wait()
-                if not input_admitted:
+                if tty_job_control:
+                    try:
+                        os.tcsetpgrp(0, supervisor_group)
+                        termios.tcsetattr(0, termios.TCSAFLUSH, terminal_modes)
+                    except (OSError, termios.error):
+                        raise ForegroundError(
+                            "Unable to restore the foreground terminal."
+                        ) from None
+                elif not input_admitted:
                     # The child may have changed TTY modes before it could accept input.
                     # Restore them after retirement and discard input for the failed launch.
                     with suppress(OSError):
@@ -395,6 +437,28 @@ def _run_native(
         finally:
             for sig, handler in original.items():
                 signal.signal(sig, handler)
+
+
+def _group_retired(group: int) -> bool:
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+def _retire_unadmitted_group(child: subprocess.Popen[bytes]) -> None:
+    # Only the separately owned, still gated group is in scope. SIGCONT lets a
+    # process stopped by SIGTTIN handle termination without admitting its reads.
+    for sig in (signal.SIGTERM, signal.SIGCONT):
+        with suppress(ProcessLookupError):
+            os.killpg(child.pid, sig)
+    with suppress(subprocess.TimeoutExpired):
+        child.wait(timeout=_STARTUP_RETIRE_TIMEOUT_SECONDS)
+    if not _group_retired(child.pid):
+        with suppress(ProcessLookupError):
+            os.killpg(child.pid, signal.SIGKILL)
+    child.wait()
 
 
 def _enable_input(launch: ForegroundLaunch) -> None:

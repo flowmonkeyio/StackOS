@@ -317,14 +317,13 @@ def test_console_enrolls_and_selects_through_the_registered_host_adapter(
         return response.json()["data"]
 
     empty = call("listAccounts").json()["hosts"]
-    assert empty == {
-        "codex": {
+    for host_key in ("codex", "claude-code"):
+        assert empty[host_key] == {
             "accounts": [],
             "desired": {"account_ref": None, "revision": 0},
             "pending_enrollment": None,
             "pending_cleanups": [],
         }
-    }
     initial = service.host_accounts(mcp_settings.data_dir).resolve("codex")
     assert initial.profile is None
     assert not (mcp_settings.data_dir / "host-accounts").exists()

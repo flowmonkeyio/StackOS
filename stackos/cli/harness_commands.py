@@ -57,6 +57,12 @@ def harness_run(
             with ordinary_launch(executable) as (_, fd):
                 os.set_inheritable(fd, True)
                 os.execv(executable, (executable, *args))
+        if (
+            host == "claude-code"
+            and session_id is None
+            and accounts.resolve(host).desired.account_ref is None
+        ):
+            os.execv(executable, (executable, *args))
         if adapter is None:
             if session_id is not None or accounts.resolve(host).desired.account_ref is not None:
                 raise ForegroundError("Managed exact-session launch is unavailable for this host.")
