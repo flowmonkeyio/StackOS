@@ -414,6 +414,7 @@ class HostAccounts:
             outgoing = host.accounts.get(host.desired.account_ref or "")
             if outgoing is None:
                 outgoing = next((row for row in host.accounts.values() if row.native_default), None)
+            previous = host.desired
             try:
                 adapter.activate(
                     self._account_profile(account),
@@ -425,7 +426,23 @@ class HostAccounts:
                 host.desired = DesiredAccount(
                     account_ref=account_ref, revision=expected_revision + 1
                 )
-            self._save(state)
+            try:
+                self._save(state)
+            except (OSError, HostAccountError):
+                # Activation saved the outgoing native credentials. Restore them
+                # if committing the selection fails, including a post-rename error.
+                try:
+                    if outgoing is None:
+                        raise HostAccountError("selection_restore_failed")
+                    adapter.activate(
+                        self._account_profile(outgoing), self._account_profile(account)
+                    )
+                    host.desired = previous
+                    if self._load().hosts[host_key].desired != previous:
+                        self._save(state)
+                except Exception:
+                    raise HostAccountError("selection_restore_failed") from None
+                raise HostAccountError("account_store_unavailable") from None
             return host.desired
 
     def refresh(self, host_key: str, account_ref: str) -> AccountView:

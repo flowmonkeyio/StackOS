@@ -120,6 +120,38 @@ def test_foreign_native_login_is_not_saved_as_outgoing_account(registry, homes):
     assert store.resolve("codex").desired.account_ref == a
 
 
+@pytest.mark.parametrize("after_replace", [False, True])
+def test_failed_selection_save_restores_native_login_and_can_retry(
+    registry, homes, monkeypatch, after_replace
+):
+    store, a, b = registry
+    home, _ = homes
+    store.select("codex", a, 0)
+    (home / "auth.json").write_bytes(b"renewed A")
+    real_save = store._save
+    failed = False
+
+    def fail_once(state):
+        nonlocal failed
+        if not failed:
+            failed = True
+            if after_replace:
+                real_save(state)
+            raise OSError("disposable selection store failure")
+        real_save(state)
+
+    monkeypatch.setattr(store, "_save", fail_once)
+    with pytest.raises(HostAccountError, match="account_store_unavailable"):
+        store.select("codex", b, 1)
+    assert (home / "auth.json").read_bytes() == b"renewed A"
+    assert store.resolve("codex").desired.account_ref == a
+    assert store.resolve("codex").desired.revision == 1
+    assert store.select("codex", b, 1).revision == 2
+    assert (home / "auth.json").read_bytes() == b"original B"
+    store.select("codex", a, 2)
+    assert (home / "auth.json").read_bytes() == b"renewed A"
+
+
 @pytest.mark.parametrize("mode", ["keyring", "auto", "ephemeral"])
 def test_unsupported_mode_keeps_native_store(registry, homes, monkeypatch, mode):
     store, _, b = registry
