@@ -121,8 +121,8 @@ function meterTone(used: number) {
     <ul v-else-if="cards.length" class="host-grid">
       <li v-for="card in cards" :key="card.key" :aria-label="card.name"
         class="host-card min-w-0 rounded-lg border border-subtle bg-bg-surface-alt p-3">
-        <div class="min-w-0 items-center" :class="accountHosts.has(card.key) ? 'host-account-header min-h-9 gap-x-1' : 'flex gap-1.5'">
-          <img :src="card.logo" alt="" :class="accountHosts.has(card.key) ? 'row-span-2 h-8 w-8' : 'h-6 w-6'" class="shrink-0 rounded-md object-contain">
+        <div class="host-header min-h-12 min-w-0 items-center gap-x-3 gap-y-1">
+          <img :src="card.logo" alt="" class="row-span-2 h-12 w-12 shrink-0 rounded-md object-contain">
           <div class="flex min-w-0 flex-1 items-center gap-1">
             <h4 class="min-w-0 flex-1 text-xs font-semibold leading-tight text-fg-strong" :class="{ 'whitespace-nowrap': accountHosts.has(card.key) }">{{ card.name }}</h4>
             <UiBadge :tone="card.status.tone" size="sm" class="shrink-0" :title="card.message">{{ card.status.label }}</UiBadge>
@@ -138,7 +138,7 @@ function meterTone(used: number) {
               </template>
             </UiDropdownMenu>
         </div>
-        <div class="text-xs text-fg-muted">
+        <div class="pt-2 text-xs text-fg-muted">
           <p :title="card.message">{{ card.primary }}</p>
           <p v-if="accounts.errors.value[card.key]" role="alert" class="text-danger-fg">{{ accounts.errors.value[card.key] }}</p>
         </div>
@@ -182,10 +182,10 @@ function meterTone(used: number) {
 
 <style scoped>
 .host-section { container-type: inline-size; }
-.host-account-header { display: grid; grid-template-columns: 2rem minmax(0, 1fr); }
+.host-header { display: grid; grid-template-columns: 3rem minmax(0, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
 .host-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; list-style: none; padding: 0; margin: 0; }
 .host-card { display: grid; grid-row: span 4; grid-template-rows: subgrid; row-gap: 0; overflow-wrap: anywhere; }
-@container (min-width: 24rem) { .host-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container (min-width: 36.5rem) { .host-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@container (min-width: 74rem) { .host-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@container (min-width: 31rem) { .host-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (min-width: 46rem) { .host-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 92rem) { .host-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 </style>
