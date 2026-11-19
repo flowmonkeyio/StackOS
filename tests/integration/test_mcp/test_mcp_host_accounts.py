@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from stackos.host_mcp import accounts, service
 from stackos.host_mcp.accounts import HostAccountError, HostAccounts, NativeIdentity
+from stackos.host_mcp.adapters import codex_accounts
 from stackos.host_mcp.result import HostMcpResult
 from stackos.operations import build_operation_registry
 
@@ -53,6 +54,12 @@ B = NativeIdentity(
 
 
 class FakeNativeAccounts:
+    def capture(self, profile):
+        self.identities[profile.ref] = self.default
+
+    def activate(self, profile, outgoing):
+        pass
+
     def __init__(self):
         self.default = A
         self.identities = {}
@@ -127,6 +134,60 @@ def _enroll_in_console(console, adapter, identity):
     return arguments, receipt, profile
 
 
+def test_console_select_activates_real_disposable_codex_store(
+    account_console, tmp_path, monkeypatch
+):
+    home = tmp_path / "native-codex"
+    home.mkdir(mode=0o700)
+    auth = home / "auth.json"
+    auth.write_text("original A")
+    auth.chmod(0o600)
+    conversation = home / "conversation-C.jsonl"
+    conversation.write_text("original conversation")
+    config = home / "config.toml"
+    config.write_text("original settings")
+    monkeypatch.setattr(
+        codex_accounts, "subprocess_env_for_cli", lambda _: {"CODEX_HOME": str(home)}
+    )
+    monkeypatch.setattr(
+        codex_accounts, "_config", lambda *_a, **_k: {"cli_auth_credentials_store": "file"}
+    )
+
+    def identity(_binary, env, **_kwargs):
+        data = (Path(env["CODEX_HOME"]) / "auth.json").read_text()
+        return A if data.endswith("A") else B
+
+    monkeypatch.setattr(codex_accounts, "native_identity", identity)
+    native = codex_accounts.CodexAccounts(lambda: "disposable-codex")
+
+    def login(profile):
+        path = profile.directory / "auth.json"
+        path.write_text("original B")
+        path.chmod(0o600)
+
+    monkeypatch.setattr(native, "start_login", login)
+    definitions = tuple(
+        replace(row, account_adapter=native) if row.policy.host_key == "codex" else row
+        for row in service._definitions()
+    )
+    monkeypatch.setattr(service, "_definitions", lambda: definitions)
+    host = {"host_key": "codex"}
+    a = _account_data(account_console("adoptAccount", **host))["account_ref"]
+    enrollment = {**host, "enrollment_ref": str(uuid4())}
+    _account_data(account_console("addAccount", **enrollment))
+    b = _account_data(account_console("completeAccountEnrollment", **enrollment))["account_ref"]
+    auth.write_text("renewed A")
+    _account_data(account_console("selectAccount", **host, account_ref=b, expected_revision=0))
+    assert auth.read_text() == "original B"
+    auth.write_text("renewed B")
+    _account_data(account_console("selectAccount", **host, account_ref=a, expected_revision=1))
+    assert auth.read_text() == "renewed A"
+    _account_data(account_console("selectAccount", **host, account_ref=b, expected_revision=2))
+    assert auth.read_text() == "renewed B"
+    assert conversation.read_text() == "original conversation"
+    assert config.read_text() == "original settings"
+
+
 @pytest.mark.parametrize("recover_selected", [False, True])
 def test_console_recovers_expired_enrollment_profile(
     account_console, adapter, mcp_settings, recover_selected
@@ -191,7 +252,7 @@ def test_console_adopts_working_default_for_existing_account(
     if retained_profile == "healthy":
         assert resolved.profile == profile
     else:
-        assert resolved.profile.directory is None
+        assert resolved.profile.directory.is_dir()
         assert resolved.profile.ref != profile.ref
     assert adapter.discarded == []
 
@@ -343,7 +404,9 @@ def test_console_enrolls_and_selects_through_the_registered_host_adapter(
     a = data("adoptAccount", host)
     assert a == data("adoptAccount", host)
     assert a["email"] == A.email
-    assert [profile.directory for profile in adapter.reads] == [None, None]
+    assert adapter.reads[0].directory is None
+    assert adapter.reads[1].directory.is_dir()
+    assert adapter.reads[2].directory is None
     assert not adapter.started and not adapter.discarded
     assert data(
         "selectAccount", {**host, "account_ref": a["account_ref"], "expected_revision": 0}
@@ -425,7 +488,7 @@ def test_native_identity_keys_refresh_and_restart(tmp_path):
     a = store.adopt("codex")
     store.select("codex", a.account_ref, 0)
     default_profile = store.resolve("codex").profile
-    assert default_profile is not None and default_profile.directory is None
+    assert default_profile is not None and default_profile.directory.is_dir()
     assert default_profile.ref != a.account_ref
 
     duplicate, profile = _begin(store, adapter)
@@ -528,7 +591,7 @@ def test_enrollment_cancel_expiry_and_native_failure_are_terminal(tmp_path, monk
 
     def late_retained_identity(context):
         nonlocal now
-        if context.directory is None:
+        if context.ref != profile.ref:
             now += timedelta(minutes=15)
         return read_identity(context)
 
@@ -620,4 +683,4 @@ def test_invalid_stored_profile_ref_never_reaches_native_adapter(tmp_path):
     path.write_text(json.dumps(state))
     with pytest.raises(HostAccountError, match="account_store_unavailable"):
         store.resolve("codex")
-    assert len(adapter.reads) == 2
+    assert len(adapter.reads) == 3

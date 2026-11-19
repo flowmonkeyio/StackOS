@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
+from pathlib import Path
 from threading import Event
+from uuid import uuid4
 
 import pytest
 
-from stackos.host_mcp.accounts import DesiredAccount, NativeAccountProfile, ResolvedAccountSelection
-from stackos.host_mcp.adapters import codex, codex_accounts
-from stackos.host_mcp.adapters.codex_accounts import AuthExchange, CodexAccountError
+from stackos.host_mcp.accounts import (
+    HostAccountError,
+    HostAccounts,
+    NativeAccountProfile,
+    NativeIdentity,
+)
+from stackos.host_mcp.adapters import codex_accounts
 
 
 @pytest.fixture
@@ -25,107 +30,106 @@ def homes(tmp_path):
 
 def fixture_principal(home):
     data = (home / "auth.json").read_bytes()
-    return ("B" if data.endswith(b"B") else "A", "workspace")
+    return (data.decode().split()[-1], "workspace")
 
 
-def test_exchange_preserves_native_refresh_and_original_login(homes):
-    regular, isolated = homes
-    exchange = AuthExchange(regular, fixture_principal)
-    with exchange.selected(isolated, ("B", "workspace")):
-        assert (regular / "auth.json").read_bytes() == b"original B"
-        assert (isolated / "auth.json").read_bytes() == b"original A"
-        assert exchange.profile_home(None) == isolated
-        assert exchange.profile_home(isolated) == regular
-        with AuthExchange(regular, fixture_principal).selected(isolated, ("B", "workspace")):
-            assert (regular / "auth.json").read_bytes() == b"original B"
-        with (
-            pytest.raises(CodexAccountError, match="another account"),
-            AuthExchange(regular, fixture_principal).selected(None, ("A", "workspace")),
-        ):
-            pytest.fail("another account must not change the credential in use")
-        updated = regular / "refresh"
-        updated.write_bytes(b"refreshed B")
-        updated.chmod(0o600)
-        os.replace(updated, regular / "auth.json")
-    assert (regular / "auth.json").read_bytes() == b"original A"
-    assert (isolated / "auth.json").read_bytes() == b"refreshed B"
-
-
-def test_exchange_preserves_unexpected_foreign_write_for_recovery(homes):
-    regular, isolated = homes
-    exchange = AuthExchange(regular, fixture_principal)
-    with (
-        pytest.raises(CodexAccountError, match="credential changed"),
-        exchange.selected(isolated, ("B", "workspace")),
-    ):
-        updated = regular / "login"
-        updated.write_bytes(b"new external principal")
-        updated.chmod(0o600)
-        os.replace(updated, regular / "auth.json")
-    assert (regular / "auth.json").read_bytes() == b"new external principal"
-    assert (isolated / "auth.json").read_bytes() == b"original A"
-
-
-def test_withdrawn_selection_keeps_both_native_files(homes):
-    regular, isolated = homes
-    exchange = AuthExchange(regular, fixture_principal)
-    with (
-        pytest.raises(CodexAccountError, match="selection changed"),
-        exchange.selected(isolated, ("B", "workspace"), allowed=lambda: False),
-    ):
-        pytest.fail("a stale selection must not launch")
-    assert (regular / "auth.json").read_bytes() == b"original A"
-    assert (isolated / "auth.json").read_bytes() == b"original B"
-
-
-def test_interrupted_exchange_recovers_from_journal(homes, monkeypatch):
-    regular, isolated = homes
-    exchange = AuthExchange(regular, fixture_principal)
-    real_sync = codex_accounts._sync_directory
-
-    def interrupt_after_swap(path):
-        if path == regular:
-            raise OSError("interrupted after native exchange")
-        real_sync(path)
-
-    with monkeypatch.context() as patch:
-        patch.setattr(codex_accounts, "_sync_directory", interrupt_after_swap)
-        with (
-            pytest.raises(CodexAccountError, match="private Codex credential transaction"),
-            exchange.selected(isolated, ("B", "workspace")),
-        ):
-            pytest.fail("the failed transaction must not launch")
-    assert (regular / "auth.json").read_bytes() == b"original B"
-    assert exchange.journal.is_file()
-    with AuthExchange(regular, fixture_principal).selected(None, None):
-        assert (regular / "auth.json").read_bytes() == b"original A"
-        assert (isolated / "auth.json").read_bytes() == b"original B"
-        assert not exchange.journal.exists()
-
-
-@pytest.mark.parametrize("mode", ["keyring", "auto", "ephemeral"])
-def test_unsupported_credential_mode_keeps_both_stores(homes, monkeypatch, mode):
-    regular, isolated = homes
+@pytest.fixture
+def registry(homes, tmp_path, monkeypatch):
+    regular, _ = homes
     monkeypatch.setattr(
         codex_accounts, "subprocess_env_for_cli", lambda _: {"CODEX_HOME": str(regular)}
     )
     monkeypatch.setattr(
-        codex_accounts, "_config", lambda *_args, **_kw: {"cli_auth_credentials_store": mode}
+        codex_accounts, "_config", lambda *_a, **_kw: {"cli_auth_credentials_store": "file"}
     )
-    ref = "e8ece2a3-4335-4267-99ec-fab200a72839"
-    selection = ResolvedAccountSelection(
-        DesiredAccount(account_ref=ref, revision=1),
-        NativeAccountProfile(ref, isolated),
-        ("B", "workspace"),
+
+    def identity(_binary, env, **_kwargs):
+        principal, workspace = fixture_principal(codex_accounts._home(env))
+        return NativeIdentity(
+            principal=principal, workspace=workspace, email=f"{principal}@example.invalid"
+        )
+
+    monkeypatch.setattr(codex_accounts, "native_identity", identity)
+    adapter = codex_accounts.CodexAccounts(lambda: "codex")
+    store = HostAccounts(tmp_path, {"codex": adapter})
+    a = store.adopt("codex")
+
+    def login(profile):
+        auth = profile.directory / "auth.json"
+        auth.write_bytes(b"original B")
+        auth.chmod(0o600)
+
+    monkeypatch.setattr(adapter, "start_login", login)
+    enrollment = str(uuid4())
+    store.add("codex", enrollment)
+    b = store.complete("codex", enrollment)
+    return store, a.account_ref, b.account_ref
+
+
+def test_select_persists_native_login_and_preserves_refreshed_accounts(registry, homes):
+    store, a, b = registry
+    home, _ = homes
+    conversation = home / "sessions" / "C.jsonl"
+    conversation.parent.mkdir()
+    conversation.write_text("original conversation C")
+    config = home / "config.toml"
+    config.write_text('model = "operator-choice"')
+    saved_a = store.resolve("codex").enrolled_directories
+    assert any((path / "auth.json").read_bytes() == b"original A" for path in saved_a)
+    (home / "auth.json").write_bytes(b"renewed A")
+    assert store.select("codex", b, 0).revision == 1
+    assert (home / "auth.json").read_bytes() == b"original B"
+    (home / "auth.json").write_bytes(b"renewed B")
+    assert store.select("codex", a, 1).revision == 2
+    assert (home / "auth.json").read_bytes() == b"renewed A"
+    assert store.select("codex", b, 2).revision == 3
+    assert (home / "auth.json").read_bytes() == b"renewed B"
+    assert conversation.read_text() == "original conversation C"
+    assert config.read_text() == 'model = "operator-choice"'
+
+
+def test_failed_native_swap_retains_usable_login_and_selection(registry, homes, monkeypatch):
+    store, a, b = registry
+    home, _ = homes
+    store.select("codex", a, 0)
+    real_replace = Path.replace
+
+    def fail_swap(source, destination):
+        if destination == home / "auth.json":
+            raise OSError("disposable native store refused replacement")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", fail_swap)
+    with pytest.raises(HostAccountError, match="activation_failed"):
+        store.select("codex", b, 1)
+    assert (home / "auth.json").read_bytes() == b"original A"
+    assert store.resolve("codex").desired.account_ref == a
+    assert store.resolve("codex").desired.revision == 1
+
+
+def test_foreign_native_login_is_not_saved_as_outgoing_account(registry, homes):
+    store, a, b = registry
+    home, _ = homes
+    store.select("codex", a, 0)
+    saved_a = store.resolve("codex").profile.directory / "auth.json"
+    (home / "auth.json").write_bytes(b"external C")
+    with pytest.raises(HostAccountError, match="activation_failed"):
+        store.select("codex", b, 1)
+    assert saved_a.read_bytes() == b"original A"
+    assert (home / "auth.json").read_bytes() == b"external C"
+    assert store.resolve("codex").desired.account_ref == a
+
+
+@pytest.mark.parametrize("mode", ["keyring", "auto", "ephemeral"])
+def test_unsupported_mode_keeps_native_store(registry, homes, monkeypatch, mode):
+    store, _, b = registry
+    home, _ = homes
+    monkeypatch.setattr(
+        codex_accounts, "_config", lambda *_a, **_kw: {"cli_auth_credentials_store": mode}
     )
-    with (
-        pytest.raises(CodexAccountError, match="configured Codex credential backend"),
-        codex_accounts.selected_launch("codex", regular, selection),
-    ):
-        pytest.fail("must not force the file backend")
-    assert (regular / "auth.json").read_bytes() == b"original A"
-    assert (isolated / "auth.json").read_bytes() == b"original B"
-    assert not (regular / ".stackos-accounts").exists()
+    with pytest.raises(HostAccountError):
+        store.select("codex", b, 0)
+    assert (home / "auth.json").read_bytes() == b"original A"
 
 
 def test_native_identity_requires_native_workspace_and_uses_email_for_display():
@@ -147,39 +151,6 @@ def test_native_identity_requires_native_workspace_and_uses_email_for_display():
     identity = codex_accounts._identity(response, selection)
     assert identity.principal_key == ("native-user", "workspace")
     assert identity.email == "same@example.invalid"
-
-
-def test_ordinary_reader_prevents_a_managed_account_exchange(homes):
-    regular, isolated = homes
-    exchange = AuthExchange(regular, fixture_principal)
-    with (
-        codex_accounts.ordinary_launch("codex", env={"CODEX_HOME": str(regular)}),
-        pytest.raises(CodexAccountError, match="in use"),
-        exchange.selected(isolated, ("B", "workspace")),
-    ):
-        pytest.fail("native default and selected executions cannot overlap a credential swap")
-    assert (regular / "auth.json").read_bytes() == b"original A"
-
-
-def test_headless_rejects_competing_api_key_before_creating_a_turn(homes, monkeypatch):
-    regular, isolated = homes
-    ref = "e8ece2a3-4335-4267-99ec-fab200a72839"
-    selection = ResolvedAccountSelection(
-        DesiredAccount(account_ref=ref, revision=1),
-        NativeAccountProfile(ref, isolated),
-        ("B", "workspace"),
-    )
-    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "codex")
-    monkeypatch.setenv("CODEX_HOME", str(regular))
-    monkeypatch.setenv("CODEX_API_KEY", "synthetic-key")
-    monkeypatch.setattr(
-        codex_accounts, "_config", lambda *_a, **_kw: pytest.fail("started native RPC")
-    )
-    result = codex.run_agent(regular, "Instructions", "Prompt", {}, account_selection=selection)
-    assert not result.ok
-    assert "competing" in result.error
-    assert (regular / "auth.json").read_bytes() == b"original A"
-    assert (isolated / "auth.json").read_bytes() == b"original B"
 
 
 def test_enrollment_starts_native_first_party_signin_in_isolated_home(homes, monkeypatch):

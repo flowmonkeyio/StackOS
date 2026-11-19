@@ -453,6 +453,13 @@ profile roots and checks ownership, permissions and symlinks before use.
 Native adapters own credential files or keychain entries within their
 profile contract.
 
+Codex adoption saves its file-backed native credentials into an existing private
+host profile. Selection saves outgoing native refreshes to that profile before
+atomically replacing the regular `CODEX_HOME/auth.json`. Credentials remain
+inside native adapter file handling and never enter inventory or operation
+responses. Settings and transcripts stay in the same native home. A foreign
+native principal or unsupported credential backend prevents switching.
+
 The exact registered `hostMcp` account operation routes require local operator
 REST authority. The account inventory is separate from the general
 `hostMcp.status` feed. Provider replies stay inside the adapter. The local

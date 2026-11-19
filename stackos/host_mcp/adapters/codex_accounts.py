@@ -1,22 +1,18 @@
-"""Codex-owned native account profiles and same-home file credential leases."""
+"""Codex-owned native account profiles and persistent credential selection."""
 
 from __future__ import annotations
 
-import ctypes
 import fcntl
 import json
 import os
 import stat
-import sys
 import webbrowser
 from collections.abc import Callable, Iterator
-from contextlib import ExitStack, contextmanager
-from hashlib import sha256
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Event, Thread
 from urllib.parse import urlsplit
-from uuid import UUID
 
 from pydantic import ValidationError
 
@@ -118,7 +114,7 @@ def selected_quota_responses(binary: str, selection: ResolvedAccountSelection) -
         mode = _storage(_config(binary, env))
         if selection.profile.directory is not None and mode != "file":
             return []
-        home = AuthExchange(regular, lambda _: None).profile_home(selection.profile.directory)
+        home = selection.profile.directory or regular
         responses = _rpc(
             binary,
             _profile_env(env, home),
@@ -178,101 +174,12 @@ def _profile_env(env, home):
     return {**env, "CODEX_HOME": str(home)}
 
 
-@contextmanager
-def ordinary_launch(
-    binary: str, *, env: dict[str, str] | None = None
-) -> Iterator[tuple[dict[str, str], int]]:
-    """Keep native defaults on the shared side of a managed credential lease."""
-    env = subprocess_env_for_cli(binary) if env is None else env
-    exchange = AuthExchange(_home(env), lambda _: None)
-    try:
-        with ExitStack() as usage:
-            with exchange.admission():
-                fd = usage.enter_context(exchange.lease(shared=True))
-                if exchange.journal.exists():
-                    raise CodexAccountError("A managed Codex account owns the native home.")
-            yield env, fd
-    except (HostAccountError, OSError):
-        raise CodexAccountError("The private Codex execution lease is unavailable.") from None
-
-
 def _storage(config: dict) -> str:
     value = config["cli_auth_credentials_store"]
     mode = value if value is not None else "file"
     if mode not in ("file", "keyring", "auto", "ephemeral"):
         raise CodexAccountError("Codex credential mode is unsupported.")
     return mode
-
-
-def exact_uuid(value: object) -> str:
-    if isinstance(value, str):
-        try:
-            if str(UUID(value)) == value:
-                return value
-        except ValueError:
-            pass
-    raise CodexAccountError("An exact Codex conversation UUID is required.")
-
-
-def exact_thread(binary: str, env: dict[str, str], thread: str, *, overrides=()) -> None:
-    exact_uuid(thread)
-    responses = _rpc(
-        binary,
-        env,
-        ("thread/read", {"threadId": thread, "includeTurns": False}),
-        overrides=overrides,
-    )
-    record = native.rpc_result(responses, 1).get("thread")
-    if not isinstance(record, dict) or record.get("id") != thread:
-        raise CodexAccountError("The exact Codex conversation was not found in the regular home.")
-    if record.get("modelProvider") != "openai":
-        raise CodexAccountError("The saved Codex conversation uses a different model provider.")
-
-
-@contextmanager
-def selected_launch(
-    binary: str,
-    cwd: Path,
-    selection: ResolvedAccountSelection,
-    *,
-    provider: str | None = None,
-    overrides=(),
-    allowed: Callable[[], bool] | None = None,
-) -> Iterator[tuple[dict[str, str], int]]:
-    env = subprocess_env_for_cli(binary)
-    _check_environment(env)
-    home = _home(env)
-    config = _config(binary, env, cwd, overrides=overrides)
-    if (provider or config.get("model_provider") or "openai") != "openai":
-        raise CodexAccountError("Managed Codex accounts require the native OpenAI provider.")
-    custom_providers = config.get("model_providers")
-    if isinstance(custom_providers, dict) and "openai" in custom_providers:
-        raise CodexAccountError("A custom provider conflicts with the managed Codex account.")
-    mode = _storage(config)
-    if selection.profile is None or selection.principal_key is None:
-        raise CodexAccountError("The Codex account selection is incomplete.")
-    isolated = selection.profile.directory
-    if isolated is not None and mode != "file":
-        raise CodexAccountError("The configured Codex credential backend cannot switch this login.")
-
-    def principal(path: Path) -> Principal | None:
-        identity = native_identity(
-            binary,
-            _profile_env(env, path),
-            overrides=("-c", f'cli_auth_credentials_store="{mode}"'),
-        )
-        return identity.principal_key if isinstance(identity, NativeIdentity) else None
-
-    try:
-        exchange = AuthExchange(home, principal)
-        if mode != "file" and exchange.journal.exists():
-            raise CodexAccountError(
-                "The previous file-backed Codex exchange needs operator recovery."
-            )
-        with exchange.selected(isolated, selection.principal_key, allowed=allowed) as fd:
-            yield env, fd
-    except (HostAccountError, OSError):
-        raise CodexAccountError("The private Codex credential store is unavailable.") from None
 
 
 class CodexAccounts:
@@ -290,6 +197,57 @@ class CodexAccounts:
         _check_environment(env)
         return binary, env
 
+    def _file_home(self) -> Path:
+        binary, env = self._resolve()
+        if _storage(_config(binary, env)) != "file":
+            raise CodexAccountError("Codex switching requires file-backed native credentials.")
+        home = _home(env)
+        info = home.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
+            raise CodexAccountError("The regular Codex home is unsafe for account switching.")
+        return home
+
+    def capture(self, profile: NativeAccountProfile) -> None:
+        home = self._file_home()
+        if profile.directory is None:
+            raise CodexAccountError("Codex adoption requires a private saved profile.")
+        _private_directory(profile.directory, "unsafe_profile")
+        with _native_lock(home):
+            _write_credential(profile.directory, _read_credential(home))
+
+    def activate(
+        self, profile: NativeAccountProfile, outgoing: NativeAccountProfile | None
+    ) -> None:
+        home = self._file_home()
+        target = profile.directory
+        if target is None or outgoing is None or outgoing.directory is None:
+            raise CodexAccountError("Adopt the current Codex login before switching accounts.")
+        _private_directory(target, "unsafe_profile")
+        _private_directory(outgoing.directory, "unsafe_profile")
+        binary, env = self._resolve()
+        expected = self.read_identity(profile)
+        previous = self.read_identity(outgoing)
+        active = native_identity(binary, env)
+        if (
+            not isinstance(expected, NativeIdentity)
+            or not isinstance(previous, NativeIdentity)
+            or not isinstance(active, NativeIdentity)
+        ):
+            raise CodexAccountError("Codex could not verify the account before switching.")
+        if previous.principal_key != active.principal_key:
+            raise CodexAccountError("The native Codex login changed outside account selection.")
+        original = _credential(home)
+        selected = _credential(target)
+        if original is None or selected is None:
+            raise CodexAccountError("Codex native credentials are unavailable.")
+        with _native_lock(home):
+            if _credential(home) != original or _credential(target) != selected:
+                raise CodexAccountError("Codex credentials changed during selection. Retry.")
+            _write_credential(outgoing.directory, _read_credential(home))
+            # Reselecting the active identity must retain its renewed credentials.
+            if expected.principal_key != active.principal_key:
+                _write_credential(home, _read_credential(target))
+
     def read_identity(self, profile: NativeAccountProfile) -> NativeIdentity | NativeIdentityIssue:
         try:
             binary, env = self._resolve()
@@ -301,7 +259,7 @@ class CodexAccounts:
             if profile.directory is not None and mode != "file":
                 return "unavailable"
             regular = _home(env)
-            home = AuthExchange(regular, lambda _: None).profile_home(profile.directory)
+            home = profile.directory or regular
         except (CodexAccountError, HostAccountError, OSError):
             return "unavailable"
         return native_identity(
@@ -438,8 +396,7 @@ def _credential(home: Path) -> FileIdentity | None:
 
 @contextmanager
 def _native_lock(home: Path) -> Iterator[None]:
-    # Codex 0.170 serializes native writes on auth.lock. Unlike the StackOS
-    # execution lease, this lock is released before any native process runs.
+    # Coordinate only the credential update with native auth writes.
     fd = os.open(home / "auth.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         info = os.fstat(fd)
@@ -456,307 +413,23 @@ def _native_lock(home: Path) -> Iterator[None]:
         os.close(fd)
 
 
-def _exchange(first: Path, second: Path) -> None:
-    libc = ctypes.CDLL(None, use_errno=True)
-    if sys.platform == "darwin":
-        swap = libc.renamex_np
-        swap.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-        result = swap(os.fsencode(first), os.fsencode(second), 0x00000002)
-    elif sys.platform == "linux" and hasattr(libc, "renameat2"):
-        swap = libc.renameat2
-        swap.argtypes = [
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_uint,
-        ]
-        result = swap(-100, os.fsencode(first), -100, os.fsencode(second), 2)
-    else:
-        raise CodexAccountError(
-            "This filesystem has no supported atomic Codex credential exchange."
-        )
-    if result != 0:
-        raise CodexAccountError(
-            "Could not exchange Codex credentials atomically on this filesystem."
-        )
+def _read_credential(home: Path) -> bytes:
+    if _credential(home) is None:
+        raise CodexAccountError("Codex native credentials are unavailable.")
+    fd = _private_fd(home / "auth.json", os.O_RDONLY)
+    with os.fdopen(fd, "rb") as source:
+        return source.read()
 
 
-def _sync_directory(directory: Path) -> None:
-    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
-class AuthExchange:
-    """Borrow the selected native credential while preserving refresh and recovery."""
-
-    def __init__(self, home: Path, principal: Callable[[Path], Principal | None]):
-        self.home = home
-        self.principal = principal
-        self.state = home / ".stackos-accounts"
-        self.journal = self.state / "exchange.json"
-
-    def profile_home(self, isolated: Path | None) -> Path:
-        """Resolve the physical home of a logical profile during an active lease."""
-        journal = self._read_journal()
-        ordinary = isolated or self.home
-        if journal is None:
-            return ordinary
-        parked_home, original, _selected, _expected = journal
-        if isolated is not None and isolated.resolve() != parked_home.resolve():
-            return isolated
-        active, parked = _credential(self.home), _credential(parked_home)
-        if active == original:
-            return ordinary
-        if parked != original or active is None:
-            raise CodexAccountError("A native Codex credential changed during the exchange.")
-        return self.home if isolated is not None else parked_home
-
-    def _lock_path(self, suffix: str) -> Path:
-        # Ordinary Stock Codex can start with no existing native home, and its
-        # home configuration may be read-only. Keep the process fence separate
-        # from credential storage and use the same owner-local path in every
-        # StackOS entry point, independent of inherited TMPDIR.
-        directory = Path(f"/tmp/stackos-codex-leases-{os.geteuid()}")
-        directory.mkdir(mode=0o700, exist_ok=True)
-        _private_directory(directory, "unsafe_profile")
-        key = sha256(os.fsencode(self.home.resolve())).hexdigest()
-        return directory / (key + suffix)
-
-    @contextmanager
-    def admission(self) -> Iterator[None]:
-        fd = _private_fd(self._lock_path(".admission"), os.O_RDWR | os.O_CREAT)
+def _write_credential(home: Path, data: bytes) -> None:
+    """Atomically replace auth.json; a failed staging/write preserves the old file."""
+    _credential(home)
+    with NamedTemporaryFile(dir=home, delete=False) as temp:
+        staged = Path(temp.name)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
+            temp.write(data)
+            temp.flush()
+            os.fsync(temp.fileno())
+            staged.replace(home / "auth.json")
         finally:
-            os.close(fd)
-
-    @contextmanager
-    def lease(self, *, shared: bool = False, suffix: str = "") -> Iterator[int]:
-        fd = _private_fd(self._lock_path(suffix), os.O_RDWR | os.O_CREAT)
-        try:
-            try:
-                mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
-                fcntl.flock(fd, mode | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise CodexAccountError("The managed Codex home is in use.") from None
-            yield fd
-        finally:
-            os.close(fd)
-
-    @contextmanager
-    def selected(
-        self,
-        isolated: Path | None,
-        expected: Principal | None,
-        *,
-        allowed: Callable[[], bool] | None = None,
-    ) -> Iterator[int]:
-        try:
-            with ExitStack() as usage:
-                with self.admission():
-                    fd = self._join_or_switch(usage, isolated, expected, allowed)
-                try:
-                    if expected is not None and self.principal(self.home) != expected:
-                        raise CodexAccountError(
-                            "The regular Codex home did not confirm the selected account."
-                        )
-                    if allowed is not None and not allowed():
-                        raise CodexAccountError("Codex account selection changed before launch.")
-                    yield fd
-                finally:
-                    usage.close()
-                    self._recover_if_idle()
-        except OSError:
-            raise CodexAccountError(
-                "Could not access the private Codex credential transaction."
-            ) from None
-
-    def _join_or_switch(
-        self,
-        usage: ExitStack,
-        isolated: Path | None,
-        expected: Principal | None,
-        allowed: Callable[[], bool] | None,
-    ) -> int:
-        if allowed is not None and not allowed():
-            raise CodexAccountError("Codex account selection changed before launch.")
-        try:
-            fd = usage.enter_context(self.lease())
-        except CodexAccountError:
-            fd = usage.enter_context(self.lease(shared=True))
-            journal = self._read_journal()
-            active = journal[0] if journal is not None else None
-            if (isolated is None) != (active is None) or (
-                isolated is not None
-                and active is not None
-                and isolated.resolve() != active.resolve()
-            ):
-                raise CodexAccountError(
-                    "The managed Codex home is in use by another account."
-                ) from None
-        else:
-            self._prepare_state()
-            self._recover()
-            if isolated is not None:
-                self._stage_account(isolated, expected, allowed)
-            fcntl.flock(fd, fcntl.LOCK_SH)
-        return fd
-
-    def _stage_account(
-        self,
-        isolated: Path,
-        expected: Principal | None,
-        allowed: Callable[[], bool] | None,
-    ) -> None:
-        _private_directory(isolated, "unsafe_profile")
-        if isolated.resolve() == self.home.resolve():
-            raise CodexAccountError("The enrolled and regular Codex homes must be distinct.")
-        if expected is None:
-            raise CodexAccountError("Codex has no verified principal for this selection.")
-        original = _credential(self.home)
-        selected = _credential(isolated)
-        if selected is None or self.principal(isolated) != expected:
-            raise CodexAccountError("Codex could not confirm the selected enrolled account.")
-        if _credential(isolated) != selected:
-            raise CodexAccountError("The selected Codex credential changed during preflight.")
-        self._swap_in(isolated, original, selected, expected, allowed)
-
-    def _recover_if_idle(self) -> None:
-        with self.admission(), ExitStack() as idle:
-            if not self.journal.exists():
-                return
-            try:
-                idle.enter_context(self.lease())
-            except CodexAccountError:
-                return
-            self._recover()
-
-    @contextmanager
-    def thread_lease(self, thread_id: str) -> Iterator[int]:
-        exact_uuid(thread_id)
-        with ExitStack() as ownership:
-            try:
-                fd = ownership.enter_context(self.lease(suffix=f".thread-{thread_id}"))
-            except CodexAccountError:
-                raise CodexAccountError(
-                    "This Codex conversation already has a managed writer."
-                ) from None
-            yield fd
-
-    def _prepare_state(self) -> None:
-        # The regular home may be readable by other users. Its transaction state
-        # and both native credential files must themselves remain private.
-        info = self.home.stat()
-        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
-            raise CodexAccountError("The regular Codex home is unsafe for account switching.")
-        self.state.mkdir(mode=0o700, exist_ok=True)
-        _private_directory(self.state, "unsafe_profile")
-
-    def _write_journal(
-        self,
-        isolated: Path,
-        original: FileIdentity | None,
-        selected: FileIdentity,
-        expected: Principal,
-    ) -> None:
-        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.state, delete=False) as temp:
-            staged = Path(temp.name)
-            try:
-                json.dump(
-                    {
-                        "profile": str(isolated),
-                        "original": original,
-                        "selected": selected,
-                        "principal": expected,
-                    },
-                    temp,
-                )
-                temp.flush()
-                os.fsync(temp.fileno())
-                staged.replace(self.journal)
-            finally:
-                staged.unlink(missing_ok=True)
-        _sync_directory(self.state)
-
-    def _swap_in(
-        self,
-        isolated: Path,
-        original: FileIdentity | None,
-        selected: FileIdentity,
-        expected: Principal,
-        allowed: Callable[[], bool] | None,
-    ) -> None:
-        with _native_lock(self.home), _native_lock(isolated):
-            if allowed is not None and not allowed():
-                raise CodexAccountError("Codex account selection changed before launch.")
-            if _credential(self.home) != original or _credential(isolated) != selected:
-                raise CodexAccountError("A native Codex credential changed before launch.")
-            self._write_journal(isolated, original, selected, expected)
-            active = self.home / "auth.json"
-            parked = isolated / "auth.json"
-            if original is None:
-                parked.replace(active)
-            else:
-                _exchange(active, parked)
-            _sync_directory(self.home)
-            _sync_directory(isolated)
-
-    def _read_journal(self):
-        try:
-            fd = _private_fd(self.journal, os.O_RDONLY)
-        except FileNotFoundError:
-            return None
-        try:
-            with os.fdopen(fd, encoding="utf-8") as file:
-                data = json.loads(file.read(4096))
-            return (
-                Path(data["profile"]),
-                tuple(data["original"]) if data["original"] else None,
-                tuple(data["selected"]),
-                tuple(data["principal"]),
-            )
-        except (KeyError, TypeError, ValueError):
-            raise CodexAccountError(
-                "The Codex credential exchange needs operator recovery."
-            ) from None
-
-    def _recover(self) -> None:
-        journal = self._read_journal()
-        if journal is None:
-            return
-        isolated, original, selected, expected = journal
-        _private_directory(isolated, "unsafe_profile")
-        active_now = _credential(self.home)
-        parked_now = _credential(isolated)
-        before_swap = active_now == original and parked_now is not None and parked_now != original
-        if not before_swap:
-            if parked_now != original or active_now is None:
-                raise CodexAccountError("A native Codex credential changed during the exchange.")
-            if active_now != selected:
-                if self.principal(self.home) != expected:
-                    raise CodexAccountError(
-                        "The active Codex credential changed during the exchange."
-                    )
-                if _credential(self.home) != active_now:
-                    raise CodexAccountError(
-                        "The active Codex credential changed during the exchange."
-                    )
-        with _native_lock(self.home), _native_lock(isolated):
-            if _credential(self.home) != active_now or _credential(isolated) != parked_now:
-                raise CodexAccountError("A native Codex credential changed during recovery.")
-            if not before_swap:
-                active = self.home / "auth.json"
-                parked = isolated / "auth.json"
-                if original is None:
-                    active.replace(parked)
-                else:
-                    _exchange(active, parked)
-                _sync_directory(self.home)
-                _sync_directory(isolated)
-            self.journal.unlink()
-            _sync_directory(self.state)
+            staged.unlink(missing_ok=True)

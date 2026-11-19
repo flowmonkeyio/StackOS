@@ -66,6 +66,19 @@ class NativeAccountProfile:
 class NativeAccountAdapter(Protocol):
     """Provider-owned native login and identity checks. Calls must be bounded."""
 
+    def capture(self, profile: NativeAccountProfile) -> None:
+        """Save the current native login in this private profile before adoption."""
+        ...
+
+    def activate(
+        self, profile: NativeAccountProfile, outgoing: NativeAccountProfile | None
+    ) -> None:
+        """Persistently select the native login, saving outgoing credentials first.
+
+        Raise on failure; selection metadata is committed only after return.
+        """
+        ...
+
     def read_identity(self, profile: NativeAccountProfile) -> NativeIdentity | NativeIdentityIssue:
         """Check the settled native subscription identity without starting login."""
         ...
@@ -256,9 +269,7 @@ class HostAccounts:
             return ResolvedAccountSelection(DesiredAccount())
         host = self._load().hosts.get(host_key, _HostState())
         enrolled = tuple(
-            self._root / f"profile-{row.profile_ref}"
-            for row in host.accounts.values()
-            if not row.native_default
+            self._root / f"profile-{row.profile_ref}" for row in host.accounts.values()
         )
         ref = host.desired.account_ref
         if ref is None:
@@ -282,7 +293,7 @@ class HostAccounts:
                 ),
                 None,
             )
-            profile = NativeAccountProfile(adopted[1].profile_ref if adopted else None, None)
+            profile = NativeAccountProfile(None, None)
             identity = self._read_identity(adapter, profile)
             if adopted is not None:
                 ref, account = adopted
@@ -297,11 +308,24 @@ class HostAccounts:
                 raise HostAccountError("identity_unverified", status=identity)
             matched = self._matching_account(host, identity)
             if matched is not None and self._refresh(adapter, matched[1]) == "verified":
+                matched[1].native_default = True
                 self._save(state)
                 return matched[1].view(matched[0])
             ref = matched[0] if matched else str(uuid4())
+            profile_ref = str(uuid4())
+            try:
+                saved = self._isolated_profile(profile_ref, create=True)
+                adapter.capture(saved)
+                captured = self._read_identity(adapter, saved)
+                if (
+                    not isinstance(captured, NativeIdentity)
+                    or captured.principal_key != identity.principal_key
+                ):
+                    raise HostAccountError("identity_unverified")
+            except Exception:
+                raise HostAccountError("activation_failed") from None
             account = self._bind_verified_profile(
-                host, ref, str(uuid4()), identity, native_default=True
+                host, ref, profile_ref, identity, native_default=True
             )
             self._save(state)
             return account.view(ref)
@@ -387,6 +411,16 @@ class HostAccounts:
             if status != "verified":
                 self._save(state)
                 raise HostAccountError("identity_unverified", status=status)
+            outgoing = host.accounts.get(host.desired.account_ref or "")
+            if outgoing is None:
+                outgoing = next((row for row in host.accounts.values() if row.native_default), None)
+            try:
+                adapter.activate(
+                    self._account_profile(account),
+                    self._account_profile(outgoing) if outgoing is not None else None,
+                )
+            except Exception:
+                raise HostAccountError("activation_failed") from None
             if host.desired.account_ref != account_ref:
                 host.desired = DesiredAccount(
                     account_ref=account_ref, revision=expected_revision + 1
@@ -500,8 +534,6 @@ class HostAccounts:
         return host.enrollments[ref]
 
     def _account_profile(self, account: _Account) -> NativeAccountProfile:
-        if account.native_default:
-            return NativeAccountProfile(account.profile_ref, None)
         return self._isolated_profile(account.profile_ref)
 
     def _isolated_profile(

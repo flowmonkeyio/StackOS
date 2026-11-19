@@ -219,7 +219,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         _spec(
             "selectAccount",
-            "Verify and save a desired account at the expected revision.",
+            "Activate the saved native login and record selection at the expected revision.",
             AccountSelectInput,
             WriteEnvelope[DesiredAccount],
             _select,

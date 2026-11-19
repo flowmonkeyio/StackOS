@@ -6,23 +6,12 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
-from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, TypedDict
 
-from stackos.host_mcp.accounts import ResolvedAccountSelection
-from stackos.host_mcp.adapters.codex_accounts import (
-    AuthExchange,
-    CodexAccountError,
-    CodexAccounts,
-    _home,
-    exact_thread,
-    exact_uuid,
-    ordinary_launch,
-    selected_launch,
-)
+from stackos.host_mcp.adapters.codex_accounts import CodexAccounts
 from stackos.host_mcp.agent_execution import InvocationCancelled, ManagedProcessControl
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
@@ -91,8 +80,6 @@ def run_agent(
     mcp_config_ref: dict[str, str] | None = None,
     native_settings: dict[str, Any] | None = None,
     process_control: ManagedProcessControl | None = None,
-    account_selection: ResolvedAccountSelection | None = None,
-    account_selection_current: Callable[[], bool] | None = None,
 ) -> AgentRunResult:
     """Run supplied instructions in a new or explicitly selected native thread."""
     if not instructions.strip():
@@ -111,68 +98,23 @@ def run_agent(
         sandbox = native_agent_sandbox(sandbox, native_settings or {})
     except ValueError as error:
         return AgentRunResult(None, error=str(error))
-    try:
-        if account_selection is None:
-            launch = ordinary_launch(codex_bin, env=subprocess_env_for_cli(codex_bin))
-        else:
-            launch = selected_launch(
-                codex_bin,
-                project_dir,
-                account_selection,
-                provider=provider,
-                overrides=overrides,
-                allowed=account_selection_current,
-            )
-        with launch as (env, auth_lease_fd), ExitStack() as writers:
-            store = AuthExchange(_home(env), lambda _: None)
-            inherited: tuple[int, ...] = (auth_lease_fd,)
-            reserved = None
-            if resume_thread_id is not None:
-                try:
-                    reserved = exact_uuid(resume_thread_id)
-                except CodexAccountError:
-                    if account_selection is not None:
-                        raise
-                if reserved is not None:
-                    inherited += (writers.enter_context(store.thread_lease(reserved)),)
-                if account_selection is not None:
-                    exact_thread(codex_bin, env, resume_thread_id, overrides=overrides)
-            if account_selection_current is not None and not account_selection_current():
-                raise CodexAccountError("Codex account selection changed before launch.")
-
-            def track_session(session_id: str) -> None:
-                nonlocal reserved
-                if reserved is None:
-                    try:
-                        observed = exact_uuid(session_id)
-                    except CodexAccountError:
-                        if account_selection is not None:
-                            raise
-                    else:
-                        writers.enter_context(store.thread_lease(observed))
-                        reserved = observed
-                if on_session is not None:
-                    on_session(session_id)
-
-            return _exec_agent(
-                codex_bin,
-                project_dir,
-                instructions,
-                prompt,
-                output_schema,
-                sandbox=sandbox,
-                model=model,
-                provider=provider,
-                overrides=overrides,
-                resume_thread_id=resume_thread_id,
-                on_session=track_session if on_session is not None or account_selection else None,
-                process_control=process_control,
-                env=env,
-                inherited=inherited,
-                private_diagnostics=mcp_config_ref is not None or account_selection is not None,
-            )
-    except CodexAccountError as exc:
-        return AgentRunResult(None, error=str(exc))
+    return _exec_agent(
+        codex_bin,
+        project_dir,
+        instructions,
+        prompt,
+        output_schema,
+        sandbox=sandbox,
+        model=model,
+        provider=provider,
+        overrides=overrides,
+        resume_thread_id=resume_thread_id,
+        on_session=on_session,
+        process_control=process_control,
+        env=subprocess_env_for_cli(codex_bin),
+        inherited=(),
+        private_diagnostics=mcp_config_ref is not None,
+    )
 
 
 def _exec_agent(

@@ -1042,21 +1042,25 @@ includes the desired revision, the native profile context and the expected
 principal/workspace tuple. Recheck native identity at the affected consumer
 and use the revision to detect a superseded request.
 
-Managed Codex switching uses a native file-backed sign-in. Enrollment opens
-first-party browser sign-in in the isolated Codex home and verifies the native
-principal and workspace before saving an account. Launches keep the regular
-`CODEX_HOME` and original thread UUID. Launchers using the same account can
-work on distinct conversations while holding the home read lease. A credential
-exchange requires all current holders to retire. The last selected launch
-returns the native file to its enrolled profile, including refreshes written
-by Codex. An unexpected native write leaves recovery evidence
-and blocks further use of the exchange. Keep concurrent unmanaged Codex login
-or execution out of a home used for managed account switching.
+Codex selection persistently replaces the normal file-backed
+`CODEX_HOME/auth.json`. Adoption saves the original login in the existing private
+host profile store before another account can overwrite it. Enrollment opens
+first-party browser sign-in in an isolated home and verifies the native principal
+and workspace. Selecting another account saves the outgoing native credentials,
+including native refreshes, then atomically installs the selected saved login.
+The registry changes its selected reference only after activation succeeds;
+a failed file replacement keeps the prior usable native login.
 
-An adopted default still uses its configured native store, including Keychain.
-An isolated account switch requires file mode. Strict Keychain, automatic
-store selection, and ephemeral storage decline the file exchange. A competing
-credential override or a missing exact thread also stops the managed launch.
+Normal Codex CLI and app launches retain the same `CODEX_HOME`, original
+conversations, settings and native capabilities. There is no per-child credential
+lease or automatic revert. Existing clients may cache their login; selecting an
+account does not restart clients or guarantee that an already running client
+reloads credentials. Avoid concurrent native login changes during selection.
+If the actual native principal differs from the outgoing saved account, selection
+fails instead of saving credentials under the wrong account.
+
+Codex adoption and switching require file mode. Keychain, automatic store
+selection, ephemeral storage and competing credential overrides fail closed.
 
 Managed Claude Code starts first-party subscription sign-in in a separate
 `CLAUDE_CONFIG_DIR`. Claude keeps its native Keychain or file-backed login.
