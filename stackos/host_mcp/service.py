@@ -19,6 +19,7 @@ from stackos import claude_mcp
 from stackos.host_mcp.accounts import HostAccounts, NativeAccountAdapter
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.adapters.claude_accounts import accounts as claude_accounts
+from stackos.host_mcp.adapters.grok_accounts import GrokAccounts
 from stackos.host_mcp.agent_execution import (
     ManagedProcessControl,
     managed_launch_lock,
@@ -1172,6 +1173,9 @@ def _single(
     )
 
 
+_grok_accounts = GrokAccounts(lambda: grok.resolve_grok_bin(default_home()))
+
+
 def _definitions() -> tuple[HostMcpDefinition, ...]:
     codex_reasoning: dict[str, tuple[str, ...]] = {
         model: ("low", "medium", "high", "xhigh", "max")
@@ -1367,6 +1371,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 ),
             ),
             run_agent=grok.run_agent,
+            account_adapter=_grok_accounts,
             subscription=lambda: _read_subscription(
                 grok.resolve_grok_bin(default_home()), read_grok
             ),
