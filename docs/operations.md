@@ -1062,14 +1062,21 @@ fails instead of saving credentials under the wrong account.
 Codex adoption and switching require file mode. Keychain, automatic store
 selection, ephemeral storage and competing credential overrides fail closed.
 
-Managed Claude Code starts first-party subscription sign-in in a separate
-`CLAUDE_CONFIG_DIR`. Claude keeps its native Keychain or file-backed login.
-The enrolled profile shares the native local transcript tree and user settings,
-and inherits the existing user and workspace MCP definitions at enrollment.
-Project settings and tools still load through Claude's native startup.
+Claude Code enrollment starts first-party subscription sign-in in a private
+profile with both `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` set.
+Adoption captures the original subscription in the existing host profile store.
+Selection saves outgoing native refreshes, then replaces only `claudeAiOauth`
+in the native secure-store object and `oauthAccount` in native `.claude.json`.
+Other credential entries, MCP configuration, workspace trust, settings and
+transcripts remain in their original native locations. A metadata write failure
+restores the prior credential object and reports failure.
 
-Automated Claude runs check for an existing writer before resuming the original
-local transcript by its exact path.
+On macOS, the native Keychain service is primary; a missing item may use the
+native `.credentials.json` fallback. A locked or unreadable primary item stops
+selection. Writes use the native `security` command's stdin protocol and reject
+oversized payloads without passing secrets in arguments. Ordinary Claude runs
+and resume keep native defaults and original session IDs. Existing clients may
+cache credentials; selection does not restart them or guarantee immediate reload.
 
 ## Browser Operations
 

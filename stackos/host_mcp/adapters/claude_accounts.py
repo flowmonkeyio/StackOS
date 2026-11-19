@@ -1,4 +1,4 @@
-"""Claude Code profile selection, native identity, and local transcript ownership."""
+"""Claude Code native sign-in, identity and persistent subscription selection."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ import os
 import shutil
 import stat
 import subprocess
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,10 +20,10 @@ from stackos.host_mcp.accounts import (
     NativeAccountProfile,
     NativeIdentity,
     NativeIdentityIssue,
-    ResolvedAccountSelection,
     _private_directory,
     _private_fd,
 )
+from stackos.host_mcp.adapters import claude_credentials as credentials
 from stackos.host_mcp.agent_execution import ManagedProcessControl
 from stackos.host_mcp.discovery import subprocess_env_for_cli
 from stackos.host_mcp.subscription_native import run_capture
@@ -48,17 +46,6 @@ _COMPETING_ENV = {
     "CLAUDE_CODE_REMOTE",
     "CLAUDE_CODE_SKIP_AUTH",
 }
-_USER_FILES = (
-    "settings.json",
-    "CLAUDE.md",
-    "keybindings.json",
-    "agents",
-    "commands",
-    "skills",
-    "rules",
-    "plugins",
-    "output-styles",
-)
 _LOGIN_LEASE = ".stackos-claude-login"
 _MAX_CONFIG_BYTES = 8 * 1024 * 1024
 
@@ -88,6 +75,7 @@ def _identity_env(binary: str, profile: NativeAccountProfile) -> dict[str, str]:
     if profile.directory is not None:
         _private_directory(profile.directory, "unsafe_profile")
         env["CLAUDE_CONFIG_DIR"] = str(profile.directory)
+        env["CLAUDE_SECURESTORAGE_CONFIG_DIR"] = str(profile.directory)
     return env
 
 
@@ -128,7 +116,10 @@ def check_auth_settings(env: dict[str, str], cwd: Path | None) -> None:
         overrides = settings.get("env")
         if settings.get("apiKeyHelper") or (
             isinstance(overrides, dict)
-            and any(overrides.get(key) for key in _COMPETING_ENV | {"CLAUDE_CONFIG_DIR"})
+            and any(
+                overrides.get(key)
+                for key in _COMPETING_ENV | {"CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"}
+            )
         ):
             raise ClaudeAccountError("Competing Claude Code authentication is configured.")
 
@@ -156,7 +147,6 @@ def _paths(status: dict, env: dict[str, str]) -> ClaudeProfile:
 def _read_oauth_account_metadata(path: Path) -> tuple[str, str, str]:
     # Native auth status verifies the login and reports the email and organization.
     # It omits the person UUID, which Claude stores in this separate metadata object.
-    # Do not open .credentials.json, query Keychain, or retain the config payload.
     row = read_native_object(path, _MAX_CONFIG_BYTES)["oauthAccount"]
     return _uuid(row["accountUuid"]), _uuid(row["organizationUuid"]), row["emailAddress"]
 
@@ -177,35 +167,6 @@ def read_native_object(path: Path, limit: int = 4096) -> dict:
     if not isinstance(value, dict):
         raise ValueError("Expected native metadata object")
     return value
-
-
-def _seed_tool_config(default: ClaudeProfile, directory: Path) -> None:
-    # Claude keeps user/local MCP definitions and workspace trust in the same
-    # native file as its account metadata. Carry over only tool configuration
-    # and existing local choices. OAuth and other native state stay behind.
-    try:
-        original = read_native_object(default.metadata, _MAX_CONFIG_BYTES)
-    except FileNotFoundError:
-        return
-    result = {key: original[key] for key in ("mcpServers",) if key in original}
-    if original.get("hasCompletedOnboarding") is True:
-        result["hasCompletedOnboarding"] = True
-    if isinstance(projects := original.get("projects"), dict):
-        keys = {
-            "mcpServers",
-            "hasTrustDialogAccepted",
-            "enabledMcpjsonServers",
-            "disabledMcpjsonServers",
-        }
-        result["projects"] = {
-            path: {key: row[key] for key in keys & row.keys()}
-            for path, row in projects.items()
-            if isinstance(row, dict) and keys & row.keys()
-        }
-    if result:
-        fd = _private_fd(directory / ".claude.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-        with os.fdopen(fd, "w") as stream:
-            json.dump(result, stream)
 
 
 def _identity(status: dict, paths: ClaudeProfile) -> NativeIdentity | NativeIdentityIssue:
@@ -233,148 +194,99 @@ def _identity(status: dict, paths: ClaudeProfile) -> NativeIdentity | NativeIden
         return "unavailable"
 
 
-def selected_profile(
-    binary: str,
-    selection: ResolvedAccountSelection,
-    cwd: Path | None = None,
-) -> tuple[dict[str, str], ClaudeProfile]:
-    selected = selection.desired.account_ref is not None
-    profile = selection.profile
-    if selected and (profile is None or selection.principal_key is None):
-        raise ClaudeAccountError("Claude Code has no verified profile for this account.")
-    env = _identity_env(binary, profile or NativeAccountProfile(None, None))
-    status = _status(binary, env, cwd)
-    paths = _paths(status, env)
-    identity = _identity(status, paths)
-    if not isinstance(identity, NativeIdentity) or (
-        selected and identity.principal_key != selection.principal_key
-    ):
-        raise ClaudeAccountError("Claude Code did not confirm the selected subscription account.")
-    # An implicit default and an explicit override of the same directory use
-    # different native global metadata. Preserve the original selection mode.
-    return env, paths
-
-
-def _transcript_matches(path: Path, session_id: str, cwd: Path) -> bool:
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(fd, "rb") as file:
-        info = os.fstat(file.fileno())
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or info.st_mode & 0o022
-            or info.st_nlink != 1
-        ):
-            return False
-        remaining = _MAX_CONFIG_BYTES
-        while remaining > 0 and (line := file.readline(remaining + 1)):
-            remaining -= len(line)
-            if remaining < 0:
-                return False
-            try:
-                value = json.loads(line)
-                if value.get("sessionId") == session_id and value.get("type") in {
-                    "user",
-                    "assistant",
-                }:
-                    origin = Path(value["cwd"])
-                    return origin.is_absolute() and origin.resolve() == cwd
-            except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
-                continue
-        return False
-
-
-def resume_transcript(paths: ClaudeProfile, session_id: str, cwd: Path) -> Path:
-    try:
-        _uuid(session_id)
-        root = paths.projects.resolve(strict=True)
-        matches = [
-            path for path in root.glob(f"*/{session_id}.jsonl") if not path.parent.is_symlink()
-        ]
-        if len(matches) == 1 and _transcript_matches(matches[0], session_id, cwd.resolve()):
-            return matches[0]
-    except (OSError, ValueError, RuntimeError):
-        pass
-    raise ClaudeAccountError(
-        "The exact local Claude Code transcript is missing, ambiguous, or outside this workspace. "
-        "Resume a saved local conversation from its original workspace."
-    )
-
-
-def ensure_transcript_inactive(
-    binary: str,
-    env: dict[str, str],
-    paths: ClaudeProfile,
-    selection: ResolvedAccountSelection,
-    cwd: Path,
-    session_id: str,
-    *,
-    owned_pid: int | None = None,
-) -> None:
-    """Check native writers in the selected and known profiles sharing the transcript."""
-    try:
-        root = paths.projects.resolve()
-        inherited = subprocess_env_for_cli(binary)
-        home = Path(inherited.get("HOME") or Path.home())
-        default = Path(inherited.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser()
-        selected = paths.config.resolve()
-        profiles = {selected: env}
-        candidates = (default, home / ".claude", *selection.enrolled_directories)
-        if root.name == "projects":
-            candidates += (root.parent,)
-        for directory in candidates:
-            if (directory / "projects").resolve() == root:
-                config = directory.resolve()
-                profiles.setdefault(config, {**env, "CLAUDE_CONFIG_DIR": str(config)})
-        for config, profile_env in profiles.items():
-            result = run_capture(binary, ["agents", "--json"], cwd=cwd, env=profile_env)
-            if result is None or result.returncode:
-                raise ValueError
-            sessions = json.loads(result.stdout)
-            if not isinstance(sessions, list) or any(not isinstance(row, dict) for row in sessions):
-                raise ValueError
-            for row in sessions:
-                if row.get("sessionId") != session_id:
-                    continue
-                if owned_pid is not None and row.get("pid") == owned_pid and config == selected:
-                    continue
-                raise ClaudeAccountError(
-                    "The requested Claude Code conversation has an active native session."
-                )
-    except (OSError, ValueError, RecursionError, RuntimeError):
-        raise ClaudeAccountError(
-            "Claude Code could not confirm that the local session is inactive."
-        ) from None
-
-
-@contextmanager
-def transcript_writer(session_id: str) -> Iterator[int]:
-    """Keep one shared writer lease across StackOS Claude profiles and processes."""
-    try:
-        _uuid(session_id)
-        directory = Path(f"/tmp/stackos-claude-leases-{os.getuid()}")
-        directory.mkdir(mode=0o700, exist_ok=True)
-        _private_directory(directory, "unsafe_profile")
-        fd = _private_fd(directory / session_id, os.O_RDWR | os.O_CREAT)
-    except (HostAccountError, OSError, ValueError):
-        raise ClaudeAccountError("The Claude Code conversation lease is unavailable.") from None
-    try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            raise ClaudeAccountError(
-                "This Claude Code conversation already has a writer."
-            ) from None
-        yield fd
-    finally:
-        os.close(fd)
-
-
 class ClaudeAccounts:
     """Native first-party sign-in in a separate, owner-private config directory."""
 
     def __init__(self) -> None:
         self._logins: dict[Path, ManagedProcessControl] = {}
+
+    @staticmethod
+    def _native() -> tuple[str, dict[str, str], ClaudeProfile]:
+        binary = claude_mcp.resolve_claude_bin()
+        if binary is None:
+            raise ClaudeAccountError("Claude Code CLI is unavailable.")
+        env = subprocess_env_for_cli(binary)
+        return binary, env, _paths(_status(binary, env), env)
+
+    def capture(self, profile: NativeAccountProfile) -> None:
+        binary, env, paths = self._native()
+        if profile.directory is None:
+            raise ClaudeAccountError("Claude adoption requires a private saved profile.")
+        saved_env = _identity_env(binary, profile)
+        self._save_login(env, paths.metadata, saved_env, profile.directory / ".claude.json")
+
+    @staticmethod
+    def _save_login(source_env, source_metadata, target_env, target_metadata) -> None:
+        source, _ = credentials.read_store(source_env)
+        oauth = source.get("claudeAiOauth")
+        account = read_native_object(source_metadata, _MAX_CONFIG_BYTES).get("oauthAccount")
+        if not isinstance(oauth, dict) or not oauth or not isinstance(account, dict):
+            raise ClaudeAccountError("Claude subscription credentials are unavailable.")
+        ClaudeAccounts._write_login(target_env, target_metadata, oauth, account)
+
+    @staticmethod
+    def _write_login(target_env, target_metadata, oauth, account) -> None:
+        target, backend = credentials.read_store(target_env)
+        try:
+            metadata = read_native_object(target_metadata, _MAX_CONFIG_BYTES)
+        except FileNotFoundError:
+            metadata = {}
+        updated_store = {key: value for key, value in target.items() if key != "claudeAiOauth"}
+        updated_metadata = {key: value for key, value in metadata.items() if key != "oauthAccount"}
+        if oauth is not None:
+            updated_store["claudeAiOauth"] = oauth
+            updated_metadata["oauthAccount"] = account
+        credentials.write_store(target_env, updated_store, backend)
+        try:
+            credentials.write_object(target_metadata, updated_metadata)
+        except Exception:
+            # Restore the prior secure-store object if the separate metadata write fails.
+            try:
+                credentials.write_store(target_env, target, backend)
+            except Exception:
+                raise HostAccountError("selection_restore_failed") from None
+            raise
+
+    def activate(
+        self, profile: NativeAccountProfile | None, outgoing: NativeAccountProfile | None
+    ) -> None:
+        binary, env, paths = self._native()
+        active = _identity(_status(binary, env), paths)
+        if outgoing is None:
+            if active != "needs_sign_in" or profile is None:
+                raise ClaudeAccountError(
+                    "Adopt the current Claude login before switching accounts."
+                )
+        else:
+            previous = self.read_identity(outgoing)
+            if (
+                outgoing.directory is None
+                or not isinstance(active, NativeIdentity)
+                or not isinstance(previous, NativeIdentity)
+                or active.principal_key != previous.principal_key
+            ):
+                raise ClaudeAccountError(
+                    "The native Claude login changed outside account selection."
+                )
+            self._save_login(
+                env,
+                paths.metadata,
+                _identity_env(binary, outgoing),
+                outgoing.directory / ".claude.json",
+            )
+        if profile is None:
+            self._write_login(env, paths.metadata, None, None)
+            return
+        selected = self.read_identity(profile)
+        if profile.directory is None or not isinstance(selected, NativeIdentity):
+            raise ClaudeAccountError("Claude could not verify the selected native account.")
+        if not isinstance(active, NativeIdentity) or selected.principal_key != active.principal_key:
+            self._save_login(
+                _identity_env(binary, profile),
+                profile.directory / ".claude.json",
+                env,
+                paths.metadata,
+            )
 
     def read_identity(self, profile: NativeAccountProfile) -> NativeIdentity | NativeIdentityIssue:
         binary = claude_mcp.resolve_claude_bin()
@@ -399,18 +311,6 @@ class ClaudeAccounts:
         default = _paths(_status(binary, default_env), default_env)
         if default.config.resolve() == directory.resolve():
             raise ClaudeAccountError("Claude Code enrollment requires a distinct profile.")
-        # Share the local transcript tree and user configuration files. The native
-        # global metadata, authentication/keychain entry, and caches stay profile-local.
-        default.projects.mkdir(mode=0o700, parents=True, exist_ok=True)
-        (directory / "projects").symlink_to(
-            default.projects.resolve(strict=True), target_is_directory=True
-        )
-        for name in _USER_FILES:
-            source = default.config / name
-            if source.exists():
-                (directory / name).symlink_to(source, target_is_directory=source.is_dir())
-        _seed_tool_config(default, directory)
-        _paths(_status(binary, env), env)
         fd = _private_fd(directory / _LOGIN_LEASE, os.O_RDWR | os.O_CREAT | os.O_EXCL)
         control = ManagedProcessControl()
         try:

@@ -5,21 +5,10 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from stackos import claude_mcp
-from stackos.host_mcp.accounts import HostAccountError, ResolvedAccountSelection
-from stackos.host_mcp.adapters.claude_accounts import (
-    ClaudeAccountError,
-    ensure_transcript_inactive,
-    resume_transcript,
-    selected_profile,
-    transcript_writer,
-)
 from stackos.host_mcp.agent_execution import ManagedProcessControl, execute_json_agent, json_object
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
@@ -52,8 +41,6 @@ def run_agent(
     profile: str | None = None,
     resume_thread_id: str | None = None,
     process_control: ManagedProcessControl | None = None,
-    account_selection: ResolvedAccountSelection | None = None,
-    account_selection_current: Callable[[], bool] | None = None,
 ) -> AgentRunResult:
     cli = claude_mcp.resolve_claude_bin()
     if cli is None:
@@ -84,50 +71,6 @@ def run_agent(
         command += ["--model", model]
     if model_reasoning_effort is not None:
         command += ["--effort", model_reasoning_effort]
-    if account_selection is not None and account_selection.desired.account_ref is not None:
-        try:
-            env, paths = selected_profile(cli, account_selection, project_dir)
-            session_id = resume_thread_id or str(uuid4())
-            with transcript_writer(session_id) as fd:
-                if resume_thread_id is not None:
-                    path = resume_transcript(paths, session_id, project_dir)
-                    ensure_transcript_inactive(
-                        cli, env, paths, account_selection, project_dir, session_id
-                    )
-                    command += ["--resume", str(path)]
-                else:
-                    command += ["--session-id", session_id]
-                if account_selection_current is not None and not account_selection_current():
-                    raise ClaudeAccountError("Claude Code account selection changed before launch.")
-                result = execute_json_agent(
-                    command,
-                    project_dir,
-                    prompt,
-                    output_schema,
-                    "Claude Code",
-                    lambda stdout: _agent_result(
-                        stdout, native_version=_native_version(cli, project_dir, env)
-                    ),
-                    env,
-                    (fd,),
-                    process_control=process_control,
-                )
-                if result.thread_id != session_id and (result.ok or result.thread_id is not None):
-                    return replace(
-                        result,
-                        thread_id=None,
-                        result=None,
-                        usage=None,
-                        error="Claude Code returned a different native conversation ID.",
-                    )
-                return result
-        except (ClaudeAccountError, HostAccountError) as exc:
-            diagnostic = (
-                str(exc)
-                if isinstance(exc, ClaudeAccountError)
-                else "Claude Code profile is unavailable."
-            )
-            return AgentRunResult(None, error=diagnostic)
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
     return execute_json_agent(

@@ -460,6 +460,13 @@ inside native adapter file handling and never enter inventory or operation
 responses. Settings and transcripts stay in the same native home. A foreign
 native principal or unsupported credential backend prevents switching.
 
+Claude selection changes only the native `claudeAiOauth` subscription object
+and its `oauthAccount` metadata. Other secure-store entries and native global
+configuration remain intact. macOS Keychain reads and stdin-only writes stay
+inside the provider adapter; a locked primary item cannot silently fall back
+to file storage. Isolated enrollment overrides both native configuration and
+secure-storage directories so inherited settings cannot target another login.
+
 The exact registered `hostMcp` account operation routes require local operator
 REST authority. The account inventory is separate from the general
 `hostMcp.status` feed. Provider replies stay inside the adapter. The local

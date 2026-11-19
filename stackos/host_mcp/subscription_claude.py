@@ -5,8 +5,6 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from .accounts import HostAccountError, ResolvedAccountSelection
-from .adapters.claude_accounts import ClaudeAccountError, selected_profile
 from .subscription_native import run_capture
 
 # The CLI added auth status in 2.1.41 and structured /usage in 2.1.273.
@@ -87,14 +85,8 @@ def _meters(stdout: str) -> list[dict[str, Any]]:
 
 def read_claude(
     binary: str,
-    selection: ResolvedAccountSelection | None = None,
 ) -> dict[str, Any] | None:
     env = None
-    if selection is not None and selection.desired.account_ref is not None:
-        try:
-            env, _ = selected_profile(binary, selection)
-        except (ClaudeAccountError, HostAccountError):
-            return None
     version = run_capture(binary, ["--version"], env=env)
     if (
         version is None
