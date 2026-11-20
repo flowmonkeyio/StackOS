@@ -363,9 +363,10 @@ class AgentBridgeProxy:
             return
         try:
             out = self.request_daemon(
-                client, _bridge_make_tool_call_payload(
+                client,
+                _bridge_make_tool_call_payload(
                     "stackos-bridge-resolve", "workspace.resolve", {**args, "response_mode": "raw"}
-                )
+                ),
             )
             envelope = json.loads(out)
         except Exception:
@@ -386,18 +387,26 @@ class AgentBridgeProxy:
             # A workspace can resolve ambiguously even while its selected project
             # remains valid. Only a definitive not-found response permits recovery.
             try:
-                probe = json.loads(self.request_daemon(
-                    client, _bridge_make_tool_call_payload(
-                        "stackos-bridge-project-check", "project.get",
-                        {"project_id": self.scoped_project_id, "response_mode": "raw"},
+                probe = json.loads(
+                    self.request_daemon(
+                        client,
+                        _bridge_make_tool_call_payload(
+                            "stackos-bridge-project-check",
+                            "project.get",
+                            {"project_id": self.scoped_project_id, "response_mode": "raw"},
+                        ),
                     )
-                ))
+                )
             except Exception:
                 return
             result = probe.get("result") if isinstance(probe, dict) else None
             error = result.get("structuredContent") if isinstance(result, dict) else None
-            if not (isinstance(result, dict) and result.get("isError") is True
-                    and isinstance(error, dict) and error.get("code") == -32004):
+            if not (
+                isinstance(result, dict)
+                and result.get("isError") is True
+                and isinstance(error, dict)
+                and error.get("code") == -32004
+            ):
                 return
             self.scoped_project_id = None
             self.allowed_by_run.clear()
