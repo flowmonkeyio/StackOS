@@ -939,12 +939,12 @@ host's plan and quota windows with scope, percentage remaining and optional
 reset time. An unavailable host reading is null. Native registration, agent
 selection and Doctor do not invoke subscription checks.
 
-Each host resolves its selected account before and after its native read. A
-changed account reference or generation discards only that host's reading and
-returns its current selection. If a selected profile cannot be resolved, that
-host's reading is null and its entry is omitted from `selections`; no native
-default or empty selection is substituted. Healthy siblings retain their own
-readings and selections. A native reader failure alone still returns the
+Each host resolves its selected account before its native read and again after
+all native readers finish. A changed account reference or generation discards
+only that host's reading and returns its current selection. If a selected
+profile cannot be resolved, that host's reading is null and its entry is omitted
+from `selections`; no native default or empty selection is substituted. Healthy
+siblings retain their own readings and selections. A native reader failure alone still returns the
 resolved selection with a null reading.
 
 For Home connected tools, existing `account.list` and `connection.list` accept

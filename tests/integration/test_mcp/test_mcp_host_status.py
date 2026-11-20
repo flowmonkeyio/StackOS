@@ -1,5 +1,6 @@
 """The console can read safe host status; scoped agents cannot inspect other hosts."""
 
+import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
@@ -12,6 +13,7 @@ from stackos.host_mcp import service
 from stackos.host_mcp.accounts import HostAccountError, HostAccounts
 from stackos.host_mcp.result import HostMcpResult
 from stackos.operations import build_operation_registry
+from stackos.operations import system as system_operations
 
 from .conftest import MCPClient
 from .test_mcp_bridge_agent_path import (
@@ -254,6 +256,80 @@ def test_subscription_read_drops_only_the_account_that_changed(
         "claude-code": {"plan": "Unchanged sibling", "meters": []},
     }
     assert snapshot["selections"]["codex"] == current.model_dump()
+
+
+@pytest.mark.parametrize("transition", ["A-to-B", "A-to-B-to-A", "delete-profile"])
+def test_subscription_snapshot_fences_a_finished_reader_until_siblings_finish(
+    mcp_client, monkeypatch, subscription_accounts, transition
+):
+    store, natives = subscription_accounts
+    first = store.resolve("codex")
+    enrollment = str(uuid4())
+    assert store.add("codex", enrollment).status == "pending"
+    natives["codex"].identities[natives["codex"].started[-1].ref] = B
+    second = store.complete("codex", enrollment)
+    assert second.status == "enrolled" and second.account_ref is not None
+    fast_finished, sibling_entered, release = Event(), Event(), Event()
+
+    def fast_reader():
+        return {"plan": "Old A quota", "meters": []}
+
+    original_to_thread = system_operations.to_thread
+
+    async def observe_completion(function, *args, **kwargs):
+        result = await original_to_thread(function, *args, **kwargs)
+        if args and args[0] is fast_reader:
+            # Observe the next loop turn after the caller receives the native
+            # result. Keep real account resolution and thread execution intact.
+            asyncio.get_running_loop().call_soon(fast_finished.set)
+        return result
+
+    monkeypatch.setattr(system_operations, "to_thread", observe_completion)
+
+    def slow_sibling():
+        sibling_entered.set()
+        assert release.wait(5), "held sibling reader was not released"
+        return {"plan": "Healthy held sibling", "meters": []}
+
+    monkeypatch.setattr(
+        service,
+        "subscription_readers",
+        lambda: {"codex": fast_reader, "claude-code": slow_sibling},
+    )
+    client = mcp_client.test_client
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(
+            client.post,
+            "/api/v1/operations/hostMcp.subscriptions/call",
+            json={"arguments": {}},
+            headers={"Authorization": f"Bearer {client.app.state.ui_token}"},
+        )
+        try:
+            assert sibling_entered.wait(5), "sibling reader did not start"
+            assert fast_finished.wait(5), "fast reader did not finish"
+            assert not pending.done()
+            if transition == "delete-profile":
+                assert first.profile is not None and first.profile.directory is not None
+                first.profile.directory.rmdir()
+                expected_selection = None
+            else:
+                current = store.select("codex", second.account_ref, first.desired.revision)
+                if transition == "A-to-B-to-A":
+                    current = store.select("codex", first.desired.account_ref, current.revision)
+                expected_selection = current.model_dump()
+        finally:
+            release.set()
+        response = pending.result(timeout=5)
+    assert response.status_code == 200, response.text
+    snapshot = response.json()
+    assert snapshot["readings"] == {
+        "codex": None,
+        "claude-code": {"plan": "Healthy held sibling", "meters": []},
+    }
+    assert snapshot["selections"].get("codex") == expected_selection
+    assert (
+        snapshot["selections"]["claude-code"] == store.resolve("claude-code").desired.model_dump()
+    )
 
 
 def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspected) -> None:

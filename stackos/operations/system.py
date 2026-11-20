@@ -139,22 +139,30 @@ async def host_subscriptions(
         try:
             before = accounts.resolve(key).desired
             reading = await to_thread(read, reader)
-            selected = accounts.resolve(key).desired
         except Exception:
             # An unusable selected profile invalidates only this host. Do not
             # read native defaults or invent an identity when resolution fails.
             return None, None
-        return reading if before == selected else None, selected
+        return reading, before
 
     results = await gather(*(read_host(key, reader) for key, reader in readers.items()))
+    readings: dict[str, HostSubscription | None] = {}
+    selections: dict[str, DesiredAccount] = {}
+    # A finished host can change while a sibling is still pending. Revalidate
+    # every selection after all readers finish, isolating resolution failures.
+    for key, (reading, before) in zip(readers, results, strict=True):
+        readings[key] = None
+        try:
+            selected = accounts.resolve(key).desired
+        except Exception:
+            continue
+        selections[key] = selected
+        readings[key] = reading if before == selected else None
+
     return HostSubscriptionsOut(
         checked_at=datetime.now(UTC),
-        readings={key: result[0] for key, result in zip(readers, results, strict=True)},
-        selections={
-            key: selected
-            for key, (_, selected) in zip(readers, results, strict=True)
-            if selected is not None
-        },
+        readings=readings,
+        selections=selections,
     )
 
 
