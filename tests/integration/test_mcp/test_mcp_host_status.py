@@ -1,13 +1,15 @@
 """The console can read safe host status; scoped agents cannot inspect other hosts."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
-from threading import get_ident
+from threading import Event, get_ident
+from uuid import uuid4
 
 import pytest
 
 from stackos.host_mcp import service
-from stackos.host_mcp.accounts import DesiredAccount, ResolvedAccountSelection
+from stackos.host_mcp.accounts import HostAccountError, HostAccounts
 from stackos.host_mcp.result import HostMcpResult
 from stackos.operations import build_operation_registry
 
@@ -19,6 +21,7 @@ from .test_mcp_bridge_agent_path import (
     _send,
     _toolbox_call,
 )
+from .test_mcp_host_accounts import B, FakeNativeAccounts
 
 
 @pytest.fixture
@@ -131,24 +134,94 @@ def test_console_subscription_snapshot_is_independent_and_allowlisted(mcp_client
     }
 
 
-@pytest.mark.parametrize("new_ref", ["a" * 8, "b" * 8])
-def test_subscription_read_drops_only_the_account_that_changed(
-    mcp_client: MCPClient, monkeypatch: pytest.MonkeyPatch, new_ref: str
-) -> None:
-    first = "aaaaaaaa-1111-2222-3333-444444444444"
-    current = DesiredAccount(account_ref=first, revision=1)
+@pytest.fixture
+def subscription_accounts(tmp_path, monkeypatch):
+    natives = {key: FakeNativeAccounts() for key in ("codex", "claude-code", "grok")}
+    store = HostAccounts(tmp_path, natives)
+    for host_key in natives:
+        account = store.adopt(host_key)
+        store.select(host_key, account.account_ref, 0)
+    monkeypatch.setattr(service, "host_accounts", lambda _data_dir: store)
+    return store, natives
 
-    class Accounts:
-        def resolve(self, host_key: str) -> ResolvedAccountSelection:
-            return ResolvedAccountSelection(current if host_key == "codex" else DesiredAccount())
+
+@pytest.mark.parametrize("host_key", ["codex", "claude-code", "grok"])
+@pytest.mark.parametrize("delete_during_read", [False, True])
+def test_subscription_read_isolates_a_deleted_selected_profile(
+    mcp_client, monkeypatch, subscription_accounts, host_key, delete_during_read
+):
+    store, natives = subscription_accounts
+    selected = {key: store.resolve(key) for key in natives}
+    profile = selected[host_key].profile
+    assert profile is not None and profile.directory is not None
+    calls = []
+    healthy = {
+        key: {
+            "plan": f"Selected {key} quota",
+            "meters": [{"scope": "Weekly", "remaining_percent": 37, "resets_at": None}],
+        }
+        for key in natives
+    }
+
+    def reader(key):
+        def read():
+            calls.append(key)
+            if key == host_key:
+                assert delete_during_read
+                profile.directory.rmdir()
+            return healthy[key]
+
+        return read
+
+    # Put the damaged host first: its preflight must not prevent sibling reads.
+    monkeypatch.setattr(
+        service,
+        "subscription_readers",
+        lambda: {key: reader(key) for key in (host_key, *sorted(natives.keys() - {host_key}))},
+    )
+    if not delete_during_read:
+        profile.directory.rmdir()
+    client = mcp_client.test_client
+    response = client.post(
+        "/api/v1/operations/hostMcp.subscriptions/call",
+        json={"arguments": {}},
+        headers={"Authorization": f"Bearer {client.app.state.ui_token}"},
+    )
+    assert response.status_code == 200, response.text
+    snapshot = response.json()
+    assert snapshot["checked_at"]
+    assert snapshot["readings"] == {**healthy, host_key: None}
+    assert snapshot["selections"] == {
+        key: selection.desired.model_dump()
+        for key, selection in selected.items()
+        if key != host_key
+    }
+    assert sorted(calls) == sorted(key for key in natives if delete_during_read or key != host_key)
+    # Damage stays selected; the read must neither switch nor invent native defaults.
+    assert store.inventory().hosts[host_key].desired == selected[host_key].desired
+    with pytest.raises(HostAccountError, match="profile_missing"):
+        store.resolve(host_key)
+    assert all(len(native.activations) == 1 for native in natives.values())
+
+
+@pytest.mark.parametrize("return_to_original", [False, True])
+def test_subscription_read_drops_only_the_account_that_changed(
+    mcp_client, monkeypatch, subscription_accounts, return_to_original
+) -> None:
+    store, natives = subscription_accounts
+    first = store.resolve("codex").desired
+    enrollment = str(uuid4())
+    assert store.add("codex", enrollment).status == "pending"
+    natives["codex"].identities[natives["codex"].started[-1].ref] = B
+    second = store.complete("codex", enrollment)
+    assert second.status == "enrolled" and second.account_ref is not None
+    entered, release = Event(), Event()
 
     def interrupted_read():
-        nonlocal current
-        # Covers both A -> B and A -> B -> A while a native quota read is held.
-        current = DesiredAccount(account_ref=f"{new_ref}-1111-2222-3333-444444444444", revision=3)
+        entered.set()
+        assert release.wait(5), "held quota reader was not released"
         return {"plan": "Old account quota", "meters": []}
 
-    monkeypatch.setattr(service, "host_accounts", lambda _data_dir: Accounts())
     monkeypatch.setattr(
         service,
         "subscription_readers",
@@ -158,11 +231,22 @@ def test_subscription_read_drops_only_the_account_that_changed(
         },
     )
     client = mcp_client.test_client
-    result = client.post(
-        "/api/v1/operations/hostMcp.subscriptions/call",
-        json={"arguments": {}},
-        headers={"Authorization": f"Bearer {client.app.state.ui_token}"},
-    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(
+            client.post,
+            "/api/v1/operations/hostMcp.subscriptions/call",
+            json={"arguments": {}},
+            headers={"Authorization": f"Bearer {client.app.state.ui_token}"},
+        )
+        try:
+            assert entered.wait(5), "quota reader did not start"
+            current = store.select("codex", second.account_ref, first.revision)
+            if return_to_original:
+                current = store.select("codex", first.account_ref, current.revision)
+            assert current != first
+        finally:
+            release.set()
+        result = pending.result(timeout=5)
     assert result.status_code == 200, result.text
     snapshot = result.json()
     assert snapshot["readings"] == {
@@ -250,3 +334,34 @@ def test_scoped_agent_cannot_inspect_host_status(
     assert result["result"]["isError"] is True, result
     assert "local-admin" in str(result), result
     assert inspected == []
+
+
+def test_scoped_agent_cannot_read_subscriptions(
+    mcp_client, seeded_project, monkeypatch, subscription_accounts
+):
+    store, _ = subscription_accounts
+    before = store.inventory()
+    calls = []
+
+    def reader():
+        calls.append("codex")
+        return {"plan": "Unauthorized quota", "meters": []}
+
+    monkeypatch.setattr(service, "subscription_readers", lambda: {"codex": reader})
+    mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "repo_fingerprint": "path:subscriptions",
+            "last_known_root": "/tmp/subscriptions",
+        },
+    )
+    proxy, client = _scoped_bridge(
+        mcp_client, cwd="/tmp/subscriptions", repo_fingerprint="path:subscriptions"
+    )
+    _initialize(proxy, client)
+    result = _toolbox_call(proxy, client, "hostMcp.subscriptions", {})
+    assert result["result"]["isError"] is True, result
+    assert "hostMcp.subscriptions" in str(result), result
+    assert not calls
+    assert store.inventory() == before
