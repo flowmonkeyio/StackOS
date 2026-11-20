@@ -70,6 +70,8 @@ Partial edits may exist after interruption/cancellation. No rollback is implied.
 For ready_to_use preparation, return a partial report with the bounded adoption_proposal when
 saved defaults need adoption or post-adoption native verification remains. The managed owner
 validates and adopts it after this invocation retires, then links the verification continuation.
+Use projectSetup.get.delivery_defaults_digest as expected_delivery_digest in the proposal;
+this read-only scoped digest is not a launch-preferences preview and grants no write authority.
 Never call configureDelivery or invent local-admin authority. In verification, read the supplied
 canonical adoption_readback, reuse current matching proof and perform only missing bounded checks
 selected by the workflow method. Record actual consumption separately from saved defaults.

@@ -279,6 +279,10 @@ remain inspectable while required activation is pending or blocked.
 
 `report.adoption_proposal` contains only the observed project/root/binding,
 expected saved-delivery digest and bounded role selections with provenance.
+Use the scoped `projectSetup.get.delivery_defaults_digest` for the proposal's
+`expected_delivery_digest`. Refresh it before reporting; the managed owner still
+rejects stale proposals. This does not grant access to the console-only
+`resolve_launch_preferences` preview or authorize a defaults write.
 Codex selections use exact source refs/digests; supported other hosts retain
 their native inline contracts. The repository validates and retains the proposal
 without writing defaults. It cannot supply trusted-local-admin context or an

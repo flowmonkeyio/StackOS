@@ -7176,6 +7176,8 @@ export interface components {
             configured_count: number;
             /** @default null */
             current_attempt: components["schemas"]["SetupAttempt"] | null;
+            /** Delivery Defaults Digest */
+            delivery_defaults_digest: string;
             /** Detail Ref */
             detail_ref: {
                 [key: string]: unknown;
