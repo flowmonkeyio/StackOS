@@ -2,14 +2,18 @@
 import { UiButton, UiSectionHeader } from '@/components/ui'
 import type { InsightsModel } from './insightsViewModel'
 
-defineProps<{
-  model: InsightsModel
-  status: string
-  hasRequest: boolean
-  requestAllowed: boolean
-  refreshAllowed: boolean
-  loading?: boolean
-}>()
+withDefaults(
+  defineProps<{
+    model: InsightsModel
+    status: string
+    hasRequest: boolean
+    requestAllowed: boolean
+    refreshAllowed: boolean
+    loading?: boolean
+    showControls?: boolean
+  }>(),
+  { showControls: true },
+)
 const emit = defineEmits<{ request: []; refresh: []; inspect: [recordRef: string] }>()
 </script>
 <template>
@@ -21,7 +25,7 @@ const emit = defineEmits<{ request: []; refresh: []; inspect: [recordRef: string
       title="AI categories and concerns"
       description="Reviewed suggestions from your finance agent. Proposed groups do not change source categories or financial totals."
     >
-      <template #actions>
+      <template v-if="showControls !== false" #actions>
         <UiButton :disabled="!requestAllowed" @click="emit('request')">{{
           hasRequest
             ? 'Request new category and concern review'

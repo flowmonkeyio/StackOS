@@ -46,20 +46,21 @@ proof = {
         "decision": "accept",
         "findings": [],
         "scope": (
-            "Candidate freshness, staged delta, exact transfer receipts and public hashes, "
-            "recovery completeness, desktop preservation and bounded retries."
+            "Candidate freshness, staged delta, exact transfer receipts and "
+            "public hashes, recovery completeness, desktop preservation and "
+            "bounded retries."
         ),
         "main_adjudication": (
-            "Accepted all three independent reviews; main separately viewed all four "
-            "production browser screenshots and checked final console."
+            "Accepted all three independent reviews; main separately viewed all "
+            "four production browser screenshots and checked final console."
         ),
         "source_checks": (
             "12 accepted file hashes,119 build-input hashes and protected baseline match."
         ),
         "artifact_identity_limit": (
             "No historical whole-output manifest existed at design acceptance. "
-            "Current output was independently pinned after verifying recorded hashes "
-            "and timestamps."
+            "Current output was independently pinned after verifying recorded "
+            "hashes and timestamps."
         ),
     },
     "sitemap": {
@@ -76,8 +77,10 @@ proof = {
     },
     "limits": [
         "Google processing pending; no claim about recrawl, page indexing or ranking.",
-        "No Hostinger cache purge performed. Ordinary public URLs and StackOS browser "
-        "served the verified candidate.",
+        (
+            "No Hostinger cache purge performed. Ordinary public URLs and "
+            "StackOS browser served the verified candidate."
+        ),
         "Two TLS verification timeouts were each retried once; original evidence retained.",
         "No desktop release, signing, install or daemon lifecycle mutation.",
     ],

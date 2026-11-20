@@ -170,10 +170,14 @@ def main():
             ],
             "protected_remote_only": ["/StackOS/", "/google1e7f2e5eaf4f6048.html"],
             "limits": [
-                "Historical manifest is bound to successful publication551 evidence; "
-                "live preflight must verify overwritten prior bytes before upload.",
-                "Desktop binaries and remote-only ownership are excluded. "
-                "Obsolete remote assets are retained.",
+                (
+                    "Historical manifest is bound to successful publication551 evidence; "
+                    "live preflight must verify overwritten prior bytes before upload."
+                ),
+                (
+                    "Desktop binaries and remote-only ownership are excluded. Obsolete "
+                    "remote assets are retained."
+                ),
             ],
         },
     )

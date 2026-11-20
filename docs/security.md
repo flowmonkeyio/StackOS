@@ -392,7 +392,8 @@ the bounded run abort control.
 registered operation. It validates one installed plugin and an available project;
 it neither provisions Finance files nor grants workflow execution. Finance file
 initialization remains with authenticated `finance.status` after explicit enablement.
-`plugin.disable` and legacy plugin mutation URLs remain daemon-admin surfaces.
+The UI cannot supply `config_json`, even as null. `plugin.disable` and other
+legacy plugin mutation URLs remain daemon-admin surfaces.
 `project.update` and `project.move` are browser-safe only for the bounded
 project management contract: explicit `scope: "catalog"`, display-name-only
 patches and single-project moves. Catalog scope requires authenticated REST
@@ -548,6 +549,17 @@ See [native browser sessions](browser-automation.md) for the full transport and
 lifecycle contract.
 
 ## UI Token Bootstrap Trade-Off
+
+The console bearer permits the exact POST route
+`/api/v1/projects/{positive_numeric_id}/plugins/{installed_slug}/enable`
+as local setup. Its body must be absent or an empty JSON object. Middleware
+rejects all configuration fields (including `config_json: null`), unknown keys,
+and other bodies before repository mutation. Normal project/plugin validation
+still applies. Enabling preserves existing configuration and does not provision,
+reset, or reconcile Finance files. The registered `plugin.enable` operation is
+also available for explicit setup, but the UI may not supply `config_json`.
+Neither path permits disable/install routes, MCP, or changes to agent grants.
+The daemon admin token retains its existing configuration-write authority.
 
 Adding `/api/v1/auth/ui-token` accepts a reduction in defence depth.
 

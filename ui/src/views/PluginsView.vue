@@ -28,6 +28,7 @@ import {
   type CatalogSort,
 } from './plugins/viewModel'
 import { useIntegrationAvailability } from './plugins/useIntegrationAvailability'
+import { usePluginEnablement } from './plugins/usePluginEnablement'
 
 type CatalogView = 'plugins' | 'providers'
 
@@ -109,6 +110,15 @@ function clearFilters(): void {
   search.value = ''
 }
 
+const enablement = usePluginEnablement(projectId, {
+  enable: catalogStore.enablePlugin,
+  refresh: (id) => {
+    const freshPlugins = catalogStore.refreshPlugins(id, { silent: true, force: true })
+    return Promise.all([freshPlugins, catalogStore.refresh(id), inventory.refresh(id)])
+  },
+})
+const { pendingSlug, error: enableError, message: enableMessage } = enablement
+
 const { refresh } = useProjectScopedLoader({
   projectId,
   load: ({ projectId }) => Promise.all([catalogStore.refresh(projectId), inventory.refresh(projectId)]),
@@ -156,9 +166,21 @@ const { refresh } = useProjectScopedLoader({
     </UiCallout>
 
     <UiCallout
-      v-if="availabilityError"
-      tone="warning"
+      v-if="enableError"
+      tone="danger"
+      role="alert"
     >
+      {{ enableError }}
+    </UiCallout>
+    <UiCallout
+      v-if="enableMessage"
+      tone="success"
+      role="status"
+    >
+      {{ enableMessage }}
+    </UiCallout>
+
+    <UiCallout v-if="availabilityError" tone="warning">
       Availability unavailable. The catalog is still available; refresh to retry the integration check.
     </UiCallout>
 
@@ -235,6 +257,9 @@ const { refresh } = useProjectScopedLoader({
           :project-id="projectId"
           :availability-loading="availabilityLoading"
           :availability-error="availabilityError"
+          :enabling="pendingSlug === item.plugin.slug"
+          :enable-disabled="pendingSlug !== null || loading"
+          @enable="enablement.enable(item.plugin.slug, item.plugin.name)"
           :connections-href="connectionsHref"
           @show-providers="showProviders(item.plugin.slug)"
         />

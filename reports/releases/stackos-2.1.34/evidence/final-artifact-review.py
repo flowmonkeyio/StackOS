@@ -61,41 +61,55 @@ from pathlib import Path
 import stackos
 import stackos_connectors
 from stackos_connectors.auth import get_auth_contract, scope_satisfies
+
 READ = "https://www.googleapis.com/auth/webmasters.readonly"
 WRITE = "https://www.googleapis.com/auth/webmasters"
 methods = (
-    "oauth2_authorization_code", "oauth2_access_token", "oauth2_refresh_token", "service-account"
+    "oauth2_authorization_code",
+    "oauth2_access_token",
+    "oauth2_refresh_token",
+    "service-account",
 )
 contracts = []
 for method in methods:
     default = get_auth_contract("google-search-console", method=method)
     explicit_read = get_auth_contract(
-        "google-search-console", method=method, config={"access_mode":"readonly"}
+        "google-search-console", method=method, config={"access_mode": "readonly"}
     )
     write = get_auth_contract(
-        "google-search-console", method=method, config={"access_mode":"sitemap_write"}
+        "google-search-console", method=method, config={"access_mode": "sitemap_write"}
     )
     assert default.scopes == explicit_read.scopes == (READ,)
     assert write.scopes == (WRITE,)
-    contracts.append({
-        "method":method, "default":list(default.scopes),
-        "readonly":list(explicit_read.scopes), "sitemap_write":list(write.scopes)
-    })
+    contracts.append(
+        {
+            "method": method,
+            "default": list(default.scopes),
+            "readonly": list(explicit_read.scopes),
+            "sitemap_write": list(write.scopes),
+        }
+    )
 assert scope_satisfies("google-search-console", READ, {WRITE})
 assert not scope_satisfies("google-search-console", WRITE, {READ})
 assert not scope_satisfies("google-analytics", READ, {WRITE})
 versions = {
-    "stackos":importlib.metadata.version("stackos"),
-    "stackos-connectors":importlib.metadata.version("stackos-connectors")
+    "stackos": importlib.metadata.version("stackos"),
+    "stackos-connectors": importlib.metadata.version("stackos-connectors"),
 }
-assert versions == {"stackos":"2.1.34","stackos-connectors":"0.2.1"}, versions
-print(json.dumps({
-    "versions":versions, "contracts":contracts, "scope_compatibility":"pass",
-    "loaded_sources":{
-        "stackos":str(Path(stackos.__file__).resolve()),
-        "stackos_connectors":str(Path(stackos_connectors.__file__).resolve())
-    }
-}))
+assert versions == {"stackos": "2.1.34", "stackos-connectors": "0.2.1"}, versions
+print(
+    json.dumps(
+        {
+            "versions": versions,
+            "contracts": contracts,
+            "scope_compatibility": "pass",
+            "loaded_sources": {
+                "stackos": str(Path(stackos.__file__).resolve()),
+                "stackos_connectors": str(Path(stackos_connectors.__file__).resolve()),
+            },
+        }
+    )
+)
 """
     with tempfile.TemporaryDirectory(prefix="stackos-artifact-review-") as isolated:
         result = subprocess.run(

@@ -15,11 +15,14 @@ const props = defineProps<{
   availabilityLoading?: boolean
   availabilityError?: boolean
   connectionsHref: string
+  enabling?: boolean
+  enableDisabled?: boolean
 }>()
-defineEmits<{ showProviders: [] }>()
+defineEmits<{ showProviders: []; enable: [] }>()
 
 const repair = resolveStatus('integration', 'repair_required')
 const enabled = computed(() => isProjectPluginEnabled(props.item.plugin))
+const enablement = computed(() => resolveStatus('plugin', props.item.plugin.enabled_for_project === true ? 'enabled' : props.item.plugin.enabled_for_project === false ? 'disabled' : 'available'))
 </script>
 
 <template>
@@ -46,10 +49,10 @@ const enabled = computed(() => isProjectPluginEnabled(props.item.plugin))
       <UiBadge
         class="shrink-0"
         size="md"
-        :tone="enabled ? 'success' : 'neutral'"
-        :dot="enabled"
+        :tone="enablement.tone"
+        :dot="enablement.dot"
       >
-        {{ enabled ? 'Enabled' : 'Available' }}
+        {{ enablement.label }}
       </UiBadge>
     </div>
 
@@ -122,6 +125,17 @@ const enabled = computed(() => isProjectPluginEnabled(props.item.plugin))
         Review connections
       </UiButton>
     </div>
+
+    <UiButton
+      v-if="item.plugin.enabled_for_project !== true"
+      size="sm"
+      :loading="enabling"
+      :disabled="enableDisabled"
+      :aria-label="`Enable ${item.plugin.name} for this project`"
+      @click="$emit('enable')"
+    >
+      {{ enabling ? 'Enabling…' : 'Enable for this project' }}
+    </UiButton>
 
     <div class="mt-auto pt-4">
       <UiButton

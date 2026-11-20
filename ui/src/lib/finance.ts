@@ -125,7 +125,8 @@ export function formatMoney(value: unknown): string {
   if (!precision(money.exponent)) return `${currency} ${minor} minor units (precision unavailable)`
   const decimal = minorToDecimal(minor, money.exponent)
   const [whole, fraction] = decimal.replace('-', '').split('.')
-  return `${currency} ${decimal.startsWith('-') ? '−' : ''}${whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction !== undefined ? `.${fraction}` : ''}`
+  const label = `${currency} ${decimal.startsWith('-') ? '−' : ''}${whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction !== undefined ? `.${fraction}` : ''}`
+  return money.precision_basis === 'currency-convention' ? `${label} (display units only)` : label
 }
 export function metricText(value: unknown): string {
   const metric = object(value)

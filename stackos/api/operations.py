@@ -73,6 +73,15 @@ async def call_operation(
     if normalized_client_surface not in {"cli"}:
         normalized_client_surface = None
     auth_scope = getattr(request.state, "auth_scope", None)
+    if (
+        operation_name == "plugin.enable"
+        and str(auth_scope).startswith("ui-")
+        and "config_json" in payload.arguments
+    ):
+        return JSONResponse(
+            {"detail": "UI plugin enablement cannot change plugin configuration"},
+            status_code=403,
+        )
     if operation_name == "localAgentChat.createMessage" and str(auth_scope).startswith("ui-"):
         # Validate the browser-owned intent before a possible generic replay.
         from stackos.operations.communications import (

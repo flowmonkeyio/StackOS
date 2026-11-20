@@ -347,12 +347,18 @@ def main():
         "failures": failures,
         "limits": [
             "One bounded public request per URL; no upload or automatic retry.",
-            "Recovery restores overwritten existing website bytes; "
-            "new hashed assets may remain harmlessly remote.",
-            "Desktop release inventory/feed bytes/installer HEAD identity only; "
-            "no binary download or signing claim.",
-            ".htaccess unchanged and not staged; observed security/redirect checks "
-            "verify its deployed behavior.",
+            (
+                "Recovery restores overwritten existing website bytes; new hashed "
+                "assets may remain harmlessly remote."
+            ),
+            (
+                "Desktop release inventory/feed bytes/installer HEAD identity only; "
+                "no binary download or signing claim."
+            ),
+            (
+                ".htaccess unchanged and not staged; observed security/redirect "
+                "checks verify its deployed behavior."
+            ),
             "No indexing or ranking claim.",
         ],
     }

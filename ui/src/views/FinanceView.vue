@@ -24,6 +24,7 @@ import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import FinanceFilters from '@/components/finance/FinanceFilters.vue'
 import FinanceRecordPanel from '@/components/finance/FinanceRecordPanel.vue'
 import FinanceOverview from './finance/FinanceOverview.vue'
+import { financeRecordLabel } from './finance/reportingReadiness'
 import FinanceOverviewInsights from './finance/FinanceOverviewInsights.vue'
 import FinanceRequestDialog from './finance/FinanceRequestDialog.vue'
 import { aiCategory, insightsModel } from './finance/insightsViewModel'
@@ -85,6 +86,7 @@ const analysis = ref<SchemaFinanceContentOut | null>(null),
   analysisLoading = ref(false),
   analysisKind = ref('opportunities')
 let active = true,
+  basisInitialized = false,
   scopeSequence = 0,
   querySequence = 0,
   reportSequence = 0,
@@ -329,7 +331,7 @@ async function loadStatus() {
     if (access.value && canonicalJson([access.value.project_id, access.value.workspace_ref, access.value.generation, access.value.backend_key]) !== canonicalJson([chosen.project_id, chosen.workspace_ref, chosen.generation, chosen.backend_key])) clearContent()
     access.value = chosen as SchemaFinanceAccessOut
     authorityReady.value = true
-    await loadQuery(query.value)
+    await loadQuery(query.value, !basisInitialized)
     if (active && sequence === scopeSequence) await loadRequests()
   } catch (cause) {
     if (active && sequence === scopeSequence) {
@@ -360,7 +362,7 @@ async function enableFinance() {
     if (active) enabling.value = false
   }
 }
-async function loadQuery(value: FinanceQuery) {
+async function loadQuery(value: FinanceQuery, applyApprovedDefault = false) {
   if (!access.value || !authorityReady.value) return
   const sequence = ++querySequence,
     identity = JSON.stringify(base())
@@ -391,6 +393,24 @@ async function loadQuery(value: FinanceQuery) {
       argumentsJson,
     )
     if (!active || sequence !== querySequence || identity !== JSON.stringify(base())) return
+    if (applyApprovedDefault) {
+      basisInitialized = true
+      const defaults = object(response.data.reporting_defaults)
+      if (
+        ['cash', 'accrual'].includes(text(defaults.recognition_basis)) &&
+        ['transaction', 'posting', 'issue', 'cash'].includes(text(defaults.date_basis)) &&
+        (defaults.recognition_basis !== value.recognition_basis ||
+          defaults.date_basis !== value.date_basis)
+      ) {
+        await loadQuery({
+          ...value,
+          recognition_basis: defaults.recognition_basis as FinanceQuery['recognition_basis'],
+          date_basis: defaults.date_basis as FinanceQuery['date_basis'],
+          offset: 0,
+        })
+        return
+      }
+    }
     if (projection.value && projection.value.snapshot.sha256 !== response.data.snapshot.sha256) {
       releaseReport()
       analysis.value = null
@@ -795,6 +815,16 @@ onBeforeUnmount(() => {
               {{ query.start }} through {{ query.end }} · {{ query.recognition_basis }} recognition
               · {{ query.date_basis }} dates · {{ query.timezone }} · prepared/unposted · coverage
               {{ text(projection.coverage.state) }}
+              <template
+                v-if="
+                  query.recognition_basis === 'accrual' &&
+                  query.date_basis === 'issue' &&
+                  projection.coverage.state !== 'complete'
+                "
+              >
+                · Invoice amounts are incomplete. Add missing invoice dates and confirm source
+                coverage; payment matching and posting remain separate.
+              </template>
             </p>
             <details class="text-xs text-fg-muted">
               <summary class="focus-ring cursor-pointer">Source and reporting gaps</summary>
@@ -821,7 +851,7 @@ onBeforeUnmount(() => {
                 size="sm"
                 variant="ghost"
                 @click="inspect(refValue)"
-                >{{ refValue }}</UiButton
+                >{{ financeRecordLabel(projection, refValue) }}</UiButton
               >
             </section>
             <FinanceOverview
@@ -831,7 +861,8 @@ onBeforeUnmount(() => {
               @drill="drill"
             />
             <FinanceOverviewInsights
-              v-if="section === 'overview'"
+              v-if="section === 'overview' && insights.hasResult"
+              :show-controls="false"
               :model="insights"
               :status="statusText"
               :has-request="!!selectedRequest"
@@ -855,7 +886,7 @@ onBeforeUnmount(() => {
                     projection.rows.find((row) => row.record_ref === refValue),
                   )
                 "
-                >{{ refValue }}</UiButton
+                >{{ financeRecordLabel(projection, refValue) }}</UiButton
               >
             </section>
             <section v-if="section === 'records'" class="space-y-3">

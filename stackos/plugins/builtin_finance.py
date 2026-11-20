@@ -718,6 +718,9 @@ class FinanceConsole:
             project = self._project(inp.project_id)
             state = self._state(metadata, project)
             if state is None:
+                marker = parent / ".publication-pending"
+                if marker.exists() or marker.is_symlink():
+                    _error("storage_publication_incomplete")
                 state = self._prepare(project, root, metadata, self._legacy())
             elif state["phase"] == "publishing":
                 self._mark_publication(parent)

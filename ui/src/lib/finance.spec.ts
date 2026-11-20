@@ -24,6 +24,14 @@ describe('exact finance presentation', () => {
     expect(formatMoney({ minor: '-105', currency: 'JPY', exponent: 0 })).toBe('JPY −105')
     expect(formatMoney({ minor: '1234', currency: 'KWD', exponent: 3 })).toBe('KWD 1.234')
     expect(formatMoney(null)).toBe('Unavailable')
+    expect(
+      formatMoney({
+        minor: '806',
+        currency: 'USD',
+        exponent: 2,
+        precision_basis: 'currency-convention',
+      }),
+    ).toBe('USD 8.06 (display units only)')
     expect(formatMoney({ minor: '105', currency: 'USD', exponent: null })).toContain(
       'precision unavailable',
     )

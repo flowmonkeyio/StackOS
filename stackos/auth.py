@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import stat
@@ -241,6 +242,22 @@ def _allows_ui_project_setup(path: str, method: str) -> bool:
     return method.upper() == "POST" and path == "/api/v1/projects"
 
 
+def _allows_ui_plugin_enable(path: str, method: str) -> bool:
+    """Allow only explicit enablement of an installed plugin in a positive project."""
+    segments = path.split("/")
+    return (
+        method.upper() == "POST"
+        and len(segments) == 8
+        and segments[:4] == ["", "api", "v1", "projects"]
+        and segments[4].isascii()
+        and segments[4].isdigit()
+        and bool(segments[4].lstrip("0"))
+        and segments[5] == "plugins"
+        and bool(segments[6])
+        and segments[7] == "enable"
+    )
+
+
 def _ui_scope_for_request(path: str, method: str) -> str | None:
     if _allows_ui_read(path, method):
         return "ui-read"
@@ -250,6 +267,8 @@ def _ui_scope_for_request(path: str, method: str) -> str | None:
         return "ui-console-operation"
     if _allows_ui_project_setup(path, method):
         return "ui-project-setup"
+    if _allows_ui_plugin_enable(path, method):
+        return "ui-plugin-enable"
     if _allows_ui_auth_setup(path, method):
         return "ui-auth-setup"
     return None
@@ -306,12 +325,26 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
                     {
                         "detail": (
                             "UI token can only read REST data, call read-only or explicitly "
-                            "browser-safe operations, create projects, and manage provider "
+                            "browser-safe operations, create projects, enable installed plugins "
+                            "without configuration changes, and manage provider "
                             "auth setup; use the daemon token for other mutations"
                         )
                     },
                     status_code=403,
                 )
+            if scope == "ui-plugin-enable":
+                # Authorize the actual body, not the lossy Pydantic projection:
+                # unknown keys and even config_json:null are outside UI authority.
+                body = await request.body()
+                try:
+                    empty = not body or json.loads(body) == {}
+                except (ValueError, UnicodeDecodeError):
+                    empty = False
+                if not empty:
+                    return JSONResponse(
+                        {"detail": "UI plugin enablement accepts only an absent body or {}"},
+                        status_code=403,
+                    )
             request.state.auth_scope = scope
             return await call_next(request)
 

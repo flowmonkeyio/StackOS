@@ -6,13 +6,29 @@ import type { PluginDirectoryItem } from './viewModel'
 
 describe('PluginDirectoryCard', () => {
   const connectionsHref = '/projects/1/connections?section=services'
+  it.each([null, false, true])('renders explicit enablement %s truthfully', async (enabled) => {
+    const item = directoryItem(0)
+    item.plugin.enabled_for_project = enabled
+    const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref } })
+    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : enabled === false ? 'Disabled' : 'Available')
+    const button = wrapper.find('button[aria-label="Enable SEO for this project"]')
+    expect(button.exists()).toBe(enabled !== true)
+    if (button.exists()) {
+      await button.trigger('click')
+      expect(wrapper.emitted('enable')).toHaveLength(1)
+      await wrapper.setProps({ enabling: true })
+      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('aria-busy')).toBe('true')
+    }
+  })
+
 
   it.each([null, false, true])('shows actual Finance enablement %s and a scoped next action', (enabled) => {
     const item = directoryItem(0)
     item.plugin.slug = 'finance'
     item.plugin.enabled_for_project = enabled
     const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref, projectId: 7 } })
-    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : 'Available')
+    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : enabled === false ? 'Disabled' : 'Available')
     expect(wrapper.get('a').attributes('href')).toBe('/projects/7/finance')
     expect(wrapper.get('a').text()).toBe(enabled === true ? 'Open Finance' : 'Set up Finance')
   })
@@ -44,7 +60,7 @@ describe('PluginDirectoryCard', () => {
       total_action_count: 5, executable_action_count: 0, hidden_action_count: 0,
     }))
     const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref } })
-    expect(wrapper.text()).toContain(enabled ? 'Enabled' : 'Available')
+    expect(wrapper.text()).toContain(enabled ? 'Enabled' : 'Disabled')
     const states = wrapper.get('ul[aria-label="Service availability"]').text()
     for (const label of ['Connected', 'Not connected', 'Partially available', 'Account repair required', 'Unknown']) {
       expect(states).toContain(label)

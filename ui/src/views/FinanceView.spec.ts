@@ -147,6 +147,40 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('uses approved invoice basis once without resetting an explicit filter selection', async () => {
+    const original = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'finance.query')
+        return {
+          data: {
+            ...projection(args),
+            reporting_defaults: { recognition_basis: 'accrual', date_basis: 'issue' },
+          },
+        }
+      return original(name, args)
+    })
+    const { wrapper } = await mounted()
+    const queries = () =>
+      vi.mocked(callOperation).mock.calls.filter((call) => call[0] === 'finance.query')
+    expect(queries()).toHaveLength(2)
+    expect(queries().at(-1)![1]).toMatchObject({
+      recognition_basis: 'accrual',
+      date_basis: 'issue',
+    })
+    expect(wrapper.text()).toContain('Invoice amounts are incomplete')
+    expect(wrapper.text()).not.toContain('Reporting setup needed')
+    const filters = wrapper.findComponent({ name: 'FinanceFilters' })
+    filters.vm.$emit('apply', {
+      ...queries().at(-1)![1],
+      recognition_basis: 'cash',
+      date_basis: 'cash',
+    })
+    await flushPromises()
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(queries().at(-1)![1]).toMatchObject({ recognition_basis: 'cash', date_basis: 'cash' })
+    expect(queries()).toHaveLength(4)
+  })
   it('keeps selected records and their panel through both status and query refresh', async () => {
     const basics = vi.mocked(callOperation).getMockImplementation()!
     const { wrapper } = await mounted()
@@ -398,6 +432,8 @@ describe('Finance management', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-14T12:00:00Z'))
     const { wrapper, router } = await mounted()
+    expect(wrapper.find('[aria-label="Reporting setup"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Reporting setup needed')
     const queries = () =>
       vi.mocked(callOperation).mock.calls.filter((call) => call[0] === 'finance.query')
     expect(queries()).toHaveLength(1)
@@ -564,7 +600,11 @@ describe('Finance management', () => {
         : basics(name, args),
     )
     const { wrapper } = await mounted()
-    await wrapper.get('section[aria-label="AI categories and concerns"] button').trigger('click')
+    expect(wrapper.find('section[aria-label="AI categories and concerns"]').exists()).toBe(false)
+    await wrapper
+      .findAll('section[aria-label="Agent finance analysis"] button')
+      .find((button) => button.text() === 'Request category and concern review')!
+      .trigger('click')
     await flushPromises()
     const requests = vi
       .mocked(callOperation)
@@ -1917,7 +1957,8 @@ describe('Finance management', () => {
     const { wrapper } = await mounted()
     expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
     expect(wrapper.text()).toContain('Unavailable')
-    expect(wrapper.text()).toContain('receipt:undated')
+    expect(wrapper.text()).toContain('Inspect record details')
+    expect(wrapper.text()).not.toContain('receipt:undated')
     expect(wrapper.text()).toContain('Expenses & income')
     wrapper.unmount()
   })

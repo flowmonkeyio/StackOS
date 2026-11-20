@@ -138,8 +138,8 @@ def require_accepted(name, submission_id):
 try:
     if args.phase == "continue":
         assert not SUBMISSION.exists(), (
-            "A DMG submission attempt exists; use finish or inspect its saved ID, "
-            "never resubmit automatically"
+            "A DMG submission attempt exists; use finish or inspect its saved "
+            "ID, never resubmit automatically"
         )
         assert not DMG.exists() and not DMG.with_suffix(".zip").exists(), (
             "Existing distributables require inspection before packaging again"
@@ -226,8 +226,8 @@ try:
             submission["status"] = "submitted"
         write_json(SUBMISSION, submission)
         assert submission.get("submission_id"), (
-            "DMG submission returned no ID; inspect Apple history before any further action. "
-            "Do not resubmit."
+            "DMG submission returned no ID; inspect Apple history before any "
+            "further action. Do not resubmit."
         )
         receipt.update(
             status="dmg_submitted_pending_acceptance", dmg_submission_id=submission["submission_id"]
@@ -271,8 +271,11 @@ try:
             [
                 "node",
                 "-e",
-                'const {createLatestDmgAliases}=require("./scripts/release-artifacts.cjs"); '
-                "console.log(JSON.stringify(createLatestDmgAliases([process.argv[1]])));",
+                (
+                    "const "
+                    '{createLatestDmgAliases}=require("./scripts/release-artifacts.cjs"); '
+                    "console.log(JSON.stringify(createLatestDmgAliases([process.argv[1]])));"
+                ),
                 str(DMG),
             ],
         )
