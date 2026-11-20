@@ -50,7 +50,7 @@ both normal Finance startup and this command fail closed rather than initialize
 an empty ledger. The source and staged copy remain available for inspection.
 Keep the preview and
 originals until the installed Finance view is verified. After successful recovery,
-use the existing Plugins enable control and verify the original record counts.
+open Finance from the project menu, enable it there, and verify the original record counts.
 
 Plugins are StackOS domain packages. They let the core stay generic while each
 domain brings its own capabilities, providers, resources, actions, workflow
@@ -63,12 +63,19 @@ only reusable, domain-agnostic product primitives belong in core.
 
 ## Project enablement
 
-The project Plugins page distinguishes **Available** (not explicitly configured),
-**Disabled**, and **Enabled** (explicitly enabled). Use **Enable for project** to
-persist enablement through the existing local-admin plugin operation. This does
-not grant agent tools, connect credentials or execute plugin workflows. Failures
-stay visible and may be retried; switching projects cannot apply a delayed result
-to the new project.
+The project Plugins page is a catalog for inspecting plugins and their services,
+not an activation step. Ordinary plugins are enabled by default unless explicitly
+disabled. Their badges show effective **Enabled** or **Disabled** state; this does
+not imply connected credentials or granted agent tools. Account setup remains in
+Accounts and Connections. Explicit plugin administration remains available through
+the existing plugin operations.
+
+Finance is always reachable from the project menu. Before enablement, its landing
+page explains the project-local storage and offers **Enable Finance** through the
+existing local-admin plugin operation. The catalog links to that same destination
+and shows **Setup required** for unconfigured Finance. Setup is an explicit click,
+never a side effect of catalog browsing or navigation. Failures stay visible and
+may be retried; switching projects cannot apply a delayed result to the new project.
 
 Finance requires explicit enablement. Enabling or re-enabling Finance does not
 create or reset financial records. Opening Finance resolves its managed store,

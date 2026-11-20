@@ -171,6 +171,19 @@ def test_existing_session_setup_owner_report_and_startup_projection(mcp_client, 
     summary = startup["project_setup"]
     assert summary["eligible"] and summary["current_attempt"] is None
     assert summary["guidance_ref"]["tool_name"] == "workflowTemplate.authoringGuide"
+    guide = _operation_data(
+        _structured(
+            _toolbox_call(
+                proxy,
+                client,
+                summary["guidance_ref"]["tool_name"],
+                summary["guidance_ref"]["arguments"],
+            )
+        )
+    )
+    from stackos.workflows.authoring_guide import project_setup_method
+
+    assert guide["project_setup_method"] == project_setup_method().model_dump()
     assert summary["notice"] == PROJECT_SETUP_NOTICES["setup_needed"]
     assert "available_sources" not in json.dumps(summary)
     assert startup["setup_state"]["project_scoped_tools_usable"]

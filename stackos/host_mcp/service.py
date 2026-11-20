@@ -387,12 +387,12 @@ def _unregister(call: ActiveInvocation) -> None:
         call.retired.set()
 
 
-def retire_invocation(call: ActiveInvocation) -> str:
+def retire_invocation(call: ActiveInvocation, *, cancel: bool = True) -> str:
     """Stop the registered handle and release an exceptional retirement hold only on proof."""
     with _active_invocations_lock:
         call.process_retirement = {"outcome": "pending"}
     try:
-        outcome = call.process_control.stop()
+        outcome = call.process_control.stop() if cancel else call.process_control.stop(cancel=False)
     except Exception as error:
         outcome = "unconfirmed"
         call.process_control.stop_error = f"Native retirement failed: {type(error).__name__}"
@@ -958,7 +958,8 @@ def _run_agent_once(
             ):
                 # Returned adapter errors can hide failed post-spawn I/O too.
                 # Reconcile the actual group before releasing either owner.
-                outcome = retire_invocation(call)
+                # Successful post-exit cleanup must preserve the completed result.
+                outcome = retire_invocation(call, cancel=not bool(result and result.ok))
                 if result is not None and outcome == "unconfirmed":
                     result = replace(
                         result, error=result.error or "Native process retirement is unconfirmed"

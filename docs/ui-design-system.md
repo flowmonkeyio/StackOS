@@ -49,10 +49,11 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 - Sidebar: 256px desktop rail.
 - The project picker directly precedes the scrollable project navigation.
-  Home, Work, Automations and Library lead without a category heading. **Setup**
+  Home, Work, Automations, Library and Finance lead without a category heading. **Setup**
   contains Connections, Spend, Agents and Plugins. The following **Plugins**
-  group contains direct enabled-domain links, including the existing Finance
-  destination. Domain links never expand into Data/Workflows submenus.
+  group contains direct enabled-domain links. Finance remains visible before
+  enablement and owns its setup screen; Plugins is a catalog, not an activation
+  step. Domain links never expand into Data/Workflows submenus.
 - A separated **App** footer holds Overview, Accounts, Backups, and Patterns outside the
   project navigation scroll, above the theme control. All four are available
   without a project. Backups retains the global `/setup` route.

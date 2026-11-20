@@ -236,6 +236,18 @@ def test_real_owned_group_stops_parent_child_and_leaves_other_tasks_and_external
         external.wait(timeout=3)
 
 
+@pytest.mark.parametrize("already_cancelled", [False, True])
+def test_cleanup_without_cancellation_still_fences_launch(monkeypatch, already_cancelled):
+    control = ManagedProcessControl()
+    if already_cancelled:
+        control.cancelled.set()
+    assert control.stop(cancel=False) == "prevented"
+    assert control.cancelled.is_set() is already_cancelled
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: pytest.fail("closed spawn"))
+    with pytest.raises(InvocationCancelled):
+        control.spawn(["never-launch"])
+
+
 def test_cancel_before_registration_and_before_handle_never_spawns(tmp_path, monkeypatch):
     control = ManagedProcessControl()
     control.cancelled.set()

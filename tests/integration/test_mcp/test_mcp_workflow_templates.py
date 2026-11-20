@@ -130,6 +130,15 @@ outputs:
     method = authoring_guide["project_setup_method"]
     assert method["version"] == "2"
     for obligation in (
+        "not an exact catalog operation name",
+        "does not require executing a full delivery or build",
+        "not need a new workflow solely because the catalog lacks that operation",
+        "precedence and scope",
+        "current configuration and scripts",
+        "report needs_input with a bounded actionable question",
+        "continue independent setup",
+        "not attempted, never as a build failure",
+        "Setup authority never authorizes business execution",
         "source-to-target role identities",
         "complete adapted operating guidance",
         "nested domain followups",

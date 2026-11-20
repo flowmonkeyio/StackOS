@@ -554,7 +554,14 @@ bounded input contract, mode instructions, session notices and concrete question
 result wording for both existing-session and managed entrypoints. Consumers load
 it with `response_mode=raw`; they do not keep separate prompt text. Inspect repository
 intent and current setup before inferring workflows from ordinary goals and the
-catalog's outcome/use boundaries. Ask only for missing intent or material conflicts.
+catalog's outcome/use boundaries, rather than requiring an exact operation-name
+match. A local development goal can select applicable engineering setup without
+executing a delivery or build; a one-off command does not need a new workflow just
+because the catalog lacks it. Setup readiness and execution authority stay separate.
+Resolve apparent instruction conflicts using precedence, scope and current project
+configuration/scripts. Follow clear authority and flag stale docs; a material
+unresolved choice needs a bounded `needs_input` question while independent setup
+continues. An unattempted build is not a build failure.
 Harmless questions need no workflow run; a newly relevant goal can set up the
 appropriate method within current authority. The public getting-started guide
 remains the human walkthrough.

@@ -31,6 +31,7 @@ import { aiCategory, insightsModel } from './finance/insightsViewModel'
 import {
   UiButton,
   UiCallout,
+  UiEmptyState,
   UiFormField,
   UiPageShell,
   UiSectionHeader,
@@ -284,8 +285,6 @@ function financeStatusMessage(code: string): string {
     access_denied: 'Project Finance data access was denied. Check local permissions, then refresh.',
     invalid_root:
       'Project Finance storage could not be safely read. Check local permissions and preserve the existing files, then refresh.',
-    plugin_not_enabled:
-      'Finance is not enabled for this project. Enable Finance to open this project’s console.',
     writer_busy:
       'Project Finance data is busy. Wait for the current write or backup to finish, then refresh.',
   }
@@ -325,7 +324,7 @@ async function loadStatus() {
       const readiness = text(chosen?.readiness || response.data.readiness)
       clearScope()
       pluginDisabled.value = readiness === 'plugin_not_enabled'
-      error.value = financeStatusMessage(readiness)
+      error.value = pluginDisabled.value ? '' : financeStatusMessage(readiness)
       return
     }
     if (access.value && canonicalJson([access.value.project_id, access.value.workspace_ref, access.value.generation, access.value.backend_key]) !== canonicalJson([chosen.project_id, chosen.workspace_ref, chosen.generation, chosen.backend_key])) clearContent()
@@ -339,7 +338,7 @@ async function loadStatus() {
       if (code || (cause instanceof ApiError && [401, 403, 404].includes(cause.status))) clearScope()
       authorityReady.value = false
       pluginDisabled.value = code === 'plugin_not_enabled'
-      error.value = financeStatusMessage(code)
+      error.value = pluginDisabled.value ? '' : financeStatusMessage(code)
     }
   } finally {
     if (active && sequence === scopeSequence) loading.value = false
@@ -350,6 +349,7 @@ async function enableFinance() {
   const id = projectId.value,
     sequence = scopeSequence
   enabling.value = true
+  error.value = ''
   try {
     await callOperation('plugin.enable', { project_id: id, plugin_slug: 'finance' })
     if (!active || sequence !== scopeSequence || id !== projectId.value) return
@@ -357,7 +357,7 @@ async function enableFinance() {
     await loadStatus()
   } catch {
     if (active && sequence === scopeSequence && id === projectId.value)
-      error.value = 'Finance could not be enabled for this project. Check local permissions, then refresh to retry.'
+      error.value = 'Finance enablement could not be confirmed. Try again, or refresh to check its current status.'
   } finally {
     if (active) enabling.value = false
   }
@@ -728,29 +728,30 @@ onBeforeUnmount(() => {
     </ProjectPageHeader>
     <UiCallout
       v-if="error && !projection"
-      :tone="pluginDisabled ? 'warning' : 'danger'"
+      tone="danger"
       role="alert"
     >
       {{ error }}
-      <template
-        v-if="pluginDisabled"
-        #actions
-      >
+    </UiCallout>
+    <UiEmptyState
+      v-if="pluginDisabled"
+      data-test="finance-setup"
+      icon="database"
+      title="Set up Finance"
+      description="Track expenses and income, keep supporting documents, and review reports. Enabling Finance prepares private local storage for this project and preserves existing records."
+    >
+      <template #actions>
         <UiButton
           data-test="enable-finance"
+          variant="primary"
+          :loading="enabling"
           :disabled="enabling || loading"
           @click="enableFinance"
         >
           {{ enabling ? 'Enabling Finance…' : 'Enable Finance' }}
         </UiButton>
-        <UiButton
-          :href="`/projects/${projectId}/plugins`"
-          variant="link"
-        >
-          View plugins
-        </UiButton>
       </template>
-    </UiCallout>
+    </UiEmptyState>
     <div class="min-h-10 text-sm text-fg-muted" role="status" aria-live="polite">
       <template v-if="projection && (!currentAuthority || error)">
         <p>Last-known Finance data · {{ loading ? 'validating current source…' : 'refresh required' }}</p>

@@ -5,6 +5,7 @@ import { UiBadge, UiButton, UiCard, UiIcon, UiMedallion } from '@/components/ui'
 import { resolveStatus } from '@/design/status'
 import { pluginSectionIcon } from '@/lib/stackos/nav'
 import { isProjectPluginEnabled } from '@/lib/stackos/pluginPage'
+import { providerLogo } from '@/lib/stackos/providerPresentation'
 
 import IntegrationAvailability from './IntegrationAvailability.vue'
 import type { PluginDirectoryItem } from './viewModel'
@@ -15,14 +16,12 @@ const props = defineProps<{
   availabilityLoading?: boolean
   availabilityError?: boolean
   connectionsHref: string
-  enabling?: boolean
-  enableDisabled?: boolean
 }>()
-defineEmits<{ showProviders: []; enable: [] }>()
+defineEmits<{ showProviders: [] }>()
 
 const repair = resolveStatus('integration', 'repair_required')
 const enabled = computed(() => isProjectPluginEnabled(props.item.plugin))
-const enablement = computed(() => resolveStatus('plugin', props.item.plugin.enabled_for_project === true ? 'enabled' : props.item.plugin.enabled_for_project === false ? 'disabled' : 'available'))
+const enablement = computed(() => resolveStatus('plugin', enabled.value ? 'enabled' : props.item.plugin.enabled_for_project === false ? 'disabled' : 'setup_required'))
 </script>
 
 <template>
@@ -80,7 +79,10 @@ const enablement = computed(() => resolveStatus('plugin', props.item.plugin.enab
           :plugin-slug="provider.plugin_slug"
           size="xs"
         />
-        <span class="truncate text-sm font-medium text-fg-default">{{ provider.name }}</span>
+        <span
+          class="truncate text-sm font-medium text-fg-default"
+          :class="{ 'sr-only': providerLogo(provider.key, provider.plugin_slug)?.kind.includes('wordmark') }"
+        >{{ provider.name }}</span>
       </li>
       <li
         v-if="item.providers.length > 4"
@@ -96,17 +98,6 @@ const enablement = computed(() => resolveStatus('plugin', props.item.plugin.enab
       No services required.
     </p>
 
-    <UiButton
-      v-if="item.providers.length"
-      class="mt-2 self-start"
-      variant="link"
-      size="md"
-      icon-right="arrow-right"
-      @click="$emit('showProviders')"
-    >
-      View services
-    </UiButton>
-
     <div
       v-if="!availabilityLoading && !availabilityError && item.integrations.some((entry) => entry.state === 'repair_required')"
       class="mt-2 flex flex-wrap items-center gap-2"
@@ -117,34 +108,34 @@ const enablement = computed(() => resolveStatus('plugin', props.item.plugin.enab
       >
         {{ repair.label }}
       </UiBadge>
-      <UiButton
-        :href="connectionsHref"
-        variant="link"
-        size="sm"
-      >
-        Review connections
-      </UiButton>
     </div>
 
-    <UiButton
-      v-if="item.plugin.enabled_for_project !== true"
-      size="sm"
-      :loading="enabling"
-      :disabled="enableDisabled"
-      :aria-label="`Enable ${item.plugin.name} for this project`"
-      @click="$emit('enable')"
-    >
-      {{ enabling ? 'Enabling…' : 'Enable for this project' }}
-    </UiButton>
-
     <div class="mt-auto pt-4">
-      <UiButton
-        v-if="item.plugin.slug === 'finance' && projectId"
-        :href="`/projects/${projectId}/finance`"
-        class="mb-3"
+      <div
+        v-if="item.providers.length || (item.plugin.slug === 'finance' && projectId)"
+        class="mb-4 flex flex-wrap items-center gap-2"
       >
-        {{ enabled ? 'Open Finance' : 'Set up Finance' }}
-      </UiButton>
+        <UiButton
+          v-if="item.providers.length"
+          icon-right="arrow-right"
+          @click="$emit('showProviders')"
+        >
+          View services
+        </UiButton>
+        <UiButton
+          v-if="item.plugin.slug === 'finance' && projectId"
+          :href="`/projects/${projectId}/finance`"
+          icon-right="arrow-right"
+        >
+          Open Finance
+        </UiButton>
+        <UiButton
+          v-if="!availabilityLoading && !availabilityError && item.integrations.some((entry) => entry.state === 'repair_required')"
+          :href="connectionsHref"
+        >
+          Review connections
+        </UiButton>
+      </div>
       <details class="group border-t border-default pt-2">
         <summary class="focus-ring flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-sm text-fg-default [&::-webkit-details-marker]:hidden">
           <UiIcon

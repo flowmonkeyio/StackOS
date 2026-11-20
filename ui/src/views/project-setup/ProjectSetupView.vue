@@ -205,13 +205,14 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
         >
           Waiting for available agent capacity. This attempt will start when a slot is free.
         </p>
-        <p
+        <div
           v-if="attempt?.progress?.message && attempt.status !== 'success'"
-          class="whitespace-pre-wrap [overflow-wrap:anywhere]"
+          class="space-y-1"
           role="status"
         >
-          {{ attempt.progress.message }}
-        </p>
+          <p class="text-xs font-medium text-fg-muted">Agent report</p>
+          <p class="whitespace-pre-wrap [overflow-wrap:anywhere]">{{ attempt.progress.message }}</p>
+        </div>
         <details
           v-if="attempt?.status === 'success' && attempt.progress?.message"
           class="text-sm"
@@ -233,16 +234,16 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           v-if="attempt?.partial_changes_possible && attempt.status !== 'success'"
           class="text-fg-muted"
         >
-          Some files may have changed. The agent must check them before continuing. Completed workflow results are kept; no rollback is implied.
+          Before continuing, the agent will check for partial file changes. This is a precaution, not confirmation that files changed. Completed workflow results are kept; no rollback is implied.
         </p>
         <p
           v-if="attempt?.managed?.diagnostic"
           class="text-fg-muted"
         >
-          {{ attempt.managed.diagnostic }}
+          Agent execution: {{ attempt.managed.diagnostic }}
         </p>
         <p
-          v-if="attempt && attempt.status !== 'success'"
+          v-if="attempt && ['queued', 'running'].includes(attempt.status)"
           class="text-xs text-fg-muted"
         >
           You can leave this page. Closing it does not stop setup.

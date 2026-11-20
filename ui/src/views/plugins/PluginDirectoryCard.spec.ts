@@ -6,20 +6,12 @@ import type { PluginDirectoryItem } from './viewModel'
 
 describe('PluginDirectoryCard', () => {
   const connectionsHref = '/projects/1/connections?section=services'
-  it.each([null, false, true])('renders explicit enablement %s truthfully', async (enabled) => {
+  it.each([null, false, true])('renders effective enablement %s without activation controls', (enabled) => {
     const item = directoryItem(0)
     item.plugin.enabled_for_project = enabled
     const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref } })
-    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : enabled === false ? 'Disabled' : 'Available')
-    const button = wrapper.find('button[aria-label="Enable SEO for this project"]')
-    expect(button.exists()).toBe(enabled !== true)
-    if (button.exists()) {
-      await button.trigger('click')
-      expect(wrapper.emitted('enable')).toHaveLength(1)
-      await wrapper.setProps({ enabling: true })
-      expect(button.attributes('disabled')).toBeDefined()
-      expect(button.attributes('aria-busy')).toBe('true')
-    }
+    expect(wrapper.text()).toContain(enabled === false ? 'Disabled' : 'Enabled')
+    expect(wrapper.find('button').exists()).toBe(false)
   })
 
 
@@ -28,9 +20,10 @@ describe('PluginDirectoryCard', () => {
     item.plugin.slug = 'finance'
     item.plugin.enabled_for_project = enabled
     const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref, projectId: 7 } })
-    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : enabled === false ? 'Disabled' : 'Available')
+    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : enabled === false ? 'Disabled' : 'Setup required')
     expect(wrapper.get('a').attributes('href')).toBe('/projects/7/finance')
-    expect(wrapper.get('a').text()).toBe(enabled === true ? 'Open Finance' : 'Set up Finance')
+    expect(wrapper.get('a').text()).toBe('Open Finance')
+    expect(wrapper.find('button').exists()).toBe(false)
   })
 
   it('previews services and lets the operator inspect the complete catalog details', async () => {

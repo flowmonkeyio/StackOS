@@ -5,6 +5,9 @@
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
@@ -440,7 +443,11 @@ def test_real_request_executor_persists_report_identity_and_releases(managed, se
         on_session("managed-native-fixture")
         context = json.loads(prompt)
         assert context["project_id"] == project
-        assert context["guidance_ref"]["tool_name"] == "workflowTemplate.authoringGuide"
+        assert context["guidance_ref"] == {
+            "tool_name": "workflowTemplate.authoringGuide",
+            "arguments": {"response_mode": "raw"},
+        }
+        assert "Consume its complete project_setup_method" in instructions
         assert str(root) == context["project_dir"]
         return AgentRunResult(
             0,
@@ -475,6 +482,101 @@ def test_real_request_executor_persists_report_identity_and_releases(managed, se
     assert json.loads(evidence["snapshot"]["prompt"])["claim_token"] == "[redacted]"
     assert row.metadata_json["project_setup"]["status"] == "partial"
     assert capacity_counts(session, scheduler)["running_count"] == 0
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Owned process groups require POSIX")
+@pytest.mark.parametrize("status", ["partial", "needs_input", "invalid"])
+@pytest.mark.parametrize(
+    "retirement", ["ordinary", "remaining_child", "cancelled", "live_root", "failed_root"]
+)
+def test_setup_report_survives_completed_native_group_cleanup(
+    managed, session, monkeypatch, status, retirement
+):
+    _execution, project, scheduler, _factory = managed
+    definition = service._definition_by_key("codex")
+    controls = []
+    report = {
+        "status": status,
+        "progress": {"message": "Inspected project", "evidence_ref": "fixture:inspection"},
+    }
+    if status == "partial":
+        report["recovery_condition"] = "Reconcile the remaining project inputs"
+    elif status == "needs_input":
+        report["question"] = {
+            "question_id": "goal",
+            "revision": 1,
+            "prompt": "What should this project do?",
+            "workflow_keys": [],
+            "response_channel": "managed_ui",
+        }
+
+    def runner(_root, _instructions, prompt, _schema, *, on_session, process_control, **kwargs):
+        controls.append(process_control)
+        on_session("completed-setup")
+        script = "pass"
+        if retirement in {"remaining_child", "failed_root"}:
+            script = (
+                "import subprocess,sys; "
+                "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+                f"sys.exit({7 if retirement == 'failed_root' else 0})"
+            )
+        elif retirement == "live_root":
+            script = "import time; time.sleep(30)"
+        process = process_control.spawn(
+            [sys.executable, "-c", script],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if retirement == "live_root":
+            assert process.poll() is None
+        else:
+            assert process.wait(timeout=3) == (7 if retirement == "failed_root" else 0)
+        if retirement in {"remaining_child", "failed_root", "live_root"}:
+            assert process_control.retirement_status() == "unconfirmed"
+        if retirement == "cancelled":
+            context = json.loads(prompt)
+            assert service.cancel_request_invocations(project, context["request_id"])
+        return AgentRunResult(
+            0,
+            thread_id="completed-setup",
+            result=(
+                {"verification_status": None, "report_json": json.dumps(report)}
+                if status != "invalid"
+                else {"not_a_setup_result": True}
+            ),
+        )
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
+    )
+    opened = launch(managed, host_key="codex")
+    try:
+        execute_job(scheduler)
+        session.expire_all()
+        row = session.get(AgentRequest, opened.attempt.request_id)
+        native = row.metadata_json["native_execution"]
+        setup = row.metadata_json["project_setup"]
+        assert native["finished_at"] and native["exit_code"] == 0
+        rejected = retirement in {"cancelled", "live_root", "failed_root"}
+        assert native["cancelled"] is rejected
+        assert setup["status"] == ("failed" if rejected or status == "invalid" else status)
+        assert setup["managed"]["slot_reserved"] is False
+        assert service.active_request_execution(project, row.id) is None
+        assert controls[0].retirement_status() == "stopped"
+        if retirement in {"remaining_child", "failed_root", "live_root"}:
+            assert native["process_retirement"]["outcome"] == "stopped"
+        if rejected:
+            assert "cancelled" in setup["managed"]["diagnostic"]
+        elif status == "invalid":
+            assert "Invalid" in setup["managed"]["diagnostic"]
+            assert not setup["reports"]
+        else:
+            assert setup["reports"][-1]["status"] == status
+            assert not setup["managed"]["diagnostic"]
+    finally:
+        for control in controls:
+            control.stop()
 
 
 def test_invalid_explicit_selection_rejects_before_request(managed, session):

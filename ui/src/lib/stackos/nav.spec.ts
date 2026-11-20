@@ -16,27 +16,30 @@ describe('project navigation', () => {
     expect(isStackOsNavItemActive(home, '/projects/7/tasks')).toBe(false)
     expect(isStackOsNavItemActive(home, '/projects/8/setup')).toBe(false)
   })
-  it('requires explicit Finance enablement while preserving other plugin defaults', () => {
-    const finance = { ...plugin('finance'), enabled_for_project: null }
+  it.each([null, false, true])('keeps one Finance entry for project enablement %s while preserving other plugin defaults', (enabled) => {
+    const finance = { ...plugin('finance'), enabled_for_project: enabled }
     const engineering = { ...plugin('engineering'), enabled_for_project: null }
+    const financeEntries = projectNavSections(7, [finance, engineering])
+      .flatMap(section => section.items).filter(item => item.to === '/projects/7/finance')
+    expect(financeEntries).toHaveLength(1)
+    expect(financeEntries[0]).toMatchObject({ key: 'finance', label: 'Finance' })
     expect(pluginContributionSections(7, [finance, engineering])[0]!.items.map(item => item.key))
       .toEqual(['plugin-engineering'])
   })
   it('connects the primary and Setup destinations without category pages', () => {
     const sections = coreNavSections(7)
     expect(sections.map(section => section.items.map(item => [item.label, item.to]))).toEqual([
-      [['Home', '/projects/7'], ['Work', '/projects/7/tasks'], ['Automations', '/projects/7/schedules'], ['Library', '/projects/7/library']],
+      [['Home', '/projects/7'], ['Work', '/projects/7/tasks'], ['Automations', '/projects/7/schedules'], ['Library', '/projects/7/library'], ['Finance', '/projects/7/finance']],
       [['Connections', '/projects/7/connections'], ['Spend', '/projects/7/cost-budget'], ['Agents', '/projects/7/agents'], ['Plugins', '/projects/7/plugins']],
     ])
   })
-  it('normalizes enabled legacy contributions to direct domains, preserving Finance and display order', () => {
+  it('normalizes enabled legacy contributions to direct domains without duplicating Finance', () => {
     const sections = projectNavSections(7, [plugin('agency', 19), plugin('support', 15), plugin('finance', 18), plugin('engineering'), plugin('seo', 60, false)])
     expect(sections.map(section => section.key)).toEqual(['project', 'setup', 'domains'])
     expect(sections[2]!.items.map(item => item.to)).toEqual([
-      '/projects/7/plugins/engineering', '/projects/7/plugins/support', '/projects/7/finance', '/projects/7/plugins/agency',
+      '/projects/7/plugins/engineering', '/projects/7/plugins/support', '/projects/7/plugins/agency',
     ])
-    expect(sections[2]!.items[2]!.label).toBe('Finance')
-    expect(sections[2]!.items).toHaveLength(4)
+    expect(sections[2]!.items).toHaveLength(3)
   })
   it('does not create domains for provider-only packages without a declared page or navigation', () => {
     expect(pluginContributionSections(7, [{ ...plugin('transport'), manifest_json: {} }])).toEqual([])
@@ -53,7 +56,7 @@ describe('project navigation', () => {
       plugin('disabled', 30, false),
     ] as SchemaPluginOut[]
     const items = pluginContributionSections(7, plugins)[0]!.items
-    expect(items.map(item => item.to)).toEqual(['/projects/7/plugins/workflow-only', '/projects/7/finance', '/projects/7/plugins/records'])
+    expect(items.map(item => item.to)).toEqual(['/projects/7/plugins/workflow-only', '/projects/7/plugins/records'])
   })
   it('keeps domain selection on workflow details and Library selection on filtered records', () => {
     expect(isStackOsNavItemActive({ to: '/projects/7/plugins/seo', matchPrefix: true }, '/projects/7/plugins/seo/workflows/seo.audit')).toBe(true)

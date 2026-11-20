@@ -7,7 +7,7 @@ import { insightFixture } from './finance/insightsFixtures'
 import { callOperation } from '@/lib/operations'
 import { ApiError, apiFetch } from '@/lib/client'
 import { useStackOsCatalogStore } from '@/stores/plugins'
-import { pluginContributionSections } from '@/lib/stackos/nav'
+import { projectNavSections } from '@/lib/stackos/nav'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async (original) => ({ ...await original<typeof import('@/lib/client')>(), apiFetch: vi.fn() }))
@@ -280,7 +280,8 @@ describe('Finance management', () => {
     expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
     release([{ ...finance, enabled_for_project: false }])
     await pendingShell
-    const navigation = () => pluginContributionSections(1, catalog.enabledPlugins).flatMap(section => section.items)
+    expect(catalog.enabledPlugins).toContainEqual(expect.objectContaining({ slug: 'finance', enabled_for_project: true }))
+    const navigation = () => projectNavSections(1, catalog.enabledPlugins).flatMap(section => section.items)
     expect(navigation()).toContainEqual(expect.objectContaining({ to: '/projects/1/finance' }))
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     await flushPromises()
@@ -304,6 +305,9 @@ describe('Finance management', () => {
     const { wrapper } = await mounted()
     expect(apiFetch).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('Synthetic vendor')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="finance-setup"]').text()).toContain('private local storage for this project')
+    expect(wrapper.find('a[href="/projects/1/plugins"]').exists()).toBe(false)
     await wrapper.get('[data-test="enable-finance"]').trigger('click')
     await flushPromises()
     expect(callOperation).toHaveBeenCalledWith('plugin.enable', { project_id: 1, plugin_slug: 'finance' })
@@ -325,6 +329,7 @@ describe('Finance management', () => {
     const { wrapper, router } = await mounted()
     await wrapper.get('[data-test="enable-finance"]').trigger('click')
     expect(wrapper.get('[data-test="enable-finance"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="enable-finance"]').attributes('aria-busy')).toBe('true')
     await wrapper.get('[data-test="enable-finance"]').trigger('click')
     expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'plugin.enable')).toHaveLength(1)
     await router.push('/projects/2/finance')
@@ -337,11 +342,15 @@ describe('Finance management', () => {
     expect(vi.mocked(callOperation).mock.calls.filter(([name, args]) => name === 'finance.status' && args.project_id === 1)).toHaveLength(1)
     wrapper.unmount()
   })
-  it('keeps failed enablement safe and allows a status retry after permissions change', async () => {
+  it.each(['enable', 'refresh'])('keeps failed enablement safe and allows %s after a failed attempt', async (retry) => {
     let disabled = true
+    let finishEnable!: () => void
     const basics = vi.mocked(callOperation).getMockImplementation()!
     vi.mocked(callOperation).mockImplementation(async (name, args) => {
-      if (name === 'plugin.enable') throw new Error('/private/secret')
+      if (name === 'plugin.enable') {
+        if (disabled) throw new Error('/private/secret')
+        return new Promise(resolve => { finishEnable = () => resolve({}) })
+      }
       if (name === 'finance.status' && disabled)
         throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
       return basics(name, args)
@@ -349,10 +358,15 @@ describe('Finance management', () => {
     const { wrapper } = await mounted()
     await wrapper.get('[data-test="enable-finance"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('Check local permissions')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Try again, or refresh to check its current status.')
     expect(wrapper.text()).not.toContain('/private/secret')
     disabled = false
-    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await wrapper.get(`[data-test="${retry}-finance"]`).trigger('click')
+    if (retry === 'enable') {
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="enable-finance"]').attributes('aria-busy')).toBe('true')
+      finishEnable()
+    }
     await flushPromises()
     expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -1114,11 +1128,7 @@ describe('Finance management', () => {
     ],
     ['unsafe_or_changing_storage', 422, 'Project Finance storage could not be safely verified.'],
     ['invalid_root', 403, 'Project Finance storage could not be safely read.'],
-    [
-      'plugin_not_enabled',
-      403,
-      'Finance is not enabled for this project. Enable Finance',
-    ],
+    ['plugin_not_enabled', 403, 'Set up Finance'],
     ['writer_busy', 409, 'Project Finance data is busy. Wait for the current write or backup'],
     ['unknown-private-code', 422, 'Project Finance data is unavailable.'],
     ['toString', 422, 'Project Finance data is unavailable.'],
@@ -1179,7 +1189,13 @@ describe('Finance management', () => {
       failed = true
       await wrapper.get('[data-test="refresh-finance"]').trigger('click')
       await flushPromises()
-      expect(wrapper.get('[role="alert"]').text()).toContain(expected)
+      if (code === 'plugin_not_enabled') {
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(wrapper.get('[data-test="finance-setup"]').text()).toContain(expected)
+      } else {
+        expect(wrapper.get('[role="alert"]').text()).toContain(expected)
+        expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
+      }
       if (code.startsWith('legacy_') || code === 'migration_too_large') {
         expect(wrapper.get('[role="alert"]').text()).toContain('Ask an agent to inspect')
         expect(wrapper.get('[role="alert"]').text()).toContain('No existing records were replaced.')

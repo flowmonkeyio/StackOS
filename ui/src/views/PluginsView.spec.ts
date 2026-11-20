@@ -4,7 +4,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import PluginsView from './PluginsView.vue'
-import { useStackOsCatalogStore } from '@/stores/plugins'
 
 const ORIGINAL_FETCH = globalThis.fetch
 
@@ -165,26 +164,13 @@ describe('PluginsView directory', () => {
     wrapper.unmount()
   })
 
-  it('enables an available plugin through the registered project endpoint and reloads its status', async () => {
-    let enabled = false
-    let holdRead = false
-    let releaseOld!: (value: Response) => void
-    globalThis.fetch = vi.fn(async (input, init) => {
+  it('routes unconfigured Finance to its own setup without mutating plugin state', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
-      if (url === '/api/v1/projects/1/plugins/finance/enable') {
-        expect(init?.method).toBe('POST')
-        expect(init?.body).toBeUndefined()
-        enabled = true
-        return json({ data: { project_id: 1, enabled: true } })
-      }
       if (url === '/api/v1/plugins?project_id=1&compact=true') {
-        if (holdRead) {
-          holdRead = false
-          return new Promise<Response>(resolve => { releaseOld = resolve })
-        }
         return json([{
           id: 1, slug: 'finance', name: 'Finance Operations', description: 'Finance tools',
-          enabled_for_project: enabled ? true : null, source: 'builtin', version: '1.0.0',
+          enabled_for_project: null, source: 'builtin', version: '1.0.0',
         }])
       }
       if (url === '/api/v1/operations/integration.list/call') return json({ project_id: 1, items: [] })
@@ -200,18 +186,11 @@ describe('PluginsView directory', () => {
     const pinia = createPinia()
     const wrapper = mount(PluginsView, { global: { plugins: [router, pinia] } })
     await vi.waitFor(() => expect(wrapper.text()).toContain('Finance Operations'))
-    expect(wrapper.text()).not.toContain('Enabled')
-    holdRead = true
-    const oldRead = useStackOsCatalogStore(pinia).refreshPlugins(1, { silent: true })
-    await wrapper.get('button[aria-label="Enable Finance Operations for this project"]').trigger('click')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Finance Operations is enabled for this project.'))
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Enabled'))
-    releaseOld(json([{ id: 1, slug: 'finance', name: 'Finance Operations', description: 'Finance tools',
-      enabled_for_project: null, source: 'builtin', version: '1.0.0' }]))
-    await oldRead
-    await flushPromises()
-    expect(wrapper.text()).toContain('Enabled')
-    expect(wrapper.find('button[aria-label="Enable Finance Operations for this project"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Setup required')
+    expect(wrapper.get('a[href="/projects/1/finance"]').text()).toBe('Open Finance')
+    expect(wrapper.findAll('button').some(button => button.text().includes('Enable'))).toBe(false)
+    expect(vi.mocked(fetch).mock.calls.every(([input, init]) => !init?.method || init.method === 'GET'
+      || ['integration.list/call', 'action.list/call'].some(path => String(input).endsWith(path)))).toBe(true)
     wrapper.unmount()
   })
 

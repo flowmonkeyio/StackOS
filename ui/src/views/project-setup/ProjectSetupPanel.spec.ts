@@ -166,16 +166,20 @@ describe('setup detail questions and recovery', () => {
     expect(wrapper!.text()).toContain('Compatible local instructions kept.')
     expect(wrapper!.findAll('h1')).toHaveLength(1)
     expect(writes()).toHaveLength(0)
+    expect(wrapper!.text().includes('Closing it does not stop setup.')).toBe(['queued', 'running'].includes(status))
     if (['partial', 'failed', 'interrupted', 'cancelled'].includes(status)) {
       expect(button(status === 'failed' ? 'Retry remaining' : status === 'interrupted' ? 'Resume setup' : status === 'cancelled' ? 'Start again' : 'Continue remaining')).toBeDefined()
       expect(wrapper!.text()).not.toContain('Your project is ready')
     }
   })
   it('reports mixed outcomes and old verified versions without global readiness or invented override questions', async () => {
-    state.current_attempt = attemptFixture({ status: SetupAttemptStatus.partial, managed, thread_id: 'native-exact', partial_changes_possible: true })
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus.partial, managed: { ...managed, diagnostic: 'Native request invocation cancelled' }, thread_id: 'native-exact', partial_changes_possible: true,
+      progress: { message: 'VERIFIED: No local build was attempted.', evidence_ref: 'fixture/no-build-attempt' } })
     state.workflows = [workflow('fixture.first'), workflow('fixture.second', { latest_status: 'failed', status: 'update_available' as SchemaSetupWorkflowOut['status'], partial_changes: true, latest_result: { diagnostics: ['Check conflicting instruction.'], changes: ['Edited local guidance.'] } })]
     await panel()
-    expect(wrapper!.text()).toContain('Some files may have changed')
+    expect(wrapper!.text()).toContain('This is a precaution, not confirmation that files changed.')
+    expect(wrapper!.get('[role="status"]').text()).toContain('Agent report')
+    expect(wrapper!.text()).toContain('Agent execution: Native request invocation cancelled')
     expect(wrapper!.text()).toContain('Last verified setup: v1')
     expect(wrapper!.text()).toContain('Check conflicting instruction.')
     expect(wrapper!.text()).not.toContain('Your project is ready')
@@ -216,7 +220,7 @@ describe('setup detail questions and recovery', () => {
     })
     await panel()
     expect(wrapper!.get('table tbody tr:first-child td:nth-child(2) > p').text()).toBe('Workflow setup and activation are verified.')
-    expect(wrapper!.text()).not.toContain('Some files may have changed')
+    expect(wrapper!.text()).not.toContain('check for partial file changes')
     expect(wrapper!.get('section[aria-labelledby="setup-state-heading"]').find('[role="status"]').exists()).toBe(false)
     expect(wrapper!.findAll('details').some(item => item.text().includes('Agent result') && item.text().includes('/private/fixture/guide.md'))).toBe(true)
   })

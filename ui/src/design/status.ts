@@ -227,7 +227,7 @@ export const memoryState = defineStatuses({
 export const pluginStatus = defineStatuses({
   enabled: { label: 'Enabled', tone: 'success', dot: true },
   disabled: { label: 'Disabled', tone: 'neutral' },
-  available: { label: 'Available', tone: 'neutral' },
+  setup_required: { label: 'Setup required', tone: 'neutral' },
 });
 
 export const statusRegistry = {

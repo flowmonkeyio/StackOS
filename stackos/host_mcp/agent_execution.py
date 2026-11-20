@@ -29,6 +29,7 @@ class ManagedProcessControl:
 
     def __init__(self, launch_allowed: Callable[[], bool] | None = None):
         self.cancelled = Event()
+        self._closed = Event()
         self.account_switch = False
         self._process: subprocess.Popen[str] | None = None
         self._launch_allowed = launch_allowed
@@ -37,8 +38,10 @@ class ManagedProcessControl:
 
     def spawn(self, command: list[str], **kwargs: Any) -> subprocess.Popen[str]:
         with managed_launch_lock:
-            if self.cancelled.is_set() or (
-                self._launch_allowed is not None and not self._launch_allowed()
+            if (
+                self.cancelled.is_set()
+                or self._closed.is_set()
+                or (self._launch_allowed is not None and not self._launch_allowed())
             ):
                 self.cancelled.set()
                 raise InvocationCancelled("Invocation cancelled before launch")
@@ -75,13 +78,21 @@ class ManagedProcessControl:
                 return "unconfirmed"
             return "stopped" if exited else "unconfirmed"
 
-    def stop(self, timeout: float = 1.5) -> str:
+    def stop(self, timeout: float = 1.5, *, cancel: bool = True) -> str:
         """TERM then KILL only our launch group, with bounded confirmation."""
-        self.cancelled.set()
+        # A completed root may leave descendants to retire. Cleanup still fences
+        # launch, but must not manufacture cancellation of its completed result.
+        self._closed.set()
+        if cancel:
+            self.cancelled.set()
         with self._stop_lock:
             self.stop_error = None
             with managed_launch_lock:
                 process = self._process
+                # Trust our handle, not an adapter's returned exit code. A live
+                # or failed root cannot become successful through cleanup.
+                if not cancel and process is not None and process.poll() != 0:
+                    self.cancelled.set()
             if process is None:
                 return "prevented"
             if os.name != "posix":

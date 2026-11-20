@@ -453,8 +453,10 @@ scroll. Overview opens active work across projects and the system/lifecycle surf
 Backups retains `/setup`; Patterns uses `/patterns`. Both work without a project.
 
 **Setup** contains Connections, Spend, Agents and Plugins. A separate **Plugins**
-group links directly to enabled domain pages; Finance retains its existing
-destination and sections. Domain pages expose their workflows and canonical
+group links directly to enabled domain pages. Finance has a stable entry after
+Library, including before enablement; its landing page owns setup and retains
+its existing console sections. Plugin cards browse services without activation
+controls. Domain pages expose their workflows and canonical
 Library content and contextual workflow details.
 
 Work shows task results and history contextually. Finance inspects the original

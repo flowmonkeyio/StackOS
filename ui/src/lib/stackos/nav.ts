@@ -54,6 +54,7 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
         { key: 'tasks', label: 'Work', to: `${base}/tasks`, matchPrefix: true, icon: 'tasks' },
         { key: 'schedules', label: 'Automations', to: `${base}/schedules`, icon: 'bolt' },
         { key: 'library', label: 'Library', to: `${base}/library`, icon: 'folder' },
+        { key: 'finance', label: 'Finance', to: `${base}/finance`, matchPrefix: true, icon: 'database' },
       ],
     },
     {
@@ -107,18 +108,18 @@ export function pluginContributionSections(
   const base = `/projects/${projectId}`
   const items: StackOsNavItem[] = []
   for (const plugin of [...plugins].sort(comparePlugins)) {
-    if (!isProjectPluginEnabled(plugin)) continue
+    // Finance keeps a stable entry point for its explicit project setup.
+    if (plugin.slug === 'finance' || !isProjectPluginEnabled(plugin)) continue
     const ui = isRecord(plugin.manifest_json?.ui) ? plugin.manifest_json.ui : null
     const nav = isRecord(ui?.nav) ? ui.nav : null
-    // Section metadata cannot create a page. Finance retains its dedicated
-    // console; generic domains must declare content the renderer supports.
-    if (!domainPage(plugin).sections.length && plugin.slug !== 'finance') continue
-    const label = plugin.slug === 'finance' ? 'Finance'
-      : typeof nav?.section === 'string' ? nav.section : plugin.name
+    // Section metadata cannot create a page; domains must declare content
+    // the generic renderer supports.
+    if (!domainPage(plugin).sections.length) continue
+    const label = typeof nav?.section === 'string' ? nav.section : plugin.name
     items.push({
       key: `plugin-${plugin.slug}`,
       label,
-      to: plugin.slug === 'finance' ? `${base}/finance` : `${base}/plugins/${encodeURIComponent(plugin.slug)}`,
+      to: `${base}/plugins/${encodeURIComponent(plugin.slug)}`,
       matchPrefix: true,
       icon: pluginSectionIcon(plugin.slug),
     })

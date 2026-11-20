@@ -16,7 +16,6 @@ import type {
   SchemaAuthStatusOut,
   SchemaCapabilityOut,
   SchemaPluginOut,
-  SchemaWriteResponseProjectPluginOut,
   SchemaProviderOut,
   SchemaWriteResponseAuthCredentialSetOut,
   SchemaWriteResponseAuthRevokeOut,
@@ -116,13 +115,6 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const enabledPlugins = computed(() =>
     plugins.value.filter(isProjectPluginEnabled),
   )
-
-  async function enablePlugin(projectId: number, pluginSlug: string): Promise<void> {
-    await apiFetch<SchemaWriteResponseProjectPluginOut>(
-      `/api/v1/projects/${projectId}/plugins/${encodeURIComponent(pluginSlug)}/enable`,
-      { method: 'POST' },
-    )
-  }
 
   function refreshPlugins(
     projectId: number,
@@ -549,7 +541,6 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     connectionProjectId,
     enabledPlugins,
     refreshPlugins,
-    enablePlugin,
     capturePluginScope: projectRequests.captureScope,
     refresh,
     refreshAuth,

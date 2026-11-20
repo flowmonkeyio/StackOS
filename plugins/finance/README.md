@@ -9,7 +9,8 @@ and audit state rather than a second financial ledger.
 
 ## Manage finance in the local console
 
-Enable Finance for the owning StackOS project and open **Finance**. StackOS
+Open **Finance** from the owning project's menu. The entry stays visible before
+setup; select **Enable Finance** on that page to open the console. StackOS
 automatically prepares its private default folder at
 `data/projects/<project-id>/finance/`; there is no folder or workspace selection.
 Existing project data is reused, and missing/corrupt provisioned data requires
