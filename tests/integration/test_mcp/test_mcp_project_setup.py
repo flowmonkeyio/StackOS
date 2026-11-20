@@ -110,7 +110,9 @@ def test_reviewer_capability_report_rejects_foreign_proof_then_accepts_owner(
     )
 
 
-def test_setup_read_injected_project_and_foreign_rejection(mcp_client, tmp_path, monkeypatch):
+def test_setup_read_injected_project_and_foreign_rejection(
+    mcp_client, mcp_app, tmp_path, monkeypatch
+):
     other = _create_project(mcp_client, "other-setup")
     own = mcp_client.call_tool_structured(
         "workspace.bootstrap", {"cwd": str(tmp_path), "project_name": "Setup bound"}
@@ -124,6 +126,19 @@ def test_setup_read_injected_project_and_foreign_rejection(mcp_client, tmp_path,
     assert data["project_id"] == own
     assert data["eligible"] is True
     assert data["status"] == "setup_needed"
+    from stackos.repositories.project_setup import _digest
+
+    assert data["delivery_defaults_digest"] == _digest({})
+    from stackos.repositories.tracker import TrackerRepository
+
+    with Session(mcp_app.state.engine) as session:
+        TrackerRepository(session).configure_delivery(
+            project_id=own, delivery={"host_key": "codex"}
+        )
+        session.commit()
+    changed = _operation_data(_structured(_toolbox_call(proxy, client, "projectSetup.get", {})))
+    assert changed["delivery_defaults_digest"] == _digest({"host_key": "codex"})
+    assert changed["delivery_defaults_digest"] != data["delivery_defaults_digest"]
     assert data["notice"] == PROJECT_SETUP_NOTICES["setup_needed"]
     probes = []
     monkeypatch.setattr(service, "inspect_host", lambda host: probes.append(host))

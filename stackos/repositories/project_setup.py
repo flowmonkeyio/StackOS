@@ -592,6 +592,7 @@ class ProjectSetupOut(BaseModel):
     workflows: list[SetupWorkflowOut] = Field(default_factory=list)
     current_attempt: SetupAttempt | None = None
     launch_preferences: dict[str, Any] = Field(default_factory=dict)
+    delivery_defaults_digest: str
     attempt_diagnostic: str | None = None
     guidance_ref: dict[str, Any] = Field(default_factory=lambda: dict(SETUP_GUIDANCE_REF))
     notice: str | None = None
@@ -2160,6 +2161,7 @@ class ProjectSetupRepository:
             if updates
             else "current"
         )
+        delivery_defaults = TrackerRepository(self._s).delivery_defaults(project_id=project_id)
         return ProjectSetupOut(
             project_id=project_id,
             eligible=eligible,
@@ -2173,9 +2175,8 @@ class ProjectSetupRepository:
             update_count=updates,
             unknown_count=unknown,
             current_attempt=attempt,
-            launch_preferences=TrackerRepository(self._s)
-            .delivery_defaults(project_id=project_id)
-            .get("main_agent", {}),
+            launch_preferences=delivery_defaults.get("main_agent", {}),
+            delivery_defaults_digest=_digest(delivery_defaults),
             attempt_diagnostic=attempt_diagnostic,
             notice=(
                 None
