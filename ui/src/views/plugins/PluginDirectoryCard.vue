@@ -95,7 +95,7 @@ const enablement = computed(() => resolveStatus('plugin', enabled.value ? 'enabl
       v-else
       class="mt-5 text-sm text-fg-muted"
     >
-      No services required.
+      {{ item.plugin.enabled_for_project === false ? 'Services are unavailable while this plugin is disabled.' : 'No services required.' }}
     </p>
 
     <div

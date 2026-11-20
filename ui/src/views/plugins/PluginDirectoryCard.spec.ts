@@ -11,6 +11,8 @@ describe('PluginDirectoryCard', () => {
     item.plugin.enabled_for_project = enabled
     const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref } })
     expect(wrapper.text()).toContain(enabled === false ? 'Disabled' : 'Enabled')
+    expect(wrapper.text().includes('Services are unavailable while this plugin is disabled.')).toBe(enabled === false)
+    expect(wrapper.text().includes('No services required.')).toBe(enabled !== false)
     expect(wrapper.find('button').exists()).toBe(false)
   })
 

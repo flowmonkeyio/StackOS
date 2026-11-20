@@ -293,9 +293,11 @@ putting that business decision in the connector.
 
 ## Enablement
 
-Plugins can be enabled per project. A disabled plugin should not appear in the
-project catalog, but its historical records can still be displayed when they are
-part of prior run history.
+Plugins can be enabled per project. Disabled plugins remain visible in the
+project plugin catalog with a Disabled status, while their services and actions
+are unavailable to the project. An empty service list for a disabled plugin
+does not mean it requires no services. Historical records can still be
+displayed as part of prior run history.
 
 ## Tests
 
