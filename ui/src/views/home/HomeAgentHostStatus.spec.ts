@@ -15,7 +15,7 @@ function inventory(accounts = [a, b], desired: string | null = 'a') {
 function panel() {
   const store = useHomeSubscriptions()
   return mount(HomeAgentHostStatus, { props: {
-    state: { kind: 'loaded', items: ['codex', 'claude-code', 'grok', 'gemini-cli'].map(host_key => ({ host_key, status_label: 'Connected', ok: true })) },
+    state: { kind: 'loaded', items: ['codex', 'claude-code', 'grok', 'gemini-cli'].map(host_key => ({ host_key, status_label: 'Connected', ok: true, available: true, connection_state: 'connected' as const })) },
     summary: 'Tools ready', subscriptions: store.subscriptions,
   }, attachTo: document.body })
 }
@@ -23,6 +23,78 @@ function panel() {
 describe('native account picker', () => {
   beforeEach(() => { setActivePinia(createPinia()) })
   afterEach(() => { useToastsStore().clear(); globalThis.fetch = originalFetch; document.body.innerHTML = ''; vi.useRealTimers() })
+
+  it('waits for host detection and never adopts an uninstalled host', async () => {
+    const empty = { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: null }
+    globalThis.fetch = vi.fn(async url => {
+      if (String(url).includes('adoptAccount')) return json({ data: a })
+      return json({ hosts: { codex: { ...empty }, grok: { ...empty } } })
+    }) as typeof fetch
+    const store = useHomeSubscriptions()
+    const wrapper = mount(HomeAgentHostStatus, { props: {
+      state: { kind: 'loading', items: [] }, summary: '', subscriptions: store.subscriptions,
+    } })
+    try {
+      await flushPromises()
+      expect(fetch).not.toHaveBeenCalled()
+      await wrapper.setProps({ state: { kind: 'loaded', items: [
+        { host_key: 'codex', status_label: 'Connected', available: true, connection_state: 'connected' },
+        { host_key: 'grok', status_label: 'Not detected', available: false, connection_state: 'unavailable' },
+      ] } })
+      await flushPromises()
+      const calls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('adoptAccount'))
+      expect(calls).toHaveLength(1)
+      expect(JSON.parse(String(calls[0]![1]?.body)).arguments.host_key).toBe('codex')
+      expect(wrapper.find('[aria-label="Grok Build accounts"]').exists()).toBe(false)
+      await wrapper.setProps({ summary: 'Updated summary' })
+      await flushPromises()
+      expect(fetch).toHaveBeenCalledTimes(2)
+      const items = wrapper.props('state').items
+      await wrapper.setProps({ state: { kind: 'loading', items } })
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+      await wrapper.setProps({ state: { kind: 'error', items, message: 'Status unavailable' } })
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+      expect(fetch).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount() }
+  })
+
+  it.each([false, true])('handles detection changes during an account read (retired: %s)', async retired => {
+    let finishRead!: (response: Response) => void
+    let reads = 0
+    globalThis.fetch = vi.fn(async url => {
+      if (String(url).includes('adoptAccount')) return json({ data: a })
+      if (++reads === 1) return new Promise<Response>(resolve => { finishRead = resolve })
+      return json({ hosts: {
+        ...inventory().hosts,
+        grok: { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: null },
+      } })
+    }) as typeof fetch
+    const store = useHomeSubscriptions()
+    const wrapper = mount(HomeAgentHostStatus, { props: {
+      state: { kind: 'loaded', items: [
+        { host_key: 'codex', available: true, connection_state: 'connected' },
+        { host_key: 'grok', available: false, connection_state: 'unavailable' },
+      ] }, summary: '', subscriptions: store.subscriptions,
+    } })
+    try {
+      await flushPromises()
+      await wrapper.setProps({ state: { kind: 'loaded', items: [
+        { host_key: 'codex', available: true, connection_state: 'connected' },
+        { host_key: 'grok', available: true, connection_state: 'connected' },
+      ] } })
+      expect(reads).toBe(1)
+      if (retired) wrapper.unmount()
+      finishRead(json(inventory()))
+      await flushPromises()
+      const adoptions = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('adoptAccount'))
+      expect(reads).toBe(retired ? 1 : 2)
+      expect(adoptions).toHaveLength(retired ? 0 : 1)
+      if (!retired) {
+        expect(JSON.parse(String(adoptions[0]![1]?.body)).arguments.host_key).toBe('grok')
+        expect(wrapper.find('[aria-label="Grok Build account: first@example.com"]').exists()).toBe(true)
+      }
+    } finally { if (!retired) wrapper.unmount() }
+  })
 
   it('shows switching immediately and confirms before a slow quota refresh finishes', async () => {
     let finishSwitch!: (response: Response) => void

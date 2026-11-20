@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onBeforeUpdate, onMounted } from 'vue'
 import { UiBadge, UiButton, UiCallout, UiDialog, UiDropdownMenu, UiIcon, UiScoreMeter, UiSkeleton } from '@/components/ui'
 import { accountHosts, useHomeHostAccounts } from './useHomeHostAccounts'
 import HomeAccountEmail from './HomeAccountEmail.vue'
@@ -10,8 +10,28 @@ import type { HomeSubscriptions } from './useHomeSubscriptions'
 
 const props = defineProps<{ state: HostStatusState; summary: string; subscriptions: HomeSubscriptions }>()
 defineEmits<{ refresh: [] }>()
-const accounts = useHomeHostAccounts()
-onMounted(() => { void accounts.load() })
+function hostAvailable(key: string) {
+  const host = props.state.items.find(item => item.host_key === key)
+  return host?.available === true && host.connection_state !== 'unavailable'
+}
+const accounts = useHomeHostAccounts(key => props.state.kind === 'loaded' && hostAvailable(key))
+let loadedState: HostStatusState | undefined
+let loadingAccounts = false
+let disposed = false
+function loadDetectedAccounts() {
+  const state = props.state
+  if (disposed || state.kind !== 'loaded' || state === loadedState || loadingAccounts) return
+  loadingAccounts = true
+  void accounts.load().then(() => {
+    loadedState = state
+    loadingAccounts = false
+    // Catch up once if detection changed while the account read was pending.
+    loadDetectedAccounts()
+  })
+}
+onMounted(loadDetectedAccounts)
+onBeforeUpdate(loadDetectedAccounts)
+onBeforeUnmount(() => { disposed = true })
 function email(host: string) {
   const state = accounts.hosts.value[host]
   const current = state?.accounts.find(account => account.account_ref === accounts.currentRef(host))
@@ -127,7 +147,7 @@ function meterTone(used: number) {
             <h4 class="min-w-0 flex-1 text-xs font-semibold leading-tight text-fg-strong" :class="{ 'whitespace-nowrap': accountHosts.has(card.key) }">{{ card.name }}</h4>
             <UiBadge :tone="card.status.tone" size="sm" class="shrink-0" :title="card.message">{{ card.status.label }}</UiBadge>
           </div>
-            <UiDropdownMenu v-if="accountHosts.has(card.key)" :items="accountItems(card.key)" :aria-label="card.name + ' accounts'" class="account-picker col-start-2 w-full min-w-0">
+            <UiDropdownMenu v-if="accountHosts.has(card.key) && hostAvailable(card.key)" :items="accountItems(card.key)" :aria-label="card.name + ' accounts'" class="account-picker col-start-2 w-full min-w-0">
               <template #trigger="{ open, toggle }">
                 <button type="button" data-dropdown-trigger class="focus-ring flex w-full min-w-0 items-center gap-1 text-left text-xs text-fg-muted"
                   aria-haspopup="menu" :aria-expanded="open" :aria-label="card.name + ' account: ' + email(card.key)"
