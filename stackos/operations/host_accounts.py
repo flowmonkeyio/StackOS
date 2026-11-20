@@ -19,6 +19,7 @@ from stackos.host_mcp.accounts import (
     HostAccountInventory,
     HostAccounts,
 )
+from stackos.logging import get_logger
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.errors import ToolNotGrantedError
@@ -32,6 +33,80 @@ from stackos.operations.spec import (
     OperationSurfaces,
 )
 from stackos.repositories.base import ConflictError, ValidationError
+
+_log = get_logger(__name__)
+_HOST_NAMES = {"codex": "Codex", "claude-code": "Claude Code", "grok": "Grok"}
+_IDENTITY_MESSAGES = {
+    "needs_sign_in": (
+        "Sign in using the native client, then refresh accounts. "
+        "If the saved profile is missing, add the account again."
+    ),
+    "expired": "Native sign-in has expired. Sign in again, then refresh accounts.",
+    "missing_email": (
+        "Native verification did not provide an email. Complete native sign-in, "
+        "then refresh accounts."
+    ),
+    "conflicting_credentials": (
+        "Conflicting native credentials prevent verification. Resolve competing "
+        "credential settings in the native client, then refresh accounts."
+    ),
+    "unavailable": (
+        "Native account verification is unavailable. Check that the native client "
+        "is available and supports the account protocol, then refresh accounts."
+    ),
+    "identity_changed": (
+        "The native account identity changed. Refresh accounts and verify the intended "
+        "sign-in before selecting it again."
+    ),
+}
+_ACCOUNT_MESSAGES = {
+    "identity_unverified": (
+        "The native account could not be verified. Sign in, then refresh accounts."
+    ),
+    "activation_failed": (
+        "Could not save or activate the native account. Check native credential storage "
+        "and sign-in, then refresh accounts before retrying."
+    ),
+    "selection_restore_failed": (
+        "Native account restoration could not be confirmed. Check the native client's "
+        "current sign-in before retrying or starting work."
+    ),
+    "profile_missing": (
+        "The saved account profile is missing. Add the account again before selecting it."
+    ),
+    "unsafe_profile": (
+        "The saved account profile failed its safety checks. Check its ownership and "
+        "permissions before retrying."
+    ),
+    "account_store_unavailable": (
+        "Saved accounts could not be read or updated safely. Check local account-store "
+        "access and permissions, then refresh accounts."
+    ),
+    "unsupported_host": "Account management is not supported for this host. Use its native client.",
+    "unknown_account": (
+        "The saved account was not found. Refresh accounts and select an enrolled account."
+    ),
+    "unknown_enrollment": (
+        "The sign-in attempt was not found. Refresh accounts before starting sign-in again."
+    ),
+    "stale_selection": "The selected account changed. Refresh accounts before selecting again.",
+    "enrollment_pending": (
+        "A sign-in attempt is already pending. Complete or cancel it before adding an account."
+    ),
+    "default_profile_changed": (
+        "The native default identity changed. Refresh accounts and verify the intended "
+        "sign-in before adopting it again."
+    ),
+    "account_switch_busy": "An account switch is already in progress. Try again shortly.",
+    "account_switch_unresumable_worker": (
+        "An automated Codex process cannot yet resume its saved conversation. "
+        "Let it finish before switching accounts."
+    ),
+    "account_switch_retirement_unconfirmed": (
+        "An automated Codex process has not stopped. The account was not changed. "
+        "Check the running task before trying again."
+    ),
+}
 
 
 class AccountConsoleInput(MCPInput):
@@ -68,7 +143,9 @@ def _accounts(inp: AccountConsoleInput, ctx: MCPContext) -> HostAccounts:
     return service.host_accounts(settings.data_dir)
 
 
-async def _call[T](fn: Callable[..., T], *args: Any) -> T:
+async def _call[T](
+    fn: Callable[..., T], *args: Any, operation: str, host_key: str | None = None
+) -> T:
     try:
         return await to_thread(fn, *args)
     except HostAccountError as exc:
@@ -85,53 +162,85 @@ async def _call[T](fn: Callable[..., T], *args: Any) -> T:
             }
             else ValidationError
         )
-        data = {"code": exc.code}
-        if exc.status is not None:
-            data["identity_status"] = exc.status
-        message = {
-            "account_switch_busy": "An account switch is already in progress. Try again shortly.",
-            "account_switch_unresumable_worker": (
-                "An automated Codex process cannot yet resume its saved conversation. "
-                "Let it finish before switching accounts."
-            ),
-            "account_switch_retirement_unconfirmed": (
-                "An automated Codex process has not stopped. The account was not changed. "
-                "Check the running task before trying again."
-            ),
-        }.get(exc.code, "Harness account action could not complete.")
+        # Only closed diagnostics cross this boundary, never native exception text.
+        code = exc.code if exc.code in _ACCOUNT_MESSAGES else "account_error"
+        status = exc.status if exc.status in {*_IDENTITY_MESSAGES, "verified"} else None
+        data = {"code": code}
+        if status is not None:
+            data["identity_status"] = status
+        message = _ACCOUNT_MESSAGES.get(
+            code, "Account action failed. Refresh accounts before retrying."
+        )
+        if code == "identity_unverified" and status is not None:
+            message = _IDENTITY_MESSAGES.get(status, message)
+        label = _HOST_NAMES.get(host_key or "", "Harness accounts")
+        message = f"{label}: {message}"
+        _log.info(
+            "host_account.rejected",
+            operation=operation,
+            host_key=host_key if host_key in _HOST_NAMES else None,
+            reason=code,
+            identity_status=status,
+            http_status=error.http_status,
+        )
         raise error(message, data=data) from None
 
 
 async def _list(
     inp: AccountConsoleInput, ctx: MCPContext, _p: ProgressEmitter
 ) -> HostAccountInventory:
-    return await _call(_accounts(inp, ctx).inventory)
+    return await _call(_accounts(inp, ctx).inventory, operation="hostMcp.listAccounts")
 
 
 async def _adopt(
     inp: AccountHostInput, ctx: MCPContext, _p: ProgressEmitter
 ) -> WriteEnvelope[AccountView]:
-    return WriteEnvelope(data=await _call(_accounts(inp, ctx).adopt, inp.host_key))
+    return WriteEnvelope(
+        data=await _call(
+            _accounts(inp, ctx).adopt,
+            inp.host_key,
+            operation="hostMcp.adoptAccount",
+            host_key=inp.host_key,
+        )
+    )
 
 
 async def _add(
     inp: AccountEnrollmentInput, ctx: MCPContext, _p: ProgressEmitter
 ) -> WriteEnvelope[EnrollmentView]:
-    data = await _call(_accounts(inp, ctx).add, inp.host_key, inp.enrollment_ref)
+    data = await _call(
+        _accounts(inp, ctx).add,
+        inp.host_key,
+        inp.enrollment_ref,
+        operation="hostMcp.addAccount",
+        host_key=inp.host_key,
+    )
     return WriteEnvelope(data=data)
 
 
 async def _complete(
     inp: AccountEnrollmentInput, ctx: MCPContext, _p: ProgressEmitter
 ) -> WriteEnvelope[EnrollmentView]:
-    data = await _call(_accounts(inp, ctx).complete, inp.host_key, inp.enrollment_ref)
+    data = await _call(
+        _accounts(inp, ctx).complete,
+        inp.host_key,
+        inp.enrollment_ref,
+        operation="hostMcp.completeAccountEnrollment",
+        host_key=inp.host_key,
+    )
     return WriteEnvelope(data=data)
 
 
 async def _cancel(
     inp: AccountEnrollmentInput, ctx: MCPContext, _p: ProgressEmitter
 ) -> WriteEnvelope[EnrollmentView]:
-    data = await _call(_accounts(inp, ctx).cancel, inp.host_key, inp.enrollment_ref)
+    data = await _call(
+        _accounts(inp, ctx).cancel,
+        inp.host_key,
+        inp.enrollment_ref,
+        operation="hostMcp.cancelAccountEnrollment",
+        host_key=inp.host_key,
+    )
     return WriteEnvelope(data=data)
 
 
@@ -144,6 +253,8 @@ async def _select(
         inp.host_key,
         inp.account_ref,
         inp.expected_revision,
+        operation="hostMcp.selectAccount",
+        host_key=inp.host_key,
     )
     return WriteEnvelope(data=data)
 
@@ -152,7 +263,13 @@ async def _refresh(
     inp: AccountRefInput, ctx: MCPContext, _p: ProgressEmitter
 ) -> WriteEnvelope[AccountView]:
     return WriteEnvelope(
-        data=await _call(_accounts(inp, ctx).refresh, inp.host_key, inp.account_ref)
+        data=await _call(
+            _accounts(inp, ctx).refresh,
+            inp.host_key,
+            inp.account_ref,
+            operation="hostMcp.refreshAccount",
+            host_key=inp.host_key,
+        )
     )
 
 

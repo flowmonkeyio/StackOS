@@ -11,7 +11,7 @@ cached ``response_json`` from the original call (per PLAN.md L724-L727).
 
 from __future__ import annotations
 
-import contextvars
+import re
 import uuid
 from typing import Any
 
@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
-from stackos.logging import get_logger
+from stackos.logging import get_logger, request_id_var
 from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -36,11 +36,8 @@ from stackos.validation_errors import safe_validation_errors
 
 _log = get_logger(__name__)
 
-# Contextvar set by ``RequestIdMiddleware``; the structlog processor reads
-# it directly. Routes can also surface it on the response via ``X-Request-Id``.
-request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "request_id", default=None
-)
+# Keep the existing import/export available; logging owns the shared context.
+_SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 
 
 class ErrorResponse(BaseModel):
@@ -73,11 +70,12 @@ class ErrorResponse(BaseModel):
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
-    """Stamp every request/response with a UUID4 ``X-Request-Id``.
+    """Stamp every request/response with a bounded ``X-Request-Id``.
 
     Reads an inbound ``X-Request-Id`` header if present (so an upstream
-    proxy or test harness can inject a known id) and falls back to a
-    fresh UUID4. The value is stored in a ``contextvars.ContextVar`` so
+    proxy or test harness can inject a known id). Safe ASCII tokens of up to
+    128 characters pass through; other values are replaced with a fresh UUID4
+    without recording the input. The value is stored in a shared ContextVar so
     structlog's ``_inject_contextvars`` processor binds it to every log
     line emitted under the request without explicit threading.
     """
@@ -88,7 +86,8 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         call_next: RequestResponseEndpoint,
     ) -> Response:
         """Bind a request-id and propagate it back to the client."""
-        rid = request.headers.get("x-request-id") or str(uuid.uuid4())
+        inbound = request.headers.get("x-request-id", "")
+        rid = inbound if _SAFE_REQUEST_ID.fullmatch(inbound) else str(uuid.uuid4())
         token = request_id_var.set(rid)
         try:
             response = await call_next(request)

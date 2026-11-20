@@ -58,7 +58,7 @@ class FakeNativeAccounts:
         self.identities[profile.ref] = self.default
 
     def activate(self, profile, outgoing):
-        pass
+        self.activations.append((profile, outgoing))
 
     def __init__(self):
         self.default = A
@@ -68,6 +68,7 @@ class FakeNativeAccounts:
         self.discarded = []
         self.retire = True
         self.start_error = False
+        self.activations = []
 
     def read_identity(self, profile):
         self.reads.append(profile)
@@ -97,6 +98,169 @@ def adapter(monkeypatch):
     )
     monkeypatch.setattr(service, "_definitions", lambda: definitions)
     return native
+
+
+@pytest.fixture
+def account_adapters(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    natives = {key: FakeNativeAccounts() for key in ("codex", "claude-code", "grok")}
+    definitions = tuple(
+        replace(definition, account_adapter=natives[definition.policy.host_key])
+        if definition.policy.host_key in natives
+        else definition
+        for definition in service._definitions()
+    )
+    monkeypatch.setattr(service, "_definitions", lambda: definitions)
+    return natives
+
+
+@pytest.mark.parametrize(
+    "host_key,label", [("codex", "Codex"), ("claude-code", "Claude Code"), ("grok", "Grok")]
+)
+@pytest.mark.parametrize(
+    "status,explanation",
+    [
+        ("needs_sign_in", "sign in"),
+        ("expired", "expired"),
+        ("missing_email", "email"),
+        ("conflicting_credentials", "conflicting"),
+        ("unavailable", "protocol"),
+    ],
+)
+def test_console_identity_rejection_explains_host_without_activation(
+    account_adapters, account_console, host_key, label, status, explanation
+):
+    native = account_adapters[host_key]
+    native.default = status
+    response = account_console("adoptAccount", host_key=host_key)
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == -32602 and body["retryable"] is False
+    assert body["data"] == {"code": "identity_unverified", "identity_status": status}
+    assert label in body["detail"]
+    assert explanation in body["detail"].lower()
+    assert "not installed" not in body["detail"].lower()
+    assert not native.activations and not native.started
+    state = account_console("listAccounts").json()["hosts"][host_key]
+    assert state["desired"] == {"account_ref": None, "revision": 0}
+    assert state["accounts"] == []
+    sibling = next(key for key in account_adapters if key != host_key)
+    assert _account_data(account_console("adoptAccount", host_key=sibling))["email"] == A.email
+
+
+@pytest.mark.parametrize(
+    "host_key,label", [("codex", "Codex"), ("claude-code", "Claude Code"), ("grok", "Grok")]
+)
+@pytest.mark.parametrize("failure", ["identity_changed", "activation_failed", "profile_missing"])
+def test_console_selection_diagnostics_preserve_generation(
+    account_adapters, emitted_log, account_console, monkeypatch, host_key, label, failure
+):
+    native = account_adapters[host_key]
+    account = _account_data(account_console("adoptAccount", host_key=host_key))
+    selected = _account_data(
+        account_console(
+            "selectAccount",
+            host_key=host_key,
+            account_ref=account["account_ref"],
+            expected_revision=0,
+        )
+    )
+    profile = next(profile for profile in native.reads if profile.directory is not None)
+    marker = "PRIVATE_NATIVE_STDERR_identity@example.test"
+    if failure == "identity_changed":
+        native.identities[profile.ref] = B
+    elif failure == "activation_failed":
+
+        def fail_activation(*_args):
+            raise RuntimeError(marker)
+
+        monkeypatch.setattr(native, "activate", fail_activation)
+    else:
+        profile.directory.rmdir()
+    response = account_console(
+        "selectAccount", host_key=host_key, account_ref=account["account_ref"], expected_revision=1
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert label in body["detail"]
+    assert (
+        marker not in response.text
+        and A.email not in response.text
+        and B.email not in response.text
+    )
+    code = failure
+    if failure == "identity_changed" or (failure == "profile_missing" and host_key != "codex"):
+        code = "identity_unverified"
+    assert body["data"]["code"] == code
+    expected = {
+        "identity_changed": "identity",
+        "activation_failed": "activate",
+        "profile_missing": "missing",
+    }
+    assert expected[failure] in body["detail"].lower()
+    state = account_console("listAccounts").json()["hosts"][host_key]
+    assert state["desired"] == selected
+    assert len(native.activations) == 1
+    for private in (marker, A.email, B.email, A.principal, A.workspace, str(profile.directory)):
+        assert private not in emitted_log.read_text()
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_console_failure_correlates_with_actual_emitted_log(
+    account_adapters, emitted_log, mcp_client, account_console, monkeypatch, conflict
+):
+    native = account_adapters["grok"]
+    marker = "PRIVATE_NATIVE_STDERR_identity@example.test"
+    if conflict:
+        _account_data(account_console("addAccount", host_key="grok", enrollment_ref=str(uuid4())))
+        verb = "addAccount"
+        arguments = {"host_key": "grok", "enrollment_ref": str(uuid4())}
+        reason, identity_status, http_status = "enrollment_pending", None, 409
+    else:
+
+        def fail_identity(_profile):
+            raise RuntimeError(marker)
+
+        monkeypatch.setattr(native, "read_identity", fail_identity)
+        verb, arguments = "adoptAccount", {"host_key": "grok"}
+        reason, identity_status, http_status = "identity_unverified", "unavailable", 422
+    client = mcp_client.test_client
+    rid = "support-case.891:account-1"
+    response = client.post(
+        f"/api/v1/operations/hostMcp.{verb}/call",
+        json={"arguments": arguments},
+        headers={"Authorization": f"Bearer {client.app.state.ui_token}", "X-Request-Id": rid},
+    )
+    assert response.status_code == http_status
+    assert response.headers["x-request-id"] == rid
+    # The same file also receives plain stdlib migration/HTTP diagnostics.
+    events = [
+        json.loads(line) for line in emitted_log.read_text().splitlines() if line.startswith("{")
+    ]
+    matching = [event for event in events if event.get("event") == "host_account.rejected"]
+    assert len(matching) == 1, emitted_log.read_text()
+    event = matching[0]
+    assert event["request_id"] == rid
+    assert event["operation"] == f"hostMcp.{verb}"
+    assert event["host_key"] == "grok"
+    assert event["reason"] == reason
+    assert event["identity_status"] == identity_status
+    assert event["http_status"] == http_status
+    assert set(event) == {
+        "event",
+        "level",
+        "timestamp",
+        "request_id",
+        "operation",
+        "host_key",
+        "reason",
+        "identity_status",
+        "http_status",
+    }
+    public = response.text + emitted_log.read_text()
+    for private in (marker, A.email, A.principal, A.workspace, str(native.identities)):
+        if private != "{}":
+            assert private not in public
 
 
 def _begin(store, adapter):

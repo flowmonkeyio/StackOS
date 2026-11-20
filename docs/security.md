@@ -482,6 +482,23 @@ console receives enrolled account references, display email, verification
 status and enrollment or selection receipts. Account management stays on the
 local-console routes. See [the operation contract](operations.md#native-harness-account-controls).
 
+Handled account failures expose fixed host-specific recovery messages and the
+existing reason/identity-status codes, never native exception text or payloads.
+The configured daemon log records a `host_account.rejected` event with the
+operation, allowlisted host, reason, identity status and HTTP status. Its
+`request_id` matches the response's `X-Request-Id`, which the console includes
+in the displayed error. Use that exact ID to find new failures in the daemon
+log; this does not recover missing diagnostics for historical requests.
+Programmatic startup migrations retain that configured logging pipeline;
+standalone Alembic commands keep their own console logging configuration.
+
+Request IDs share the logging context owner and are retired after each request.
+Caller-supplied IDs are opaque correlation tokens: 1–128 ASCII characters,
+starting with a letter or digit and otherwise containing only letters, digits,
+`.`, `_`, `:` or `-`. Other values, including empty or oversized headers, are
+replaced with a fresh UUID without logging the original input. Put no account
+identity, credential or other private data in a correlation token.
+
 ### Private finance console
 
 The exact registered MCP-disabled Finance REST operations use
