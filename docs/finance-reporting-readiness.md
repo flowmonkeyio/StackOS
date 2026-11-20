@@ -58,8 +58,11 @@ export manifest before relying on a previously verified snapshot.
 
 ## Verification
 
-Use the maintained Finance projection, storage, recovery and consuming-screen
-tests selected by [integration testing](integration-testing.md). Keep source,
+Select the affected maintained checks in
+[Finance projection tests](../tests/unit/test_finance_reporting_readiness.py),
+[project storage tests](../tests/integration/test_routes/test_finance_project_storage.py),
+[recovery tests](../tests/integration/test_routes/test_finance_recovery.py) and
+[Finance screen tests](../ui/src/views/FinanceView.spec.ts). Keep source,
 generated-bundle and installed-app evidence distinct. Follow
 [release signoff](release-signoff.md) for the combined candidate and
 [desktop distribution](desktop-distribution.md) for packaging/install proof.
