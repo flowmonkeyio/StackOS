@@ -306,8 +306,20 @@ to choose a repair action.
 
 Host readiness and install success are separate. Restart, review, update, or
 optional-host availability can remain visible in the status report without
-preventing StackOS from opening. Install/repair fails only when shared bootstrap
-fails or a StackOS-owned repair attempt does not complete.
+preventing StackOS from opening. The shared host lifecycle supplies the same
+installation interpretation to bulk repair and Doctor. `doctor --json` retains
+its strict `ok`, `code`, checks, and host diagnostics, and also emits
+`installation: {"ok": true|false, "code": <exit code>}`. Normal CLI install
+postflight and desktop install/repair consume that installation result; desktop
+also requires successful restart, health, a complete valid Doctor envelope and
+the matching process exit status. An optional host requiring attention stays
+unready for execution even when installation succeeds.
+
+Failed shared bootstrap, failed host operations, unreadable configuration,
+remaining stale or unsafe StackOS-owned wiring, and required state, assets or
+runtime failures still fail install/repair. Foreign same-name entries remain
+unchanged for review. CLI install retains its first-run daemon-down warning;
+desktop must observe a healthy running service before opening.
 
 Claude Desktop reports **Restart needed** only after StackOS actually changes
 its config while Claude is open; a no-op repair must not renew that state.

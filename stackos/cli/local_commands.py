@@ -12,7 +12,7 @@ from stackos.config import get_settings
 
 from . import launchd as launchd_service
 from .app import app
-from .doctor_commands import doctor
+from .doctor_commands import _run_doctor as doctor
 from .paths import _doctor_home
 
 
@@ -233,9 +233,10 @@ def install(
     if do_mcp:
         if mcp_host is not None:
             from stackos.host_mcp import register_host
+            from stackos.host_mcp.service import host_installation_ok
 
             host_result = register_host(mcp_host, home=home, profile=mcp_profile)
-            ok = not host_result.blocking
+            ok = host_installation_ok(host_result)
             messages = [host_result.message]
             if host_result.repair and host_result.blocking:
                 messages.append(host_result.repair)
@@ -262,11 +263,10 @@ def install(
 
     if not skip_doctor:
         typer.echo("==> Running doctor")
-        # Re-enter the doctor command in-process so the exit code
-        # propagates. We delegate to the underlying typer command via
-        # the same module to avoid duplicating the logic.
+        # Preserve strict diagnostics, using Doctor's canonical installation
+        # result rather than requiring every optional host to be executable.
         try:
-            doctor(json_output=False)
+            doctor(json_output=False, installation=True)
         except typer.Exit as exc:
             # A fresh install usually happens before the daemon is started.
             # Keep `doctor` strict when called directly, but let install finish

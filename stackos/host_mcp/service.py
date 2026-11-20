@@ -685,6 +685,10 @@ class HostMcpAggregate:
     results: list[HostMcpResult]
 
     @property
+    def installation_ok(self) -> bool:
+        return all(host_installation_ok(result) for result in self.results)
+
+    @property
     def blocking_results(self) -> list[HostMcpResult]:
         return [result for result in self.results if result.blocking]
 
@@ -1622,6 +1626,27 @@ def _aggregate(results: list[HostMcpResult]) -> HostMcpAggregate:
     return HostMcpAggregate(
         ok=not any(result.blocking for result in results),
         results=results,
+    )
+
+
+def host_installation_ok(result: HostMcpResult) -> bool:
+    """Separate optional host attention from failed or unsafe owned installation.
+
+    Call only with normalized lifecycle facts. Foreign entries are preserved for
+    review; unreadable configuration cannot establish safe ownership.
+    """
+    return (
+        result.connection_state is not None
+        and result.connection_state not in {"error", "repair_needed"}
+        and result.status
+        not in {
+            "token_missing",
+            "register_failed",
+            "remove_failed",
+            "config_unreadable",
+            "registered_unsafe",
+        }
+        and not (result.managed and result.connection_state == "review_required")
     )
 
 

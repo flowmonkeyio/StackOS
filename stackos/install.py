@@ -1394,12 +1394,7 @@ def repair_mcp_hosts(*, home: Path | None = None) -> tuple[bool, list[str]]:
     from stackos.host_mcp import repair_all
 
     aggregate = repair_all(home=home if home is not None else Path.home())
-    operation_ok = not any(
-        result.status in {"token_missing", "register_failed", "remove_failed"}
-        or result.connection_state == "repair_needed"
-        for result in aggregate.results
-    )
-    return operation_ok, aggregate.summary_lines()
+    return aggregate.installation_ok, aggregate.summary_lines()
 
 
 def remove_mcp_hosts(*, home: Path | None = None) -> tuple[bool, list[str]]:
