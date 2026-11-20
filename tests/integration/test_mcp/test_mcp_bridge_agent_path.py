@@ -20,6 +20,7 @@ from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.models import Credential
 from stackos.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
+from stackos.repositories.projects import ProjectRepository
 
 from .conftest import MODERN_PROTOCOL_VERSION, MCPClient
 
@@ -1210,6 +1211,33 @@ def test_bridge_app_bundle_cwd_does_not_autobootstrap_workspace(
     assert resolved["data"].get("workspace_binding_id") is None
     assert resolved["data"]["needs_connect"] is True
     assert bindings["items"] == []
+
+
+@pytest.mark.parametrize("setup_tool", ["workspace.startSession", "workspace.bootstrap"])
+def test_bridge_recovers_when_bound_project_is_deleted(
+    mcp_client: MCPClient, mcp_settings: Settings, setup_tool: str,
+) -> None:
+    proxy, client = _scoped_bridge(
+        mcp_client, cwd="/tmp/deleted-project-workspace",
+        repo_fingerprint="path:deleted-project-workspace",
+    )
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+    old_project = proxy.scoped_project_id
+    assert old_project is not None
+    _create_project(mcp_client, "other-project")
+    engine = make_engine(mcp_settings.db_path)
+    with Session(engine) as session:
+        ProjectRepository(session).delete(old_project, hard=True)
+    engine.dispose()
+
+    if setup_tool == "workspace.startSession":
+        response = _tool_call(proxy, client, setup_tool, {}, request_id="recover")
+    else:
+        response = _toolbox_call(proxy, client, setup_tool, {}, request_id="recover")
+    assert response["result"]["isError"] is False
+    assert proxy.scoped_project_id is not None
+    assert proxy.scoped_project_id != old_project
 
 
 def test_bridge_no_hint_start_session_lists_named_workspace_candidates(

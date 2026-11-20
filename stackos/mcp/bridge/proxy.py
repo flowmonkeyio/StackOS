@@ -24,6 +24,7 @@ from .protocol import (
     _bridge_negotiated_protocol_version,
     _bridge_replace_tool_call_arguments,
     _bridge_response_text,
+    _bridge_structured_content,
     _bridge_tool_call_arguments,
     _bridge_tool_call_name,
 )
@@ -146,6 +147,8 @@ class AgentBridgeProxy:
         tool_name = _bridge_tool_call_name(payload)
         arguments = _bridge_tool_call_arguments(payload)
         self._ensure_workspace_scope(client)
+        if tool_name == "workspace.startSession":
+            self._refresh_workspace_scope(client)
         if tool_name == _TOOLBOX_DESCRIBE_TOOL:
             return self._handle_toolbox_describe(client, request_id, arguments)
         if tool_name == _TOOLBOX_CALL_TOOL:
@@ -261,6 +264,40 @@ class AgentBridgeProxy:
         if project_id is not None:
             self.scoped_project_id = project_id
             self.workspace_scope_error = None
+
+    def _refresh_workspace_scope(self, client: Any) -> None:
+        """Reconcile cached scope with the daemon before starting a new session."""
+        if self.scoped_project_id is None or not self._has_workspace_hints():
+            return
+        args, error = self._scope_workspace_arguments("workspace.resolve", {})
+        if error is not None or args is None:
+            return
+        try:
+            out = self.request_daemon(
+                client, _bridge_make_tool_call_payload(
+                    "stackos-bridge-resolve", "workspace.resolve", args
+                )
+            )
+            envelope = json.loads(out)
+        except Exception:
+            return
+        result = envelope.get("result") if isinstance(envelope, dict) else None
+        structured = _bridge_structured_content(out)
+        if (
+            not isinstance(result, dict)
+            or result.get("isError")
+            or not isinstance(structured, dict)
+        ):
+            return
+        data = structured.get("data", structured)
+        if not isinstance(data, dict) or "project_id" not in data:
+            return
+        project_id = _bridge_extract_project_id(out)
+        if project_id != self.scoped_project_id:
+            self.scoped_project_id = project_id
+            self.allowed_by_run.clear()
+            self.tokens_by_run.clear()
+            self.plans_by_run.clear()
 
     def _has_workspace_hints(self) -> bool:
         return any((self.cwd, self.repo_fingerprint, self.git_remote_url))
@@ -445,6 +482,8 @@ class AgentBridgeProxy:
         self._ensure_tool_catalog(client)
         target_name = arguments.get("tool_name")
         target_args = arguments.get("arguments")
+        if target_name in {"workspace.bootstrap", "workspace.connect"}:
+            self._refresh_workspace_scope(client)
         run_id = _bridge_as_int(arguments.get("run_id"))
         run_plan_id = None
         if run_id is None and isinstance(target_args, dict):
