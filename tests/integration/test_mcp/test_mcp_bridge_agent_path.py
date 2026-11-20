@@ -2451,6 +2451,57 @@ def test_bridge_app_bundle_cwd_does_not_autobootstrap_workspace(
     assert bindings["items"] == []
 
 
+@pytest.mark.parametrize("setup_tool", ["workspace.startSession", "workspace.bootstrap"])
+@pytest.mark.parametrize("prebind_replacement", [False, True])
+def test_bridge_recovers_when_bound_project_is_deleted(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    setup_tool: str,
+    tmp_path: Path,
+    prebind_replacement: bool,
+) -> None:
+    root = tmp_path / "deleted-project-workspace"
+    root.mkdir()
+    proxy, client = _scoped_bridge(
+        mcp_client,
+        cwd=str(root),
+    )
+    _initialize(proxy, client)
+    started = _tool_call(proxy, client, "workspace.startSession", {})
+    assert not started["result"].get("isError"), started
+    old_project = proxy.scoped_project_id
+    assert old_project is not None
+    _create_project(mcp_client, "other-project")
+    engine = make_engine(mcp_settings.db_path)
+    with Session(engine) as session:
+        slug = session.get(Project, old_project).slug
+    engine.dispose()
+    deleted = _toolbox_call(
+        proxy,
+        client,
+        "project.delete",
+        {
+            "confirmation": {"permanent": True, "project_id": old_project, "project_slug": slug},
+        },
+    )
+    assert _structured(deleted)["data"]["status"] == "deleted", deleted
+    replacement = None
+    if prebind_replacement:
+        replacement = mcp_client.call_tool_structured(
+            "workspace.bootstrap", {"cwd": str(root), "project_name": "Replacement"}
+        )["data"]["project"]["id"]
+
+    if setup_tool == "workspace.startSession":
+        response = _tool_call(proxy, client, setup_tool, {}, request_id="recover")
+    else:
+        response = _toolbox_call(proxy, client, setup_tool, {}, request_id="recover")
+    assert response["result"]["isError"] is False
+    assert proxy.scoped_project_id is not None
+    assert proxy.scoped_project_id != old_project
+    if replacement is not None:
+        assert proxy.scoped_project_id == replacement
+
+
 def test_bridge_no_hint_start_session_lists_named_workspace_candidates(
     mcp_client: MCPClient,
 ) -> None:
