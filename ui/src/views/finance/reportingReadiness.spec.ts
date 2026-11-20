@@ -19,7 +19,7 @@ describe('legacy reporting readiness', () => {
       props: { projection },
       global: { stubs: { FinanceOverviewCharts: true } },
     })
-    expect(wrapper.text()).toContain('No supported accounting totals yet')
+    expect(wrapper.text()).toContain('Totals are not available yet')
     expect(wrapper.findComponent({ name: 'FinanceOverviewCharts' }).exists()).toBe(false)
     expect(wrapper.findAllComponents({ name: 'UiMetricCard' })).toHaveLength(0)
   })

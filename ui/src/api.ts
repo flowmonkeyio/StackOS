@@ -1596,6 +1596,84 @@ export interface components {
             /** Updated At */
             updated_at?: string | null;
         };
+        /** AccountConsoleInput */
+        AccountConsoleInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: AccountConsoleInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** AccountEnrollmentInput */
+        AccountEnrollmentInput: {
+            /** Enrollment Ref */
+            enrollment_ref: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Host Key */
+            host_key: string;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: AccountEnrollmentInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** AccountHostInput */
+        AccountHostInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Host Key */
+            host_key: string;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: AccountHostInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
         /** AccountOut */
         AccountOut: {
             /** Account */
@@ -1633,6 +1711,64 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** AccountRefInput */
+        AccountRefInput: {
+            /** Account Ref */
+            account_ref: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Host Key */
+            host_key: string;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: AccountRefInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** AccountSelectInput */
+        AccountSelectInput: {
+            /** Account Ref */
+            account_ref: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Host Key */
+            host_key: string;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: AccountSelectInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
         /**
          * AccountSessionOut
          * @description Agent-safe state of one project-attached Telegram Account session.
@@ -1660,6 +1796,18 @@ export interface components {
             provider_key: string;
             /** Status */
             status: string;
+        };
+        /** AccountView */
+        AccountView: {
+            /** Account Ref */
+            account_ref: string;
+            /** Email */
+            email: string;
+            /**
+             * Identity Status
+             * @enum {string}
+             */
+            identity_status: AccountViewIdentity_status;
         };
         /**
          * ActionAvailabilityOut
@@ -3928,6 +4076,19 @@ export interface components {
              */
             total_seconds: number | null;
         };
+        /** DesiredAccount */
+        DesiredAccount: {
+            /**
+             * Account Ref
+             * @default null
+             */
+            account_ref: string | null;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+        };
         /** DurableActionItemOut */
         DurableActionItemOut: {
             /** Attempt Count */
@@ -4099,6 +4260,36 @@ export interface components {
          * @enum {string}
          */
         DurableActionJobStatus: DurableActionJobStatus;
+        /** EnrollmentView */
+        EnrollmentView: {
+            /**
+             * Account Ref
+             * @default null
+             */
+            account_ref: string | null;
+            /**
+             * Cleanup Pending
+             * @default false
+             */
+            cleanup_pending: boolean;
+            /** Enrollment Ref */
+            enrollment_ref: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Identity Status
+             * @default null
+             */
+            identity_status: EnrollmentViewIdentity_statusAnyOf0 | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: EnrollmentViewStatus;
+        };
         /**
          * EnumLookupResponse
          * @description Core enum values and lifecycle transition maps.
@@ -4402,6 +4593,15 @@ export interface components {
             /** Workspace Ref */
             workspace_ref: string;
         };
+        /** FinanceAccountFilterOptionOut */
+        FinanceAccountFilterOptionOut: {
+            /** Aliases */
+            aliases: string[];
+            /** Label */
+            label: string | null;
+            /** Value */
+            value: string;
+        };
         /** FinanceCommitInput */
         FinanceCommitInput: {
             /** Access Generation */
@@ -4573,6 +4773,13 @@ export interface components {
             /** Superseded Ref */
             superseded_ref: string;
         };
+        /** FinanceCounterpartyFilterOptionOut */
+        FinanceCounterpartyFilterOptionOut: {
+            /** Label */
+            label: string | null;
+            /** Value */
+            value: string;
+        };
         /** FinanceEditFields */
         FinanceEditFields: {
             /**
@@ -4708,6 +4915,13 @@ export interface components {
             /** Workspace Ref */
             workspace_ref: string;
         };
+        /** FinanceFilterOptionsOut */
+        FinanceFilterOptionsOut: {
+            /** Accounts */
+            accounts: components["schemas"]["FinanceAccountFilterOptionOut"][];
+            /** Counterparties */
+            counterparties: components["schemas"]["FinanceCounterpartyFilterOptionOut"][];
+        };
         /** FinanceMoneyInput */
         FinanceMoneyInput: {
             /** Currency */
@@ -4772,6 +4986,7 @@ export interface components {
             exclusions: {
                 [key: string]: unknown;
             }[];
+            filter_options?: components["schemas"]["FinanceFilterOptionsOut"] | null;
             /** Metrics By Currency */
             metrics_by_currency: {
                 [key: string]: unknown;
@@ -5249,6 +5464,73 @@ export interface components {
             project_id: number | null;
             /** Run Id */
             run_id: number | null;
+        };
+        /** HostAccountInventory */
+        HostAccountInventory: {
+            /** Hosts */
+            hosts: {
+                [key: string]: components["schemas"]["HostAccountsView"];
+            };
+        };
+        /** HostAccountsView */
+        HostAccountsView: {
+            /** Accounts */
+            accounts: components["schemas"]["AccountView"][];
+            desired: components["schemas"]["DesiredAccount"];
+            /** Pending Cleanups */
+            pending_cleanups?: components["schemas"]["EnrollmentView"][];
+            /** @default null */
+            pending_enrollment: components["schemas"]["EnrollmentView"] | null;
+        };
+        /**
+         * HostMcpStatusInput
+         * @description Inspect the daemon's local hosts, with no caller-controlled filesystem target.
+         */
+        HostMcpStatusInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: HostMcpStatusInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** HostSubscription */
+        HostSubscription: {
+            /** Meters */
+            meters: components["schemas"]["SubscriptionMeter"][];
+            /** Plan */
+            plan: string | null;
+        };
+        /** HostSubscriptionsOut */
+        HostSubscriptionsOut: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Readings */
+            readings: {
+                [key: string]: components["schemas"]["HostSubscription"] | null;
+            };
+            /** Selections */
+            selections: {
+                [key: string]: components["schemas"]["DesiredAccount"];
+            };
         };
         /** IntegrationActionSummaryOut */
         IntegrationActionSummaryOut: {
@@ -8885,6 +9167,15 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** SubscriptionMeter */
+        SubscriptionMeter: {
+            /** Remaining Percent */
+            remaining_percent: number;
+            /** Resets At */
+            resets_at: string | null;
+            /** Scope */
+            scope: string;
+        };
         /** TaskActivityItem */
         TaskActivityItem: {
             /** Details */
@@ -11168,6 +11459,20 @@ export interface components {
             /** Version Id */
             version_id?: number | null;
         };
+        /** WriteEnvelope[AccountView] */
+        WriteEnvelope_AccountView_: {
+            data: components["schemas"]["AccountView"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[AgentDefinition] */
         WriteEnvelope_AgentDefinition_: {
             data: components["schemas"]["AgentDefinition"];
@@ -11196,9 +11501,37 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[DesiredAccount] */
+        WriteEnvelope_DesiredAccount_: {
+            data: components["schemas"]["DesiredAccount"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[DurableActionJobOut] */
         WriteEnvelope_DurableActionJobOut_: {
             data: components["schemas"]["DurableActionJobOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[EnrollmentView] */
+        WriteEnvelope_EnrollmentView_: {
+            data: components["schemas"]["EnrollmentView"];
             /**
              * Project Id
              * @default null
@@ -11708,8 +12041,14 @@ export interface components {
 }
 export type SchemaAccountAuthChallengeOut = components['schemas']['AccountAuthChallengeOut'];
 export type SchemaAccountAuthStatusOut = components['schemas']['AccountAuthStatusOut'];
+export type SchemaAccountConsoleInput = components['schemas']['AccountConsoleInput'];
+export type SchemaAccountEnrollmentInput = components['schemas']['AccountEnrollmentInput'];
+export type SchemaAccountHostInput = components['schemas']['AccountHostInput'];
 export type SchemaAccountOut = components['schemas']['AccountOut'];
+export type SchemaAccountRefInput = components['schemas']['AccountRefInput'];
+export type SchemaAccountSelectInput = components['schemas']['AccountSelectInput'];
 export type SchemaAccountSessionOut = components['schemas']['AccountSessionOut'];
+export type SchemaAccountView = components['schemas']['AccountView'];
 export type SchemaActionAvailabilityOut = components['schemas']['ActionAvailabilityOut'];
 export type SchemaActionCallAuditOut = components['schemas']['ActionCallAuditOut'];
 export type SchemaActionCallControlInput = components['schemas']['ActionCallControlInput'];
@@ -11784,8 +12123,10 @@ export type SchemaDeliveryTrendDayOut = components['schemas']['DeliveryTrendDayO
 export type SchemaDeliveryTrendMetricsOut = components['schemas']['DeliveryTrendMetricsOut'];
 export type SchemaDeliveryTrendsOut = components['schemas']['DeliveryTrendsOut'];
 export type SchemaDeliveryWorkTimeOut = components['schemas']['DeliveryWorkTimeOut'];
+export type SchemaDesiredAccount = components['schemas']['DesiredAccount'];
 export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
 export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
+export type SchemaEnrollmentView = components['schemas']['EnrollmentView'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
 export type SchemaExecutionIdentityOut = components['schemas']['ExecutionIdentityOut'];
 export type SchemaExperimentCreateRequest = components['schemas']['ExperimentCreateRequest'];
@@ -11796,14 +12137,17 @@ export type SchemaExperimentOut = components['schemas']['ExperimentOut'];
 export type SchemaExperimentVariantOut = components['schemas']['ExperimentVariantOut'];
 export type SchemaExperimentVariantRequest = components['schemas']['ExperimentVariantRequest'];
 export type SchemaFinanceAccessOut = components['schemas']['FinanceAccessOut'];
+export type SchemaFinanceAccountFilterOptionOut = components['schemas']['FinanceAccountFilterOptionOut'];
 export type SchemaFinanceCommitInput = components['schemas']['FinanceCommitInput'];
 export type SchemaFinanceCommitOut = components['schemas']['FinanceCommitOut'];
 export type SchemaFinanceComparisonInput = components['schemas']['FinanceComparisonInput'];
 export type SchemaFinanceContentOut = components['schemas']['FinanceContentOut'];
 export type SchemaFinanceCorrectionHistoryItemOut = components['schemas']['FinanceCorrectionHistoryItemOut'];
+export type SchemaFinanceCounterpartyFilterOptionOut = components['schemas']['FinanceCounterpartyFilterOptionOut'];
 export type SchemaFinanceEditFields = components['schemas']['FinanceEditFields'];
 export type SchemaFinanceEditIntent = components['schemas']['FinanceEditIntent'];
 export type SchemaFinanceEvidenceReadInput = components['schemas']['FinanceEvidenceReadInput'];
+export type SchemaFinanceFilterOptionsOut = components['schemas']['FinanceFilterOptionsOut'];
 export type SchemaFinanceMoneyInput = components['schemas']['FinanceMoneyInput'];
 export type SchemaFinanceMoneyOut = components['schemas']['FinanceMoneyOut'];
 export type SchemaFinancePreviewOut = components['schemas']['FinancePreviewOut'];
@@ -11819,6 +12163,11 @@ export type SchemaFirstReviewAcceptanceOut = components['schemas']['FirstReviewA
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthResponse = components['schemas']['HealthResponse'];
 export type SchemaHeartbeatResponse = components['schemas']['HeartbeatResponse'];
+export type SchemaHostAccountInventory = components['schemas']['HostAccountInventory'];
+export type SchemaHostAccountsView = components['schemas']['HostAccountsView'];
+export type SchemaHostMcpStatusInput = components['schemas']['HostMcpStatusInput'];
+export type SchemaHostSubscription = components['schemas']['HostSubscription'];
+export type SchemaHostSubscriptionsOut = components['schemas']['HostSubscriptionsOut'];
 export type SchemaIntegrationActionSummaryOut = components['schemas']['IntegrationActionSummaryOut'];
 export type SchemaIntegrationBudgetOut = components['schemas']['IntegrationBudgetOut'];
 export type SchemaIntegrationListInput = components['schemas']['IntegrationListInput'];
@@ -11939,6 +12288,7 @@ export type SchemaSetupWorkflowOutcome = components['schemas']['SetupWorkflowOut
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
+export type SchemaSubscriptionMeter = components['schemas']['SubscriptionMeter'];
 export type SchemaTaskActivityItem = components['schemas']['TaskActivityItem'];
 export type SchemaTaskActivityOut = components['schemas']['TaskActivityOut'];
 export type SchemaTaskDeliveryAgentOverride = components['schemas']['TaskDeliveryAgentOverride'];
@@ -12006,9 +12356,12 @@ export type SchemaWorkflowTemplateIssue = components['schemas']['WorkflowTemplat
 export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
+export type SchemaWriteEnvelopeAccountView = components['schemas']['WriteEnvelope_AccountView_'];
 export type SchemaWriteEnvelopeAgentDefinition = components['schemas']['WriteEnvelope_AgentDefinition_'];
 export type SchemaWriteEnvelopeDeliveryCapacityOut = components['schemas']['WriteEnvelope_DeliveryCapacityOut_'];
+export type SchemaWriteEnvelopeDesiredAccount = components['schemas']['WriteEnvelope_DesiredAccount_'];
 export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['WriteEnvelope_DurableActionJobOut_'];
+export type SchemaWriteEnvelopeEnrollmentView = components['schemas']['WriteEnvelope_EnrollmentView_'];
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
@@ -15180,6 +15533,40 @@ export enum PathsApiV1ProjectsProject_idArtifactsGetParametersQueryStatusAnyOf0 
     superseded = "superseded",
     archived = "archived"
 }
+export enum AccountConsoleInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum AccountEnrollmentInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum AccountHostInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum AccountRefInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum AccountSelectInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum AccountViewIdentity_status {
+    needs_sign_in = "needs_sign_in",
+    expired = "expired",
+    missing_email = "missing_email",
+    conflicting_credentials = "conflicting_credentials",
+    unavailable = "unavailable",
+    verified = "verified",
+    identity_changed = "identity_changed"
+}
 export enum ActionCallControlInputResponse_modeAnyOf0 {
     compact = "compact",
     raw = "raw",
@@ -15331,6 +15718,23 @@ export enum DurableActionJobStatus {
     failed = "failed",
     unknown_hold = "unknown-hold"
 }
+export enum EnrollmentViewIdentity_statusAnyOf0 {
+    needs_sign_in = "needs_sign_in",
+    expired = "expired",
+    missing_email = "missing_email",
+    conflicting_credentials = "conflicting_credentials",
+    unavailable = "unavailable",
+    verified = "verified",
+    identity_changed = "identity_changed"
+}
+export enum EnrollmentViewStatus {
+    pending = "pending",
+    enrolled = "enrolled",
+    duplicate = "duplicate",
+    cancelled = "cancelled",
+    expired = "expired",
+    failed = "failed"
+}
 export enum FinanceCommitInputAction {
     create_bookkeeping = "create-bookkeeping",
     correct_bookkeeping = "correct-bookkeeping",
@@ -15460,6 +15864,13 @@ export enum FinanceStatusInputResponse_modeAnyOf0 {
 export enum HealthResponseDb_status {
     ok = "ok",
     unreachable = "unreachable"
+}
+export enum HostMcpStatusInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
 }
 export enum IntegrationListInputResponse_modeAnyOf0 {
     compact = "compact",

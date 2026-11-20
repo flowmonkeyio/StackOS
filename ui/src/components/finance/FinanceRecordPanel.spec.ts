@@ -358,7 +358,7 @@ describe('invoice and receipt originals', () => {
       expect(panel.find('iframe').exists()).toBe(false)
       expect(panel.find('a[download]').exists()).toBe(false)
       expect(panel.get('section[aria-label="Receipt"]').text()).toContain(
-        'Read outcome: cannot open this original',
+        'Couldn’t open this document. Refresh its availability to try again.',
       )
       expect(panel.get('section[aria-label="Receipt"]').text()).toContain(
         'Available · verified in this snapshot',
@@ -414,7 +414,7 @@ describe('invoice and receipt originals', () => {
     expect(panel.text()).toContain('Invoice · Partial · 1/2 available')
     expect(panel.text()).toContain('2 linked · 1 available · 1 unavailable · 0 not verified')
     expect(panel.get('section[aria-label="Unidentified documents"]').text()).toContain(
-      '1 linked original(s)',
+      'Needs identification',
     )
     expect(
       panel.get('[data-document-ref="attachment:missing"]').attributes('disabled'),
@@ -635,7 +635,15 @@ describe('sourced finance editor', () => {
     })
     await flushPromises()
     expect(panel.text()).toContain('0001-01-01')
-    expect(panel.text()).toContain('Original evidence')
+    expect(panel.text()).toContain('Documents')
+    const facts = panel.get('[data-test="transaction-facts"]')
+    expect(facts.text()).toContain('Synthetic vendor')
+    expect(facts.text()).not.toContain('receipt:legacy')
+    expect(facts.text()).not.toContain('Prepared/unposted')
+    const history = panel.findAll('details').find(item => item.get('summary').text() === 'History and source details')!
+    expect(history.attributes('open')).toBeUndefined()
+    expect(history.text()).toContain('receipt:legacy')
+    expect(history.text()).toContain('source:synthetic')
     await panel.get('[data-test="edit-record"]').trigger('click')
     await panel.get('[data-test="date"]').setValue('2026-09-01')
     await panel.get('[data-test="cancel-edit"]').trigger('click')
@@ -804,7 +812,7 @@ describe('canonical precision and correction history', () => {
     await panel.get('[data-test="edit-record"]').trigger('click')
     const sourceField = panel
       .findAllComponents({ name: 'UiFormField' })
-      .find((field) => field.props('label') === 'Supporting source references')!
+      .find((field) => field.props('label') === 'Source references')!
     await sourceField.get('textarea').setValue('source:replacement')
     await panel.get('[data-test="date"]').setValue('2026-09-01')
     await panel.get('[data-test="reason"]').setValue('Correct the supporting source')

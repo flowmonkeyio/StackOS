@@ -32,6 +32,15 @@ def test_missing_revenue_is_unknown_not_zero(tmp_path):
     )
     assert projected["metrics_by_currency"] == []
     assert projected["coverage"]["state"] == "unavailable"
+    assert projected["filter_options"] == {"accounts": [], "counterparties": []}
+
+
+def test_projection_accepts_older_payload_without_filter_options():
+    from stackos.operations.finance import FinanceProjectionOut
+
+    projected = management().query(snapshot(fixture_document()), QUERY)
+    projected.pop("filter_options")
+    assert FinanceProjectionOut.model_validate(projected).filter_options is None
 
 
 QUERY = {
@@ -239,6 +248,172 @@ def test_selected_account_identity_and_alias_have_identical_population():
     by_identity = module.query(snapshot(document), {**QUERY, "account_ref": "account:one"})
     assert by_identity["rows"] == by_alias["rows"]
     assert by_identity["metrics_by_currency"] == by_alias["metrics_by_currency"]
+    assert by_identity["filter_options"] == by_alias["filter_options"]
+
+
+def filter_options_document():
+    document = fixture_document()
+
+    def add(ref, account="bank:one", **reporting):
+        row = record(
+            ref,
+            "prepared/unposted",
+            date="2026-09-03",
+            amount=money(100),
+            source_refs=["source:bank"],
+            account_ref=account,
+            category={"state": "unresolved"},
+        )
+        document["bookkeeping"].append(row)
+        metadata(document, row, **reporting)
+        return row
+
+    add("book:named", counterparty_ref="vendor:named", counterparty_label="Named vendor")
+    add("book:missing", "unmapped:account", counterparty_ref="vendor:missing")
+    add("book:blank", counterparty_ref="vendor:blank", counterparty_label="   ")
+    add("book:conflict-a", counterparty_ref="vendor:conflict", counterparty_label="First")
+    add("book:conflict-b", counterparty_ref="vendor:conflict", counterparty_label="Second")
+    add("book:partial-a", counterparty_ref="vendor:partial", counterparty_label="Partial")
+    add("book:partial-b", counterparty_ref="vendor:partial")
+    add("book:label-only", counterparty_label="Label without an identity")
+    document["receipts"].append(
+        record(
+            "receipt:merchant-only",
+            "prepared",
+            business_date="2026-09-03",
+            amount=money(100),
+            merchant="Merchant must not become an identity",
+            source_ref="source:bank",
+            attachment_refs=["attachment:merchant"],
+        )
+    )
+    document["attachments"].append(
+        record(
+            "attachment:merchant",
+            "retained",
+            source_ref="source:bank",
+            role="original",
+            relative_path="attachments/2026/09/merchant.txt",
+            sha256=hashlib.sha256(b"x").hexdigest(),
+            bytes=1,
+            media_type="text/plain",
+            original_filename="merchant.txt",
+        )
+    )
+    document["sources"][0]["attachment_refs"].append("attachment:merchant")
+    old = add("book:old", counterparty_ref="vendor:old", counterparty_label="Old vendor")
+    replacement = copy.deepcopy(old)
+    replacement.update(record_id="book:new")
+    document["bookkeeping"].append(replacement)
+    document["corrections"].append(
+        record(
+            "correction:options",
+            "applied",
+            superseded_ref=old["record_id"],
+            replacement_ref=replacement["record_id"],
+            reason="Current corrected fixture",
+            decision_ref="fixture:decision",
+        )
+    )
+    metadata(document, replacement, counterparty_ref="vendor:new", counterparty_label="New vendor")
+    # Current source metadata with conflicting declarations cannot establish an option.
+    invalid = add("book:invalid", counterparty_ref="vendor:invalid", counterparty_label="Invalid")
+    original = next(
+        s
+        for s in document["operating_settings"]
+        if s["scope"] == "finance-management-record:" + invalid["record_id"]
+    )
+    setting(document, "metadata:duplicate", original["scope"], json.loads(original["policy_text"]))
+    return document
+
+
+@pytest.mark.parametrize(
+    "filters",
+    [
+        {"start": "2026-10-01", "end": "2026-10-31"},
+        {"q": "no matching rows"},
+        {"account_ref": "account:one"},
+        {"counterparty_ref": "vendor:named"},
+        {"category_ref": "category:missing"},
+        {"scope": "external-project", "external_project_ref": "project:missing"},
+        {"kind": "income"},
+        {"currency": "EUR"},
+        {"needs_review": True},
+        {"sort": "counterparty", "offset": 1, "limit": 1},
+    ],
+)
+def test_filter_options_are_current_complete_and_independent_of_visible_population(filters):
+    module = management()
+    document = filter_options_document()
+    module.workspace.validate(document)
+    before = copy.deepcopy(document)
+    unfiltered = module.query(snapshot(document), QUERY)
+    narrowed = module.query(snapshot(document), {**QUERY, **filters})
+    assert narrowed["filter_options"] == unfiltered["filter_options"]
+    assert narrowed["filter_options"] == {
+        "accounts": [
+            {"value": "account:one", "label": "Synthetic account", "aliases": ["bank:one"]},
+            {"value": "unmapped:account", "label": None, "aliases": []},
+        ],
+        "counterparties": [
+            {"value": "vendor:blank", "label": None},
+            {"value": "vendor:conflict", "label": None},
+            {"value": "vendor:missing", "label": None},
+            {"value": "vendor:named", "label": "Named vendor"},
+            {"value": "vendor:new", "label": "New vendor"},
+            {"value": "vendor:partial", "label": None},
+        ],
+    }
+    assert document == before
+
+
+@pytest.mark.parametrize("recognition_basis", ["cash", "accrual"])
+@pytest.mark.parametrize("date_basis", ["transaction", "posting", "issue", "cash"])
+def test_filter_options_ignore_reporting_basis_without_changing_financial_population(
+    recognition_basis, date_basis
+):
+    module = management()
+    document = filter_options_document()
+    module.workspace.validate(document)
+    unfiltered = module.query(snapshot(document), QUERY)
+    projected = module.query(
+        snapshot(document),
+        {**QUERY, "recognition_basis": recognition_basis, "date_basis": date_basis},
+    )
+    assert projected["filter_options"] == unfiltered["filter_options"]
+    row = next(row for row in projected["rows"] if row["record_ref"] == "book:named")
+    if recognition_basis == "cash" and date_basis == "transaction":
+        assert row["reporting"]["counterparty_ref"] == "vendor:named"
+    else:
+        assert row["reporting"] is None
+        assert row["metric_exclusion"] is not None
+
+
+def test_filter_options_account_aliases_use_only_current_canonical_setting():
+    module = management()
+    document = fixture_document()
+    replacement = copy.deepcopy(document["operating_settings"][0])
+    replacement.update(record_id="account:current", supersedes_ref="account:one", version=2)
+    replacement["account_identity"] = {
+        "display_name": "Current account",
+        "aliases": ["bank:one", "bank:additional"],
+    }
+    document["operating_settings"].append(replacement)
+    options = module.query(snapshot(document), QUERY)["filter_options"]
+    assert options == {
+        "accounts": [
+            {
+                "value": "account:current",
+                "label": "Current account",
+                "aliases": ["account:one", "bank:additional", "bank:one"],
+            }
+        ],
+        "counterparties": [],
+    }
+    for account in ["account:current", *options["accounts"][0]["aliases"]]:
+        projected = module.query(snapshot(document), {**QUERY, "account_ref": account})
+        assert projected["filter_options"] == options
+        assert projected["page"]["total"] == 8
 
 
 @pytest.mark.parametrize("conflict", ["policy", "cross-record"])

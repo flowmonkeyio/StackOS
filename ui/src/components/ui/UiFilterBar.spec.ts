@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import UiFilterBar from './UiFilterBar.vue'
 
@@ -43,6 +44,25 @@ describe('applied filter chips', () => {
     expect(wrapper.emitted('update:search')).toEqual([['account']])
     await wrapper.setProps({ noSearch: true })
     expect(wrapper.find('input').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('offers neutral editable chips through the same bar without changing legacy chips', async () => {
+    const wrapper = mount(UiFilterBar, {
+      attachTo: document.body,
+      props: { noSearch: true, editableActive: [{ key: 'color', label: 'Color: Green' }] },
+      slots: { default: '<button>Filter</button>', editor: '<p>Color editor</p>' },
+    })
+    await nextTick()
+    await wrapper.get('[aria-label="Edit Color: Green"]').trigger('click')
+    expect(wrapper.emitted('edit')).toEqual([['color']])
+    expect(wrapper.get('[aria-label="Edit filter"]').text()).toContain('Color editor')
+    wrapper.vm.closeEditor()
+    await nextTick()
+    expect(wrapper.find('[aria-label="Edit filter"]').exists()).toBe(false)
+    await wrapper.get('[aria-label="Remove Color: Green"]').trigger('click')
+    expect(wrapper.emitted('remove')).toEqual([['color']])
+    expect(wrapper.find('.ui-badge').exists()).toBe(false)
     wrapper.unmount()
   })
 })

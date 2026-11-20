@@ -35,7 +35,7 @@ not become narrower when its data or selected mode changes.
 | `/projects/:id/workflows/:templateKey` | Configured workflow details | `WorkflowDetailView` | exact project/repository/user workflow contract selected from Home; return to that project's Home |
 | `/projects/:id/library` | Library | `LibraryView` | Saved information / Files with typed source identity, filters and shared reader |
 | `/projects/:id/agents` | Agents | `AgentsView` | native project sources, Add/Edit and explicit saved-default adoption |
-| `/projects/:id/finance` | Finance | `FinanceView` | Overview / Expenses & income / Reports; contextual request inspection without inferred task links |
+| `/projects/:id/finance` | Finance | `FinanceView` | Full-width horizontal Overview / Expenses & income / Reports, compact shared filter chips, stable loading region; contextual record and request inspection without inferred task links |
 | `/accounts` | Accounts | `AccountsView` | global named Account inventory and reusable Account setup |
 | `/patterns` and `/patterns/:patternId` | Patterns | `PatternsView` | installation-wide searchable guidance, selective Markdown reading and ordinary add/edit/delete |
 | `/projects/:id/connections` | Connections | `ConnectionsView` | Account attachment plus project-bound communication setup |

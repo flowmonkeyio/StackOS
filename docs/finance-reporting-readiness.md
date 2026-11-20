@@ -9,9 +9,11 @@ revenue, complete coverage, tax treatment or business-use allocation from invoic
 When valid approved reporting metadata unanimously uses one recognition/date basis,
 the existing console filters initially select that basis. Mixed or absent metadata
 leaves the existing default unchanged; subsequent user filter selections win.
-Supported partial amounts appear in the existing metric cards as
-`Incomplete · unposted`. The period caption identifies missing invoice dates and
-source coverage while keeping payment matching and posting separate.
+Supported partial amounts appear in the existing metric cards as **Partial total**.
+Missing dates, unavailable amounts and review needs appear where the user can
+inspect the affected records. Reporting basis is under **Report options**;
+posting state and source identifiers remain in record details. These presentation
+changes never imply payment matching or ledger posting.
 
 Undated documents use sanitized original filenames rather than internal receipt
 IDs. Merchant labels may use unanimous active linked receipt evidence. Labels cover
@@ -20,8 +22,8 @@ Legacy USD minor units use two decimal places for display only, marked
 `display units only`. Stale/conflicting precision never uses that fallback;
 accounting totals never consume the display-only convention. Supported comparison
 charts remain available even when the current period has no supported totals.
-The dedicated analysis section owns requests; existing results/history remain
-accessible from Overview.
+The collapsed **Review finances** entry on Overview owns requests and access to
+existing review results/history. Reports retains report viewing and export.
 
 ## Data and permission boundaries
 

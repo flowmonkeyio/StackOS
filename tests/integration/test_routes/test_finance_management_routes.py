@@ -22,6 +22,7 @@ from tests.unit.test_finance_management import (
     analysis_result,
     categorization_result,
     fixture_document,
+    metadata,
 )
 
 WORKSPACE = "finance:project:1"
@@ -146,6 +147,51 @@ def test_console_projection_detail_reports_and_no_read_writes(api, finance):
     assert len(exported["rows"]) == data["page"]["total"]
     assert projected.headers["cache-control"] == report.headers["cache-control"] == "no-store"
     assert str(finance["path"].parent) not in projected.text
+    assert finance["path"].read_bytes() == before
+
+
+@pytest.mark.parametrize("mode", ["compact", "raw"])
+def test_filter_options_survive_registered_projection_without_paths_or_writes(api, finance, mode):
+    module = finance["module"]
+    document = module.read_snapshot(finance["path"])["document"]
+    row = document["bookkeeping"][0]
+    scope = "finance-management-record:" + row["record_id"]
+    old_setting = next(s for s in document["operating_settings"] if s["scope"] == scope)
+    document["operating_settings"].remove(old_setting)
+    document["reviews"] = [
+        review for review in document["reviews"] if review["target_ref"] != old_setting["record_id"]
+    ]
+    metadata(
+        document, row, "revenue", counterparty_ref="customer:one", counterparty_label="Customer"
+    )
+    document["revision"] += 1
+    module.workspace.write_document(
+        finance["path"], document, module.workspace.digest(finance["path"])
+    )
+    before = finance["path"].read_bytes()
+    response = call(
+        api,
+        "finance.query",
+        {
+            **finance["common"],
+            **QUERY,
+            "q": "no matching rows",
+            "offset": 3,
+            "limit": 1,
+            "response_mode": mode,
+        },
+    )
+    assert response.status_code == 200, response.text
+    projected = body(response)
+    assert projected["rows"] == []
+    assert projected["filter_options"] == {
+        "accounts": [
+            {"value": "account:one", "label": "Synthetic account", "aliases": ["bank:one"]}
+        ],
+        "counterparties": [{"value": "customer:one", "label": "Customer"}],
+    }
+    assert str(finance["path"].parent) not in response.text
+    assert "relative_path" not in json.dumps(projected["filter_options"])
     assert finance["path"].read_bytes() == before
 
 

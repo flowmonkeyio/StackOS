@@ -5,34 +5,43 @@
   Filters are described declaratively; the consumer owns state.
 -->
 <script setup lang="ts">
-import UiInput from './UiInput.vue';
-import UiBadge from './UiBadge.vue';
-import UiButton from './UiButton.vue';
-import UiIcon from './UiIcon.vue';
+import { ref } from 'vue'
+import UiInput from './UiInput.vue'
+import UiBadge from './UiBadge.vue'
+import UiButton from './UiButton.vue'
+import UiIcon from './UiIcon.vue'
+import UiFilterChipStrip, { type FilterChip } from './UiFilterChipStrip.vue'
 
 export interface ActiveFilter {
-  key: string;
-  label: string;
+  key: string
+  label: string
   /** Human display of value. */
-  value: string;
+  value: string
 }
 
 defineProps<{
   /** Search input value (two-way). */
-  search?: string;
-  searchPlaceholder?: string;
+  search?: string
+  searchPlaceholder?: string
   /** Active filter chips — caller renders the controls themselves in the slot. */
-  active?: ActiveFilter[];
-  ariaLabel?: string;
+  active?: ActiveFilter[]
+  ariaLabel?: string
   /** Hide the search box. */
-  noSearch?: boolean;
-}>();
+  noSearch?: boolean
+  /** Optional single-row presentation with editable, responsive applied chips. */
+  editableActive?: FilterChip[]
+  chipEditorLabel?: string
+  disabled?: boolean
+}>()
 
 defineEmits<{
-  (e: 'update:search', v: string): void;
-  (e: 'remove', key: string): void;
-  (e: 'clearAll'): void;
-}>();
+  (e: 'update:search', v: string): void
+  (e: 'remove', key: string): void
+  (e: 'clearAll'): void
+  (e: 'edit', key: string): void
+}>()
+const chipStrip = ref<InstanceType<typeof UiFilterChipStrip> | null>(null)
+defineExpose({ closeEditor: () => chipStrip.value?.close() })
 </script>
 
 <template>
@@ -41,7 +50,9 @@ defineEmits<{
     :aria-label="ariaLabel ?? 'Filters'"
     class="ui-filter-bar flex flex-col gap-2"
   >
-    <div class="flex flex-wrap items-center gap-2">
+    <div
+      :class="['flex items-center gap-2', editableActive ? 'ui-filter-bar__inline' : 'flex-wrap']"
+    >
       <UiInput
         v-if="!noSearch"
         :model-value="search"
@@ -61,6 +72,22 @@ defineEmits<{
         </template>
       </UiInput>
       <slot />
+      <UiFilterChipStrip
+        v-if="editableActive"
+        ref="chipStrip"
+        :chips="editableActive"
+        :editor-label="chipEditorLabel"
+        :disabled="disabled"
+        @edit="$emit('edit', $event)"
+        @remove="$emit('remove', $event)"
+      >
+        <template #editor="scope">
+          <slot
+            name="editor"
+            v-bind="scope"
+          />
+        </template>
+      </UiFilterChipStrip>
       <div class="ml-auto flex items-center gap-2">
         <slot name="right" />
       </div>
@@ -101,3 +128,16 @@ defineEmits<{
     </div>
   </div>
 </template>
+
+<style scoped>
+.ui-filter-bar__inline {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.ui-filter-bar__inline :deep(.ui-popover) {
+  flex: none;
+}
+.ui-filter-bar__inline :deep(.ui-button) {
+  white-space: nowrap;
+}
+</style>

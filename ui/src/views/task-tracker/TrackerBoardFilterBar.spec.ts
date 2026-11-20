@@ -12,29 +12,49 @@ const disconnect = vi.fn()
 enableAutoUnmount(afterEach)
 beforeEach(() => {
   available = 480
-  vi.stubGlobal('ResizeObserver', class {
-    constructor(callback: () => void) { resize = callback }
-    observe() {}
-    disconnect = disconnect
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        resize = callback
+      }
+      observe() {}
+      disconnect = disconnect
+    },
+  )
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.classList.contains('ui-filter-chips__region') ? available : 0
   })
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
-    return this.classList.contains('board-filter-bar__chips') ? available : 0
-  })
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ width: 160 } as DOMRect))
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    () => ({ width: 160 }) as DOMRect,
+  )
 })
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); disconnect.mockClear() })
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  disconnect.mockClear()
+})
 function textFilters(value: string): BoardFilterState {
   const defaults = defaultBoardFilters()
   return { ...defaults, clauses: [{ field: 'text', value }, ...defaults.clauses], completed: 'all' }
 }
 function render(filters: Partial<BoardFilterState> = {}) {
-  return mount(TrackerBoardFilterBar, { attachTo: document.body, props: {
-    filters: { ...defaultBoardFilters(), ...filters }, workflowOptions: [{ value: 'engineering', label: 'Tracked delivery' }],
-    assigneeOptions: [{ value: 'Codex Main', label: 'Codex Main' }], taskRowsCount: 3, tasksCount: 12, indexAvailable: true,
-  } })
+  return mount(TrackerBoardFilterBar, {
+    attachTo: document.body,
+    props: {
+      filters: { ...defaultBoardFilters(), ...filters },
+      workflowOptions: [{ value: 'engineering', label: 'Tracked delivery' }],
+      assigneeOptions: [{ value: 'Codex Main', label: 'Codex Main' }],
+      taskRowsCount: 3,
+      tasksCount: 12,
+      indexAvailable: true,
+    },
+  })
 }
 function button(wrapper: ReturnType<typeof render>, text: string) {
-  const found = wrapper.findAll('button').find(item => item.text() === text)
+  const found = wrapper.findAll('button').find((item) => item.text() === text)
   if (!found) throw new Error(`Missing button ${text}`)
   return found
 }
@@ -44,7 +64,7 @@ describe('Board filter controls', () => {
     const wrapper = render()
     await button(wrapper, 'Filter').trigger('click')
     for (const label of ['Text', 'Status', 'Priority', 'Workflow', 'Assignee']) {
-      const option = wrapper.findAllComponents(UiButton).find(item => item.text() === label)!
+      const option = wrapper.findAllComponents(UiButton).find((item) => item.text() === label)!
       expect(option.props('align')).toBe('start')
       expect(option.classes()).toContain('justify-start')
       expect(option.classes()).not.toContain('justify-center')
@@ -59,7 +79,10 @@ describe('Board filter controls', () => {
     await opener.trigger('click')
     await wrapper.get('[role="combobox"]').trigger('click')
     const menu = new DOMWrapper(document.body)
-    await menu.findAll('[role="option"]').find(option => option.text() === 'None')!.trigger('click')
+    await menu
+      .findAll('[role="option"]')
+      .find((option) => option.text() === 'None')!
+      .trigger('click')
     await flushPromises()
     expect(wrapper.emitted('update:display')).toEqual([[{ completed: 'none' }]])
     expect(wrapper.find('[aria-label="Edit board filter"]').exists()).toBe(false)
@@ -69,20 +92,30 @@ describe('Board filter controls', () => {
   })
   it('anchors every applied clause and Completed to its own chip', async () => {
     available = 2000
-    const wrapper = render({ clauses: [
-      { field: 'text', value: 'server' }, { field: 'status', operator: 'is', values: ['in-progress'] },
-      { field: 'priority', operator: 'is', values: ['p1'] }, { field: 'workflow', operator: 'is', value: 'engineering' },
-      { field: 'assignee', operator: 'is', value: 'Codex Main' }, { field: 'ticket-status', value: 'complete' }, { field: 'blocked' },
-    ] })
+    const wrapper = render({
+      clauses: [
+        { field: 'text', value: 'server' },
+        { field: 'status', operator: 'is', values: ['in-progress'] },
+        { field: 'priority', operator: 'is', values: ['p1'] },
+        { field: 'workflow', operator: 'is', value: 'engineering' },
+        { field: 'assignee', operator: 'is', value: 'Codex Main' },
+        { field: 'ticket-status', value: 'complete' },
+        { field: 'blocked' },
+      ],
+    })
     await nextTick()
-    const chips = wrapper.findAll('.board-filter-bar__chips .board-filter-bar__edit')
+    const chips = wrapper.findAll('.ui-filter-chips__region .ui-filter-chips__edit')
     expect(chips).toHaveLength(8)
     for (const chip of chips) {
       await chip.trigger('click')
-      const editor = wrapper.findAllComponents(UiPopover).find(popover => popover.props('ariaLabel') === 'Edit board filter')!
+      const editor = wrapper
+        .findAllComponents(UiPopover)
+        .find((popover) => popover.props('ariaLabel') === 'Edit board filter')!
       expect(editor.props('modelValue')).toBe(true)
       expect(editor.props('anchor')).toBe(chip.element)
-      expect(wrapper.findAllComponents(UiPopover).filter(popover => popover.props('modelValue'))).toHaveLength(1)
+      expect(
+        wrapper.findAllComponents(UiPopover).filter((popover) => popover.props('modelValue')),
+      ).toHaveLength(1)
     }
     wrapper.unmount()
   })
@@ -93,10 +126,14 @@ describe('Board filter controls', () => {
     await button(wrapper, '+2 filters').trigger('click')
     const chip = wrapper.get('[aria-label="Edit Text: server"]')
     await chip.trigger('click')
-    const editor = wrapper.findAllComponents(UiPopover).find(popover => popover.props('ariaLabel') === 'Edit board filter')!
+    const editor = wrapper
+      .findAllComponents(UiPopover)
+      .find((popover) => popover.props('ariaLabel') === 'Edit board filter')!
     expect(editor.props('anchor')).toBe(chip.element)
-    available = 2000; resize(); await flushPromises()
-    const movedChip = wrapper.get('.board-filter-bar__chips [aria-label="Edit Text: server"]')
+    available = 2000
+    resize()
+    await flushPromises()
+    const movedChip = wrapper.get('.ui-filter-chips__region [aria-label="Edit Text: server"]')
     expect(editor.props('anchor')).toBe(movedChip.element)
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await nextTick()
@@ -108,11 +145,17 @@ describe('Board filter controls', () => {
     await nextTick()
     await wrapper.get('[aria-label="Edit Text: server"]').trigger('click')
     await wrapper.get('input[type="search"]').setValue('retained draft')
-    available = 80; resize(); await flushPromises()
+    available = 80
+    resize()
+    await flushPromises()
     const overflow = button(wrapper, '+2 filters')
-    const editor = wrapper.findAllComponents(UiPopover).find(popover => popover.props('ariaLabel') === 'Edit board filter')!
+    const editor = wrapper
+      .findAllComponents(UiPopover)
+      .find((popover) => popover.props('ariaLabel') === 'Edit board filter')!
     expect(editor.props('anchor')).toBe(overflow.element)
-    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('retained draft')
+    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe(
+      'retained draft',
+    )
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await nextTick()
     expect(document.activeElement).toBe(overflow.element)
@@ -123,7 +166,9 @@ describe('Board filter controls', () => {
     await nextTick()
     const chip = wrapper.get('[aria-label="Edit Text: server"]')
     await chip.trigger('click')
-    const editor = wrapper.findAllComponents(UiPopover).find(popover => popover.props('modelValue'))!
+    const editor = wrapper
+      .findAllComponents(UiPopover)
+      .find((popover) => popover.props('modelValue'))!
     expect(editor.props()).toHaveProperty('anchor', chip.element)
     wrapper.unmount()
   })
@@ -135,7 +180,13 @@ describe('Board filter controls', () => {
     await wrapper.get('input[type="search"]').setValue('server')
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('update:filter')?.[0]).toEqual([{ field: 'text', value: 'server' }])
-    await wrapper.setProps({ filters: { clauses: [{ field: 'text', value: 'server' }], completed: 'all', hideEmptyColumns: false } })
+    await wrapper.setProps({
+      filters: {
+        clauses: [{ field: 'text', value: 'server' }],
+        completed: 'all',
+        hideEmptyColumns: false,
+      },
+    })
     await wrapper.get('[aria-label="Edit Text: server"]').trigger('click')
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('server')
     await wrapper.get('input').setValue('')
@@ -151,46 +202,69 @@ describe('Board filter controls', () => {
     expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(8)
     await wrapper.get('input[type="checkbox"]').setValue(true)
     await wrapper.get('form').trigger('submit')
-    expect(wrapper.emitted('update:filter')?.[0]).toEqual([{ field: 'status', operator: 'is-not', values: ['aborted', 'backlog'] }])
+    expect(wrapper.emitted('update:filter')?.[0]).toEqual([
+      { field: 'status', operator: 'is-not', values: ['aborted', 'backlog'] },
+    ])
     await button(wrapper, 'Filter').trigger('click')
     await button(wrapper, 'Priority').trigger('click')
     expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(4)
     await wrapper.get('input[type="checkbox"]').setValue(true)
     await wrapper.get('form').trigger('submit')
-    expect(wrapper.emitted('update:filter')?.[1]).toEqual([{ field: 'priority', operator: 'is', values: ['p0'] }])
-    for (const [field, label, value] of [['workflow', 'Workflow', 'engineering'], ['assignee', 'Assignee', 'Codex Main']] as const) {
+    expect(wrapper.emitted('update:filter')?.[1]).toEqual([
+      { field: 'priority', operator: 'is', values: ['p0'] },
+    ])
+    for (const [field, label, value] of [
+      ['workflow', 'Workflow', 'engineering'],
+      ['assignee', 'Assignee', 'Codex Main'],
+    ] as const) {
       await button(wrapper, 'Filter').trigger('click')
       await button(wrapper, label).trigger('click')
       const selects = wrapper.findAllComponents({ name: 'UiSelect' })
       selects[0]!.vm.$emit('update:modelValue', 'is-not')
       selects[1]!.vm.$emit('update:modelValue', value)
       await wrapper.get('form').trigger('submit')
-      expect(wrapper.emitted('update:filter')?.at(-1)).toEqual([{ field, operator: 'is-not', value }])
+      expect(wrapper.emitted('update:filter')?.at(-1)).toEqual([
+        { field, operator: 'is-not', value },
+      ])
     }
     wrapper.unmount()
   })
 
   it('collapses clauses on resize and uses the same editor/removal commands in overflow', async () => {
-    const wrapper = render({ clauses: [
-      { field: 'text', value: 'a very long filter value' }, ...defaultBoardFilters().clauses,
-      { field: 'priority', operator: 'is', values: ['p1'] }, { field: 'workflow', operator: 'is', value: 'engineering' },
-      { field: 'ticket-status', value: 'complete' }, { field: 'blocked' },
-    ] })
+    const wrapper = render({
+      clauses: [
+        { field: 'text', value: 'a very long filter value' },
+        ...defaultBoardFilters().clauses,
+        { field: 'priority', operator: 'is', values: ['p1'] },
+        { field: 'workflow', operator: 'is', value: 'engineering' },
+        { field: 'ticket-status', value: 'complete' },
+        { field: 'blocked' },
+      ],
+    })
     await nextTick()
-    expect(wrapper.findAll('.board-filter-bar__chips > .board-filter-bar__chip')).toHaveLength(2)
+    expect(wrapper.findAll('.ui-filter-chips__region > .ui-filter-chips__chip')).toHaveLength(2)
     expect(button(wrapper, '+5 filters').exists()).toBe(true)
-    available = 80; resize(); await nextTick()
-    expect(wrapper.findAll('.board-filter-bar__chips > .board-filter-bar__chip')).toHaveLength(0)
+    available = 80
+    resize()
+    await nextTick()
+    expect(wrapper.findAll('.ui-filter-chips__region > .ui-filter-chips__chip')).toHaveLength(0)
     await button(wrapper, '+7 filters').trigger('click')
     await wrapper.get('[aria-label="Remove Has blocked tickets"]').trigger('click')
     expect(wrapper.emitted('removeFilter')?.[0]).toEqual(['blocked'])
     await wrapper.get('[aria-label="Edit Workflow is: engineering"]').trigger('click')
     expect(wrapper.find('[aria-label="More filters"]').exists()).toBe(true)
     const clicked = wrapper.get('[aria-label="Edit Workflow is: engineering"]').element
-    expect(wrapper.findAllComponents(UiPopover).find(popover => popover.props('ariaLabel') === 'Edit board filter')!.props('anchor')).toBe(clicked)
+    expect(
+      wrapper
+        .findAllComponents(UiPopover)
+        .find((popover) => popover.props('ariaLabel') === 'Edit board filter')!
+        .props('anchor'),
+    ).toBe(clicked)
     expect(wrapper.get('[aria-label="Workflow value"]').text()).toContain('Tracked delivery')
-    available = 2000; resize(); await nextTick()
-    expect(wrapper.findAll('.board-filter-bar__chips > .board-filter-bar__chip')).toHaveLength(7)
+    available = 2000
+    resize()
+    await nextTick()
+    expect(wrapper.findAll('.ui-filter-chips__region > .ui-filter-chips__chip')).toHaveLength(7)
     wrapper.unmount()
     expect(disconnect).toHaveBeenCalledOnce()
   })
@@ -201,8 +275,11 @@ describe('Board filter controls', () => {
     await wrapper.get('[aria-label="Edit Completed: Past week"]').trigger('click')
     const select = wrapper.findComponent({ name: 'UiSelect' })
     expect(select.props('options')).toEqual([
-      { value: 'all', label: 'All' }, { value: 'past-day', label: 'Past day' }, { value: 'past-week', label: 'Past week' },
-      { value: 'past-month', label: 'Past month' }, { value: 'none', label: 'None' },
+      { value: 'all', label: 'All' },
+      { value: 'past-day', label: 'Past day' },
+      { value: 'past-week', label: 'Past week' },
+      { value: 'past-month', label: 'Past month' },
+      { value: 'none', label: 'None' },
     ])
     select.vm.$emit('change', 'none')
     expect(wrapper.emitted('update:display')?.[0]).toEqual([{ completed: 'none' }])

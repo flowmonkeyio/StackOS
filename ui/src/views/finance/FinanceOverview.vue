@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { SchemaFinanceProjectionOut } from '@/api'
 import DataTable from '@/components/DataTable.vue'
-import { UiButton, UiMetricCard } from '@/components/ui'
+import { UiButton, UiEmptyState, UiMetricCard } from '@/components/ui'
 import { metricText, object, objects, refs, text } from '@/lib/finance'
 import FinanceOverviewCharts from './FinanceOverviewCharts.vue'
 import { contributionRows, overviewCurrencies } from './overviewViewModel'
@@ -12,6 +12,7 @@ const props = defineProps<{ projection: SchemaFinanceProjectionOut }>()
 const emit = defineEmits<{
   inspect: [recordRefs: string[]]
   drill: [dimension: string, row: Record<string, unknown>]
+  records: []
 }>()
 const currencies = computed(() => overviewCurrencies(props.projection))
 const readiness = computed(() => reportingReadiness(props.projection))
@@ -23,19 +24,35 @@ const groups = computed(() =>
 )
 </script>
 <template>
-  <section class="min-w-0 space-y-5" aria-label="Finance overview">
-    <p v-if="!readiness.hasMetrics" class="text-sm text-fg-muted">
-      No supported accounting totals yet. Inspect the existing records and source gaps; this does
-      not mean there are no invoices.
-    </p>
+  <section
+    class="min-w-0 space-y-5"
+    aria-label="Finance overview"
+  >
+    <UiEmptyState
+      v-if="!readiness.hasMetrics"
+      icon="chart-bar"
+      title="Totals are not available yet"
+      description="Check your expenses and income for missing dates or amounts. Existing records are still available to inspect."
+    >
+      <template #actions>
+        <UiButton @click="emit('records')">
+          View expenses &amp; income
+        </UiButton>
+      </template>
+    </UiEmptyState>
     <section
       v-for="metric in readiness.hasMetrics ? projection.metrics_by_currency : []"
       :key="text(metric.currency)"
       class="space-y-3"
     >
-      <h2 class="t-h2">{{ text(metric.currency) }} · supported operating result</h2>
+      <h2 class="t-h3">
+        {{ text(metric.currency) }} totals
+      </h2>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div v-for="name in ['spend', 'revenue', 'profit']" :key="name">
+        <div
+          v-for="name in ['spend', 'revenue', 'profit']"
+          :key="name"
+        >
           <UiMetricCard
             :label="
               name === 'spend' ? 'Spend' : name === 'revenue' ? 'Revenue' : 'Operating profit'
@@ -43,8 +60,10 @@ const groups = computed(() =>
             :value="metricText(metric[name])"
             :hint="
               text(object(metric[name]).state) === 'partial'
-                ? 'Incomplete · unposted'
-                : text(object(metric[name]).state) || 'Unavailable'
+                ? 'Partial total'
+                : text(object(metric[name]).state) === 'complete'
+                  ? undefined
+                  : 'Not available'
             "
           />
           <UiButton
@@ -52,9 +71,13 @@ const groups = computed(() =>
             size="sm"
             variant="ghost"
             @click="emit('inspect', refs(object(metric[name]).included_record_refs))"
-            >Inspect included records</UiButton
           >
-          <p v-if="projection.comparison" class="mt-1 text-xs text-fg-muted">
+            Inspect included records
+          </UiButton>
+          <p
+            v-if="projection.comparison"
+            class="mt-1 text-xs text-fg-muted"
+          >
             Prior:
             {{
               metricText(
@@ -72,17 +95,22 @@ const groups = computed(() =>
       :currencies="currencies"
       @inspect="emit('inspect', $event)"
     />
-    <details v-if="readiness.hasMetrics" class="space-y-3">
-      <summary class="focus-ring cursor-pointer text-sm font-medium">Detailed breakdowns</summary>
+    <details
+      v-if="readiness.hasMetrics"
+      class="space-y-3"
+    >
+      <summary class="focus-ring cursor-pointer text-sm font-medium">
+        Detailed breakdowns
+      </summary>
       <div class="space-y-5 pt-2">
-        <p class="text-sm text-fg-muted">
-          Breakdowns and trends show spend and revenue contributions from selected supported
-          records. A zero revenue contribution means no selected supported income contribution; for
-          expense-only records without income coverage, total revenue and operating profit remain
-          unavailable.
-        </p>
-        <section v-for="group in groups" :key="group.dimension" class="space-y-2">
-          <h3 class="t-h3">By {{ group.dimension }}</h3>
+        <section
+          v-for="group in groups"
+          :key="group.dimension"
+          class="space-y-2"
+        >
+          <h3 class="t-h3">
+            By {{ group.dimension }}
+          </h3>
           <DataTable
             :items="contributionRows(group.rows, projection)"
             :columns="[
@@ -98,7 +126,9 @@ const groups = computed(() =>
           />
         </section>
         <section class="space-y-2">
-          <h3 class="t-h3">Recorded contributions across currencies</h3>
+          <h3 class="t-h3">
+            Recorded contributions across currencies
+          </h3>
           <DataTable
             :items="contributionRows(projection.trend, projection)"
             :columns="[

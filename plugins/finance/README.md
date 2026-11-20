@@ -20,12 +20,25 @@ originals and reports. Renaming a project leaves its files in place.
 The console has three views:
 
 - **Overview** shows supported spend, income and profit by currency, with the
-  selected period, date/recognition basis, source coverage and review gaps.
+  selected period and actionable review gaps. **Review finances** opens the
+  optional agent-review controls and latest review status.
 - **Expenses & income** searches and filters expenses, income, bills and receipts.
   Open a row to inspect current facts, retained original evidence and correction
   history. Prepare a sourced edit, inspect its preview, then save or cancel.
-- **Reports** renders the selected period as Markdown, JSON or formula-safe CSV,
-  and requests independently reviewed agent analysis.
+- **Reports** shows the selected period's report and exports it as Markdown,
+  JSON or formula-safe CSV.
+
+The compact filter bar uses the same editable chips and overflow controls as
+Work. Period, search and individual filter editors apply only their own
+submitted values. Clearing filters preserves the selected
+period, comparison and reporting options. Account and counterparty choices use
+current observed references with known names from the Finance source. They are
+not a complete business directory. Existing category/project selections remain
+inspectable and removable; the source currently supplies no name catalog for
+creating those filters. Reporting basis and timezone are under **Report options**.
+Same-selection refreshes retain results, while a changed selection shows a stable
+loading placeholder. Validation errors keep controls available for correction.
+Technical record and evidence details are inside deliberate disclosures.
 
 Inline original preview depends on browser support. If a PDF preview is blank,
 use the verified original download; inline PDF rendering is not guaranteed.
@@ -44,7 +57,10 @@ inferring a date from the filename.
 The query's `record_labels` supplies human-readable labels for the complete
 filtered population so undated and drill-down links remain useful across
 pagination. These labels do not approve policy, infer dates/treatment or change
-ledger records. See [invoice reporting and verification](../../docs/finance-reporting-readiness.md)
+ledger records. `filter_options` comes from the complete current source pass
+before presentation filters or pagination; account aliases resolve to their
+canonical current identity. Unknown or conflicting labels remain unavailable.
+See [invoice reporting and verification](../../docs/finance-reporting-readiness.md)
 for the current behavior, evidence requirements and remaining limits.
 Business-wide views include shared/unassigned costs. Optional verified project
 labels do not infer allocation from customer names or require agency setup.

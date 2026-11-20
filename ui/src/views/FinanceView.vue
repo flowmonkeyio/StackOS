@@ -18,24 +18,23 @@ import type {
   SchemaLocalAgentChatMessageOut,
 } from '@/api'
 import DataTable from '@/components/DataTable.vue'
-import MarkdownView from '@/components/MarkdownView.vue'
-import SubNav from '@/components/SubNav.vue'
+import TabBar from '@/components/TabBar.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import FinanceFilters from '@/components/finance/FinanceFilters.vue'
 import FinanceRecordPanel from '@/components/finance/FinanceRecordPanel.vue'
 import FinanceOverview from './finance/FinanceOverview.vue'
 import { financeRecordLabel } from './finance/reportingReadiness'
-import FinanceOverviewInsights from './finance/FinanceOverviewInsights.vue'
+import FinanceReports from './finance/FinanceReports.vue'
+import FinanceAnalysisReview from './finance/FinanceAnalysisReview.vue'
 import FinanceRequestDialog from './finance/FinanceRequestDialog.vue'
-import { aiCategory, insightsModel } from './finance/insightsViewModel'
+import { insightsModel } from './finance/insightsViewModel'
 import {
   UiButton,
   UiCallout,
   UiEmptyState,
-  UiFormField,
   UiPageShell,
   UiSectionHeader,
-  UiSelect,
+  UiSkeleton,
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
@@ -50,7 +49,6 @@ import {
   formatMoney,
   newIntentId,
   object,
-  objects,
   refs,
   snapshotRef,
   text,
@@ -62,7 +60,8 @@ const route = useRoute(),
   router = useRouter()
 const { projectId } = useProjectRouteScope(route)
 const catalog = useStackOsCatalogStore()
-const pluginDisabled = ref(false), enabling = ref(false)
+const pluginDisabled = ref(false),
+  enabling = ref(false)
 const section = ref('overview'),
   loading = ref(false),
   error = ref(''),
@@ -80,6 +79,7 @@ const report = ref<SchemaFinanceContentOut | null>(null),
   reportURL = ref(''),
   reportText = ref(''),
   reportLoading = ref(false)
+const reportError = ref('')
 const requests = ref<Record<string, unknown>[]>([]),
   selectedRequest = ref<Record<string, unknown> | null>(null)
 const requestOpen = ref(false)
@@ -115,8 +115,6 @@ type DisplayRow = SchemaFinanceProjectionOut['rows'][number] & {
   id: string
   invoice_status: string
   receipt_status: string
-  ai_category: string
-  ai_confidence: string
 }
 const insights = computed(() => insightsModel(analysis.value, projection.value))
 const rows = computed<DisplayRow[]>(() =>
@@ -125,29 +123,30 @@ const rows = computed<DisplayRow[]>(() =>
     id: text(row.record_ref),
     invoice_status: documentSummaryText(object(row.document_summary).invoice),
     receipt_status: documentSummaryText(object(row.document_summary).receipt),
-    ai_category: aiCategory(insights.value, text(row.record_ref)).category,
-    ai_confidence: aiCategory(insights.value, text(row.record_ref)).confidence,
   })),
 )
 const columns: DataTableColumn<(typeof rows.value)[number]>[] = [
-  { key: 'date', label: 'Date', sortable: true, format: (value) => text(value) || 'Undated' },
+  { key: 'date', label: 'Date', sortable: true, cellClass: 'whitespace-nowrap', format: (value) => text(value) || 'Undated' },
   {
     key: 'counterparty',
-    label: 'Vendor / counterparty',
+    label: 'Vendor or customer',
     format: (value) => text(value) || 'Not supplied',
   },
-  { key: 'kind', label: 'Type' },
-  { key: 'amount', label: 'Amount', sortable: true, format: formatMoney },
-  { key: 'category_ref', label: 'Source category', format: (value) => text(value) || 'Unassigned' },
-  { key: 'status', label: 'State' },
+  { key: 'kind', label: 'Type', cellClass: 'whitespace-nowrap' },
+  { key: 'amount', label: 'Amount', sortable: true, cellClass: 'whitespace-nowrap', format: formatMoney },
   { key: 'invoice_status', label: 'Invoice', cellClass: 'whitespace-nowrap' },
   { key: 'receipt_status', label: 'Receipt', cellClass: 'whitespace-nowrap' },
-  { key: 'needs_review', label: 'Review', format: (value) => (value ? 'Needs review' : 'Sourced') },
-  { key: 'ai_category', label: 'Proposed AI category' },
-  { key: 'ai_confidence', label: 'AI confidence' },
+  { key: 'needs_review', label: 'Review', format: (value) => (value ? 'Needs review' : '—') },
 ]
 const currentAuthority = computed(() => authorityReady.value && !loading.value)
-const reportAllowed = computed(() => currentAuthority.value && access.value?.modes.includes('export') === true)
+const pageRange = computed(() => {
+  const total = Number(projection.value?.page.total ?? 0)
+  const offset = Number(projection.value?.page.offset ?? 0)
+  return `${total ? offset + 1 : 0}–${Math.min(offset + rows.value.length, total)} of ${total} ${total === 1 ? 'record' : 'records'}`
+})
+const reportAllowed = computed(
+  () => currentAuthority.value && access.value?.modes.includes('export') === true,
+)
 const pendingAnalysis = computed(() => analysisSubmissions.get(projectId.value))
 const pendingArguments = computed<Record<string, unknown> | null>(() =>
   pendingAnalysis.value ? JSON.parse(pendingAnalysis.value.payloadJson) : null,
@@ -165,32 +164,32 @@ const statusText = computed(() => {
       ? 'Submitting original analysis request…'
       : 'Analysis request submission is unverified'
   const state = analysis.value?.state
-  if (state === 'current') return 'Reviewed analysis · current source'
-  if (state === 'stale') return 'Historical analysis · source changed'
+  if (state === 'current') return 'Review complete'
+  if (state === 'stale') return 'Previous review · data changed'
   if (state === 'run-started')
     return selectedRequest.value?.run_plan_id
-      ? 'Running in the linked agent run'
-      : 'Awaiting a linked run'
+      ? 'Review in progress'
+      : 'Preparing review'
   return (
     (
       {
-        awaiting_agent: 'Awaiting agent — a host must claim this request',
-        claimed: 'Claimed — awaiting execution',
-        'run-created': 'Run prepared — awaiting execution',
-        'run-blocked': 'Agent run blocked — inspect the linked run',
-        'run-aborted': 'Agent run aborted — reviewed result not published',
-        completed_unpublished: 'Run completed — reviewed result not published',
-        run_unavailable: 'Linked run unavailable — inspect the agent request',
-        responded: 'Awaiting reviewed publication',
-        failed: 'Analysis failed',
-        ignored: 'Request ignored',
-        claim_expired: 'Agent claim expired',
-        historical_access: 'Historical project Finance data',
-        historical_source: 'Analysis request is historical — source changed',
-        source_unavailable: 'Request source unavailable — request new analysis',
-        result_unavailable: 'Reviewed result unavailable',
+        awaiting_agent: 'Awaiting review',
+        claimed: 'Review queued',
+        'run-created': 'Review queued',
+        'run-blocked': 'Review needs attention',
+        'run-aborted': 'Review stopped',
+        completed_unpublished: 'Review awaiting publication',
+        run_unavailable: 'Review status unavailable',
+        responded: 'Review awaiting publication',
+        failed: 'Review failed',
+        ignored: 'Review dismissed',
+        claim_expired: 'Review timed out',
+        historical_access: 'Previous project data',
+        historical_source: 'Previous review · data changed',
+        source_unavailable: 'Original data unavailable · request a new review',
+        result_unavailable: 'Review result unavailable',
       } as Record<string, string>
-    )[state || ''] || (selectedRequest.value ? 'Awaiting agent status' : 'No analysis requested')
+    )[state || ''] || (selectedRequest.value ? 'Checking review status' : 'No review requested')
   )
 })
 function releaseReport() {
@@ -200,6 +199,7 @@ function releaseReport() {
   report.value = null
   reportText.value = ''
   reportLoading.value = false
+  reportError.value = ''
 }
 function clearContent() {
   releaseReport()
@@ -293,6 +293,7 @@ function financeStatusMessage(code: string): string {
     : 'Project Finance data is unavailable. Refresh or check the local storage.'
 }
 async function loadStatus() {
+  if (loading.value) return
   const sequence = ++scopeSequence,
     id = projectId.value
   querySequence++
@@ -327,7 +328,22 @@ async function loadStatus() {
       error.value = pluginDisabled.value ? '' : financeStatusMessage(readiness)
       return
     }
-    if (access.value && canonicalJson([access.value.project_id, access.value.workspace_ref, access.value.generation, access.value.backend_key]) !== canonicalJson([chosen.project_id, chosen.workspace_ref, chosen.generation, chosen.backend_key])) clearContent()
+    if (
+      access.value &&
+      canonicalJson([
+        access.value.project_id,
+        access.value.workspace_ref,
+        access.value.generation,
+        access.value.backend_key,
+      ]) !==
+        canonicalJson([
+          chosen.project_id,
+          chosen.workspace_ref,
+          chosen.generation,
+          chosen.backend_key,
+        ])
+    )
+      clearContent()
     access.value = chosen as SchemaFinanceAccessOut
     authorityReady.value = true
     await loadQuery(query.value, !basisInitialized)
@@ -335,7 +351,8 @@ async function loadStatus() {
   } catch (cause) {
     if (active && sequence === scopeSequence) {
       const code = cause instanceof ApiError ? text(object(cause.data).finance_code) : ''
-      if (code || (cause instanceof ApiError && [401, 403, 404].includes(cause.status))) clearScope()
+      if (code || (cause instanceof ApiError && [401, 403, 404].includes(cause.status)))
+        clearScope()
       authorityReady.value = false
       pluginDisabled.value = code === 'plugin_not_enabled'
       error.value = pluginDisabled.value ? '' : financeStatusMessage(code)
@@ -357,7 +374,8 @@ async function enableFinance() {
     await loadStatus()
   } catch {
     if (active && sequence === scopeSequence && id === projectId.value)
-      error.value = 'Finance enablement could not be confirmed. Try again, or refresh to check its current status.'
+      error.value =
+        'Finance enablement could not be confirmed. Try again, or refresh to check its current status.'
   } finally {
     if (active) enabling.value = false
   }
@@ -418,10 +436,11 @@ async function loadQuery(value: FinanceQuery, applyApprovedDefault = false) {
     projection.value = response.data
   } catch (cause) {
     if (active && sequence === querySequence && identity === JSON.stringify(base())) {
-      if (cause instanceof ApiError && ([401, 403, 404].includes(cause.status) || text(object(cause.data).finance_code))) clearScope()
-      authorityReady.value = false
+      if (rejectAuthority(cause)) return
       error.value =
-        'Selected finance data is unavailable. Check dates, basis, sources and project Finance storage.'
+        cause instanceof ApiError && [400, 422].includes(cause.status)
+          ? 'Check your filters and apply them again. Use a three-letter currency code, such as USD.'
+          : 'Could not load this selection. Try again or adjust your filters.'
     }
   } finally {
     if (active && sequence === querySequence) loading.value = false
@@ -471,7 +490,7 @@ async function loadReport(format: 'markdown' | 'csv' | 'json') {
   const sequence = reportSequence,
     identity = JSON.stringify(base())
   reportLoading.value = true
-  error.value = ''
+  reportError.value = ''
   try {
     const value = await callOperation<SchemaFinanceContentOut>('finance.report.render', {
       ...projection.value.query,
@@ -484,7 +503,7 @@ async function loadReport(format: 'markdown' | 'csv' | 'json') {
     if (!active || sequence !== reportSequence || identity !== JSON.stringify(base())) return
     report.value = value
     if (value.state !== 'current' || !value.content_base64) {
-      error.value = 'Report unavailable for this source and authorization.'
+      reportError.value = 'This report is unavailable. Refresh Finance and try again.'
       return
     }
     const blob = contentBlob(value.content_base64, value.content_type || 'text/plain')
@@ -493,14 +512,25 @@ async function loadReport(format: 'markdown' | 'csv' | 'json') {
   } catch (cause) {
     if (active && sequence === reportSequence && identity === JSON.stringify(base())) {
       if (rejectAuthority(cause)) return
-      error.value = 'Report unavailable or source changed. Refresh before exporting.'
+      reportError.value = 'Could not prepare the report. Refresh Finance and try again.'
     }
   } finally {
     if (active && sequence === reportSequence) reportLoading.value = false
   }
 }
 function rejectAuthority(cause: unknown): boolean {
-  if (!(cause instanceof ApiError) || (![401, 403, 404].includes(cause.status) && !text(object(cause.data).finance_code))) return false
+  if (!(cause instanceof ApiError)) return false
+  const code = text(object(cause.data).finance_code)
+  const sourceFailure =
+    code &&
+    ![
+      'invalid_query',
+      'invalid_comparison',
+      'invalid_report_format',
+      'unsupported_reporting',
+      'writer_busy',
+    ].includes(code)
+  if (![401, 403, 404].includes(cause.status) && !sourceFailure) return false
   clearScope()
   error.value = 'Project Finance data access or source could not be verified. Refresh to retry.'
   return true
@@ -539,12 +569,21 @@ async function loadRequests() {
     const requestedId = text(route.query.analysis)
     // Contextual deep links may be older than this bounded queue page.
     // Read the actual request; never infer a tracker task from its identity.
-    if (/^[1-9]\d*$/.test(requestedId) && !requests.value.some(row => String(row.id) === requestedId)) {
+    if (
+      /^[1-9]\d*$/.test(requestedId) &&
+      !requests.value.some((row) => String(row.id) === requestedId)
+    ) {
       const requested = await callOperation<Record<string, unknown>>('agentRequest.get', {
-        project_id: projectId.value, request_id: Number(requestedId), response_mode: 'raw',
+        project_id: projectId.value,
+        request_id: Number(requestedId),
+        response_mode: 'raw',
       })
       if (!active || sequence !== analysisSequence || identity !== JSON.stringify(base())) return
-      if (String(requested.id) === requestedId && object(object(requested.metadata_json).metadata_json).workspace_ref === access.value?.workspace_ref)
+      if (
+        String(requested.id) === requestedId &&
+        object(object(requested.metadata_json).metadata_json).workspace_ref ===
+          access.value?.workspace_ref
+      )
         requests.value.push(requested)
     }
     const requested =
@@ -568,6 +607,10 @@ function canonicalJson(value: unknown): string {
       ? Object.fromEntries(Object.entries(child).sort(([a], [b]) => a.localeCompare(b)))
       : child,
   )
+}
+function selectRequest(id: string) {
+  selectedRequest.value = requests.value.find((row) => String(row.id) === id) || null
+  void refreshAnalysis()
 }
 async function requestAnalysis() {
   const id = projectId.value
@@ -719,7 +762,9 @@ onBeforeUnmount(() => {
       <template #actions>
         <UiButton
           data-test="refresh-finance"
-          :disabled="enabling"
+          variant="ghost"
+          :loading="loading"
+          :disabled="enabling || loading"
           @click="refresh"
         >
           Refresh
@@ -727,7 +772,7 @@ onBeforeUnmount(() => {
       </template>
     </ProjectPageHeader>
     <UiCallout
-      v-if="error && !projection"
+      v-if="error"
       tone="danger"
       role="alert"
     >
@@ -752,18 +797,43 @@ onBeforeUnmount(() => {
         </UiButton>
       </template>
     </UiEmptyState>
-    <div class="min-h-10 text-sm text-fg-muted" role="status" aria-live="polite">
-      <template v-if="projection && (!currentAuthority || error)">
-        <p>Last-known Finance data · {{ loading ? 'validating current source…' : 'refresh required' }}</p>
-        <details v-if="error">
-          <summary class="focus-ring cursor-pointer">Refresh details</summary>
-          <p>{{ error }}</p>
-        </details>
-      </template>
-      <template v-else-if="loading">Loading project Finance data…</template>
-    </div>
-    <p v-if="message" role="status" class="text-sm text-fg-muted">{{ message }}</p>
-    <UiButton v-if="selectedRequest" data-test="inspect-finance-request" :data-request-id="selectedRequest.id" @click="requestOpen = true">Inspect analysis request</UiButton>
+    <p
+      v-if="projection && !currentAuthority"
+      role="status"
+      :class="loading ? 'sr-only' : 'text-sm text-fg-muted'"
+    >
+      {{
+        loading
+          ? 'Refreshing this selection…'
+          : 'Showing the last loaded selection. Refresh to enable actions.'
+      }}
+    </p>
+    <p
+      v-if="message"
+      role="status"
+      class="text-sm text-fg-muted"
+    >
+      {{ message }}
+    </p>
+    <section
+      v-if="loading && !access"
+      class="min-h-[440px] space-y-5"
+      aria-label="Loading Finance"
+      aria-busy="true"
+    >
+      <UiSkeleton
+        width="300px"
+        height="36px"
+      />
+      <UiSkeleton
+        shape="block"
+        height="48px"
+      />
+      <UiSkeleton
+        shape="block"
+        height="280px"
+      />
+    </section>
     <FinanceRequestDialog
       v-if="access && currentAuthority && requestOpen"
       :key="`${projectId}:${selectedRequest?.id ?? 'queue'}`"
@@ -774,156 +844,210 @@ onBeforeUnmount(() => {
       @close="requestOpen = false"
       @refresh="loadRequests"
     />
-    <UiCallout v-if="pendingAnalysis" variant="warning" role="status">
+    <UiCallout
+      v-if="pendingAnalysis"
+      variant="warning"
+      role="status"
+    >
       <p>
         {{ pendingAnalysis.inFlight ? 'Submitting' : 'Unverified submission for' }}
-        this project ·
+        your review for
         {{ text(object(pendingMetadata.query).start) }} through
-        {{ text(object(pendingMetadata.query).end) }} · {{ text(pendingMetadata.analysis_kind) }} ·
-        source revision {{ object(pendingMetadata.source_snapshot).revision }}. Retry retains this
-        original window, question and source; changes to the current selection apply only to a new
-        request after verification.
+        {{ text(object(pendingMetadata.query).end) }}. Retry checks the original request before
+        creating another review.
       </p>
-      <UiButton :disabled="pendingAnalysis.inFlight || !retryAllowed" @click="requestAnalysis"
-        >Retry original analysis request</UiButton
+      <UiButton
+        :disabled="pendingAnalysis.inFlight || !retryAllowed"
+        @click="requestAnalysis"
       >
-      <UiButton @click="requestOpen = true">Inspect Finance requests</UiButton>
-      <p v-if="!retryAllowed" class="text-sm">
+        Retry original analysis request
+      </UiButton>
+      <UiButton @click="requestOpen = true">
+        Inspect Finance requests
+      </UiButton>
+      <p
+        v-if="!retryAllowed"
+        class="text-sm"
+      >
         The original project data identity has changed. Refresh to reconcile its persisted request
         in Finance before retrying.
       </p>
     </UiCallout>
     <template v-if="access">
-      <FinanceFilters :query="query" :disabled="!currentAuthority" @apply="loadQuery" />
-      <div class="mt-4 grid min-w-0 grid-cols-[180px_minmax(0,1fr)] gap-5">
-        <SubNav
-          :groups="[
-            {
-              items: [
-                { key: 'overview', label: 'Overview' },
-                { key: 'records', label: 'Expenses & income' },
-                { key: 'reports', label: 'Reports' },
-              ],
-            },
-          ]"
-          :active-key="section"
-          aria-label="Finance views"
-          @change="section = $event"
-        />
-        <main class="min-w-0 space-y-5" aria-label="Finance selected view">
-          <template v-if="projection">
-            <p class="text-sm text-fg-muted">
-              {{ query.start }} through {{ query.end }} · {{ query.recognition_basis }} recognition
-              · {{ query.date_basis }} dates · {{ query.timezone }} · prepared/unposted · coverage
-              {{ text(projection.coverage.state) }}
-              <template
-                v-if="
-                  query.recognition_basis === 'accrual' &&
-                  query.date_basis === 'issue' &&
-                  projection.coverage.state !== 'complete'
-                "
-              >
-                · Invoice amounts are incomplete. Add missing invoice dates and confirm source
-                coverage; payment matching and posting remain separate.
-              </template>
+      <TabBar
+        :tabs="[
+          { key: 'overview', label: 'Overview' },
+          { key: 'records', label: 'Expenses & income' },
+          { key: 'reports', label: 'Reports' },
+        ]"
+        :active-key="section"
+        aria-label="Finance views"
+        @change="section = $event"
+      />
+      <FinanceFilters
+        :query="query"
+        :disabled="!authorityReady || loading"
+        :show-search="section === 'records'"
+        :filter-options="projection?.filter_options"
+        @apply="loadQuery"
+      />
+      <main
+        class="min-h-[440px] min-w-0 space-y-5"
+        aria-label="Finance selected view"
+        :aria-busy="loading"
+      >
+        <section
+          v-if="!projection"
+          class="min-h-[440px] space-y-5"
+          data-test="finance-pending"
+        >
+          <template v-if="loading">
+            <p
+              role="status"
+              class="text-sm text-fg-muted"
+            >
+              Loading this selection…
             </p>
-            <details class="text-xs text-fg-muted">
-              <summary class="focus-ring cursor-pointer">Source and reporting gaps</summary>
-              <p class="break-all">
-                Revision {{ projection.snapshot.revision }} · SHA-256
-                {{ projection.snapshot.sha256 }} · {{ projection.snapshot.read_at }}
-              </p>
-              <p v-for="warning in projection.warnings" :key="warning">{{ warning }}</p>
-              <p v-for="gap in refs(projection.coverage.issues)" :key="gap">
-                {{ gap.replaceAll('_', ' ') }}
-              </p>
-              <p v-for="(item, index) in projection.exclusions" :key="index">
-                {{ text(item.record_ref) }} · {{ text(item.reason).replaceAll('_', ' ') }}
-              </p>
-            </details>
-            <section v-if="projection.undated_or_period_only.length" class="text-sm">
-              <h3 class="t-h3">Undated or period-only records</h3>
-              <p class="text-fg-muted">
-                These remain inspectable and are excluded from dated metrics.
-              </p>
-              <UiButton
-                v-for="refValue in projection.undated_or_period_only"
-                :key="refValue"
-                size="sm"
-                variant="ghost"
-                @click="inspect(refValue)"
-                >{{ financeRecordLabel(projection, refValue) }}</UiButton
-              >
-            </section>
-            <FinanceOverview
+            <div
               v-if="section === 'overview'"
-              :projection="projection"
-              @inspect="includedRefs = $event"
-              @drill="drill"
-            />
-            <FinanceOverviewInsights
-              v-if="section === 'overview' && insights.hasResult"
-              :show-controls="false"
-              :model="insights"
-              :status="statusText"
-              :has-request="!!selectedRequest"
-              :request-allowed="reportAllowed && !loading && !analysisLoading && !pendingAnalysis"
-              :refresh-allowed="reportAllowed && !!selectedRequest"
-              :loading="analysisLoading"
-              @request="requestAnalysis"
-              @refresh="refreshAnalysis"
-              @inspect="inspect($event)"
-            />
-            <section v-if="includedRefs.length" class="space-y-2">
-              <h3 class="t-h3">Included records</h3>
-              <UiButton
-                v-for="refValue in includedRefs"
-                :key="refValue"
-                size="sm"
-                variant="ghost"
-                @click="
-                  inspect(
-                    refValue,
-                    projection.rows.find((row) => row.record_ref === refValue),
-                  )
-                "
-                >{{ financeRecordLabel(projection, refValue) }}</UiButton
-              >
-            </section>
-            <section v-if="section === 'records'" class="space-y-3">
-              <UiSectionHeader
-                title="Expenses & income"
-                :description="`${projection.page.total} records in this selection; bills and receipts may await classification.`"
-                ><template #actions
-                  ><UiButton :disabled="!currentAuthority || !access.modes.includes('correct')" @click="createEntry"
-                    >New expense or income</UiButton
-                  ></template
-                ></UiSectionHeader
-              >
-              <p class="text-xs text-fg-muted">
-                Invoice documents the purchase; receipt documents payment. File availability alone
-                does not confirm payment. Open a record to identify its linked originals.
-              </p>
-              <DataTable
-                :items="rows"
-                :columns="columns"
-                interactive
-                aria-label="Finance records"
-                max-height="440px"
-                :selected-id="recordRef"
-                :sort-key="query.sort"
-                :sort-dir="query.descending ? 'desc' : 'asc'"
-                @row-click="inspect(text($event.record_ref), $event)"
-                @sort="
-                  (key, dir) =>
-                    loadQuery({
-                      ...query,
-                      sort: (key === 'amount' ? 'amount' : 'date') as FinanceQuery['sort'],
-                      descending: dir === 'desc',
-                      offset: 0,
-                    })
-                "
+              class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+            >
+              <UiSkeleton
+                v-for="n in 3"
+                :key="n"
+                shape="block"
+                height="108px"
               />
+            </div>
+            <UiSkeleton
+              shape="block"
+              :height="section === 'overview' ? '264px' : '360px'"
+            />
+          </template>
+          <UiEmptyState
+            v-else
+            icon="search"
+            title="Selection unavailable"
+            description="Adjust your filters or refresh to try this selection again."
+          />
+        </section>
+        <template v-if="projection">
+          <UiCallout
+            v-if="
+              section === 'overview' &&
+                query.recognition_basis === 'accrual' &&
+                query.date_basis === 'issue' &&
+                projection.coverage.state !== 'complete'
+            "
+            variant="warning"
+          >
+            Invoice amounts are incomplete. Check missing invoice dates in Expenses &amp;
+            income.
+          </UiCallout>
+          <details
+            v-if="section === 'records' && projection.undated_or_period_only.length"
+            class="text-sm"
+          >
+            <summary class="focus-ring cursor-pointer font-medium">
+              {{ projection.undated_or_period_only.length }} records need a date
+            </summary>
+            <p class="my-2 text-fg-muted">
+              Add a date to include these records in period totals.
+            </p>
+            <UiButton
+              v-for="refValue in projection.undated_or_period_only"
+              :key="refValue"
+              size="sm"
+              variant="ghost"
+              @click="inspect(refValue)"
+            >
+              {{ financeRecordLabel(projection, refValue) }}
+            </UiButton>
+          </details>
+          <FinanceOverview
+            v-if="section === 'overview'"
+            :projection="projection"
+            @inspect="includedRefs = $event"
+            @drill="drill"
+            @records="section = 'records'"
+          />
+          <section
+            v-if="includedRefs.length"
+            class="space-y-2"
+          >
+            <h3 class="t-h3">
+              Included records
+            </h3>
+            <UiButton
+              v-for="refValue in includedRefs"
+              :key="refValue"
+              size="sm"
+              variant="ghost"
+              @click="
+                inspect(
+                  refValue,
+                  projection.rows.find((row) => row.record_ref === refValue),
+                )
+              "
+            >
+              {{ financeRecordLabel(projection, refValue) }}
+            </UiButton>
+          </section>
+          <section
+            v-if="section === 'records'"
+            class="space-y-3"
+          >
+            <UiSectionHeader
+              title="Expenses & income"
+              :description="`${projection.page.total} ${Number(projection.page.total) === 1 ? 'record' : 'records'}`"
+            >
+              <template #actions>
+                <UiButton
+                  variant="primary"
+                  :disabled="!currentAuthority || !access.modes.includes('correct')"
+                  @click="createEntry"
+                >
+                  New expense or income
+                </UiButton>
+              </template>
+            </UiSectionHeader>
+            <UiEmptyState
+              v-if="!rows.length"
+              icon="file"
+              title="No expenses or income in this selection"
+              description="Try another period or add your first expense or income."
+            />
+            <DataTable
+              v-else
+              :items="rows"
+              :columns="columns"
+              interactive
+              aria-label="Finance records"
+              max-height="440px"
+              :selected-id="recordRef"
+              :sort-key="query.sort"
+              :sort-dir="query.descending ? 'desc' : 'asc'"
+              @row-click="inspect(text($event.record_ref), $event)"
+              @sort="
+                (key, dir) =>
+                  loadQuery({
+                    ...query,
+                    sort: (key === 'amount' ? 'amount' : 'date') as FinanceQuery['sort'],
+                    descending: dir === 'desc',
+                    offset: 0,
+                  })
+              "
+            />
+            <div
+              v-if="Number(projection.page.total) > 0 || query.offset"
+              class="flex flex-wrap items-center justify-between gap-2"
+            >
+              <p
+                class="text-sm text-fg-muted"
+                role="status"
+              >
+                {{ pageRange }}
+              </p>
               <div class="flex gap-2">
                 <UiButton
                   :disabled="!currentAuthority || !query.offset"
@@ -933,184 +1057,49 @@ onBeforeUnmount(() => {
                       offset: Math.max(0, (query.offset || 0) - (query.limit || 50)),
                     })
                   "
-                  >Previous page</UiButton
-                ><UiButton
+                >
+                  Previous page
+                </UiButton><UiButton
                   :disabled="!currentAuthority || !projection.page.has_more"
                   @click="
                     loadQuery({ ...query, offset: (query.offset || 0) + (query.limit || 50) })
                   "
-                  >Next page</UiButton
                 >
+                  Next page
+                </UiButton>
               </div>
-            </section>
-            <section v-if="section === 'reports'" class="space-y-3">
-              <UiSectionHeader
-                title="Reports"
-                description="The same selected timeframe, filters and complete server population."
-              />
-              <div class="flex gap-2">
-                <UiButton
-                  :disabled="!reportAllowed || reportLoading"
-                  @click="loadReport('markdown')"
-                  >View period report</UiButton
-                ><UiButton :disabled="!reportAllowed || reportLoading" @click="loadReport('csv')"
-                  >Prepare CSV export</UiButton
-                ><UiButton :disabled="!reportAllowed || reportLoading" @click="loadReport('json')"
-                  >Prepare JSON export</UiButton
-                >
-              </div>
-              <p v-if="reportLoading" role="status">Preparing private report…</p>
-              <a
-                v-if="reportURL"
-                :href="reportAllowed ? reportURL : undefined"
-                :aria-disabled="!reportAllowed"
-                :download="report?.filename || 'finance-report'"
-                class="focus-ring text-fg-link"
-                >Download {{ report?.filename || 'private report' }}</a
-              >
-              <p v-if="report?.snapshot" class="break-all text-xs text-fg-muted">
-                Source revision {{ report.snapshot.revision }} · {{ report.snapshot.sha256 }}
-              </p>
-              <MarkdownView
-                v-if="reportText && report?.content_type?.includes('markdown')"
-                :source="reportText"
-              />
-            </section>
-            <section
-              class="space-y-3 border-t border-subtle pt-4"
-              aria-label="Agent finance analysis"
-            >
-              <UiSectionHeader
-                title="AI category and concern review"
-                description="Choose a review or inspect a previous request."
-              />
-              <details class="text-sm text-fg-muted">
-                <summary class="focus-ring cursor-pointer">How reviews work</summary>
-                <p class="mt-2">
-                  An available finance agent proposes descriptive categories and highlights
-                  supported concerns, then obtains independent control review. Queueing does not
-                  execute a model.
-                </p>
-              </details>
-              <div class="flex items-end gap-3">
-                <UiFormField label="Analysis question"
-                  ><UiSelect
-                    v-model="analysisKind"
-                    :options="[
-                      { value: 'opportunities', label: 'Categories and concerns' },
-                      { value: 'spending', label: 'Spending review' },
-                      { value: 'collections', label: 'Collection timing' },
-                      { value: 'cashflow', label: 'Cashflow questions' },
-                      { value: 'review-records', label: 'Source quality' },
-                    ]" /></UiFormField
-                ><UiButton
-                  :disabled="!reportAllowed || loading || analysisLoading || !!pendingAnalysis"
-                  @click="requestAnalysis"
-                  >{{
-                    selectedRequest
-                      ? 'Request new category and concern review'
-                      : 'Request category and concern review'
-                  }}</UiButton
-                >
-              </div>
-              <p role="status" class="text-sm">{{ statusText }}</p>
-              <UiFormField v-if="requests.length" label="Previous analysis requests"
-                ><UiSelect
-                  :model-value="String(selectedRequest?.id || '')"
-                  :options="
-                    requests.map((r) => ({
-                      value: String(r.id),
-                      label: `Request ${r.id} · ${text(r.status)}`,
-                    }))
-                  "
-                  @update:model-value="
-                    (value) => {
-                      selectedRequest = requests.find((r) => String(r.id) === String(value)) || null
-                      void refreshAnalysis()
-                    }
-                  " /></UiFormField
-              ><template v-if="selectedRequest"
-                ><p class="text-xs text-fg-muted">
-                  Request {{ selectedRequest.id }} · source
-                  {{
-                    text(
-                      object(
-                        object(object(selectedRequest.metadata_json).metadata_json).source_snapshot,
-                      ).sha256,
-                    )
-                  }}
-                </p>
-                <UiButton @click="requestOpen = true">Inspect analysis request</UiButton
-                ><UiButton
-                  :loading="analysisLoading"
-                  :disabled="!reportAllowed"
-                  @click="refreshAnalysis"
-                  >Refresh analysis status</UiButton
-                >
-                <p class="text-xs text-fg-muted">
-                  Original window:
-                  {{
-                    text(
-                      object(object(object(selectedRequest.metadata_json).metadata_json).query)
-                        .start,
-                    )
-                  }}
-                  through
-                  {{
-                    text(
-                      object(object(object(selectedRequest.metadata_json).metadata_json).query).end,
-                    )
-                  }}. Results retain the original request window and source. Selecting a finding
-                  does not adopt a financial decision.
-                </p></template
-              ><UiCallout v-if="analysis?.state === 'stale'" variant="warning"
-                >Historical result: source changed after review. Request new analysis for current
-                decisions.</UiCallout
-              >
-              <details
-                v-if="
-                  analysis?.result ||
-                  (analysis?.report && ['current', 'stale'].includes(analysis.state))
-                "
-                class="space-y-3"
-              >
-                <summary class="focus-ring cursor-pointer text-sm font-medium">
-                  Full analysis
-                </summary>
-                <div class="space-y-3 pt-2">
-                  <MarkdownView
-                    v-if="analysis?.report && ['current', 'stale'].includes(analysis.state)"
-                    :source="analysis.report"
-                  />
-                  <ul v-if="analysis?.result" class="space-y-3">
-                    <li
-                      v-for="finding in objects(analysis.result.opportunities)"
-                      :key="text(finding.opportunity_ref)"
-                    >
-                      <p class="font-medium">{{ text(finding.kind).replaceAll('-', ' ') }}</p>
-                      <p>{{ text(finding.rationale) }}</p>
-                      <p class="text-sm text-fg-muted">
-                        Uncertainty: {{ text(finding.uncertainty) }}
-                      </p>
-                      <p v-if="finding.estimated_impact">
-                        Estimated impact: {{ formatMoney(finding.estimated_impact) }}
-                      </p>
-                      <UiButton
-                        v-for="evidence in refs(finding.evidence_refs)"
-                        :key="evidence"
-                        size="sm"
-                        variant="ghost"
-                        @click="inspect(evidence)"
-                        >{{ evidence }}</UiButton
-                      >
-                    </li>
-                  </ul>
-                </div>
-              </details>
-            </section>
-          </template>
-        </main>
-      </div>
+            </div>
+          </section>
+          <FinanceReports
+            v-if="section === 'reports'"
+            :report="report"
+            :report-url="reportURL"
+            :report-text="reportText"
+            :report-error="reportError"
+            :report-loading="reportLoading"
+            :report-allowed="reportAllowed"
+            @render="loadReport"
+          />
+          <FinanceAnalysisReview
+            v-if="section === 'overview'"
+            v-model:analysis-kind="analysisKind"
+            :selected-request="selectedRequest"
+            :requests="requests"
+            :status-text="statusText"
+            :insights="insights"
+            :analysis="analysis"
+            :report-allowed="reportAllowed"
+            :loading="loading"
+            :analysis-loading="analysisLoading"
+            :pending-analysis="!!pendingAnalysis"
+            @request="requestAnalysis"
+            @refresh="refreshAnalysis"
+            @inspect-request="requestOpen = true"
+            @select-request="selectRequest"
+            @inspect="inspect($event)"
+          />
+        </template>
+      </main>
       <FinanceRecordPanel
         v-if="projection"
         v-model="panelOpen"

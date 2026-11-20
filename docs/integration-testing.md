@@ -183,6 +183,21 @@ During test design or planning, pick the row that matches the changed behavior. 
 
 ### UI reads and interactions
 
+Finance changes select the existing [page](../ui/src/views/FinanceView.spec.ts),
+[filters](../ui/src/components/finance/FinanceFilters.spec.ts) and
+[record panel](../ui/src/components/finance/FinanceRecordPanel.spec.ts) cases:
+correct a rejected query without losing edit authority; hold same/changed-query
+responses; change a period while another editor contains an unapplied draft;
+preserve exact money, reviewed-save identity and document cleanup across record
+scope changes. Shared chip changes also select the actual
+[Board consumer](../ui/src/views/task-tracker/TrackerBoardFilterBar.spec.ts).
+Readable filter-choice projection changes select
+[the complete current-source matrix](../tests/unit/test_finance_management.py)
+and [REST output preservation](../tests/integration/test_routes/test_finance_management_routes.py),
+including zero matches, pagination, supersession and missing/conflicting labels.
+Overview copy or empty-state changes also select the existing
+[reporting-readiness consumer](../ui/src/views/finance/reportingReadiness.spec.ts).
+
 | When changing | Decisive observation | Maintained checks |
 | --- | --- | --- |
 | Pending reads, writes or scope | Release an old read after mutation, project A after B, or an old detail after newer usage. A 503 can precede denial, including a coded 422 `missing_scope`; a later confirmation cannot restore denied state. A failed readback after a successful write keeps valid siblings visible and reports the refresh error. | [Store ordering and readback](../ui/src/stores/plugins.spec.ts), [scope denial](../ui/src/stores/plugins.scope.spec.ts), [agent scope](../ui/src/views/agents/useProjectAgents.spec.ts), [tracker detail/metrics](../ui/src/views/TaskTrackerView.spec.ts). |

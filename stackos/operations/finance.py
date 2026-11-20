@@ -277,6 +277,22 @@ class FinanceMoneyOut(BaseModel):
     exponent: int | None = None
 
 
+class FinanceAccountFilterOptionOut(BaseModel):
+    value: str
+    label: str | None
+    aliases: list[str]
+
+
+class FinanceCounterpartyFilterOptionOut(BaseModel):
+    value: str
+    label: str | None
+
+
+class FinanceFilterOptionsOut(BaseModel):
+    accounts: list[FinanceAccountFilterOptionOut]
+    counterparties: list[FinanceCounterpartyFilterOptionOut]
+
+
 class FinanceProjectionOut(BaseModel):
     snapshot: FinanceSnapshotOut
     query: dict[str, Any]
@@ -290,6 +306,7 @@ class FinanceProjectionOut(BaseModel):
     exclusions: list[dict[str, Any]]
     undated_or_period_only: list[str]
     reporting_defaults: dict[str, str] | None = Field(default_factory=lambda: None)
+    filter_options: FinanceFilterOptionsOut | None = Field(default_factory=lambda: None)
     record_labels: dict[str, str] = Field(default_factory=dict)
     warnings: list[str]
     comparison: dict[str, Any] | None = None
@@ -470,6 +487,14 @@ def operation_specs() -> list[OperationSpec]:
             else (),
             returns=(
                 "Current snapshot/record refs, explicit readiness/repair or verified safe receipt.",
+            )
+            + (
+                (
+                    "Query includes current observed account/counterparty filter options before "
+                    "filters and pagination; labels require canonical metadata.",
+                )
+                if name == "finance.query"
+                else ()
             ),
             mutating=write,
             grant_policy="local-admin-console-write" if write else "local-admin-console-read",
@@ -481,6 +506,11 @@ def operation_specs() -> list[OperationSpec]:
                 raw_only_reason="Preserve exact private bytes and state." if content else None,
                 compact_notes=(
                     "Keep source revision/hash, page, coverage, issues and retry outcomes.",
+                )
+                + (
+                    ("Keep complete filter_options and exact aliases.",)
+                    if name == "finance.query"
+                    else ()
                 ),
             ),
         )

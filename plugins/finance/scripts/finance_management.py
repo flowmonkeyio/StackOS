@@ -741,6 +741,34 @@ def _reporting_defaults(
     return {"recognition_basis": basis, "date_basis": date_basis}
 
 
+def _filter_options(
+    account_map: dict[str, dict[str, Any]],
+    account_refs: set[str],
+    counterparty_labels: dict[str, set[str | None]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Present observed identities using only their current canonical metadata."""
+    accounts = {}
+    for ref in sorted(account_refs):
+        setting = account_map.get(ref)
+        value = setting["record_id"] if setting else ref
+        accounts[value] = {
+            "value": value,
+            "label": setting["account_identity"]["display_name"].strip() if setting else None,
+            "aliases": [],
+        }
+    for alias, setting in sorted(account_map.items()):
+        value = setting["record_id"]
+        if value in accounts and alias != value:
+            accounts[value]["aliases"].append(alias)
+    return {
+        "accounts": [accounts[value] for value in sorted(accounts)],
+        "counterparties": [
+            {"value": ref, "label": next(iter(labels)) if len(labels) == 1 else None}
+            for ref, labels in sorted(counterparty_labels.items())
+        ],
+    }
+
+
 def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
     """One filtered population supplies rows, totals, groups, trends and reports."""
     q = normalize_query(filters)
@@ -755,9 +783,13 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
     # subset. Basis stays in the key; presentation dates/accounts/projects never
     # revive one representation of a globally conflicting event/component.
     economic_groups = defaultdict(list)
+    counterparty_labels: dict[str, set[str | None]] = defaultdict(set)
     for record in current.active("bookkeeping"):
         reporting, _reason = _reporting(current, settings, record, q, check_basis=False)
         if reporting is not None:
+            if reporting.get("counterparty_ref"):
+                label = reporting.get("counterparty_label", "").strip() or None
+                counterparty_labels[reporting["counterparty_ref"]].add(label)
             economic_groups[
                 (
                     reporting["recognition_basis"],
@@ -767,6 +799,7 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
             ].append(record["record_id"])
     conflicts = {ref for group in economic_groups.values() if len(group) > 1 for ref in group}
     rows, excluded, undated, recognized = [], [], [], []
+    account_refs: set[str] = set()
     unavailable = {x["attachment_ref"] for x in snapshot.get("custody_issues", [])}
 
     def exclusion(ref, reason):
@@ -780,6 +813,8 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                 reporting, reason = _reporting(current, settings, record, q)
                 if reporting is not None and ref in conflicts:
                     reason = "economic_identity_conflict"
+            if record.get("account_ref"):
+                account_refs.add(record["account_ref"])
             business_date = (
                 record.get("date") if collection == "bookkeeping" else record.get("business_date")
             )
@@ -1162,6 +1197,7 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
         "exclusions": excluded,
         "undated_or_period_only": undated,
         "reporting_defaults": _reporting_defaults(current, settings),
+        "filter_options": _filter_options(account_map, account_refs, counterparty_labels),
         "record_labels": {row["record_ref"]: _record_label(row) for row in rows},
         "warnings": ["prepared/unposted; supported operating result, not posted books"],
     }

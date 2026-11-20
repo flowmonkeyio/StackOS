@@ -53,16 +53,19 @@ const totalColumns = computed<DataTableColumn<TotalRow>[]>(() => {
   const columns: DataTableColumn<TotalRow>[] = [
     { key: 'label', label: 'Metric' },
     { key: 'currentText', label: 'Current' },
-    { key: 'currentState', label: 'Current coverage' },
+    { key: 'currentState', label: 'Current status', format: stateLabel },
   ]
   if (selected.value?.compared)
     columns.push(
       { key: 'priorText', label: 'Prior' },
-      { key: 'priorState', label: 'Prior coverage' },
+      { key: 'priorState', label: 'Prior status', format: stateLabel },
       { key: 'changeText', label: 'Change' },
     )
   return columns
 })
+function stateLabel(value: unknown): string {
+  return value === 'complete' ? 'Complete' : value === 'partial' ? 'Partial total' : 'Not available'
+}
 function paint() {
   if (!active) return
   if (!selected.value) {
@@ -213,7 +216,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-if="selected" class="min-w-0 space-y-5" aria-label="Overview finance graphs">
+  <section
+    v-if="selected"
+    class="min-w-0 space-y-5"
+    aria-label="Overview finance graphs"
+  >
     <UiFormField
       v-if="currencies.length > 1"
       label="Graph currency"
@@ -225,40 +232,69 @@ onBeforeUnmount(() => {
         @update:model-value="chosenCurrency = String($event)"
       />
     </UiFormField>
-    <section class="min-w-0 space-y-2" aria-label="Income versus expenses">
-      <h3 class="t-h3">Income versus expenses · {{ selected.currency }}</h3>
+    <section
+      class="min-w-0 space-y-2"
+      aria-label="Income versus expenses"
+    >
+      <h3 class="t-h3">
+        Income versus expenses · {{ selected.currency }}
+      </h3>
       <p class="text-sm text-fg-muted">
-        Current: {{ selected.currentWindow }} · {{ selected.basis }}
+        Current: {{ selected.currentWindow }}
       </p>
-      <p v-if="selected.compared" class="text-sm text-fg-muted">
+      <p
+        v-if="selected.compared"
+        class="text-sm text-fg-muted"
+      >
         Prior: {{ selected.priorWindow
         }}<template v-if="selected.clamped">
-          · Previous-year date was clamped to the supported calendar day.</template
-        >
+          · Previous-year date was clamped to the supported calendar day.
+        </template>
       </p>
-      <p class="text-xs text-fg-muted">
-        Current coverage: {{ selected.coverage
-        }}<template v-if="selected.compared">
-          · Prior coverage: {{ selected.priorCoverage }}</template
-        >. Unavailable income is not zero; partial totals show supported contributions only.
+      <p
+        v-if="
+          selected.coverage !== 'complete' ||
+            selected.totals.some(
+              (row) =>
+                row.currentState !== 'complete' ||
+                (selected.compared && row.priorState !== 'complete'),
+            )
+        "
+        class="text-xs text-fg-muted"
+      >
+        Some totals are incomplete. Unavailable income is not zero.
       </p>
-      <p class="text-xs text-fg-muted">
-        Current: solid bars<template v-if="selected.compared"> · Prior: outlined bars</template>.
+      <p
+        v-if="selected.compared"
+        class="text-xs text-fg-muted"
+      >
+        Current: solid bars<template v-if="selected.compared">
+          · Prior: outlined bars
+        </template>.
         Negative totals preserve net refunds.
       </p>
-      <div v-if="hasTotals" class="relative h-56 min-w-0 w-full">
+      <div
+        v-if="hasTotals"
+        class="relative h-56 min-w-0 w-full"
+      >
         <canvas
           ref="totalsCanvas"
           role="img"
           :aria-label="`Income versus expenses in ${selected.currency}, current ${selected.currentWindow}${selected.compared ? ', prior ' + selected.priorWindow : ''}. Exact values and changes in the table below.`"
         />
       </div>
-      <p v-else class="text-sm text-fg-muted">
+      <p
+        v-else
+        class="text-sm text-fg-muted"
+      >
         Totals cannot be plotted with the current amount and precision evidence. Exact source
         availability is shown below.
       </p>
-      <p class="text-xs text-fg-muted">{{ totalScale.description }}</p>
-      <p v-if="totalScale.belowScaleCount" role="status" class="text-xs text-fg-muted">
+      <p
+        v-if="totalScale.belowScaleCount"
+        role="status"
+        class="text-xs text-fg-muted"
+      >
         {{ totalScale.belowScaleCount }} nonzero amount(s) are below drawing precision. Inspect
         their exact values in the table.
       </p>
@@ -268,46 +304,63 @@ onBeforeUnmount(() => {
         aria-label="Exact income and expense totals"
       />
       <div class="flex flex-wrap gap-2">
-        <template v-for="row in selected.totals" :key="row.id">
+        <template
+          v-for="row in selected.totals"
+          :key="row.id"
+        >
           <UiButton
             v-if="row.currentRefs.length"
             size="sm"
             variant="ghost"
             @click="emit('inspect', row.currentRefs)"
-            >Inspect current {{ row.label.toLowerCase() }} records</UiButton
           >
+            Inspect current {{ row.label.toLowerCase() }} records
+          </UiButton>
           <UiButton
             v-if="selected.compared && row.priorRefs.length"
             size="sm"
             variant="ghost"
             @click="emit('inspect', row.priorRefs)"
-            >Inspect prior {{ row.label.toLowerCase() }} records</UiButton
           >
+            Inspect prior {{ row.label.toLowerCase() }} records
+          </UiButton>
         </template>
       </div>
     </section>
-    <section class="min-w-0 space-y-2" aria-label="Current income and expense trend">
-      <h3 class="t-h3">Income and expense trend · {{ selected.currency }}</h3>
+    <section
+      class="min-w-0 space-y-2"
+      aria-label="Current income and expense trend"
+    >
+      <h3 class="t-h3">
+        Income and expense trend · {{ selected.currency }}
+      </h3>
       <p class="text-sm text-fg-muted">
-        {{ selected.currentWindow }} · Current-period supported contributions. Only recorded dates
-        are shown; gaps are not zero.
+        {{ selected.currentWindow }} · Missing dates appear as gaps.
       </p>
       <p class="text-xs text-fg-muted">
-        Income: solid line with round points · Expenses: dashed line with square points. Source
-        coverage: {{ selected.coverage }}.
+        Income: solid line · Expenses: dashed line
       </p>
-      <div v-if="hasTrend" class="relative h-56 min-w-0 w-full">
+      <div
+        v-if="hasTrend"
+        class="relative h-56 min-w-0 w-full"
+      >
         <canvas
           ref="trendCanvas"
           role="img"
           :aria-label="`Current income and expense contributions in ${selected.currency}, ${selected.currentWindow}. Missing dates are gaps. Exact daily values in the table below.`"
         />
       </div>
-      <p v-else class="text-sm text-fg-muted">
+      <p
+        v-else
+        class="text-sm text-fg-muted"
+      >
         No supported dated contributions can be plotted in this currency and window.
       </p>
-      <p class="text-xs text-fg-muted">{{ trendScale.description }}</p>
-      <p v-if="trendScale.belowScaleCount" role="status" class="text-xs text-fg-muted">
+      <p
+        v-if="trendScale.belowScaleCount"
+        role="status"
+        class="text-xs text-fg-muted"
+      >
         {{ trendScale.belowScaleCount }} nonzero contribution(s) are below drawing precision.
         Inspect their exact values below.
       </p>

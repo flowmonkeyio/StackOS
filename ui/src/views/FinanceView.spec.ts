@@ -10,7 +10,10 @@ import { useStackOsCatalogStore } from '@/stores/plugins'
 import { projectNavSections } from '@/lib/stackos/nav'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
-vi.mock('@/lib/client', async (original) => ({ ...await original<typeof import('@/lib/client')>(), apiFetch: vi.fn() }))
+vi.mock('@/lib/client', async (original) => ({
+  ...(await original<typeof import('@/lib/client')>()),
+  apiFetch: vi.fn(),
+}))
 vi.mock('chart.js', () => ({
   Chart: class {
     static register = vi.fn()
@@ -147,6 +150,91 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('keeps filters correctable after query validation fails and accepts the repaired selection', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'finance.query' && args.currency === 'usd')
+        throw new ApiError('Invalid query', 422, {
+          detail: 'Invalid query',
+          data: { finance_code: 'invalid_query' },
+        })
+      return basics(name, args)
+    })
+    const { wrapper } = await mounted()
+    const filters = wrapper.getComponent({ name: 'FinanceFilters' })
+    filters.vm.$emit('apply', { ...filters.props('query'), currency: 'usd' })
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Check your filters')
+    expect(filters.props('disabled')).toBe(false)
+    expect(wrapper.find('[aria-label="Finance views"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+    filters.vm.$emit('apply', { ...filters.props('query'), currency: 'USD' })
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+    expect(
+      vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.status'),
+    ).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it('keeps a full content shell while a new selection loads without relabeling old amounts', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    const { wrapper } = await mounted()
+    let finish!: (value: unknown) => void
+    let nextQuery: Record<string, unknown> = {}
+    vi.mocked(callOperation).mockImplementation((name, args) =>
+      name === 'finance.query'
+        ? new Promise((resolve) => {
+            finish = resolve
+            nextQuery = args
+          })
+        : basics(name, args),
+    )
+    const filters = wrapper.getComponent({ name: 'FinanceFilters' })
+    filters.vm.$emit('apply', { ...filters.props('query'), start: '2026-11-01', end: '2026-11-30' })
+    await flushPromises()
+    expect(wrapper.get('main[aria-label="Finance selected view"]').attributes('aria-busy')).toBe(
+      'true',
+    )
+    expect(wrapper.get('[data-test="finance-pending"]').classes()).toContain('min-h-[440px]')
+    expect(wrapper.findAllComponents({ name: 'UiSkeleton' }).length).toBeGreaterThan(0)
+    expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+    expect(filters.props('query')).toMatchObject({ start: '2026-11-01', end: '2026-11-30' })
+    expect(wrapper.get('[data-test="refresh-finance"]').attributes('disabled')).toBeDefined()
+    finish({ data: projection(nextQuery) })
+    await flushPromises()
+    expect(wrapper.find('[data-test="finance-pending"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+    wrapper.unmount()
+  })
+  it('keeps source internals out of ordinary views and offers review setup only on Overview', async () => {
+    const { wrapper } = await mounted()
+    const review = wrapper.get('details[aria-label="Agent finance analysis"]')
+    expect(review.attributes('open')).toBeUndefined()
+    expect(review.get('summary').text()).toContain('Review finances')
+    for (const label of ['Overview', 'Expenses & income', 'Reports']) {
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === label)!
+        .trigger('click')
+      for (const technical of [
+        'SHA-256',
+        snapshot.sha256,
+        'prepared/unposted',
+        'Source and reporting gaps',
+        'server population',
+        'missing_source_window',
+      ])
+        expect(wrapper.text()).not.toContain(technical)
+      if (label !== 'Overview')
+        expect(wrapper.find('[aria-label="Agent finance analysis"]').exists()).toBe(false)
+    }
+    expect(
+      wrapper.findAll('button').filter((button) => button.text() === 'View report'),
+    ).toHaveLength(1)
+    expect(wrapper.get('[data-test="export-finance"]').text()).toBe('Export')
+    wrapper.unmount()
+  })
   it('uses approved invoice basis once without resetting an explicit filter selection', async () => {
     const original = vi.mocked(callOperation).getMockImplementation()!
     vi.mocked(callOperation).mockImplementation(async (name, args) => {
@@ -184,25 +272,41 @@ describe('Finance management', () => {
   it('keeps selected records and their panel through both status and query refresh', async () => {
     const basics = vi.mocked(callOperation).getMockImplementation()!
     const { wrapper } = await mounted()
-    await wrapper.findAll('button').find(button => button.text() === 'Expenses & income')!.trigger('click')
-    await wrapper.get('tbody tr').trigger('click'); await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Expenses & income')!
+      .trigger('click')
+    await wrapper.get('tbody tr').trigger('click')
+    await flushPromises()
     const panel = wrapper.getComponent({ name: 'FinanceRecordPanel' })
-    const panelUID = panel.vm.$.uid, table = wrapper.get('table').element
+    const panelUID = panel.vm.$.uid,
+      table = wrapper.get('table').element
     let resolveStatus!: (value: unknown) => void, resolveQuery!: (value: unknown) => void
     let queryArgs: Record<string, unknown> = {}
-    vi.mocked(callOperation).mockImplementation((name, args) => name === 'finance.status'
-      ? new Promise(resolve => { resolveStatus = resolve }) : name === 'finance.query'
-        ? new Promise(resolve => { resolveQuery = resolve; queryArgs = args }) : basics(name, args))
+    vi.mocked(callOperation).mockImplementation((name, args) =>
+      name === 'finance.status'
+        ? new Promise((resolve) => {
+            resolveStatus = resolve
+          })
+        : name === 'finance.query'
+          ? new Promise((resolve) => {
+              resolveQuery = resolve
+              queryArgs = args
+            })
+          : basics(name, args),
+    )
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     expect(panel.props('authorityCurrent')).toBe(false)
     expect(panel.props('modelValue')).toBe(true)
     expect(panel.props('recordRef')).toBe('receipt:one')
     expect(wrapper.get('table').element).toBe(table)
-    resolveStatus({ data: { project_id: 1, readiness: 'ready', access: [access] } }); await flushPromises()
+    resolveStatus({ data: { project_id: 1, readiness: 'ready', access: [access] } })
+    await flushPromises()
     expect(wrapper.getComponent({ name: 'FinanceRecordPanel' }).vm.$.uid).toBe(panelUID)
     expect(wrapper.get('table').element).toBe(table)
     expect(panel.props('authorityCurrent')).toBe(false)
-    resolveQuery({ data: projection(queryArgs) }); await flushPromises()
+    resolveQuery({ data: projection(queryArgs) })
+    await flushPromises()
     expect(panel.props('authorityCurrent')).toBe(true)
     expect(panel.props('recordRef')).toBe('receipt:one')
     expect(panel.props('modelValue')).toBe(true)
@@ -213,14 +317,24 @@ describe('Finance management', () => {
     const basics = vi.mocked(callOperation).getMockImplementation()!
     const { wrapper } = await mounted()
     let resolveQuery!: (value: unknown) => void
-    vi.mocked(callOperation).mockImplementation((name, args) => name === 'finance.query'
-      ? new Promise(resolve => { resolveQuery = resolve }) : basics(name, args))
+    vi.mocked(callOperation).mockImplementation((name, args) =>
+      name === 'finance.query'
+        ? new Promise((resolve) => {
+            resolveQuery = resolve
+          })
+        : basics(name, args),
+    )
     const filters = wrapper.getComponent({ name: 'FinanceFilters' })
-    filters.vm.$emit('apply', { ...filters.props('query'), q: 'changed identity' }); await flushPromises()
+    filters.vm.$emit('apply', { ...filters.props('query'), q: 'changed identity' })
+    await flushPromises()
     expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
-    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Denied', 403, { detail: 'Denied' }))
-    await wrapper.get('[data-test="refresh-finance"]').trigger('click'); await flushPromises()
-    resolveQuery({ data: projection({}, 'Old denied data') }); await flushPromises()
+    vi.mocked(callOperation).mockRejectedValueOnce(
+      new ApiError('Denied', 403, { detail: 'Denied' }),
+    )
+    filters.vm.$emit('apply', { ...filters.props('query'), q: 'newer denied selection' })
+    await flushPromises()
+    resolveQuery({ data: projection({}, 'Old denied data') })
+    await flushPromises()
     expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
     expect(wrapper.text()).not.toContain('Old denied data')
     expect(wrapper.find('[aria-label="Finance views"]').exists()).toBe(false)
@@ -228,30 +342,54 @@ describe('Finance management', () => {
   })
   it('retains report DOM and filters during compatible validation and transient errors without export authority', async () => {
     const OriginalURL = URL
-    vi.stubGlobal('URL', class extends OriginalURL {
-      static override createObjectURL = vi.fn(() => 'blob:retained')
-      static override revokeObjectURL = vi.fn()
-    })
+    vi.stubGlobal(
+      'URL',
+      class extends OriginalURL {
+        static override createObjectURL = vi.fn(() => 'blob:retained')
+        static override revokeObjectURL = vi.fn()
+      },
+    )
     const basics = vi.mocked(callOperation).getMockImplementation()!
-    vi.mocked(callOperation).mockImplementation(async (name, args) => name === 'finance.report.render'
-      ? { state: 'current', snapshot, content_base64: btoa('Retained report'), content_type: 'text/markdown', filename: 'report.md' }
-      : basics(name, args))
+    vi.mocked(callOperation).mockImplementation(async (name, args) =>
+      name === 'finance.report.render'
+        ? {
+            state: 'current',
+            snapshot,
+            content_base64: btoa('Retained report'),
+            content_type: 'text/markdown',
+            filename: 'report.md',
+          }
+        : basics(name, args),
+    )
     const { wrapper } = await mounted()
-    await wrapper.findAll('button').find(button => button.text() === 'Reports')!.trigger('click')
-    await wrapper.findAll('button').find(button => button.text() === 'View period report')!.trigger('click'); await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Reports')!
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'View report')!
+      .trigger('click')
+    await flushPromises()
     const reportNode = wrapper.getComponent({ name: 'MarkdownView' }).element
     let rejectStatus!: (cause: unknown) => void
-    vi.mocked(callOperation).mockImplementation((name, args) => name === 'finance.status'
-      ? new Promise((_resolve, reject) => { rejectStatus = reject }) : basics(name, args))
+    vi.mocked(callOperation).mockImplementation((name, args) =>
+      name === 'finance.status'
+        ? new Promise((_resolve, reject) => {
+            rejectStatus = reject
+          })
+        : basics(name, args),
+    )
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     expect(wrapper.getComponent({ name: 'MarkdownView' }).element).toBe(reportNode)
-    expect(wrapper.text()).toContain('Last-known')
-    expect(wrapper.findAll('button').find(button => button.text() === 'Prepare CSV export')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Refreshing this selection')
+    expect(wrapper.get('[data-test="export-finance"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('a[download]').attributes('href')).toBeUndefined()
-    rejectStatus(new Error('Offline')); await flushPromises()
+    rejectStatus(new Error('Offline'))
+    await flushPromises()
     expect(wrapper.getComponent({ name: 'MarkdownView' }).element).toBe(reportNode)
-    expect(wrapper.text()).toContain('Last-known')
-    expect(wrapper.findAll('button').find(button => button.text() === 'Prepare CSV export')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Showing the last loaded selection')
+    expect(wrapper.get('[data-test="export-finance"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
   it('keeps enabled navigation after a pre-enable shell read arrives late and Finance refreshes', async () => {
@@ -264,12 +402,20 @@ describe('Finance management', () => {
         return { data: { project_id: 1, plugin_slug: 'finance', enabled: true } }
       }
       if (name === 'finance.status' && !enabled)
-        throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
+        throw new ApiError('disabled', 403, {
+          detail: 'disabled',
+          data: { finance_code: 'plugin_not_enabled' },
+        })
       return basics(name, args)
     })
     const finance = { slug: 'finance', name: 'Finance', enabled_for_project: true }
     vi.mocked(apiFetch)
-      .mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve
+          }),
+      )
       .mockResolvedValue([finance])
     const { wrapper } = await mounted()
     const catalog = useStackOsCatalogStore()
@@ -280,8 +426,11 @@ describe('Finance management', () => {
     expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
     release([{ ...finance, enabled_for_project: false }])
     await pendingShell
-    expect(catalog.enabledPlugins).toContainEqual(expect.objectContaining({ slug: 'finance', enabled_for_project: true }))
-    const navigation = () => projectNavSections(1, catalog.enabledPlugins).flatMap(section => section.items)
+    expect(catalog.enabledPlugins).toContainEqual(
+      expect.objectContaining({ slug: 'finance', enabled_for_project: true }),
+    )
+    const navigation = () =>
+      projectNavSections(1, catalog.enabledPlugins).flatMap((section) => section.items)
     expect(navigation()).toContainEqual(expect.objectContaining({ to: '/projects/1/finance' }))
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     await flushPromises()
@@ -298,7 +447,10 @@ describe('Finance management', () => {
         return { data: { project_id: 1, plugin_slug: 'finance', enabled: true } }
       }
       if (name === 'finance.status' && !enabled)
-        throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
+        throw new ApiError('disabled', 403, {
+          detail: 'disabled',
+          data: { finance_code: 'plugin_not_enabled' },
+        })
       return basics(name, args)
     })
     vi.mocked(apiFetch).mockResolvedValue([])
@@ -306,73 +458,102 @@ describe('Finance management', () => {
     expect(apiFetch).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('Synthetic vendor')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="finance-setup"]').text()).toContain('private local storage for this project')
+    expect(wrapper.get('[data-test="finance-setup"]').text()).toContain(
+      'private local storage for this project',
+    )
     expect(wrapper.find('a[href="/projects/1/plugins"]').exists()).toBe(false)
     await wrapper.get('[data-test="enable-finance"]').trigger('click')
     await flushPromises()
-    expect(callOperation).toHaveBeenCalledWith('plugin.enable', { project_id: 1, plugin_slug: 'finance' })
+    expect(callOperation).toHaveBeenCalledWith('plugin.enable', {
+      project_id: 1,
+      plugin_slug: 'finance',
+    })
     expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
     expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
     wrapper.unmount()
   })
-  it.each(['resolve', 'reject'])('ignores a late enable %s after switching projects', async (outcome) => {
-    let finish!: () => void
-    const basics = vi.mocked(callOperation).getMockImplementation()!
-    vi.mocked(callOperation).mockImplementation(async (name, args) => {
-      if (name === 'plugin.enable') return new Promise((resolve, reject) => {
-        finish = () => outcome === 'resolve' ? resolve({}) : reject(new Error('private failure'))
+  it.each(['resolve', 'reject'])(
+    'ignores a late enable %s after switching projects',
+    async (outcome) => {
+      let finish!: () => void
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'plugin.enable')
+          return new Promise((resolve, reject) => {
+            finish = () =>
+              outcome === 'resolve' ? resolve({}) : reject(new Error('private failure'))
+          })
+        if (name === 'finance.status' && args.project_id === 1)
+          throw new ApiError('disabled', 403, {
+            detail: 'disabled',
+            data: { finance_code: 'plugin_not_enabled' },
+          })
+        return basics(name, args)
       })
-      if (name === 'finance.status' && args.project_id === 1)
-        throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
-      return basics(name, args)
-    })
-    const { wrapper, router } = await mounted()
-    await wrapper.get('[data-test="enable-finance"]').trigger('click')
-    expect(wrapper.get('[data-test="enable-finance"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-test="enable-finance"]').attributes('aria-busy')).toBe('true')
-    await wrapper.get('[data-test="enable-finance"]').trigger('click')
-    expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'plugin.enable')).toHaveLength(1)
-    await router.push('/projects/2/finance')
-    await flushPromises()
-    finish()
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
-    expect(apiFetch).not.toHaveBeenCalled()
-    expect(vi.mocked(callOperation).mock.calls.filter(([name, args]) => name === 'finance.status' && args.project_id === 1)).toHaveLength(1)
-    wrapper.unmount()
-  })
-  it.each(['enable', 'refresh'])('keeps failed enablement safe and allows %s after a failed attempt', async (retry) => {
-    let disabled = true
-    let finishEnable!: () => void
-    const basics = vi.mocked(callOperation).getMockImplementation()!
-    vi.mocked(callOperation).mockImplementation(async (name, args) => {
-      if (name === 'plugin.enable') {
-        if (disabled) throw new Error('/private/secret')
-        return new Promise(resolve => { finishEnable = () => resolve({}) })
-      }
-      if (name === 'finance.status' && disabled)
-        throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
-      return basics(name, args)
-    })
-    const { wrapper } = await mounted()
-    await wrapper.get('[data-test="enable-finance"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('Try again, or refresh to check its current status.')
-    expect(wrapper.text()).not.toContain('/private/secret')
-    disabled = false
-    await wrapper.get(`[data-test="${retry}-finance"]`).trigger('click')
-    if (retry === 'enable') {
-      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      const { wrapper, router } = await mounted()
+      await wrapper.get('[data-test="enable-finance"]').trigger('click')
+      expect(wrapper.get('[data-test="enable-finance"]').attributes('disabled')).toBeDefined()
       expect(wrapper.get('[data-test="enable-finance"]').attributes('aria-busy')).toBe('true')
-      finishEnable()
-    }
-    await flushPromises()
-    expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-  it.each(['scope-change', 'newer-refresh'])('ignores a delayed disabled status after %s', async (transition) => {
+      await wrapper.get('[data-test="enable-finance"]').trigger('click')
+      expect(
+        vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'plugin.enable'),
+      ).toHaveLength(1)
+      await router.push('/projects/2/finance')
+      await flushPromises()
+      finish()
+      await flushPromises()
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+      expect(apiFetch).not.toHaveBeenCalled()
+      expect(
+        vi
+          .mocked(callOperation)
+          .mock.calls.filter(([name, args]) => name === 'finance.status' && args.project_id === 1),
+      ).toHaveLength(1)
+      wrapper.unmount()
+    },
+  )
+  it.each(['enable', 'refresh'])(
+    'keeps failed enablement safe and allows %s after a failed attempt',
+    async (retry) => {
+      let disabled = true
+      let finishEnable!: () => void
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'plugin.enable') {
+          if (disabled) throw new Error('/private/secret')
+          return new Promise((resolve) => {
+            finishEnable = () => resolve({})
+          })
+        }
+        if (name === 'finance.status' && disabled)
+          throw new ApiError('disabled', 403, {
+            detail: 'disabled',
+            data: { finance_code: 'plugin_not_enabled' },
+          })
+        return basics(name, args)
+      })
+      const { wrapper } = await mounted()
+      await wrapper.get('[data-test="enable-finance"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain(
+        'Try again, or refresh to check its current status.',
+      )
+      expect(wrapper.text()).not.toContain('/private/secret')
+      disabled = false
+      await wrapper.get(`[data-test="${retry}-finance"]`).trigger('click')
+      if (retry === 'enable') {
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(wrapper.get('[data-test="enable-finance"]').attributes('aria-busy')).toBe('true')
+        finishEnable()
+      }
+      await flushPromises()
+      expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      wrapper.unmount()
+    },
+  )
+  it('ignores a delayed disabled status after scope-change', async () => {
     let finish!: () => void
     let first = true
     const basics = vi.mocked(callOperation).getMockImplementation()!
@@ -380,29 +561,40 @@ describe('Finance management', () => {
       if (name === 'finance.status' && first) {
         first = false
         return new Promise((_resolve, reject) => {
-          finish = () => reject(new ApiError('disabled', 403, {
-            detail: 'disabled', data: { finance_code: 'plugin_not_enabled' },
-          }))
+          finish = () =>
+            reject(
+              new ApiError('disabled', 403, {
+                detail: 'disabled',
+                data: { finance_code: 'plugin_not_enabled' },
+              }),
+            )
         })
       }
       return basics(name, args)
     })
     const { wrapper, router } = await mounted()
-    if (transition === 'scope-change') await router.push('/projects/2/finance')
-    else await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await router.push('/projects/2/finance')
     await flushPromises()
     finish()
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
-    expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === 'plugin.enable')).toBe(false)
+    expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === 'plugin.enable')).toBe(
+      false,
+    )
     wrapper.unmount()
   })
   it('resolves an older contextual request beyond the bounded queue page by its exact identity', async () => {
     const basics = vi.mocked(callOperation).getMockImplementation()!
-    const request = { id: 703, project_id: 1, title: 'Older Finance request', status: 'new', run_plan_id: null,
-      metadata_json: { metadata_json: { workspace_ref: access.workspace_ref, query: {} } } }
+    const request = {
+      id: 703,
+      project_id: 1,
+      title: 'Older Finance request',
+      status: 'new',
+      run_plan_id: null,
+      metadata_json: { metadata_json: { workspace_ref: access.workspace_ref, query: {} } },
+    }
     vi.mocked(callOperation).mockImplementation(async (name, args) => {
       if (name === 'agentRequest.list') return { items: [], next_cursor: 100 }
       if (name === 'agentRequest.get') return request
@@ -413,35 +605,54 @@ describe('Finance management', () => {
     await wrapper.get('[data-test="inspect-finance-request"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[role="dialog"]').text()).toContain('Older Finance request')
-    expect(callOperation).toHaveBeenCalledWith('agentRequest.get', { project_id: 1, request_id: 703, response_mode: 'raw' })
-    wrapper.unmount()
-  })
-  it.each(['new', 'failed'])('inspects a %s Finance request at origin without inventing a tracker task', async (status) => {
-    const basics = vi.mocked(callOperation).getMockImplementation()!
-    const request = {
-      id: 702, project_id: 1, title: 'Original Finance review', status,
-      run_plan_id: null, claimed_by: null,
-      metadata_json: { metadata_json: { workspace_ref: access.workspace_ref, query: { start: '2026-01-01', end: '2026-12-31' } } },
-    }
-    vi.mocked(callOperation).mockImplementation(async (name, args) => {
-      if (name === 'agentRequest.list') return { items: [request] }
-      if (name === 'agentRequest.get') return request
-      if (name === 'finance.report.render') return { state: 'awaiting_agent' }
-      return basics(name, args)
+    expect(callOperation).toHaveBeenCalledWith('agentRequest.get', {
+      project_id: 1,
+      request_id: 703,
+      response_mode: 'raw',
     })
-    const { wrapper, router } = await mounted('?analysis=702')
-    await wrapper.get('[data-test="inspect-finance-request"]').trigger('click')
-    await flushPromises()
-    const dialog = wrapper.get('[role="dialog"]')
-    expect(dialog.text()).toContain('Original Finance review')
-    expect(dialog.text()).toContain(status)
-    expect(dialog.text()).toContain('No linked run')
-    expect(dialog.find('a[href*="tasks"]').exists()).toBe(false)
-    expect(wrapper.find('a[href*="agent-requests"]').exists()).toBe(false)
-    expect(router.currentRoute.value.path).toBe('/projects/1/finance')
-    expect(callOperation).toHaveBeenCalledWith('agentRequest.get', expect.objectContaining({ project_id: 1, request_id: 702 }))
     wrapper.unmount()
   })
+  it.each(['new', 'failed'])(
+    'inspects a %s Finance request at origin without inventing a tracker task',
+    async (status) => {
+      const basics = vi.mocked(callOperation).getMockImplementation()!
+      const request = {
+        id: 702,
+        project_id: 1,
+        title: 'Original Finance review',
+        status,
+        run_plan_id: null,
+        claimed_by: null,
+        metadata_json: {
+          metadata_json: {
+            workspace_ref: access.workspace_ref,
+            query: { start: '2026-01-01', end: '2026-12-31' },
+          },
+        },
+      }
+      vi.mocked(callOperation).mockImplementation(async (name, args) => {
+        if (name === 'agentRequest.list') return { items: [request] }
+        if (name === 'agentRequest.get') return request
+        if (name === 'finance.report.render') return { state: 'awaiting_agent' }
+        return basics(name, args)
+      })
+      const { wrapper, router } = await mounted('?analysis=702')
+      await wrapper.get('[data-test="inspect-finance-request"]').trigger('click')
+      await flushPromises()
+      const dialog = wrapper.get('[role="dialog"]')
+      expect(dialog.text()).toContain('Original Finance review')
+      expect(dialog.text()).toContain(status)
+      expect(dialog.text()).toContain('No linked run')
+      expect(dialog.find('a[href*="tasks"]').exists()).toBe(false)
+      expect(wrapper.find('a[href*="agent-requests"]').exists()).toBe(false)
+      expect(router.currentRoute.value.path).toBe('/projects/1/finance')
+      expect(callOperation).toHaveBeenCalledWith(
+        'agentRequest.get',
+        expect.objectContaining({ project_id: 1, request_id: 702 }),
+      )
+      wrapper.unmount()
+    },
+  )
   it('loads the complete calendar year, applies shortcuts once and restores the default on project remount', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-14T12:00:00Z'))
@@ -458,25 +669,41 @@ describe('Finance management', () => {
       timezone: 'UTC',
       offset: 0,
     })
-    expect(wrapper.text()).toContain('Calendar year')
-    expect(wrapper.get('[data-test="finance-period-year"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-test="finance-period"]').text()).toContain('This year')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Expenses & income')!
+      .trigger('click')
     await wrapper.get('[data-test="finance-search"]').setValue('invoice-17')
-    await wrapper.get('[data-test="finance-period-month"]').trigger('click')
+    await wrapper.get('[data-test="finance-period"]').trigger('click')
+    wrapper
+      .findAllComponents({ name: 'UiSelect' })
+      .find((component) =>
+        component.props('options')?.some((option: { value: string }) => option.value === 'month'),
+      )!
+      .vm.$emit('update:modelValue', 'month')
+    await wrapper.get('[data-test="apply-finance-period"]').trigger('click')
     await flushPromises()
     expect(queries()).toHaveLength(2)
     expect(queries().at(-1)![1]).toMatchObject({
       start: '2026-10-01',
       end: '2026-10-31',
-      q: 'invoice-17',
       offset: 0,
     })
-    await wrapper.get('[data-test="finance-period-year"]').trigger('click')
+    expect(queries().at(-1)![1]).not.toHaveProperty('q')
+    await wrapper.get('[data-test="finance-period"]').trigger('click')
+    wrapper
+      .findAllComponents({ name: 'UiSelect' })
+      .find((component) =>
+        component.props('options')?.some((option: { value: string }) => option.value === 'year'),
+      )!
+      .vm.$emit('update:modelValue', 'year')
+    await wrapper.get('[data-test="apply-finance-period"]').trigger('click')
     await flushPromises()
     expect(queries()).toHaveLength(3)
     expect(queries().at(-1)![1]).toMatchObject({
       start: '2026-01-01',
       end: '2026-12-31',
-      q: 'invoice-17',
       offset: 0,
     })
     await router.push('/projects/2/finance')
@@ -490,7 +717,7 @@ describe('Finance management', () => {
       offset: 0,
     })
     expect(queries().at(-1)![1].q).toBeUndefined()
-    expect(wrapper.get('[data-test="finance-period-year"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-test="finance-period"]').text()).toContain('This year')
     wrapper.unmount()
   })
   it.each(['current', 'stale', 'legacy'])(
@@ -564,24 +791,18 @@ describe('Finance management', () => {
         .find((button) => button.text() === 'Expenses & income')!
         .trigger('click')
       const table = wrapper.get('table[aria-label="Finance records"]')
-      expect(table.findAll('th').map((row) => row.text())).toContain('Source category')
-      expect(table.findAll('th').map((row) => row.text())).toContain('Proposed AI category')
-      const rows = table
-        .findAll('tbody tr')
-        .map((row) => row.findAll('td').map((cell) => cell.text()))
-      expect(rows[0]![4]).toBe('category:adopted')
-      expect(rows[0]![9]).toBe(
-        state === 'current'
-          ? 'Software tools · proposed'
-          : state === 'stale'
-            ? 'Historical review'
-            : 'Not supplied by this review',
-      )
-      expect(rows[0]![10]).toBe(state === 'current' ? 'medium' : 'Unavailable')
-      if (state === 'current') {
-        expect(rows[1]![9]).toBe('Unassigned by review')
-        expect(rows[2]![9]).toBe('Not considered')
-      }
+      expect(table.findAll('th').map((row) => row.text())).toEqual([
+        'Date',
+        'Vendor or customer',
+        'Type',
+        'Amount',
+        'Invoice',
+        'Receipt',
+        'Review',
+      ])
+      expect(table.text()).not.toContain('category:adopted')
+      expect(table.text()).not.toContain('Software tools · proposed')
+      expect(table.text()).not.toContain('Historical review')
       expect(
         vi
           .mocked(callOperation)
@@ -616,7 +837,7 @@ describe('Finance management', () => {
     const { wrapper } = await mounted()
     expect(wrapper.find('section[aria-label="AI categories and concerns"]').exists()).toBe(false)
     await wrapper
-      .findAll('section[aria-label="Agent finance analysis"] button')
+      .findAll('[aria-label="Agent finance analysis"] button')
       .find((button) => button.text() === 'Request category and concern review')!
       .trigger('click')
     await flushPromises()
@@ -632,7 +853,7 @@ describe('Finance management', () => {
       source_refs: [],
     })
     expect(requests[0]![1].metadata_json).not.toHaveProperty('category_proposals')
-    expect(wrapper.text()).toContain('Awaiting agent')
+    expect(wrapper.text()).toContain('Awaiting review')
     wrapper.unmount()
   })
   it.each([
@@ -669,6 +890,7 @@ describe('Finance management', () => {
         }
       })
       const { wrapper } = await mounted()
+      await wrapper.get('[data-test="finance-period"]').trigger('click')
       await wrapper.get('[data-test="filter-start"]').setValue(start)
       await wrapper.get('[data-test="filter-end"]').setValue(end)
       const compare = wrapper
@@ -680,7 +902,7 @@ describe('Finance management', () => {
         )!
       compare.vm.$emit('update:modelValue', mode)
       await flushPromises()
-      await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+      await wrapper.get('[data-test="apply-finance-period"]').trigger('click')
       await flushPromises()
       const argumentsJson = vi
         .mocked(callOperation)
@@ -740,12 +962,8 @@ describe('Finance management', () => {
       .find((button) => button.text() === 'Reports')!
       .trigger('click')
     expect(wrapper.find('section[aria-label="Overview finance graphs"]').exists()).toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Prepare CSV export')).toBe(
-      true,
-    )
-    expect(wrapper.get('section[aria-label="Agent finance analysis"]').text()).toContain(
-      'Queueing does not execute a model',
-    )
+    expect(wrapper.get('[data-test="export-finance"]').text()).toBe('Export')
+    expect(wrapper.find('[aria-label="Agent finance analysis"]').exists()).toBe(false)
     expect(
       vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
     ).toHaveLength(1)
@@ -805,10 +1023,10 @@ describe('Finance management', () => {
         .get('tbody tr')
         .findAll('td')
         .map((cell) => cell.text())
-      expect(cells[6]).toBe(expected)
-      expect(cells[7]).toBe(state === 'legacy' ? 'Not verified' : 'Available · 1')
+      expect(cells[4]).toBe(expected)
+      expect(cells[5]).toBe(state === 'legacy' ? 'Not verified' : 'Available · 1')
       expect(cells).toContain('USD 90,071,992,547,409.93')
-      expect(wrapper.text()).toContain('File availability alone does not confirm payment')
+      expect(table.text()).not.toContain('Source category')
       expect(
         vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'finance.query'),
       ).toHaveLength(1)
@@ -964,7 +1182,7 @@ describe('Finance management', () => {
     for (const label of ['Revenue', 'Operating profit']) {
       const metric = metrics.find((card) => card.props('label') === label)!
       expect(metric.props('value')).toBe('Unavailable')
-      expect(metric.props('hint')).toBe('unavailable')
+      expect(metric.props('hint')).toBe('Not available')
     }
     for (const label of [
       'category breakdown',
@@ -979,17 +1197,7 @@ describe('Finance management', () => {
       expect(table.text()).toContain('USD 90,071,992,547,409.93')
       expect(table.text()).toContain('USD 0.00')
     }
-    const note = wrapper
-      .findAll('p')
-      .find((paragraph) => paragraph.text().startsWith('Breakdowns and trends show'))!
-      .text()
-    expect(note).toContain('selected supported records')
-    expect(note).toContain(
-      'A zero revenue contribution means no selected supported income contribution',
-    )
-    expect(note).toContain(
-      'for expense-only records without income coverage, total revenue and operating profit remain unavailable',
-    )
+    expect(wrapper.text()).not.toContain('prepared/unposted')
     wrapper.unmount()
   })
   it.each([
@@ -1052,7 +1260,7 @@ describe('Finance management', () => {
         .trigger('click')
       await wrapper
         .findAll('button')
-        .find((button) => button.text() === 'View period report')!
+        .find((button) => button.text() === 'View report')!
         .trigger('click')
       await flushPromises()
       expect(wrapper.text()).toContain('Prior private report')
@@ -1181,7 +1389,7 @@ describe('Finance management', () => {
         .trigger('click')
       await wrapper
         .findAll('button')
-        .find((button) => button.text() === 'View period report')!
+        .find((button) => button.text() === 'View report')!
         .trigger('click')
       await flushPromises()
       expect(wrapper.text()).toContain('Prior private report')
@@ -1256,20 +1464,26 @@ describe('Finance management', () => {
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Original analysis request 1 verified in Finance')
-    expect(wrapper.text()).toContain('Run prepared — awaiting execution')
-    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe('1')
+    expect(wrapper.text()).toContain('Review queued')
+    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe(
+      '1',
+    )
     await wrapper
       .findAll('button')
       .find((b) => b.text() === 'Request new category and concern review')!
       .trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.analysis).toBe('2')
-    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe('2')
+    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe(
+      '2',
+    )
     finishOriginal()
     await flushPromises()
     expect(router.currentRoute.value.query.analysis).toBe('2')
-    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe('2')
-    expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
+    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe(
+      '2',
+    )
+    expect(wrapper.text()).toContain('Awaiting review')
     expect(attempts).toHaveLength(2)
     expect(attempts[1]!.message_key).not.toBe(attempts[0]!.message_key)
     expect(queue.size).toBe(2)
@@ -1305,14 +1519,14 @@ describe('Finance management', () => {
         .trigger('click')
     await submit()
     await flushPromises()
-    expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+    expect(wrapper.text()).not.toContain('Review complete')
     await submit()
     await flushPromises()
     expect(attempts).toHaveLength(2)
     expect(attempts[1]).toEqual(attempts[0])
     expect(queue.size).toBe(1)
     expect(wrapper.text()).toContain('Request 1 ·')
-    expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
+    expect(wrapper.text()).toContain('Awaiting review')
     await submit()
     await flushPromises()
     expect(attempts[2]!.message_key).not.toBe(attempts[0]!.message_key)
@@ -1354,8 +1568,8 @@ describe('Finance management', () => {
       await submit()
       await flushPromises()
       if (change === 'filters') {
-        await wrapper.get('[data-test="finance-search"]').setValue('private-current-search')
-        await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+        const filters = wrapper.getComponent({ name: 'FinanceFilters' })
+        filters.vm.$emit('apply', { ...filters.props('query'), q: 'private-current-search' })
         await flushPromises()
         await wrapper
           .findAll('[role="combobox"]')
@@ -1375,9 +1589,9 @@ describe('Finance management', () => {
       expect(attempts).toHaveLength(2)
       expect(attempts[1]).toEqual(attempts[0])
       expect(wrapper.text()).toContain('Request 7 ·')
-      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      expect(wrapper.text()).not.toContain('Review complete')
       if (change === 'source')
-        expect(wrapper.text()).toContain('Analysis request is historical — source changed')
+        expect(wrapper.text()).toContain('Previous review · data changed')
       wrapper.unmount()
     },
   )
@@ -1529,7 +1743,7 @@ describe('Finance management', () => {
       if (metadataMatch === 'exact') {
         expect(retry).toBeUndefined()
         expect(wrapper.text()).toContain('Original analysis request 7 verified in Finance')
-        expect(wrapper.text()).toContain('Reviewed result unavailable')
+        expect(wrapper.text()).toContain('Review result unavailable')
         expect(attempts).toHaveLength(1)
       } else {
         expect(retry).toBeDefined()
@@ -1538,7 +1752,7 @@ describe('Finance management', () => {
         await flushPromises()
         expect(attempts[1]).toEqual(attempts[0])
       }
-      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      expect(wrapper.text()).not.toContain('Review complete')
       wrapper.unmount()
     },
   )
@@ -1585,8 +1799,8 @@ describe('Finance management', () => {
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Original analysis request 7 verified in Finance')
-    expect(wrapper.text()).toContain('Historical project Finance data')
-    expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+    expect(wrapper.text()).toContain('Previous project data')
+    expect(wrapper.text()).not.toContain('Review complete')
     expect(
       vi
         .mocked(callOperation)
@@ -1650,8 +1864,8 @@ describe('Finance management', () => {
         await flushPromises()
         expect(attempts[1]).toEqual(attempts[0])
       } else expect(attempts).toHaveLength(1)
-      expect(wrapper.text()).toContain('Analysis request is historical — source changed')
-      expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
+      expect(wrapper.text()).toContain('Previous review · data changed')
+      expect(wrapper.text()).not.toContain('Review complete')
       expect(
         wrapper
           .findAll('button')
@@ -1662,17 +1876,17 @@ describe('Finance management', () => {
     },
   )
   it.each([
-    ['run-created', 'Run prepared — awaiting execution'],
-    ['run-started', 'Running in the linked agent run'],
-    ['run-blocked', 'Agent run blocked — inspect the linked run'],
-    ['failed', 'Analysis failed'],
-    ['run-aborted', 'Agent run aborted — reviewed result not published'],
-    ['completed_unpublished', 'Run completed — reviewed result not published'],
-    ['run_unavailable', 'Linked run unavailable — inspect the agent request'],
-    ['historical_source', 'Analysis request is historical — source changed'],
-    ['historical_access', 'Historical project Finance data'],
-    ['source_unavailable', 'Request source unavailable — request new analysis'],
-    ['current', 'Reviewed analysis · current source'],
+    ['run-created', 'Review queued'],
+    ['run-started', 'Review in progress'],
+    ['run-blocked', 'Review needs attention'],
+    ['failed', 'Review failed'],
+    ['run-aborted', 'Review stopped'],
+    ['completed_unpublished', 'Review awaiting publication'],
+    ['run_unavailable', 'Review status unavailable'],
+    ['historical_source', 'Previous review · data changed'],
+    ['historical_access', 'Previous project data'],
+    ['source_unavailable', 'Original data unavailable · request a new review'],
+    ['current', 'Review complete'],
   ])(
     'renders canonical analysis state %s without adopting or changing scope',
     async (state, label) => {
@@ -1708,7 +1922,7 @@ describe('Finance management', () => {
       const { wrapper } = await mounted('?analysis=7')
       await wrapper
         .findAll('button')
-        .find((b) => b.text() === 'Reports')!
+        .find((b) => b.text() === 'Overview')!
         .trigger('click')
       await wrapper
         .findAll('button')
@@ -1721,7 +1935,7 @@ describe('Finance management', () => {
       )
       expect(wrapper.text()).not.toContain('Request 7 · new')
       if (state !== 'run-started')
-        expect(wrapper.text()).not.toContain('Running in the linked agent run')
+        expect(wrapper.text()).not.toContain('Review in progress')
       expect(wrapper.text()).toContain('2026-09-01')
       expect(wrapper.text()).toContain('2026-09-30')
       const calls = vi.mocked(callOperation).mock.calls
@@ -1767,10 +1981,11 @@ describe('Finance management', () => {
         .find((b) => b.text() === 'Reports')!
         .trigger('click')
       const label = {
-        markdown: 'View period report',
-        csv: 'Prepare CSV export',
-        json: 'Prepare JSON export',
+        markdown: 'View report',
+        csv: 'Export CSV',
+        json: 'Export JSON',
       }[format]!
+      if (format !== 'markdown') await wrapper.get('[data-test="export-finance"]').trigger('click')
       await wrapper
         .findAll('button')
         .find((b) => b.text() === label)!
@@ -1813,7 +2028,7 @@ describe('Finance management', () => {
         .trigger('click')
       await wrapper
         .findAll('button')
-        .find((b) => b.text() === 'View period report')!
+        .find((b) => b.text() === 'View report')!
         .trigger('click')
       await flushPromises()
       if (outcome === 'late-scope') {
@@ -1827,7 +2042,7 @@ describe('Finance management', () => {
         })
         await flushPromises()
         expect(wrapper.text()).not.toContain('Old private report')
-      } else expect(wrapper.text()).toContain('Report unavailable')
+      } else expect(wrapper.get('[role="alert"]').text()).toMatch(/unavailable|Could not prepare/)
       expect(wrapper.find('a[download]').exists()).toBe(false)
       wrapper.unmount()
     },
@@ -1844,8 +2059,8 @@ describe('Finance management', () => {
         return { data: { agent_request: { id: 7, status: 'new' } } }
       })
       const { wrapper } = await mounted()
-      await wrapper.get('[data-test="finance-search"]').setValue(search)
-      await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+      const filters = wrapper.getComponent({ name: 'FinanceFilters' })
+      filters.vm.$emit('apply', { ...filters.props('query'), q: search })
       await flushPromises()
       const selected = vi
         .mocked(callOperation)
@@ -1859,11 +2074,8 @@ describe('Finance management', () => {
       await flushPromises()
       expect(vi.mocked(callOperation).mock.calls.slice(before)).toHaveLength(0)
       expect(wrapper.text()).toContain('Clear search')
-      expect((wrapper.get('[data-test="finance-search"]').element as HTMLInputElement).value).toBe(
-        search,
-      )
-      await wrapper.get('[data-test="finance-search"]').setValue('')
-      await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+      expect(filters.props('query').q).toBe(search)
+      filters.vm.$emit('apply', { ...filters.props('query'), q: '' })
       await flushPromises()
       const cleared = vi
         .mocked(callOperation)
@@ -1880,7 +2092,7 @@ describe('Finance management', () => {
         .trigger('click')
       await flushPromises()
       expect(queued).toEqual(remaining)
-      expect(wrapper.text()).toContain('Awaiting agent')
+      expect(wrapper.text()).toContain('Awaiting review')
       wrapper.unmount()
     },
   )
@@ -1914,7 +2126,7 @@ describe('Finance management', () => {
     const { wrapper } = await mounted()
     await wrapper
       .findAll('button')
-      .find((button) => button.text() === 'Reports')!
+      .find((button) => button.text() === 'Overview')!
       .trigger('click')
     await wrapper
       .findAll('button')
@@ -1933,14 +2145,14 @@ describe('Finance management', () => {
         'workspace_ref',
       ].sort(),
     )
-    expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
+    expect(wrapper.text()).toContain('Awaiting review')
     await wrapper
       .findAll('button')
       .find((button) => button.text() === 'Refresh analysis status')!
       .trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Awaiting a linked run')
-    expect(wrapper.text()).not.toContain('Running in the linked agent run')
+    expect(wrapper.text()).toContain('Preparing review')
+    expect(wrapper.text()).not.toContain('Review in progress')
     state = 'stale'
     await wrapper
       .findAll('button')
@@ -1973,6 +2185,10 @@ describe('Finance management', () => {
     const { wrapper } = await mounted()
     expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
     expect(wrapper.text()).toContain('Unavailable')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Expenses & income')!
+      .trigger('click')
     expect(wrapper.text()).toContain('Inspect record details')
     expect(wrapper.text()).not.toContain('receipt:undated')
     expect(wrapper.text()).toContain('Expenses & income')
@@ -1980,9 +2196,13 @@ describe('Finance management', () => {
   })
   it('keeps selected dates during search and preserves all-time for historical lookup', async () => {
     const { wrapper } = await mounted()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Expenses & income')!
+      .trigger('click')
     const search = wrapper.get('[data-test="finance-search"]')
     await search.setValue('invoice-0001')
-    await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+    await wrapper.get('form[aria-label="Search Finance records"]').trigger('submit')
     await flushPromises()
     const calls = vi.mocked(callOperation).mock.calls.filter((c) => c[0] === 'finance.query')
     expect(calls.at(-1)?.[1]).toMatchObject({
@@ -1990,15 +2210,16 @@ describe('Finance management', () => {
       start: calls[0]?.[1].start,
       end: calls[0]?.[1].end,
     })
+    await wrapper.get('[data-test="finance-period"]').trigger('click')
     const timeframe = wrapper
       .findAll('[role="combobox"]')
-      .find((c) => c.text().includes('Calendar year'))!
+      .find((c) => c.text().includes('This year'))!
     await timeframe.trigger('click')
     await wrapper
       .findAll('[role="option"]')
       .find((o) => o.text() === 'All time')!
       .trigger('click')
-    await wrapper.get('[data-test="apply-finance-filters"]').trigger('click')
+    await wrapper.get('[data-test="apply-finance-period"]').trigger('click')
     await flushPromises()
     expect(
       vi
@@ -2051,11 +2272,11 @@ describe('Finance management', () => {
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('unavailable')
-    expect(wrapper.text()).toContain('Last-known Finance data')
+    expect(wrapper.text()).toContain('Showing the last loaded selection')
     expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
     wrapper.unmount()
   })
-  it('invalidates a pending query before refreshing managed project data', async () => {
+  it('coalesces Refresh while the current query is loading', async () => {
     let finishQuery!: (v: unknown) => void
     let statuses = 0
     vi.mocked(callOperation).mockImplementation(async (name) => {
@@ -2075,7 +2296,8 @@ describe('Finance management', () => {
     old.metrics_by_currency[0]!.spend.amount.minor = '500000'
     finishQuery({ data: old })
     await flushPromises()
-    expect(wrapper.text()).not.toContain('USD 5,000.00')
+    expect(statuses).toBe(1)
+    expect(wrapper.text()).toContain('USD 5,000.00')
     wrapper.unmount()
   })
 })
