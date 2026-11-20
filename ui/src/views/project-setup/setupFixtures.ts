@@ -7,7 +7,9 @@ export function setupFixture(patch: Partial<SchemaProjectSetupOut> = {}): Schema
     status: ProjectSetupOutStatus.setup_needed, binding_id: 1, project_folder_issue: null,
     configured_count: 0, unknown_count: 0, update_count: 0, current_attempt: null,
     setup_reminder_dismissed_at: null, update_reminder_dismissed_at: null,
-    launch_preferences: {}, workflows: [], detail_ref: {}, next_action: 'inspect_setup',
+    launch_preferences: {},
+    delivery_defaults_digest: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    workflows: [], detail_ref: {}, next_action: 'inspect_setup',
     notice: 'Set up this project', attempt_diagnostic: null, ...patch,
   }
 }
