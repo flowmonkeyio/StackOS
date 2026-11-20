@@ -1557,6 +1557,7 @@ def install_postflight(sandbox: Path, monkeypatch: pytest.MonkeyPatch):
                     status=status,
                     message=f"{self.key}: {status}",
                     ok=status != "register_failed",
+                    blocking=status == "register_failed",
                     available=status != "absent",
                     selected=status
                     in {"registered_current", "registered_unsafe", "registered_stale"},
@@ -1709,6 +1710,25 @@ def test_normal_install_retains_owned_and_bootstrap_failures(
     )
     assert isinstance(result.exception, SystemExit), repr(result.exception)
     assert "install complete" not in result.output
+    if failure in {"register_failed", "registered_stale", "registered_unsafe"}:
+        report = CliRunner().invoke(app, ["doctor", "--json"])
+        assert report.exit_code == 9, report.output
+        assert json.loads(report.stdout)["installation"] == {"ok": False, "code": 9}
+        report_path = sandbox / "failed-owned-doctor-report.json"
+        report_path.write_text(report.stdout)
+        desktop = subprocess.run(
+            [
+                "node",
+                "desktop/scripts/test-service-readiness.cjs",
+                "--doctor-report",
+                str(report_path),
+                "--expect-install-failure",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert desktop.returncode == 0, desktop.stdout + desktop.stderr
 
 
 def test_cli_rejects_profile_target_for_non_profile_host() -> None:

@@ -113,6 +113,7 @@ if (command === "doctor") {
     const lifecycleService = require("../src/service");
     const reportIndex = process.argv.indexOf("--doctor-report");
     const emitted = reportIndex < 0 ? null : JSON.parse(fs.readFileSync(process.argv[reportIndex + 1], "utf8"));
+    const emittedExpected = !process.argv.includes("--expect-install-failure");
     const healthy = JSON.parse(doctorResult.stdout.split("\n").at(-1));
     healthy.installation = { ok: true, code: 0 };
     const attention = emitted || {
@@ -126,7 +127,7 @@ if (command === "doctor") {
     };
     const cases = [
       { payload: healthy, exitCode: 0, expected: true },
-      { payload: attention, exitCode: 9, expected: true },
+      { payload: attention, exitCode: 9, expected: emittedExpected },
       { payload: { ...attention, installation: { ok: false, code: 9 } }, exitCode: 9, expected: false },
       { payload: { ...attention, installation: { ok: false, code: 1 } }, exitCode: 9, expected: false },
       { payload: "not json", exitCode: 9, expected: false },
@@ -140,6 +141,14 @@ if (command === "doctor") {
       fs.writeFileSync(fixture, JSON.stringify(test));
       const result = await lifecycleService.installOrRepair({ timeoutSeconds: 5 });
       assert.equal(result.ok, test.expected, JSON.stringify({ test, result }));
+      if (!test.install && !test.restart) {
+        assert.equal(result.phase, test.expected ? "ready" : "doctor");
+        assert.equal(result.start.health.ok, true);
+        assert.equal(result.doctor.exitCode, test.exitCode);
+      }
+      if (emitted && test.payload === attention) {
+        assert.deepEqual(result.doctor.parsed, emitted);
+      }
       if (test.expected) {
         assert.equal(result.phase, "ready");
         assert.equal(result.readiness.ok, true);
