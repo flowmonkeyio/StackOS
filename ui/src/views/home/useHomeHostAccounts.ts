@@ -12,6 +12,7 @@ export interface HostAccounts {
   desired: DesiredAccount
   accounts: Account[]
   pending_enrollment: Enrollment | null
+  pending_cleanups?: Enrollment[]
 }
 interface Inventory { hosts: Record<string, HostAccounts> }
 interface Envelope<T> { data: T }
@@ -35,6 +36,23 @@ export function useHomeHostAccounts(canAdopt: (host: string) => boolean) {
   const generations = new Map<string, number>()
   let inventoryGeneration = 0
   let selectionGeneration = 0
+
+  function restoreEnrollment() {
+    if (enrollment.value) return
+    const states = Object.entries(hosts.value).filter(([host]) => accountHosts.has(host))
+    // Retired native cleanup remains actionable, including when a new login exists.
+    for (const [host, state] of states) {
+      const value = state.pending_cleanups?.find(value => value.cleanup_pending)
+      if (value) { enrollment.value = { host, value }; schedule(); return }
+    }
+    for (const [host, state] of states) {
+      if (state.pending_enrollment) {
+        enrollment.value = { host, value: state.pending_enrollment }
+        schedule()
+        return
+      }
+    }
+  }
 
   function generation(host: string) { return generations.get(host) ?? 0 }
   function reconcileAvailability() {
@@ -92,12 +110,7 @@ export function useHomeHostAccounts(canAdopt: (host: string) => boolean) {
         } finally { if (current()) busy.value[host] = false }
       }))
       if (!valid()) return
-      for (const [host, state] of Object.entries(result.hosts)) {
-        if (accountHosts.has(host) && state.pending_enrollment && !enrollment.value) {
-          enrollment.value = { host, value: state.pending_enrollment }
-          schedule()
-        }
-      }
+      restoreEnrollment()
     }).catch(() => {
       if (valid()) inventoryError.value = 'Accounts unavailable. Try Refresh.'
     }).finally(() => { loading = undefined })

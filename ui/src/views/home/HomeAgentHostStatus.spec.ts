@@ -190,6 +190,79 @@ describe('native account picker', () => {
     } finally { wrapper.unmount() }
   })
 
+  it('restores canonical pending_cleanups after cancel and remount until cleanup is confirmed', async () => {
+    vi.useFakeTimers()
+    const pending = { enrollment_ref: 'retired-claude', status: 'pending', expires_at: new Date(Date.now() + 900_000).toISOString(), cleanup_pending: false }
+    let cancellations = 0
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes('cancelAccountEnrollment')) {
+        expect(JSON.parse(String(init?.body)).arguments).toMatchObject({ host_key: 'claude-code', enrollment_ref: pending.enrollment_ref })
+        cancellations++
+        return json({ data: { ...pending, status: 'cancelled', cleanup_pending: cancellations < 3 } })
+      }
+      return json({ hosts: { ...inventory().hosts, 'claude-code': {
+        accounts: [], desired: { account_ref: null, revision: 0 },
+        pending_enrollment: cancellations === 0 ? pending : null,
+        pending_cleanups: cancellations > 0 && cancellations < 3 ? [{ ...pending, status: 'cancelled', cleanup_pending: true }] : [],
+      } } })
+    }) as typeof fetch
+    const clickDialog = async (label: string) => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent?.trim() === label)!
+      expect(button.disabled).toBe(false)
+      button.click(); await flushPromises()
+    }
+    let wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      await clickDialog('Cancel')
+      expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+      wrapper.unmount()
+      wrapper = panel()
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      expect(document.body.textContent).toContain('Sign-in cancelled')
+      expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+      await vi.advanceTimersByTimeAsync(6000); await flushPromises()
+      expect(requests('completeAccountEnrollment')).toHaveLength(0)
+      await clickDialog('Retry cleanup')
+      expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+      await clickDialog('Retry cleanup')
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(requests('cancelAccountEnrollment')).toHaveLength(3)
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
+  it('restores every canonical cleanup before a separate pending enrollment', async () => {
+    const pending = { enrollment_ref: 'new-codex', status: 'pending', expires_at: new Date(Date.now() + 900_000).toISOString() }
+    const cleanups = ['old-claude', 'failed-claude'].map((enrollment_ref, index) => ({ ...pending, enrollment_ref, status: index ? 'failed' : 'cancelled', cleanup_pending: true }))
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes('cancelAccountEnrollment')) {
+        const args = JSON.parse(String(init?.body)).arguments
+        expect(args).toMatchObject({ host_key: 'claude-code', enrollment_ref: cleanups[0]!.enrollment_ref })
+        return json({ data: { ...cleanups.shift(), cleanup_pending: false } })
+      }
+      return json({ hosts: {
+        codex: { ...inventory().hosts.codex, pending_enrollment: pending, pending_cleanups: [] },
+        'claude-code': { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: null, pending_cleanups: [...cleanups] },
+      } })
+    }) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      for (let index = 0; index < 2; index++) {
+        expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+        const retry = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent?.trim() === 'Retry cleanup')!
+        retry.click(); await flushPromises()
+      }
+      expect(document.body.textContent).not.toContain('Native sign-in cleanup is still pending')
+      expect(document.body.textContent).toContain('Complete sign-in in the native browser')
+      expect(document.querySelector('[role="dialog"] time')?.getAttribute('datetime')).toBe(pending.expires_at)
+      expect(requests('cancelAccountEnrollment')).toHaveLength(2)
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
   it('retires a held completion on unmount without restarting polling', async () => {
     vi.useFakeTimers()
     const pending = { enrollment_ref: 'unmounted', status: 'pending', expires_at: new Date(Date.now() + 900_000).toISOString() }
