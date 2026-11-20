@@ -26,8 +26,13 @@ from stackos.db.connection import make_engine
 # the .ini file in use.
 config = context.config
 
-# Configure stdlib logging from alembic.ini if present.
-if config.config_file_name is not None and Path(config.config_file_name).exists():
+# Standalone Alembic owns its console logging. Programmatic StackOS migrations
+# must preserve their caller's configured daemon/file pipeline and logger state.
+if (
+    "stackos_settings" not in config.attributes
+    and config.config_file_name is not None
+    and Path(config.config_file_name).exists()
+):
     fileConfig(config.config_file_name)
 
 # `target_metadata` drives autogenerate. SQLModel.metadata is empty until M1

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onBeforeUpdate, onMounted } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted } from 'vue'
 import { UiBadge, UiButton, UiCallout, UiDialog, UiDropdownMenu, UiIcon, UiScoreMeter, UiSkeleton } from '@/components/ui'
 import { accountHosts, useHomeHostAccounts } from './useHomeHostAccounts'
 import HomeAccountEmail from './HomeAccountEmail.vue'
@@ -9,25 +9,32 @@ import type { HostStatusState } from './useHomeAgentHostStatuses'
 import type { HomeSubscriptions } from './useHomeSubscriptions'
 
 const props = defineProps<{ state: HostStatusState; summary: string; subscriptions: HomeSubscriptions }>()
-defineEmits<{ refresh: [] }>()
+const emit = defineEmits<{ refresh: [] }>()
 function hostAvailable(key: string) {
   const host = props.state.items.find(item => item.host_key === key)
   return host?.available === true && host.connection_state !== 'unavailable'
 }
-const accounts = useHomeHostAccounts(key => props.state.kind === 'loaded' && hostAvailable(key))
+const accounts = useHomeHostAccounts(hostAvailable)
 let loadedState: HostStatusState | undefined
 let loadingAccounts = false
 let disposed = false
 function loadDetectedAccounts() {
+  accounts.reconcileAvailability()
   const state = props.state
   if (disposed || state.kind !== 'loaded' || state === loadedState || loadingAccounts) return
   loadingAccounts = true
-  void accounts.load().then(() => {
-    loadedState = state
+  loadedState = state
+  void accounts.load(true).then(() => {
     loadingAccounts = false
     // Catch up once if detection changed while the account read was pending.
     loadDetectedAccounts()
   })
+}
+function refresh() {
+  loadedState = undefined
+  emit('refresh')
+  // Let the parent enter retained detection loading before deciding to read.
+  void nextTick(loadDetectedAccounts)
 }
 onMounted(loadDetectedAccounts)
 onBeforeUpdate(loadDetectedAccounts)
@@ -120,7 +127,7 @@ function meterTone(used: number) {
         <p class="text-xs text-fg-muted">{{ summary }}</p>
       </div>
       <UiButton variant="ghost" size="sm" icon-left="refresh"
-        :loading="state.kind === 'loading' || subscriptions.loading" @click="$emit('refresh'); accounts.load()">
+        :loading="state.kind === 'loading' || subscriptions.loading" @click="refresh">
         Refresh
       </UiButton>
     </div>
@@ -131,6 +138,9 @@ function meterTone(used: number) {
     </UiCallout>
     <UiCallout v-if="subscriptions.failed" tone="warning" density="compact" class="mb-2">
       Couldn’t refresh subscription quotas.
+    </UiCallout>
+    <UiCallout v-if="accounts.inventoryError.value" tone="warning" density="compact" class="mb-2">
+      {{ accounts.inventoryError.value }}
     </UiCallout>
     <ul v-if="state.kind === 'loading' && !cards.length" class="host-grid" aria-hidden="true">
       <li v-for="slot in 6" :key="slot" class="min-h-32 rounded-md border border-subtle bg-bg-surface-alt p-3">
@@ -189,15 +199,22 @@ function meterTone(used: number) {
     <UiDialog :model-value="!!accounts.enrollment.value" title="Add account" size="sm" static-backdrop
       @update:model-value="value => { if (!value) void accounts.cancel() }">
       <template v-if="accounts.enrollment.value">
-        <p v-if="accounts.enrollment.value.value.status === 'pending'">Complete sign-in in the native browser or tool window. This account will be added after the tool confirms its identity.</p>
+        <template v-if="accounts.enrollment.value.value.status === 'pending'">
+          <p v-if="!hostAvailable(accounts.enrollment.value.host)">Sign-in checks paused because this tool is unavailable. Restore the tool and Refresh to continue, or Cancel.</p>
+          <p v-else>Complete sign-in in the native browser or tool window. This account will be added after the tool confirms its identity.</p>
+          <p class="mt-2 text-xs text-fg-muted">Sign-in expires <time :datetime="accounts.enrollment.value.value.expires_at">{{ resetFormat.format(new Date(accounts.enrollment.value.value.expires_at)) }}</time>.</p>
+        </template>
         <p v-else-if="accounts.enrollment.value.value.status === 'enrolled'">Account added. Choose it from the account menu to switch.</p>
         <p v-else-if="accounts.enrollment.value.value.status === 'duplicate'">This account is already saved.</p>
+        <p v-else-if="accounts.enrollment.value.value.cleanup_pending">Sign-in {{ accounts.enrollment.value.value.status }}.</p>
         <p v-else>Sign-in {{ accounts.enrollment.value.value.status }}. You can close this window and try again.</p>
+        <p v-if="accounts.enrollment.value.value.cleanup_pending" role="status" class="mt-2">Native sign-in cleanup is still pending. Restore the tool and retry cleanup before starting another sign-in.</p>
         <p v-if="accounts.errors.value[accounts.enrollment.value.host]" role="alert" class="mt-2 text-danger-fg">{{ accounts.errors.value[accounts.enrollment.value.host] }}</p>
       </template>
       <template #footer>
-        <UiButton v-if="accounts.enrollment.value?.value.status === 'pending'" variant="secondary" :loading="accounts.busy.value[accounts.enrollment.value.host]" @click="accounts.complete()">Check sign-in</UiButton>
-        <UiButton variant="ghost" :disabled="!!accounts.enrollment.value && accounts.busy.value[accounts.enrollment.value.host]" @click="accounts.cancel()">{{ accounts.enrollment.value?.value.status === 'pending' ? 'Cancel' : 'Close' }}</UiButton>
+        <UiButton v-if="accounts.enrollment.value?.value.status === 'pending' && !hostAvailable(accounts.enrollment.value.host)" variant="secondary" :loading="state.kind === 'loading'" @click="refresh">Refresh</UiButton>
+        <UiButton v-if="accounts.enrollment.value?.value.status === 'pending' && hostAvailable(accounts.enrollment.value.host)" variant="secondary" :loading="accounts.busy.value[accounts.enrollment.value.host]" @click="accounts.complete()">Check sign-in</UiButton>
+        <UiButton variant="ghost" :disabled="!!accounts.enrollment.value && accounts.busy.value[accounts.enrollment.value.host]" @click="accounts.cancel()">{{ accounts.enrollment.value?.value.cleanup_pending ? 'Retry cleanup' : accounts.enrollment.value?.value.status === 'pending' ? 'Cancel' : 'Close' }}</UiButton>
       </template>
     </UiDialog>
   </section>

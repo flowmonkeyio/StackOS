@@ -14,15 +14,299 @@ function inventory(accounts = [a, b], desired: string | null = 'a') {
 }
 function panel() {
   const store = useHomeSubscriptions()
+  store.subscriptions.loading = false
   return mount(HomeAgentHostStatus, { props: {
     state: { kind: 'loaded', items: ['codex', 'claude-code', 'grok', 'gemini-cli'].map(host_key => ({ host_key, status_label: 'Connected', ok: true, available: true, connection_state: 'connected' as const })) },
     summary: 'Tools ready', subscriptions: store.subscriptions,
   }, attachTo: document.body })
 }
+const hostKeys = ['codex', 'claude-code', 'grok', 'claude-desktop', 'gemini-cli', 'hermes']
+function detection(available: string[]) {
+  return { kind: 'loaded' as const, items: hostKeys.map(host_key => ({ host_key,
+    available: available.includes(host_key), connection_state: available.includes(host_key) ? 'connected' as const : 'unavailable' as const,
+    status_label: available.includes(host_key) ? 'Connected' : 'Not detected',
+  })) }
+}
+function emptyInventory() {
+  return { hosts: Object.fromEntries(['codex', 'claude-code', 'grok'].map(host => [host,
+    { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: null }])) }
+}
+const requests = (operation: string) => vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes(operation))
 
 describe('native account picker', () => {
   beforeEach(() => { setActivePinia(createPinia()) })
   afterEach(() => { useToastsStore().clear(); globalThis.fetch = originalFetch; document.body.innerHTML = ''; vi.useRealTimers() })
+
+  it.each([null, 'codex', 'claude-code', 'grok'])('keeps six optional cards and adopts only %s', async host => {
+    globalThis.fetch = vi.fn(async url => String(url).includes('adoptAccount')
+      ? json({ detail: 'Sign in', data: { code: 'identity_unverified', identity_status: 'needs_sign_in' } }, 400)
+      : json(emptyInventory())) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(host ? [host] : []) })
+      await flushPromises()
+      expect(wrapper.findAll('.host-card')).toHaveLength(6)
+      expect(requests('adoptAccount').map(([, init]) => JSON.parse(String(init?.body)).arguments.host_key)).toEqual(host ? [host] : [])
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      if (host) {
+        const name = host === 'grok' ? 'Grok Build' : host === 'codex' ? 'Codex' : 'Claude Code'
+        await wrapper.get(`[aria-label="${name} account: Choose account"]`).trigger('click')
+        expect(wrapper.get('[role="menu"]').text()).toContain('Add account')
+      }
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['refresh', 'availability'])('retries failed adoption only through %s and clears obsolete errors', async retry => {
+    let fail = true
+    globalThis.fetch = vi.fn(async url => String(url).includes('adoptAccount')
+      ? fail ? json({ detail: 'Grok adoption failed' }, 503) : json({ data: a })
+      : json(emptyInventory())) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['grok']) }); await flushPromises()
+      expect(wrapper.text()).toContain('Grok adoption failed')
+      const count = requests('adoptAccount').length
+      await wrapper.setProps({ summary: 'Unrelated render' }); await flushPromises()
+      expect(requests('adoptAccount')).toHaveLength(count)
+      fail = false
+      if (retry === 'refresh') await wrapper.findAll('button').find(b => b.text() === 'Refresh')!.trigger('click')
+      else {
+        await wrapper.setProps({ state: detection([]) }); await flushPromises()
+        expect(wrapper.text()).not.toContain('Grok adoption failed')
+        await wrapper.setProps({ state: detection(['grok']) })
+      }
+      await flushPromises()
+      expect(requests('adoptAccount')).toHaveLength(count + 1)
+      expect(wrapper.find('[aria-label="Grok Build account: first@example.com"]').exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('Grok adoption failed')
+    } finally { wrapper.unmount() }
+  })
+
+  it('shows a shared inventory failure once, retaining healthy card content', async () => {
+    let fail = false
+    globalThis.fetch = vi.fn(async () => fail ? json({ detail: 'Store unavailable' }, 503) : json(inventory())) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      fail = true
+      await wrapper.findAll('button').find(b => b.text() === 'Refresh')!.trigger('click'); await flushPromises()
+      expect(wrapper.text().match(/Accounts unavailable\. Try Refresh\./g)).toHaveLength(1)
+      expect(wrapper.findAll('.host-card [role="alert"]')).toHaveLength(0)
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+      fail = false
+      await wrapper.findAll('button').find(b => b.text() === 'Refresh')!.trigger('click'); await flushPromises()
+      expect(wrapper.text()).not.toContain('Accounts unavailable.')
+    } finally { wrapper.unmount() }
+  })
+
+  it('forgets a removed native identity when the tool returns signed out', async () => {
+    let signedOut = false
+    globalThis.fetch = vi.fn(async url => String(url).includes('adoptAccount')
+      ? signedOut ? json({ detail: 'Sign in', data: { code: 'identity_unverified', identity_status: 'needs_sign_in' } }, 400) : json({ data: a })
+      : json(inventory([a], null))) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+      await wrapper.setProps({ state: detection([]) }); await flushPromises()
+      signedOut = true
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      expect(wrapper.find('[aria-label="Codex account: Choose account"]').exists()).toBe(true)
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
+  it('pauses removed-host polling, resumes on return and keeps keyboard Cancel and cleanup evidence', async () => {
+    vi.useFakeTimers()
+    const pending = { enrollment_ref: 'retained-claude', status: 'pending', expires_at: new Date(Date.now() + 900_000).toISOString() }
+    let value = pending
+    globalThis.fetch = vi.fn(async url => {
+      if (String(url).includes('completeAccountEnrollment')) return json({ data: value })
+      if (String(url).includes('cancelAccountEnrollment')) { value = { ...pending, status: 'cancelled', cleanup_pending: true } as typeof pending; return json({ data: value }) }
+      return json({ hosts: { 'claude-code': { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: value } } })
+    }) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection([]) }); await flushPromises()
+      expect(document.body.textContent).toContain('Sign-in checks paused')
+      expect(document.querySelector('[role="dialog"] time')?.getAttribute('datetime')).toBe(pending.expires_at)
+      expect([...document.querySelectorAll('[role="dialog"] button')].some(b => b.textContent?.trim() === 'Refresh')).toBe(true)
+      await vi.advanceTimersByTimeAsync(6000); await flushPromises()
+      expect(requests('completeAccountEnrollment')).toHaveLength(0)
+      await wrapper.setProps({ state: detection(['claude-code']) }); await flushPromises()
+      await vi.advanceTimersByTimeAsync(2000); await flushPromises()
+      expect(requests('completeAccountEnrollment')).toHaveLength(1)
+      await wrapper.setProps({ state: detection([]) }); await flushPromises()
+      await vi.advanceTimersByTimeAsync(6000); await flushPromises()
+      expect(requests('completeAccountEnrollment')).toHaveLength(1)
+      const cancel = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.trim() === 'Cancel')!
+      cancel.focus()
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+      expect(document.querySelector('[role="dialog"]')?.contains(document.activeElement)).toBe(true)
+      cancel.click(); await flushPromises()
+      expect(requests('cancelAccountEnrollment')).toHaveLength(1)
+      expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    } finally { wrapper.unmount() }
+  })
+
+  it.each([false, true])('fences a held adoption after removal or unmount (unmount: %s)', async unmount => {
+    let finish!: (response: Response) => void
+    globalThis.fetch = vi.fn(async url => String(url).includes('adoptAccount')
+      ? new Promise<Response>(resolve => { finish = resolve })
+      : json({ hosts: { ...emptyInventory().hosts, ...inventory().hosts } })) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['codex', 'grok']) }); await flushPromises()
+      if (unmount) wrapper.unmount()
+      else await wrapper.setProps({ state: detection(['codex']) })
+      finish(json({ detail: 'Obsolete error' }, 503)); await flushPromises()
+      expect(wrapper.text()).not.toContain('Obsolete error')
+      expect(requests('adoptAccount')).toHaveLength(1)
+      if (!unmount) expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+    } finally { if (!unmount) wrapper.unmount() }
+  })
+
+  it('expires unavailable enrollment without polling and retries uncertain cleanup explicitly', async () => {
+    vi.useFakeTimers()
+    const pending = { enrollment_ref: 'expiring-claude', status: 'pending', expires_at: new Date(Date.now() + 3000).toISOString() }
+    let cleaned = false
+    globalThis.fetch = vi.fn(async url => {
+      if (String(url).includes('cancelAccountEnrollment')) { cleaned = true; return json({ data: { ...pending, status: 'expired', cleanup_pending: false } }) }
+      return json({ hosts: { 'claude-code': { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: cleaned ? null : pending } } })
+    }) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection([]) }); await flushPromises()
+      await vi.advanceTimersByTimeAsync(4000); await flushPromises()
+      expect(requests('completeAccountEnrollment')).toHaveLength(0)
+      expect(document.body.textContent).toContain('Sign-in expired')
+      expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+      const retry = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.trim() === 'Retry cleanup')!
+      expect(retry.disabled).toBe(false)
+      retry.click(); await flushPromises()
+      expect(requests('cancelAccountEnrollment')).toHaveLength(1)
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+    } finally { wrapper.unmount() }
+  })
+
+  it('restores canonical pending_cleanups after cancel and remount until cleanup is confirmed', async () => {
+    vi.useFakeTimers()
+    const pending = { enrollment_ref: 'retired-claude', status: 'pending', expires_at: new Date(Date.now() + 900_000).toISOString(), cleanup_pending: false }
+    let cancellations = 0
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes('cancelAccountEnrollment')) {
+        expect(JSON.parse(String(init?.body)).arguments).toMatchObject({ host_key: 'claude-code', enrollment_ref: pending.enrollment_ref })
+        cancellations++
+        return json({ data: { ...pending, status: 'cancelled', cleanup_pending: cancellations < 3 } })
+      }
+      return json({ hosts: { ...inventory().hosts, 'claude-code': {
+        accounts: [], desired: { account_ref: null, revision: 0 },
+        pending_enrollment: cancellations === 0 ? pending : null,
+        pending_cleanups: cancellations > 0 && cancellations < 3 ? [{ ...pending, status: 'cancelled', cleanup_pending: true }] : [],
+      } } })
+    }) as typeof fetch
+    const clickDialog = async (label: string) => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent?.trim() === label)!
+      expect(button.disabled).toBe(false)
+      button.click(); await flushPromises()
+    }
+    let wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      await clickDialog('Cancel')
+      expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+      wrapper.unmount()
+      wrapper = panel()
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      expect(document.body.textContent).toContain('Sign-in cancelled')
+      expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+      await vi.advanceTimersByTimeAsync(6000); await flushPromises()
+      expect(requests('completeAccountEnrollment')).toHaveLength(0)
+      await clickDialog('Retry cleanup')
+      expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+      await clickDialog('Retry cleanup')
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(requests('cancelAccountEnrollment')).toHaveLength(3)
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
+  it('restores every canonical cleanup before a separate pending enrollment', async () => {
+    const pending = { enrollment_ref: 'new-codex', status: 'pending', expires_at: new Date(Date.now() + 900_000).toISOString() }
+    const cleanups = ['old-claude', 'failed-claude'].map((enrollment_ref, index) => ({ ...pending, enrollment_ref, status: index ? 'failed' : 'cancelled', cleanup_pending: true }))
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes('cancelAccountEnrollment')) {
+        const args = JSON.parse(String(init?.body)).arguments
+        expect(args).toMatchObject({ host_key: 'claude-code', enrollment_ref: cleanups[0]!.enrollment_ref })
+        return json({ data: { ...cleanups.shift(), cleanup_pending: false } })
+      }
+      return json({ hosts: {
+        codex: { ...inventory().hosts.codex, pending_enrollment: pending, pending_cleanups: [] },
+        'claude-code': { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: null, pending_cleanups: [...cleanups] },
+      } })
+    }) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['codex']) }); await flushPromises()
+      for (let index = 0; index < 2; index++) {
+        expect(document.body.textContent).toContain('Native sign-in cleanup is still pending')
+        const retry = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent?.trim() === 'Retry cleanup')!
+        retry.click(); await flushPromises()
+      }
+      expect(document.body.textContent).not.toContain('Native sign-in cleanup is still pending')
+      expect(document.body.textContent).toContain('Complete sign-in in the native browser')
+      expect(document.querySelector('[role="dialog"] time')?.getAttribute('datetime')).toBe(pending.expires_at)
+      expect(requests('cancelAccountEnrollment')).toHaveLength(2)
+      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
+  it('retires a held completion on unmount without restarting polling', async () => {
+    vi.useFakeTimers()
+    const pending = { enrollment_ref: 'unmounted', status: 'pending', expires_at: new Date(Date.now() + 900_000).toISOString() }
+    let finish!: (response: Response) => void
+    globalThis.fetch = vi.fn(async url => String(url).includes('completeAccountEnrollment')
+      ? new Promise<Response>(resolve => { finish = resolve })
+      : json({ hosts: { grok: { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: pending } } })) as typeof fetch
+    const wrapper = panel()
+    await wrapper.setProps({ state: detection(['grok']) }); await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000); await flushPromises()
+    wrapper.unmount()
+    finish(json({ data: pending })); await flushPromises()
+    await vi.advanceTimersByTimeAsync(10000); await flushPromises()
+    expect(requests('completeAccountEnrollment')).toHaveLength(1)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('does not let a held completion revive cancelled enrollment or polling', async () => {
+    vi.useFakeTimers()
+    const pending = { enrollment_ref: 'held-grok', status: 'pending', expires_at: new Date(Date.now() + 900_000).toISOString() }
+    let finish!: (response: Response) => void
+    let cancelled = false
+    globalThis.fetch = vi.fn(async url => {
+      if (String(url).includes('adoptAccount')) return json({ detail: 'Sign in', data: { code: 'identity_unverified', identity_status: 'needs_sign_in' } }, 400)
+      if (String(url).includes('completeAccountEnrollment')) return new Promise<Response>(resolve => { finish = resolve })
+      if (String(url).includes('cancelAccountEnrollment')) { cancelled = true; return json({ data: { ...pending, status: 'cancelled' } }) }
+      return json({ hosts: { grok: { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: cancelled ? null : pending } } })
+    }) as typeof fetch
+    const wrapper = panel()
+    try {
+      await wrapper.setProps({ state: detection(['grok']) }); await flushPromises()
+      await vi.advanceTimersByTimeAsync(2000); await flushPromises()
+      await wrapper.setProps({ state: detection([]) }); await flushPromises()
+      const cancel = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.trim() === 'Cancel')!
+      expect(cancel.disabled).toBe(false)
+      cancel.click(); await flushPromises()
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      finish(json({ data: pending })); await flushPromises()
+      await wrapper.setProps({ state: detection(['grok']) }); await flushPromises()
+      await vi.advanceTimersByTimeAsync(6000); await flushPromises()
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(requests('completeAccountEnrollment')).toHaveLength(1)
+    } finally { wrapper.unmount() }
+  })
 
   it('waits for host detection and never adopts an uninstalled host', async () => {
     const empty = { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: null }

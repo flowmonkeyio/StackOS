@@ -1,7 +1,7 @@
 """structlog configuration for the daemon.
 
 JSON output for the file sink (machine-grep friendly), pretty console output
-when stderr is a TTY (developer ergonomics). `run_id` and `project_id` are
+when stderr is a TTY (developer ergonomics). Request, run and project IDs are
 contextvars that run-plan/tool execution can set so downstream log lines
 inherit them without explicit threading.
 """
@@ -27,6 +27,9 @@ import structlog
 run_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("run_id", default=None)
 project_id_var: contextvars.ContextVar[int | None] = contextvars.ContextVar(
     "project_id", default=None
+)
+request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "request_id", default=None
 )
 
 _LOG_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -104,13 +107,16 @@ def _inject_contextvars(
     _name: str,
     event_dict: structlog.types.EventDict,
 ) -> structlog.types.EventDict:
-    """Add `run_id` and `project_id` to every log entry when set."""
+    """Add request, run and project correlation to every log entry when set."""
     rid = run_id_var.get()
     pid = project_id_var.get()
     if rid is not None:
         event_dict.setdefault("run_id", rid)
     if pid is not None:
         event_dict.setdefault("project_id", pid)
+    request_id = request_id_var.get()
+    if request_id is not None:
+        event_dict["request_id"] = request_id
     return event_dict
 
 
