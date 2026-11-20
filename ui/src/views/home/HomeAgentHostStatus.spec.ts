@@ -15,7 +15,7 @@ function inventory(accounts = [a, b], desired: string | null = 'a') {
 function panel() {
   const store = useHomeSubscriptions()
   return mount(HomeAgentHostStatus, { props: {
-    state: { kind: 'loaded', items: ['codex', 'claude-code', 'grok', 'gemini-cli'].map(host_key => ({ host_key, status_label: 'Connected', ok: true })) },
+    state: { kind: 'loaded', items: ['codex', 'claude-code', 'grok', 'gemini-cli'].map(host_key => ({ host_key, status_label: 'Connected', ok: true, available: true, connection_state: 'connected' as const })) },
     summary: 'Tools ready', subscriptions: store.subscriptions,
   }, attachTo: document.body })
 }
@@ -23,6 +23,31 @@ function panel() {
 describe('native account picker', () => {
   beforeEach(() => { setActivePinia(createPinia()) })
   afterEach(() => { useToastsStore().clear(); globalThis.fetch = originalFetch; document.body.innerHTML = ''; vi.useRealTimers() })
+
+  it('waits for host detection and never adopts an uninstalled host', async () => {
+    const empty = { accounts: [], desired: { account_ref: null, revision: 0 }, pending_enrollment: null }
+    globalThis.fetch = vi.fn(async url => {
+      if (String(url).includes('adoptAccount')) return json({ data: a })
+      return json({ hosts: { codex: { ...empty }, grok: { ...empty } } })
+    }) as typeof fetch
+    const store = useHomeSubscriptions()
+    const wrapper = mount(HomeAgentHostStatus, { props: {
+      state: { kind: 'loading', items: [] }, summary: '', subscriptions: store.subscriptions,
+    } })
+    try {
+      await flushPromises()
+      expect(fetch).not.toHaveBeenCalled()
+      await wrapper.setProps({ state: { kind: 'loaded', items: [
+        { host_key: 'codex', status_label: 'Connected', available: true, connection_state: 'connected' },
+        { host_key: 'grok', status_label: 'Not detected', available: false, connection_state: 'unavailable' },
+      ] } })
+      await flushPromises()
+      const calls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('adoptAccount'))
+      expect(calls).toHaveLength(1)
+      expect(JSON.parse(String(calls[0]![1]?.body)).arguments.host_key).toBe('codex')
+      expect(wrapper.find('[aria-label="Grok Build accounts"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
 
   it('shows switching immediately and confirms before a slow quota refresh finishes', async () => {
     let finishSwitch!: (response: Response) => void

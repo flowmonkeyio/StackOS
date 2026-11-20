@@ -16,7 +16,7 @@ export interface HostAccounts {
 interface Inventory { hosts: Record<string, HostAccounts> }
 interface Envelope<T> { data: T }
 
-export function useHomeHostAccounts() {
+export function useHomeHostAccounts(canAdopt: (host: string) => boolean) {
   const hosts = ref<Inventory['hosts']>({})
   const errors = ref<Record<string, string>>({})
   const busy = ref<Record<string, boolean>>({})
@@ -40,7 +40,7 @@ export function useHomeHostAccounts() {
       hosts.value = result.hosts
       await Promise.all([...accountHosts].map(async host => {
         const state = hosts.value[host]
-        if (!state || state.desired.account_ref !== null || state.pending_enrollment || adopted.has(host)) return
+        if (!canAdopt(host) || !state || state.desired.account_ref !== null || state.pending_enrollment || adopted.has(host)) return
         adopted.add(host)
         busy.value[host] = true
         try {
