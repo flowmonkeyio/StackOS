@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, onBeforeUnmount, onBeforeUpdate, onMounted } from 'vue'
 import { UiBadge, UiButton, UiCallout, UiDialog, UiDropdownMenu, UiIcon, UiScoreMeter, UiSkeleton } from '@/components/ui'
 import { accountHosts, useHomeHostAccounts } from './useHomeHostAccounts'
 import HomeAccountEmail from './HomeAccountEmail.vue'
@@ -15,14 +15,23 @@ function hostAvailable(key: string) {
   return host?.available === true && host.connection_state !== 'unavailable'
 }
 const accounts = useHomeHostAccounts(key => props.state.kind === 'loaded' && hostAvailable(key))
-watch(() => props.state, state => {
-  if (state.kind === 'loaded') {
-    void accounts.load().then(() => {
-      // A newer host inventory may arrive while the account request is pending.
-      if (props.state !== state && props.state.kind === 'loaded') void accounts.load()
-    })
-  }
-}, { immediate: true })
+let loadedState: HostStatusState | undefined
+let loadingAccounts = false
+let disposed = false
+function loadDetectedAccounts() {
+  const state = props.state
+  if (disposed || state.kind !== 'loaded' || state === loadedState || loadingAccounts) return
+  loadingAccounts = true
+  void accounts.load().then(() => {
+    loadedState = state
+    loadingAccounts = false
+    // Catch up once if detection changed while the account read was pending.
+    loadDetectedAccounts()
+  })
+}
+onMounted(loadDetectedAccounts)
+onBeforeUpdate(loadDetectedAccounts)
+onBeforeUnmount(() => { disposed = true })
 function email(host: string) {
   const state = accounts.hosts.value[host]
   const current = state?.accounts.find(account => account.account_ref === accounts.currentRef(host))
