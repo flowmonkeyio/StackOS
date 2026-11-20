@@ -11,7 +11,6 @@ from sqlmodel import Session, create_engine
 
 from stackos.backups.models import BackupError
 from stackos.config import get_settings
-from stackos.plugins.finance_recovery import FinanceRecovery
 from stackos.repositories.base import RepositoryError
 
 from .app import app
@@ -34,6 +33,8 @@ def finance_recover(
     Local operator recovery only. Never use this command to work around a denied
     agent operation. Stop StackOS before --apply; review the JSON preview first.
     """
+    from stackos.plugins.finance_recovery import FinanceRecovery
+
     settings = get_settings()
     if not settings.db_path.is_file():
         typer.echo("finance-recover: existing StackOS database required", err=True)

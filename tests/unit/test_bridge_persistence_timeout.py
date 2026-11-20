@@ -188,6 +188,23 @@ def test_startup_timeouts_do_not_limit_long_running_tool_calls(method, tool, bou
     assert seen[0]["read"] == (2.5 if bounded else None)
 
 
+def test_cli_startup_registers_finance_recovery_without_loading_its_runtime():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from stackos.cli import app; "
+            "assert any(command.name == 'finance-recover' for command in app.registered_commands); "
+            "assert 'stackos.plugins.finance_recovery' not in sys.modules; "
+            "assert 'stackos.plugins.manifest' not in sys.modules",
+        ],
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_real_stalled_initialize_times_out_once_and_persists_after_process_exit(tmp_path):
     received = []
     release = threading.Event()
