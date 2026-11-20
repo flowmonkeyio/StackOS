@@ -332,10 +332,27 @@ def test_install_and_restart_use_maintenance_before_side_effects(tmp_path, monke
 
 
 @pytest.mark.parametrize(
-    "exit_code,envelope", [(9, {}), (0, {"ok": False, "code": 9}), (0, {"ok": True, "code": 0})]
+    "exit_code,envelope,accepted",
+    [
+        (9, {}, False),
+        (
+            0,
+            {"ok": False, "code": 9, "checks": {}, "installation": {"ok": False, "code": 9}},
+            False,
+        ),
+        (0, {"ok": True, "code": 0, "checks": {}, "installation": {"ok": True, "code": 0}}, True),
+        (0, {"ok": False, "code": 9, "checks": {}, "installation": {"ok": True, "code": 0}}, True),
+        (9, {"ok": False, "code": 9, "checks": {}, "installation": {"ok": True, "code": 0}}, False),
+        (
+            0,
+            {"ok": True, "code": 0, "checks": {}, "installation": {"ok": True, "code": False}},
+            False,
+        ),
+        (0, {"ok": True, "code": 0, "checks": {}, "installation": None}, False),
+    ],
 )
 def test_target_doctor_retains_actual_command_exit_and_selected_context(
-    settings, monkeypatch, exit_code, envelope
+    settings, monkeypatch, exit_code, envelope, accepted
 ):
     from stackos.cli import upgrade_commands as caller
 
@@ -347,7 +364,7 @@ def test_target_doctor_retains_actual_command_exit_and_selected_context(
         return subprocess.CompletedProcess(command, exit_code, json.dumps(envelope), "")
 
     monkeypatch.setattr(caller.subprocess, "run", run)
-    if exit_code or envelope["ok"] is False:
+    if not accepted:
         with pytest.raises(typer.Exit):
             caller.run_target_doctor(settings)
     else:
@@ -355,7 +372,7 @@ def test_target_doctor_retains_actual_command_exit_and_selected_context(
     receipts = list(settings.state_dir.glob("managed-upgrade-doctor-*.json"))
     assert len(receipts) == 1
     receipt = json.loads(receipts[0].read_text())
-    assert receipt["command"][-2:] == ["doctor", "--json"]
+    assert receipt["command"][-3:] == ["doctor", "--json", "--installation"]
     assert receipt["exit_code"] == exit_code
     assert receipts[0].stat().st_mode & 0o777 == 0o600
     assert seen[0][1]["env"]["STACKOS_DATA_DIR"] == str(settings.data_dir)

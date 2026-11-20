@@ -321,6 +321,14 @@ runtime failures still fail install/repair. Foreign same-name entries remain
 unchanged for review. CLI install retains its first-run daemon-down warning;
 desktop must observe a healthy running service before opening.
 
+Managed restart and named `finish-upgrade` recovery run
+`doctor --json --installation`. This selects the same installation policy for
+the actual process exit code while preserving strict `ok`/`code` and host
+warnings in the JSON diagnosis. The private command receipt retains that exact
+command, its real exit status and output. Continuation still requires exit 0,
+a valid successful installation result, matching target identity and health.
+Ordinary `doctor --json` keeps its strict exit semantics.
+
 Claude Desktop reports **Restart needed** only after StackOS actually changes
 its config while Claude is open; a no-op repair must not renew that state.
 Gemini CLI registration is always user-scoped. When a compatible Gemini CLI

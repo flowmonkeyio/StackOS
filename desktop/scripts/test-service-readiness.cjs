@@ -97,6 +97,8 @@ async function installReadiness() {
     });
     const cli = path.join(root, "stackos");
     const fixture = path.join(root, "result.json");
+    const restartIndex = process.argv.indexOf("--restart-report");
+    const restart = restartIndex < 0 ? null : JSON.parse(fs.readFileSync(process.argv[restartIndex + 1], "utf8"));
     fs.writeFileSync(cli, `#!${process.execPath}
 const fs = require("node:fs");
 const result = JSON.parse(fs.readFileSync(${JSON.stringify(fixture)}, "utf8"));
@@ -105,7 +107,12 @@ if (command === "doctor") {
   console.log(typeof result.payload === "string" ? result.payload : JSON.stringify(result.payload));
   process.exitCode = result.exitCode;
 } else if (command === "install" || command === "restart") {
-  process.exitCode = result[command] || 0;
+  const replay = command === "restart" ? ${JSON.stringify(restart)} : null;
+  if (replay) {
+    process.stdout.write(replay.stdout);
+    process.stderr.write(replay.stderr);
+  }
+  process.exitCode = result[command] || replay?.exitCode || 0;
 } else { throw new Error("unexpected native command " + command); }
 `, { mode: 0o755 });
     process.env.STACKOS_DESKTOP_CLI = cli;
@@ -127,7 +134,7 @@ if (command === "doctor") {
     };
     const cases = [
       { payload: healthy, exitCode: 0, expected: true },
-      { payload: attention, exitCode: 9, expected: emittedExpected },
+      { payload: attention, exitCode: attention.code, expected: emittedExpected },
       { payload: { ...attention, installation: { ok: false, code: 9 } }, exitCode: 9, expected: false },
       { payload: { ...attention, installation: { ok: false, code: 1 } }, exitCode: 9, expected: false },
       { payload: "not json", exitCode: 9, expected: false },
@@ -148,6 +155,7 @@ if (command === "doctor") {
       }
       if (emitted && test.payload === attention) {
         assert.deepEqual(result.doctor.parsed, emitted);
+        if (restart) assert.equal(result.start.stdout, restart.stdout);
       }
       if (test.expected) {
         assert.equal(result.phase, "ready");

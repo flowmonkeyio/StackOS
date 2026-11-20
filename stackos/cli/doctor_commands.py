@@ -646,6 +646,13 @@ def doctor(
             help="Read retained evidence for one bridge attempt only; no health probes.",
         ),
     ] = None,
+    installation: Annotated[
+        bool,
+        typer.Option(
+            "--installation",
+            help="Use installation readiness for the exit code; retain strict diagnostics.",
+        ),
+    ] = False,
 ) -> None:
     """Diagnose the local StackOS install.
 
@@ -661,6 +668,9 @@ def doctor(
     has no DB until `make migrate` runs.
     """
     if bridge_attempt is not None:
+        if installation:
+            typer.echo("--installation cannot be combined with --bridge-attempt", err=True)
+            raise typer.Exit(code=2)
         from stackos.mcp.bridge.diagnostics import bridge_diagnostic_snapshot
 
         try:
@@ -684,7 +694,7 @@ def doctor(
                 "Reconcile before retry."
             )
         return
-    _run_doctor(json_output=json_output)
+    _run_doctor(json_output=json_output, installation=installation)
 
 
 def _run_doctor(*, json_output: bool = False, installation: bool = False) -> None:
@@ -867,6 +877,6 @@ def _run_doctor(*, json_output: bool = False, installation: bool = False) -> Non
                 f"{provider_readiness_info.get('repair')}."
             )
 
-    if installation and code != installation_code:
+    if installation and not json_output and code != installation_code:
         typer.echo("  note: optional host attention does not prevent StackOS installation.")
     _exit(installation_code if installation else code)

@@ -1612,10 +1612,7 @@ def test_normal_install_repair_doctor_optional_host_subsets(sandbox, install_pos
         assert not (sandbox / config).exists()
 
 
-@pytest.mark.parametrize("warning", ["restart", "foreign"])
-def test_normal_install_retains_optional_warnings_and_desktop_readiness(
-    sandbox, install_postflight, monkeypatch, warning
-):
+def _configure_optional_install_host(sandbox, monkeypatch, warning):
     from dataclasses import replace
 
     config = sandbox / "claude_desktop_config.json"
@@ -1643,6 +1640,16 @@ def test_normal_install_retains_optional_warnings_and_desktop_readiness(
         lambda: tuple(
             replace(d, adapter=adapter) if d.policy.host_key == key else d for d in synthetic
         ),
+    )
+    return config, grok_config, foreign_bytes, key
+
+
+@pytest.mark.parametrize("warning", ["restart", "foreign"])
+def test_normal_install_retains_optional_warnings_and_desktop_readiness(
+    sandbox, install_postflight, monkeypatch, warning
+):
+    config, grok_config, foreign_bytes, key = _configure_optional_install_host(
+        sandbox, monkeypatch, warning
     )
     for _ in range(2):
         installed = CliRunner().invoke(app, ["install"])
@@ -1675,6 +1682,134 @@ def test_normal_install_retains_optional_warnings_and_desktop_readiness(
         check=False,
     )
     assert desktop.returncode == 0, desktop.stdout + desktop.stderr
+
+
+@pytest.mark.parametrize("entry", ["restart", "finish-upgrade"])
+@pytest.mark.parametrize("state", ["healthy", "restart", "foreign", "owned", "runtime", "invalid"])
+def test_managed_install_postflight_and_named_recovery(
+    sandbox, install_postflight, monkeypatch, entry, state
+):
+    """Real lifecycle/Doctor/maintenance owner; only native/process/HTTP edges fake."""
+    from fastapi.testclient import TestClient
+
+    from stackos.server import create_app
+
+    if state in {"restart", "foreign"}:
+        _configure_optional_install_host(sandbox, monkeypatch, state)
+    installed = CliRunner().invoke(app, ["install"])
+    assert installed.exit_code == 0, installed.output
+    settings = Settings()
+    with TestClient(create_app(settings), base_url=f"http://127.0.0.1:{settings.port}") as api:
+        api.headers["Authorization"] = f"Bearer {settings.token_path.read_text().strip()}"
+        scheduler = api.app.state.scheduler
+        scheduler.pause()
+
+        def request(method, path, *, body=None, **kwargs):
+            response = api.request(method, path, json=body)
+            assert response.status_code == 200, response.text
+            return response.json()
+
+        monkeypatch.setattr(upgrade_cli, "_api_request", request)
+        status = upgrade_cli._call(settings, "upgradeStatus")
+        target = status["runtime"]["running_identity"]
+        upgrade_id = "oh891-optional-postflight-fixture"
+        prepared = upgrade_cli._call(
+            settings,
+            "prepareUpgrade",
+            {
+                "upgrade_id": upgrade_id,
+                "source_identity": target,
+                "target_identity": target,
+                "expected_revision": 0,
+            },
+        )["data"]
+        assert prepared["status"] == "quiesced" and prepared["fenced"] is True
+        scheduler.task_delivery_admission_id = "oh891-target-fixture-generation"
+        monkeypatch.setattr(upgrade_cli, "prepare_for_upgrade", lambda *a, **k: prepared)
+        monkeypatch.setattr(
+            daemon_cli, "_launchd_plist_for_requested_context", lambda *a, **k: None
+        )
+        monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *a: ([], []))
+        monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda *a, **k: False)
+        monkeypatch.setattr(
+            daemon_processes, "_spawn_detached_daemon", lambda *a, **k: (True, "fixture started")
+        )
+        monkeypatch.setattr(upgrade_cli, "_daemon_health_ok", lambda *a: True)
+        damaged = state in {"owned", "runtime", "invalid"}
+        if state == "owned":
+            install_postflight["states"]["codex"] = "registered_unsafe"
+        if state == "runtime":
+            monkeypatch.setattr(
+                doctor_cli,
+                "_check_browser_runtime",
+                lambda: (False, {"repair": "repair fixture runtime"}),
+            )
+        invalid = state == "invalid"
+        emitted = []
+
+        def doctor_process(command, **kwargs):
+            assert command[:3] == [sys.executable, "-m", "stackos"]
+            assert kwargs["env"]["STACKOS_STATE_DIR"] == str(settings.state_dir)
+            with monkeypatch.context() as probe:
+                probe.setattr(daemon_processes, "_tcp_can_connect", lambda *a: True)
+                report = CliRunner().invoke(app, command[3:])
+            stdout = "invalid fixture report" if invalid else report.stdout
+            emitted.append((command, report.exit_code, stdout))
+            return subprocess.CompletedProcess(command, report.exit_code, stdout, report.stderr)
+
+        with monkeypatch.context() as native:
+            native.setattr(upgrade_cli.subprocess, "run", doctor_process)
+            command = [entry] if entry == "restart" else [entry, "--upgrade-id", upgrade_id]
+            result = CliRunner().invoke(app, command)
+            if damaged:
+                assert result.exit_code == 1, result.output
+                held = upgrade_cli._call(settings, "upgradeStatus", {"upgrade_id": upgrade_id})
+                assert held["fenced"] is True and held["status"] == "quiesced"
+                install_postflight["states"]["codex"] = "registered_current"
+                monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {}))
+                invalid = False
+                result = CliRunner().invoke(app, ["finish-upgrade", "--upgrade-id", upgrade_id])
+            assert result.exit_code == 0, result.output
+        completed = upgrade_cli._call(settings, "upgradeStatus", {"upgrade_id": upgrade_id})
+        assert completed["status"] == "continued" and completed["fenced"] is False
+        receipts = [
+            json.loads(p.read_text())
+            for p in settings.state_dir.glob("managed-upgrade-doctor-*.json")
+        ]
+        assert len(receipts) == (2 if damaged else 1)
+        assert sorted((r["command"], r["exit_code"], r["stdout"]) for r in receipts) == sorted(
+            emitted
+        )
+        if state in {"restart", "foreign"}:
+            diagnosis = json.loads(emitted[-1][2])
+            assert diagnosis["ok"] is False and diagnosis["code"] == 9
+            assert diagnosis["installation"] == {"ok": True, "code": 0}
+        if entry == "restart" and not damaged:
+            restart_path = sandbox / "restart-result.json"
+            restart_path.write_text(
+                json.dumps(
+                    {"exitCode": result.exit_code, "stdout": result.stdout, "stderr": result.stderr}
+                )
+            )
+            with monkeypatch.context() as probe:
+                probe.setattr(daemon_processes, "_tcp_can_connect", lambda *a: True)
+                report = CliRunner().invoke(app, ["doctor", "--json"])
+            report_path = sandbox / "strict-doctor.json"
+            report_path.write_text(report.stdout)
+            desktop = subprocess.run(
+                [
+                    "node",
+                    "desktop/scripts/test-service-readiness.cjs",
+                    "--doctor-report",
+                    str(report_path),
+                    "--restart-report",
+                    str(restart_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert desktop.returncode == 0, desktop.stdout + desktop.stderr
 
 
 @pytest.mark.parametrize(
