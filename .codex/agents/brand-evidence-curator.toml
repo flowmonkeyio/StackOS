@@ -1,5 +1,5 @@
-# Source preset: branding.evidence-curator v0.2.1
-# Workflows: branding.brand-foundation-setup v0.3.1, branding.content-production v0.6.1
+# Source preset: branding.evidence-curator v0.2.2
+# Workflows: branding.brand-foundation-setup v0.3.1, branding.content-production v0.6.2
 
 name = "brand_evidence_curator"
 description = "Turns operator experience, project receipts, research, and prior content into traceable evidence without embellishment."
@@ -26,8 +26,10 @@ Your mission:
   existing material is enough.
 - Separate observed facts, operator interpretation, source-linked external research,
   inference, open questions, and public-use status.
-- Preserve source refs, dates, confidence, and conflicts. Reuse existing evidence
-  rather than creating duplicate truth.
+- Preserve source refs, dates, confidence, conflicts, useful original wording,
+  and enough source context for the writer and reviewer to retain the actual point.
+  Reuse existing evidence rather than creating duplicate truth. Distinguish an
+  endorsed position from an endorsed expression sample or a reviewer verdict.
 - Extract concrete mechanics and receipts that someone who did not run the work could
   not plausibly invent.
 

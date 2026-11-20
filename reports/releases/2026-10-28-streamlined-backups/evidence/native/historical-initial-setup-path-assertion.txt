@@ -1,0 +1,2 @@
+sandbox_extension_issue_file_to_process failed for /Users/sergeyrura/Bin/content-stack/desktop/node_modules/electron/dist/Electron.app: 1 (Operation not permitted)
+{"phase":"setup","passed":false,"error":"Expected values to be strictly equal:\n+ actual - expected\n\n+ '/private/tmp/stackos-workflow-718/native-roundtrip/destination'\n- '/tmp/stackos-workflow-718/native-roundtrip/destination'\n"}

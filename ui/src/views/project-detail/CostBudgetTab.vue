@@ -11,6 +11,7 @@ import {
   UiCallout,
   UiCard,
   UiEmptyState,
+  UiLoadingState,
   UiMetricCard,
   UiProgressBar,
   UiSectionHeader,
@@ -32,7 +33,8 @@ import type { SparklinePoint } from '@/components/ui/UiSparkline.vue'
 const costsStore = useCostsStore()
 
 const { projectId } = useProjectRouteScope()
-const { cost, budgets, history, hasNoSpendYet, month, loading } = storeToRefs(costsStore)
+const { cost, budgets, history, hasNoSpendYet, month, loading, error,
+  costLoading, budgetsLoading, historyLoading, budgetsLoaded, costError, budgetsError, historyErrors, historyEmpty } = storeToRefs(costsStore)
 
 type IntegrationKindLabels = { [Key in IntegrationKind]: string }
 
@@ -92,6 +94,7 @@ const sparklinePoints = computed<SparklinePoint[]>(() =>
 const historyHasSpend = computed(() =>
   history.value.some((row) => Number(row.total_usd) > 0),
 )
+const failedMonths = computed(() => Object.keys(historyErrors.value))
 
 function integrationLabel(kind: string): string {
   return INTEGRATION_KINDS.includes(kind as IntegrationKind)
@@ -127,12 +130,25 @@ async function load(nextProjectId: number): Promise<void> {
 const { refresh } = useProjectScopedLoader({
   projectId,
   load: ({ projectId }) => load(projectId),
+  onScopeExit: () => costsStore.reset(),
 })
 </script>
 
 <template>
   <section class="space-y-5">
-    <div class="flex justify-end">
+    <div class="flex min-h-7 flex-wrap items-center justify-between gap-2">
+      <div role="status" class="min-h-5 text-xs text-fg-muted">
+        <details v-if="costError || budgetsError">
+          <summary class="focus-ring cursor-pointer rounded-sm">Spend reads need refresh</summary>
+          <UiCallout v-if="costError" tone="warning" title="Current month read failed" class="mt-2">
+            {{ costError }} {{ cost ? 'Showing last accepted spend.' : 'Current spend is unavailable.' }}
+          </UiCallout>
+          <UiCallout v-if="budgetsError" tone="warning" title="Budget read failed" class="mt-2">
+            {{ budgetsError }} {{ budgetsLoaded ? 'Showing last accepted budgets and calls.' : 'Budgets and calls are unavailable.' }}
+          </UiCallout>
+        </details>
+        <p v-else>{{ loading ? cost || budgetsLoaded || history.length ? 'Refreshing Spend…' : 'Loading Spend…' : error ? 'Some Spend reads failed.' : 'Spend reads complete.' }}</p>
+      </div>
       <UiButton
         size="sm"
         variant="secondary"
@@ -147,37 +163,40 @@ const { refresh } = useProjectScopedLoader({
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <UiMetricCard
         label="Current month"
-        :value="formatUsd(cost?.total_usd)"
+        :value="cost ? formatUsd(cost.total_usd) : '—'"
         :delta="month ?? undefined"
         delta-label="period"
         delta-tone="neutral"
         density="compact"
-        :loading="loading && !cost"
+        :loading="costLoading && !cost"
       />
       <UiMetricCard
         label="Budget cap"
-        :value="formatUsd(totalBudgetCap)"
-        :delta="formatPercent(budgetUsagePercent)"
+        :value="budgetsLoaded ? formatUsd(totalBudgetCap) : '—'"
+        :delta="cost && budgetsLoaded ? formatPercent(budgetUsagePercent) : undefined"
         delta-label="used"
         :delta-tone="
           budgetUsagePercent >= 100 ? 'negative' : budgetUsagePercent >= 80 ? 'neutral' : 'positive'
         "
         density="compact"
+        :loading="budgetsLoading && !budgetsLoaded"
       />
       <UiMetricCard
         label="Tracked calls"
-        :value="totalBudgetCalls"
+        :value="budgetsLoaded ? totalBudgetCalls : '—'"
         delta-label="this month"
         delta-tone="neutral"
         density="compact"
+        :loading="budgetsLoading && !budgetsLoaded"
       />
       <UiMetricCard
         label="Configured caps"
-        :value="budgets.length"
+        :value="budgetsLoaded ? budgets.length : '—'"
         :delta="`${INTEGRATION_KINDS.length} vendors`"
         delta-label="available"
         delta-tone="neutral"
         density="compact"
+        :loading="budgetsLoading && !budgetsLoaded"
       />
     </div>
 
@@ -198,9 +217,9 @@ const { refresh } = useProjectScopedLoader({
       <DataTable
         :items="integrationCostRows"
         :columns="integrationColumns"
-        :loading="loading"
+        :loading="costLoading && !cost"
         aria-label="Cost breakdown by integration"
-        empty-message="No integration cost data yet."
+        :empty-message="costError && !cost ? 'Current spend is unavailable.' : 'No integration cost data yet.'"
       />
     </section>
 
@@ -212,12 +231,13 @@ const { refresh } = useProjectScopedLoader({
       />
 
       <UiEmptyState
-        v-if="!loading && budgets.length === 0"
+        v-if="budgetsLoaded && budgets.length === 0"
         title="No budget caps"
         description="Agent-owned caps will appear here with alert thresholds and pacing."
         icon="banknotes"
         framed
       />
+      <UiLoadingState v-else-if="budgetsLoading && !budgetsLoaded" label="Loading budget caps" />
 
       <div
         v-else
@@ -300,13 +320,26 @@ const { refresh } = useProjectScopedLoader({
       />
 
       <UiEmptyState
-        v-if="sparklinePoints.length === 0 || !historyHasSpend"
+        v-if="historyEmpty"
         title="No cost history yet"
         description="The trend appears once a monthly snapshot records vendor spend."
         icon="banknotes"
         framed
       />
-      <UiCard v-else>
+      <UiLoadingState v-else-if="historyLoading && !history.length" label="Loading cost history" />
+      <div class="min-h-5 text-xs text-fg-muted" role="status">
+        <details v-if="failedMonths.length">
+          <summary class="focus-ring cursor-pointer rounded-sm">History is incomplete · {{ failedMonths.length }} months failed</summary>
+          <UiCallout tone="warning" class="my-2">
+            <p>{{ historyEmpty ? 'Showing last accepted empty history. Refresh is incomplete.' : history.length ? 'Available months are shown below. Failed months with retained values are marked stale.' : 'Cost history is unavailable.' }}</p>
+            <ul class="mt-2 space-y-1">
+              <li v-for="ym in failedMonths" :key="ym">{{ ym }}: {{ historyErrors[ym] }}</li>
+            </ul>
+          </UiCallout>
+        </details>
+        <p v-else>{{ historyLoading ? 'Reading cost history…' : 'Cost history current.' }}</p>
+      </div>
+      <UiCard v-if="!historyEmpty && history.length && (historyHasSpend || failedMonths.length)">
         <UiSparkline
           :points="sparklinePoints"
           aria-label="Cost sparkline (last 12 months)"
@@ -317,7 +350,7 @@ const { refresh } = useProjectScopedLoader({
             v-for="point in sparklinePoints"
             :key="point.label"
           >
-            {{ point.label }}: {{ point.display }}
+            {{ point.label }}: {{ point.display }}{{ historyErrors[point.label] ? ' (stale)' : '' }}
           </li>
         </ul>
       </UiCard>

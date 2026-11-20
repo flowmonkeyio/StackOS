@@ -1,0 +1,11 @@
+{
+  "command": [
+    "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+    "doctor",
+    "--json"
+  ],
+  "captured_at": "2026-10-28T17:18:14.120385+00:00",
+  "seconds": 3.884,
+  "exit_code": 0,
+  "log": "/tmp/stackos-release-20261028/installed-final-doctor.log"
+}

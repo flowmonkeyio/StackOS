@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from enum import Enum
 from typing import Any
 
@@ -98,6 +99,9 @@ def compact_tracker_status(value: Any) -> dict[str, Any]:
 
 def compact_tracker_snapshot(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
+    if data.get("projection") == "ui":
+        # UI discovery is deliberately complete; metric demand owns its heavy bound.
+        return data
     tracker = _as_dict(data.get("tracker"))
     tasks = _as_list(data.get("tasks"))
     tickets = _as_list(data.get("tickets"))
@@ -211,6 +215,8 @@ def compact_tracker_history_page(value: Any) -> dict[str, Any]:
 
 def compact_tracker_changed(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
+    if data.get("projection") == "notifications":
+        return data  # Already a bounded typed projection; retain its paging contract.
     return _drop_empty(
         {
             "since_rev": _clean(data.get("since_rev")),
@@ -303,6 +309,8 @@ def compact_tracker_task(value: Any) -> dict[str, Any]:
             ),
         )
     _add_completion_evidence_flag(result, data)
+    _add_agent_stats(result, data)
+    _add_delivery_state(result, data)
     return result
 
 
@@ -345,7 +353,31 @@ def compact_tracker_snapshot_task(value: Any) -> dict[str, Any]:
             ),
         )
     _add_completion_evidence_flag(result, data)
+    _add_agent_stats(result, data)
+    _add_delivery_state(result, data)
     return result
+
+
+def _add_delivery_state(result: dict[str, Any], source: dict[str, Any]) -> None:
+    from stackos.repositories.tracker.schema import TaskDeliveryStateOut, TaskDeliveryStopContextOut
+
+    delivery = source.get("delivery")
+    if not isinstance(delivery, dict):
+        return
+    context = TaskDeliveryStopContextOut.from_value(delivery.get("stop_context"))
+    try:
+        public = TaskDeliveryStateOut.model_validate(
+            {
+                **delivery,
+                "reason": TaskDeliveryStateOut.safe_reason(delivery.get("reason"))
+                if delivery.get("status") == "stopped"
+                else None,
+                "stop_context": context if delivery.get("status") == "stopped" else None,
+            }
+        )
+    except ValueError:
+        return
+    result["delivery"] = public.model_dump(mode="json")
 
 
 def compact_tracker_ticket(value: Any) -> dict[str, Any]:
@@ -376,6 +408,7 @@ def compact_tracker_ticket(value: Any) -> dict[str, Any]:
         if result.get(key) == 0:
             result.pop(key)
     _add_completion_evidence_flag(result, _as_dict(value))
+    _add_agent_stats(result, _as_dict(value))
     return result
 
 
@@ -406,7 +439,18 @@ def compact_tracker_snapshot_ticket(value: Any) -> dict[str, Any]:
         if result.get(key) == 0:
             result.pop(key)
     _add_completion_evidence_flag(result, _as_dict(value))
+    _add_agent_stats(result, _as_dict(value))
     return result
+
+
+def _add_agent_stats(result: dict[str, Any], source: dict[str, Any]) -> None:
+    duration = _as_dict(source.get("work_duration"))
+    if duration:
+        result["work_duration"] = deepcopy(duration)
+    metrics = _as_dict(source.get("agent_stats"))
+    if metrics:
+        # This typed safe projection needs its nulls: unknown usage is not zero.
+        result["agent_stats"] = deepcopy(metrics)
 
 
 def _add_completion_evidence_flag(result: dict[str, Any], source: dict[str, Any]) -> None:

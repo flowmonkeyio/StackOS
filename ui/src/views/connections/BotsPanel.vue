@@ -27,6 +27,8 @@ const props = defineProps<{
   bots: CommunicationProfile[]
   slackConnections: ConnectionRow[]
   loading: boolean
+  loaded?: boolean
+  credentialsLoaded?: boolean
   message: { tone: MessageTone; text: string } | null
 }>()
 
@@ -71,7 +73,7 @@ function userCount(bot: CommunicationProfile): number {
       as="h3"
     >
       <template #actions>
-        <UiCountBadge :value="bots.length" />
+        <UiCountBadge v-if="loaded || bots.length" :value="bots.length" />
         <UiDropdownMenu
           :items="addBotItems"
           placement="bottom-end"
@@ -96,7 +98,7 @@ function userCount(bot: CommunicationProfile): number {
       </template>
     </UiSectionHeader>
 
-    <UiCallout v-if="!hasMessagingConnection && bots.length === 0" tone="info">
+    <UiCallout v-if="!loading && !message && credentialsLoaded !== false && !hasMessagingConnection && bots.length === 0" tone="info">
       Connect a Slack bot first, then give it an identity and access rules here. Telegram bot and
       user sessions are configured as Accounts under Services.
       <template #actions>
@@ -115,7 +117,7 @@ function userCount(bot: CommunicationProfile): number {
       {{ message.text }}
     </UiCallout>
 
-    <UiCard v-if="loading" aria-label="Loading bots">
+    <UiCard v-if="loading && !loaded && !bots.length" aria-label="Loading bots">
       <UiSkeleton shape="line" :lines="3" />
     </UiCard>
 
@@ -196,7 +198,7 @@ function userCount(bot: CommunicationProfile): number {
     </UiCard>
 
     <UiEmptyState
-      v-else-if="hasMessagingConnection"
+      v-else-if="hasMessagingConnection && !message"
       title="No bots yet"
       description="Create a bot for each messaging identity or access boundary. Bots are static setup — agents still decide what work to run after a trigger arrives."
       icon="chat"

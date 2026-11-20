@@ -216,6 +216,11 @@ class WorkspaceStartSessionInput(MCPInput):
     client_session_id: str | None = None
     workspace_alias: str | None = None
     auto_bootstrap: bool = True
+    global_session: bool = Field(
+        default=False,
+        description="Declare a global session before an unbound ambient directory is bootstrapped.",
+    )
+    project_id: int | None = Field(default=None, gt=0, strict=True)
 
 
 async def _workspace_resolve(
@@ -331,6 +336,8 @@ async def _workspace_start_session(
         thread_id=inp.thread_id,
         client_session_id=inp.client_session_id,
         auto_bootstrap=inp.auto_bootstrap,
+        global_session=inp.global_session,
+        project_id=inp.project_id,
     )
     return WriteEnvelope[AgentSessionOut](
         data=_with_ui_context(env.data),

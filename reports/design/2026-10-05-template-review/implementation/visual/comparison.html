@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StackOS option 3 comparison</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #111; background: #ddd; font-family: system-ui,sans-serif; }
+  header { padding: 12px 20px; }
+  nav { display: flex; gap: 24px; }
+  .pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; padding: 16px; }
+  figure { margin: 0; min-width: 0; }
+  figcaption { margin-bottom: 8px; font-size: 14px; font-weight: 600; }
+  img { display: block; width: 100%; height: auto; }
+  #focus { width: 2292px; }
+  #focus .crop { height: 650px; overflow: hidden; position: relative; }
+  #focus img { position: absolute; top: -444px; width: 1122px; max-width: none; }
+  #focus figcaption { height: 20px; }
+</style>
+<header>
+  <nav><a href="#full">Whole page</a><a href="#focus">Content detail</a><a href="/library/articles/how-to-do-keyword-research-for-ai-search/">Working page</a></nav>
+  <p>Selected image: 1122 × 1402. Implementation capture: 1440 × 1800, displayed at the same proportional size. Existing site shell is authoritative.</p>
+</header>
+<section class="pair" id="full">
+  <figure><figcaption>Selected option 3</figcaption><img src="target.png" alt="Selected content design option 3"></figure>
+  <figure><figcaption>Local implementation</figcaption><img src="article-desktop.png" alt="Rendered local implementation"></figure>
+</section>
+<section class="pair" id="focus">
+  <figure><figcaption>Selected option 3 — content</figcaption><div class="crop"><img src="target.png" alt="Selected design content detail"></div></figure>
+  <figure><figcaption>Local implementation — content</figcaption><div class="crop"><img src="article-desktop.png" alt="Rendered content detail"></div></figure>
+</section>
+<section class="pair" id="repairs">
+  <figure><figcaption>QA-1 before — workflow labels</figcaption><img src="content-555-workflow-desktop.png" alt="Workflow before contrast repair"></figure>
+  <figure><figcaption>QA-1 verified — workflow labels</figcaption><img src="content-555-workflow-desktop-fixed.png" alt="Workflow after contrast repair"></figure>
+  <figure><figcaption>QA-2 before — facts heading</figcaption><img src="content-555-integration-facts-desktop.png" alt="Integration facts before contrast repair"></figure>
+  <figure><figcaption>QA-2 verified — facts heading</figcaption><img src="content-555-integration-facts-desktop-fixed.png" alt="Integration facts after contrast repair"></figure>
+</section>
+</html>

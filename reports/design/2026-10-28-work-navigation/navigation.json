@@ -1,0 +1,105 @@
+{
+  "decision": "Only Board and Dependency map remain in Work navigation; selected-task control exists only in Dependency map.",
+  "implementation_amendment": "2026-10-28 operator instruction supersedes the separate view-switch row in concept images: place Board / Dependency map inline with the active view controls in one desktop toolbar. Proceed to implementation without another concept round.",
+  "states": {
+    "board": {
+      "scope": "All project tasks matching board filters",
+      "default_entry": true,
+      "controls": [
+        "Search tasks",
+        "Workflow filter",
+        "Assignee filter",
+        "Task count"
+      ],
+      "single_task_selector": false,
+      "columns": [
+        "Not Started",
+        "In Progress",
+        "Complete",
+        "Deferred",
+        "Aborted",
+        "Failed",
+        "Skipped"
+      ],
+      "lifecycle": "Read-only placement; no dragging or state updates",
+      "card_action": "Open clicked task by its explicit identity in a centered popup"
+    },
+    "task_popup": {
+      "scope": "Explicit task identity independent of remembered map selection",
+      "content": [
+        "Description and goal",
+        "Definition of done and context",
+        "Tickets and their statuses",
+        "Additional input"
+      ],
+      "actions": [
+        "Edit content",
+        "Add input",
+        "View dependencies",
+        "Close"
+      ],
+      "ticket_action": "Replace popup contents with the selected ticket and a Back to task path; no stacked dialogs",
+      "view_dependencies": "Close popup and open Dependency map with this exact task selected",
+      "close": "Restore originating view, scroll and focus"
+    },
+    "map": {
+      "scope": "One selected task's ticket dependencies",
+      "controls": [
+        "Task selector searching all project tasks",
+        "Task status",
+        "Ticket and dependency counts",
+        "Task details"
+      ],
+      "inherits_board_filters": false,
+      "task_status_editable": false,
+      "node_action": "Open that exact ticket in the shared popup",
+      "graph_filters": "Map-only ticket filters; visibly identify hidden tickets/dependencies so filtered graphs do not imply complete context"
+    },
+    "return_to_board": {
+      "behavior": "Restore board query, filters, column scroll positions and focus. The map's selected task never restricts the board."
+    }
+  },
+  "entry_rules": [
+    "Default Work entry opens Board.",
+    "An explicit valid map deep link opens its linked project task, before considering remembered selection.",
+    "Direct map tab entry reuses last valid map task for that project; if none exists, show Choose a task to view dependencies with the normal task picker.",
+    "An invalid or unavailable linked task shows unavailable/reselect state; never silently substitute another.",
+    "Map task picker searches all tasks in the current project, independently of board filters.",
+    "A task with no tickets retains its context row and Task details, and shows No tickets yet.",
+    "Tickets with no edges remain visible as disconnected nodes.",
+    "Switching projects clears incompatible selection and scopes remembered view/filter state to each project.",
+    "Browser Back follows deliberate navigation; closing a deep-linked popup restores its underlying view; opening/closing must not unexpectedly change task identity.",
+    "Protect unsaved content before leaving the popup using existing dialog behavior."
+  ],
+  "removed_tickets_view": {
+    "replacement": "Tickets remain inside task details and as map nodes, never a top-level Work tab.",
+    "entry_points": "Update owned links in Home/Attention/Activity alongside removal. Specific ticket links open the owning task's ticket detail directly.",
+    "aggregate_ticket_links": "Home ticket-count links should open Board with an explicit Contains tickets: <status> filter, distinct from Task status and from column placement; do not reinterpret ticket counts as task counts.",
+    "no_compatibility_shims": "Remove the old Tickets route branch, navigation registration and owned links together during implementation."
+  },
+  "visual_authority": [
+    "Current live app shell",
+    "ui/src/design/colors_and_type.css",
+    "ui/src/design/tokens.ts",
+    "docs/ui-design-system.md",
+    "existing UiSegmentedControl, UiDialog, StatusBadge and TicketGraphNode"
+  ],
+  "illustrative_task": {
+    "id": 1082,
+    "title": "Improve the Work view",
+    "status": "In Progress",
+    "tickets": 6,
+    "complete": 3,
+    "dependencies": 5
+  },
+  "acceptance": [
+    "Only Board and Dependency map tabs appear, at the same location across views.",
+    "Board has no selected-task dropdown or hidden single-task scope.",
+    "Clicked card identity matches popup identity and View dependencies identity.",
+    "Task1082 and its six tickets stay consistent across all three concept states.",
+    "Switching map task never changes Board filters or scroll restoration.",
+    "Ticket list remains reachable without a Tickets tab.",
+    "No lifecycle mutation controls appear.",
+    "Use existing design tokens/components; static image artifacts are not authoritative measurements."
+  ]
+}

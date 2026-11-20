@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import (
+    Annotated,
     Any,
     Literal,
 )
 
 from pydantic import (
+    BaseModel,
     ConfigDict,
     Field,
     StrictBool,
+    StrictInt,
+    StrictStr,
     model_validator,
 )
 
@@ -19,9 +24,205 @@ from stackos.db.models import (
     TrackerSourceKind,
     TrackerTicketKind,
 )
+from stackos.host_mcp.project_agents import AgentSourceRef
 from stackos.mcp.contract import MCPInput
+from stackos.project_setup_execution import MainAgentPreferences
+from stackos.repositories.tracker.agent_stats import stats_timezone
+from stackos.repositories.tracker.inspection_schema import ResultSourceKind
+from stackos.repositories.tracker.schema import TrackerCorrectionIntent, TrackerMetricDemand
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
+AgentRole = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}$", strict=True)]
+# Patch payloads remain extensible. Only the explicit correction intent reserves
+# typed fields; legacy correction prose and unrelated context remain opaque.
+TICKET_CORRECTION_PATCH_SCHEMA: dict[str, Any] = {
+    "properties": {
+        "context_json": {
+            "properties": {
+                "correction": {
+                    "if": {"type": "object", "required": ["work_intent"]},
+                    "then": TrackerCorrectionIntent.model_json_schema(),
+                }
+            }
+        }
+    }
+}
+
+
+class TrackerActiveTasksAllInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    limit: int = Field(default=100, ge=1, le=200)
+    after_id: int | None = Field(default=None, ge=1)
+    response_mode: TrackerResponseMode = "compact"
+
+
+class TrackerActiveTasksInput(TrackerActiveTasksAllInput):
+    project_id: int = Field(ge=1)
+
+
+class TrackerTaskActivityInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(ge=1)
+    task_key: str = Field(min_length=1)
+    limit: int = Field(default=50, ge=1, le=200)
+    cursor: str | None = Field(default=None, max_length=4096)
+    response_mode: TrackerResponseMode = "compact"
+
+
+class TrackerTaskResultsInput(TrackerTaskActivityInput):
+    source_kind: ResultSourceKind | None = None
+
+
+class AgentExecutionRequirements(BaseModel):
+    """Assignment needs, never native permission grants."""
+
+    model_config = ConfigDict(extra="forbid")
+    filesystem_write: bool = Field(default=False, strict=True)
+
+
+class TaskDeliveryAgentOverride(BaseModel):
+    """Task choices may omit fields supplied by project defaults."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str | None = Field(default=None, min_length=1)
+    instructions: str | None = Field(default=None, min_length=1)
+    host_key: str | None = Field(default=None, min_length=1)
+    model: str | None = Field(default=None, min_length=1)
+    provider: str | None = Field(default=None, min_length=1)
+    profile: str | None = Field(default=None, min_length=1)
+    source_ref: AgentSourceRef | None = None
+    model_reasoning_effort: str | None = Field(default=None, min_length=1)
+    execution_requirements: AgentExecutionRequirements | None = None
+
+    @model_validator(mode="after")
+    def one_instruction_owner(self):
+        if self.source_ref is not None and self.instructions is not None:
+            raise ValueError("source_ref owns instructions; remove the editable copy")
+        return self
+
+
+class TaskDeliveryAgent(TaskDeliveryAgentOverride):
+    """A resolved project agent contract, independent of host file layout."""
+
+    name: str = Field(min_length=1)
+    instructions: str = Field(min_length=1)
+
+
+class TaskDeliveryDefaults(BaseModel):
+    """Project defaults; task handoff validates the complete resolved roles."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    host_key: str | None = Field(default=None, min_length=1)
+    main_agent: MainAgentPreferences | None = None
+    delivery_agent: TaskDeliveryAgentOverride | None = None
+    review_agent: TaskDeliveryAgentOverride | None = None
+    agents: dict[AgentRole, TaskDeliveryAgentOverride] | None = None
+
+
+class AgentSourceAdoption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_ref: AgentSourceRef
+    expected_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class TrackerConfigureDeliveryInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(ge=1)
+    delivery: TaskDeliveryDefaults | None = None
+    main_agent: MainAgentPreferences | None = None
+    project_dir: str | None = None
+    adopt_sources: dict[AgentRole, AgentSourceAdoption] | None = None
+    preview: bool = False
+
+    @model_validator(mode="after")
+    def explicit_setup_mode(self):
+        if self.main_agent is not None:
+            if self.delivery is not None or self.adopt_sources is not None or self.preview:
+                raise ValueError("main_agent saves launch preferences only")
+        elif self.adopt_sources is not None:
+            if not self.adopt_sources or not self.project_dir or self.delivery is not None:
+                raise ValueError("adopt_sources requires project_dir and preserves saved delivery")
+        elif self.delivery is None or self.preview:
+            raise ValueError("Provide delivery, or an explicit source adoption preview/write")
+        return self
+
+    response_mode: TrackerResponseMode = "raw"
+
+
+class TaskMcpConfigRef(BaseModel):
+    """Task-only native route identity; never a project/default setting."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ReviewReplacementSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    binding_id: int = Field(gt=0)
+    source_ref: AgentSourceRef
+    expected_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ReviewReplacement(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+    ticket_key: str = Field(min_length=1)
+    expected_attempt: int = Field(gt=0)
+    expected_review_thread_id: str = Field(min_length=1)
+    expected_candidate_commit_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    expected_reviewer_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reason: str = Field(min_length=1, max_length=4000)
+    reviewer_source: ReviewReplacementSource | None = None
+
+
+class TrackerStartDeliveryInput(MCPInput):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    project_id: int
+    task_key: str = Field(min_length=1)
+    project_dir: str = Field(min_length=1)
+    mcp_config_ref: TaskMcpConfigRef | None = Field(
+        default=None,
+        description=(
+            "Task-only absolute native TOML path and SHA256. Existing Codex stdio server "
+            "args/cwd/non-secret env only; immutable across role sessions and rehandoff. "
+            "Keep the fragment outside Git. Other hosts reject this reference."
+        ),
+    )
+    host_key: str | None = Field(default=None, min_length=1)
+    delivery_agent: TaskDeliveryAgentOverride | None = None
+    review_agent: TaskDeliveryAgentOverride | None = None
+    agents: dict[AgentRole, TaskDeliveryAgentOverride] | None = None
+    agent_assignments: dict[str, AgentRole] | None = None
+    run_plan_id: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, min_length=1)
+    replace_review: ReviewReplacement | None = Field(
+        default=None,
+        description=(
+            "Explicit operator-authorized replacement of one quiescent stopped review; "
+            "never restarts delivery."
+        ),
+    )
+    response_mode: TrackerResponseMode = "compact"
+
+    @model_validator(mode="after")
+    def workflow_scope_pair(self):
+        if (self.run_plan_id is None) != (self.step_id is None):
+            raise ValueError("run_plan_id and step_id must be provided together")
+        if self.replace_review is not None and any(
+            value is not None
+            for value in (
+                self.host_key,
+                self.delivery_agent,
+                self.review_agent,
+                self.agents,
+                self.agent_assignments,
+            )
+        ):
+            raise ValueError(
+                "replace_review cannot override agents, assignments or execution settings"
+            )
+        return self
+
 
 TRACKER_STATUS_DESCRIPTION = (
     "Tracker lifecycle status. not-started = planned but not begun; "
@@ -54,6 +255,37 @@ class TrackerProjectInput(MCPInput):
             "the full tracker rows for diagnostics. raw aliases standard."
         ),
     )
+
+
+class AgentStatsFilters(BaseModel):
+    group_by: Literal["agent", "model", "agent_model"] = "agent_model"
+    start_date: date | None = Field(
+        default=None,
+        description="Inclusive local calendar date; supply with end_date, at most 366 days.",
+    )
+    end_date: date | None = Field(
+        default=None, description="Inclusive local calendar date; supply with start_date."
+    )
+    timezone: str = Field(
+        default="UTC",
+        description=(
+            "IANA timezone for launch.started_at calendar days. UI chooses its own default range."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> AgentStatsFilters:
+        stats_timezone(self.start_date, self.end_date, self.timezone)
+        return self
+
+
+class TrackerAgentStatsInput(TrackerProjectInput, AgentStatsFilters):
+    project_id: int = Field(ge=1)
+
+
+class TrackerAgentStatsAllInput(MCPInput, AgentStatsFilters):
+    model_config = ConfigDict(extra="forbid")
+    is_active: StrictBool | None = True
 
 
 class TrackerTicketCountsInput(TrackerProjectInput):
@@ -110,14 +342,19 @@ class TrackerGetInput(MCPInput):
     task_index_only: bool = Field(
         default=False,
         description=(
-            "Return every matching task with an aggregate ticket summary while skipping "
+            "Return every matching task with whole-task agent_stats and an aggregate ticket "
+            "summary while skipping "
             "ticket, dependency, link, and graph hydration. Pair with include_graph=false. "
             "This is intended for operator task indexes before one focused graph is loaded."
         ),
     )
+    projection: Literal["full", "ui"] = "full"
+    metric_demand: TrackerMetricDemand | None = None
 
     @model_validator(mode="after")
     def validate_task_index_scope(self) -> TrackerGetInput:
+        if self.metric_demand is not None and self.projection != "ui":
+            raise ValueError("metric_demand requires projection=ui")
         if not self.task_index_only:
             return self
         if self.include_graph:
@@ -210,6 +447,14 @@ class TrackerChangedInput(MCPInput):
     project_id: int
     since_rev: int | None = None
     limit: int = Field(default=50, ge=1, le=200)
+    projection: Literal["full", "notifications"] = Field(
+        default="full",
+        description=(
+            "notifications returns bounded task identity and before/after lifecycle/handoff "
+            "states only. Omit since_rev to baseline without historical replay; page with "
+            "next_cursor, then persist current_rev. Full history remains the default."
+        ),
+    )
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(
@@ -404,6 +649,59 @@ class TrackerUpdateTaskInput(MCPInput):
     actor: str | None = None
 
 
+class TrackerTaskBoardInput(MCPInput):
+    project_id: StrictInt = Field(gt=0)
+    task_key: StrictStr = Field(min_length=1, max_length=200)
+    expected_status: TrackerItemStatus
+    expected_updated_at: datetime
+    idempotency_key: StrictStr = Field(
+        min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+    )
+    run_token: None = None
+    expected_etag: None = None
+    response_mode: Literal["raw", "standard", "verbose"] = "raw"
+
+
+class TrackerUpdateTaskPriorityInput(TrackerTaskBoardInput):
+    priority_key: Literal["p0", "p1", "p2", "p3"]
+
+
+class TrackerReorderTaskInput(TrackerTaskBoardInput):
+    anchor_task_key: StrictStr = Field(min_length=1, max_length=200)
+    placement: Literal["before", "after"]
+
+
+class TrackerPlaceTaskInput(TrackerTaskBoardInput):
+    board_column: Literal["backlog", "todo"]
+
+
+class TrackerUpdateTaskContentInput(MCPInput):
+    """Human content edits cannot supply tracker or workflow execution state."""
+
+    project_id: StrictInt = Field(gt=0)
+    task_key: StrictStr = Field(min_length=1, max_length=200)
+    expected_updated_at: datetime
+    idempotency_key: StrictStr = Field(
+        min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+    )
+    description: StrictStr | None = Field(default=None, max_length=20_000)
+    additional_input: StrictStr | None = Field(default=None, max_length=20_000)
+    run_token: None = None
+    expected_etag: None = None
+    response_mode: Literal["raw", "standard", "verbose"] = "raw"
+
+    @model_validator(mode="after")
+    def validate_content(self) -> TrackerUpdateTaskContentInput:
+        fields = self.model_fields_set & {"description", "additional_input"}
+        if not fields:
+            raise ValueError("description or additional_input is required")
+        if any(getattr(self, field) is None for field in fields):
+            raise ValueError("content fields cannot be null; use an empty description to clear it")
+        if self.additional_input is not None and not self.additional_input.strip():
+            raise ValueError("additional_input must contain text")
+        return self
+
+
 class TrackerRejectTaskInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
@@ -486,7 +784,7 @@ class TrackerReopenInput(MCPInput):
         default=None,
         description=(
             "Optional workflow step id to resume from. Omit it and StackOS chooses "
-            "the failed/blocked step, deliver-tickets, or the last step."
+            "the first failed/blocked step, or the last step."
         ),
     )
     reason: str
@@ -551,10 +849,19 @@ class TrackerUpdateTicketInput(MCPInput):
     ticket_key: str | None = None
     patch_json: dict[str, Any] | None = Field(
         default=None,
-        description=TRACKER_PATCH_DESCRIPTION,
+        json_schema_extra=TICKET_CORRECTION_PATCH_SCHEMA,
+        description=TRACKER_PATCH_DESCRIPTION
+        + (
+            " Ticket context_json.correction may explicitly admit work_intent "
+            "(evidence_only or source_repair), with the full candidate_commit_sha "
+            "and positive integer target_attempt. Merge existing context/evidence. "
+            "Evidence-only intent applies only to that attempt and unchanged candidate; "
+            "omitted/legacy intent retains source-repair validation."
+        ),
     )
     updates_json: list[dict[str, Any]] | None = Field(
         default=None,
+        json_schema_extra={"items": {"properties": {"patch_json": TICKET_CORRECTION_PATCH_SCHEMA}}},
         description=(
             "Optional list of atomic ticket patch updates. Each item identifies a ticket "
             "by ticket_id or ticket_key and supplies patch_json. Use add_dependency_keys "
@@ -565,8 +872,8 @@ class TrackerUpdateTicketInput(MCPInput):
     dry_run: bool = Field(
         default=False,
         description=(
-            "Preview dependency-changing patch_json or updates_json without writing. "
-            "Returns dependency diffs for dependency fields and leaves ordinary updates quiet."
+            "Validate the exact patch_json or ordered updates_json without writing. "
+            "Uses apply's transition and invariant rules and returns dependency diffs."
         ),
     )
     actor: str | None = None
@@ -634,6 +941,7 @@ class TrackerLinkRunPlanInput(MCPInput):
 
 
 __all__ = [
+    "TaskDeliveryAgent",
     "TrackerChangedInput",
     "TrackerCreateTaskInput",
     "TrackerCreateTicketInput",
@@ -643,13 +951,18 @@ __all__ = [
     "TrackerNextInput",
     "TrackerPatchInput",
     "TrackerPickInput",
+    "TrackerPlaceTaskInput",
     "TrackerProjectInput",
     "TrackerRejectTaskInput",
     "TrackerReleaseInput",
     "TrackerReopenInput",
+    "TrackerReorderTaskInput",
     "TrackerResponseMode",
     "TrackerSearchInput",
+    "TrackerStartDeliveryInput",
     "TrackerTicketInput",
+    "TrackerUpdateTaskContentInput",
     "TrackerUpdateTaskInput",
+    "TrackerUpdateTaskPriorityInput",
     "TrackerUpdateTicketInput",
 ]

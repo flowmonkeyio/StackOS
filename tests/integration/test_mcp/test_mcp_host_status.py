@@ -1,10 +1,13 @@
 """The console can read safe host status; scoped agents cannot inspect other hosts."""
 
+import json
+from dataclasses import asdict, replace
 from threading import get_ident
 
 import pytest
 
 from stackos.host_mcp import service
+from stackos.host_mcp.accounts import DesiredAccount, ResolvedAccountSelection
 from stackos.host_mcp.result import HostMcpResult
 from stackos.operations import build_operation_registry
 
@@ -39,7 +42,16 @@ def inspected(monkeypatch: pytest.MonkeyPatch):
                 selected=True,
                 managed=True,
             ),
-            service.HostMcpPolicy("codex", "ChatGPT / Codex", "automatic"),
+            next(d.policy for d in service._definitions() if d.policy.host_key == "codex"),
+        )
+        result = replace(
+            result,
+            agent_execution={
+                **result.agent_execution,
+                "auth_status_command": ["/private/auth-cli", "private-auth-command"],
+                "config_path": "/private/execution-config",
+                "credential": "private-execution-credential",
+            },
         )
         return service.HostMcpAggregate(ok=True, results=[result])
 
@@ -54,6 +66,110 @@ def test_host_status_has_one_read_only_local_admin_contract() -> None:
     assert all(spec.surfaces.is_enabled(surface) for surface in ("mcp", "rest", "cli"))
     assert spec.response_policy.default_mode == "raw"
     assert spec.response_policy.allowed_modes == ("raw",)
+    schema = spec.output_model.model_json_schema()
+    capability_fields = schema["$defs"]["HostMcpAgentExecutionOut"]["properties"]
+    assert {
+        "models",
+        "reasoning_efforts",
+        "custom_models",
+        "provider_selection",
+        "profile_selection",
+        "requires_provider_model",
+    } <= capability_fields.keys()
+    assert not {"auth_status_command", "config_path", "credential"} & capability_fields.keys()
+
+
+def test_console_subscription_snapshot_is_independent_and_allowlisted(mcp_client, monkeypatch):
+    assert set(service.subscription_readers()) == {"codex", "claude-code", "grok"}
+    client = mcp_client.test_client
+    path = "/api/v1/operations/hostMcp.subscriptions/call"
+    spec = build_operation_registry().get("hostMcp.subscriptions")
+    assert spec.read_only and spec.surfaces.rest.browser_safe
+    assert not spec.surfaces.mcp.enabled and not spec.surfaces.cli.enabled
+    calls = []
+
+    def healthy():
+        calls.append("codex")
+        return {
+            "plan": "ChatGPT Pro",
+            "account": "private-account",
+            "meters": [{"scope": "Weekly", "remaining_percent": 0, "resets_at": None}],
+        }
+
+    def offline():
+        raise RecursionError("private-provider-error")
+
+    monkeypatch.setattr(
+        service,
+        "subscription_readers",
+        lambda: {
+            "codex": healthy,
+            "claude-code": offline,
+            "grok": lambda: None,
+        },
+    )
+    assert client.post(path, json={"arguments": {}}).status_code == 401
+    headers = {"Authorization": f"Bearer {client.app.state.ui_token}"}
+    for arguments in ({"binary": "/tmp/user-choice"}, {"run_token": "test-run-token"}):
+        assert client.post(path, json={"arguments": arguments}, headers=headers).is_error
+    assert not calls
+    response = client.post(path, json={"arguments": {"response_mode": "raw"}}, headers=headers)
+    assert response.status_code == 200, response.text
+    snapshot = response.json()
+    assert snapshot["checked_at"]
+    assert snapshot["readings"] == {
+        "codex": {
+            "plan": "ChatGPT Pro",
+            "meters": [{"scope": "Weekly", "remaining_percent": 0, "resets_at": None}],
+        },
+        "claude-code": None,
+        "grok": None,
+    }
+    assert calls == ["codex"]
+    assert snapshot["selections"] == {
+        key: {"account_ref": None, "revision": 0} for key in ("codex", "claude-code", "grok")
+    }
+
+
+@pytest.mark.parametrize("new_ref", ["a" * 8, "b" * 8])
+def test_subscription_read_drops_only_the_account_that_changed(
+    mcp_client: MCPClient, monkeypatch: pytest.MonkeyPatch, new_ref: str
+) -> None:
+    first = "aaaaaaaa-1111-2222-3333-444444444444"
+    current = DesiredAccount(account_ref=first, revision=1)
+
+    class Accounts:
+        def resolve(self, host_key: str) -> ResolvedAccountSelection:
+            return ResolvedAccountSelection(current if host_key == "codex" else DesiredAccount())
+
+    def interrupted_read():
+        nonlocal current
+        # Covers both A -> B and A -> B -> A while a native quota read is held.
+        current = DesiredAccount(account_ref=f"{new_ref}-1111-2222-3333-444444444444", revision=3)
+        return {"plan": "Old account quota", "meters": []}
+
+    monkeypatch.setattr(service, "host_accounts", lambda _data_dir: Accounts())
+    monkeypatch.setattr(
+        service,
+        "subscription_readers",
+        lambda: {
+            "codex": interrupted_read,
+            "claude-code": lambda: {"plan": "Unchanged sibling", "meters": []},
+        },
+    )
+    client = mcp_client.test_client
+    result = client.post(
+        "/api/v1/operations/hostMcp.subscriptions/call",
+        json={"arguments": {}},
+        headers={"Authorization": f"Bearer {client.app.state.ui_token}"},
+    )
+    assert result.status_code == 200, result.text
+    snapshot = result.json()
+    assert snapshot["readings"] == {
+        "codex": None,
+        "claude-code": {"plan": "Unchanged sibling", "meters": []},
+    }
+    assert snapshot["selections"]["codex"] == current.model_dump()
 
 
 def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspected) -> None:
@@ -74,11 +190,25 @@ def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspec
     assert row["selected"] is True
     assert row["managed"] is True
     assert not {"command", "config_path", "target", "targets"} & row.keys()
+    capability = row["agent_execution"]
+    expected = asdict(
+        next(
+            d.policy.agent_execution for d in service._definitions() if d.policy.host_key == "codex"
+        )
+    )
+    expected.pop("auth_status_command")
+    expected.update(credential_status="not_checked", model_access="not_checked")
+    assert capability == json.loads(json.dumps(expected))
+    assert not {"auth_status_command", "config_path", "credential"} & capability.keys()
     for secret in (
         "synthetic-secret",
         "raw-config-fragment",
         "private-profile",
         "/private/host-config",
+        "/private/auth-cli",
+        "private-auth-command",
+        "/private/execution-config",
+        "private-execution-credential",
     ):
         assert secret not in response.text
     assert len(inspected) == 1

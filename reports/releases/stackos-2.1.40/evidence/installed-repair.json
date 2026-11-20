@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+    "install",
+    "--launchd",
+    "--force"
+  ],
+  "captured_at": "2026-10-28T17:13:27.235570+00:00",
+  "seconds": 4.848,
+  "exit_code": 0,
+  "log": "/tmp/stackos-release-20261028/installed-repair.log"
+}

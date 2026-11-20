@@ -3,14 +3,22 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+import json
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from pydantic import TypeAdapter
+from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import update
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     TRACKER_ITEM_STATUS_TRANSITIONS,
+    IdempotencyKey,
     Run,
     RunPlan,
     RunPlanStatus,
@@ -21,7 +29,6 @@ from stackos.db.models import (
     TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
-    TrackerTicketDependency,
     TrackerTicketKind,
 )
 from stackos.repositories.base import (
@@ -32,11 +39,21 @@ from stackos.repositories.base import (
     validate_transition,
 )
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL_RUN_STATUSES
+from stackos.repositories.tracker.board import BoardColumn, task_columns
+from stackos.repositories.tracker.events import TrackerTaskChange, _tracker_task_path
+from stackos.repositories.tracker.ordering import next_task_position, task_column_rows
 from stackos.repositories.tracker.schema import (
+    TrackerCorrectionIntent,
+    TrackerDeliveryScopeExclusion,
+    TrackerDependencyPreviewOut,
     TrackerListItemResultOut,
     TrackerMutationOut,
     TrackerReopenOut,
+    TrackerTaskBoardOut,
+    TrackerTaskContentOut,
+    TrackerTaskInputOut,
 )
+from stackos.repositories.tracker.ticket_list_specs import ticket_reference_ref
 from stackos.repositories.tracker.utils import (
     TERMINAL_TRACKER_STATUSES,
     _clean_text,
@@ -109,6 +126,26 @@ _WORKFLOW_MIRROR_OWNED_TICKET_FIELDS = frozenset(
         "source_json",
     }
 )
+_TICKET_TEXT_PATCH_FIELDS = (
+    "title",
+    "goal",
+    "assignee",
+    "priority_key",
+    "lane_key",
+    "blocker_reason",
+    "outcome",
+    "effort",
+)
+_TICKET_JSON_PATCH_FIELDS = (
+    "source_json",
+    "definition_of_done_json",
+    "constraints_json",
+    "expected_changes_json",
+    "allowed_paths_json",
+    "completion_evidence_json",
+    "context_json",
+    "metadata_json",
+)
 
 
 class TrackerMutationMixin:
@@ -156,7 +193,7 @@ class TrackerMutationMixin:
             lane_key=lane_key,
             owner=owner,
             task_type=task_type,
-            order_index=self._next_task_position(tracker.id),
+            order_index=0,
             source_kind=source_kind,
             source_json=redact_secrets(source_json) if source_json is not None else None,
             definition_of_done_json=definition_of_done_json or [],
@@ -177,6 +214,10 @@ class TrackerMutationMixin:
         )
         if status in TERMINAL_TRACKER_STATUSES:
             row.lane_key = "done"
+        initial_column = task_columns(self._s, [row])[row.id]
+        row.order_index = next_task_position(
+            self._s, tracker.id, status, board_column=initial_column
+        )
         self._s.add(row)
         self._s.flush()
         assert row.id is not None
@@ -203,6 +244,12 @@ class TrackerMutationMixin:
                     now=now,
                 )
             )
+        final_column = task_columns(self._s, [row])[row.id]
+        if final_column != initial_column:
+            row.order_index = next_task_position(
+                self._s, tracker.id, row.status, exclude_task_id=row.id, board_column=final_column
+            )
+            self._s.add(row)
         self._record_revision(
             tracker,
             actor=created_by,
@@ -262,62 +309,82 @@ class TrackerMutationMixin:
         created_by: str | None = None,
         commit: bool = True,
     ) -> Envelope[TrackerMutationOut]:
-        tracker = self.ensure_tracker(project_id=project_id)
-        task = self._task_by_key(tracker.id, task_key)
-        key = _slug(key, fallback="ticket", max_length=180)
-        if self._ticket_by_key(tracker.id, key, missing_ok=True) is not None:
-            raise ConflictError("tracker ticket key already exists", data={"ticket_key": key})
-        parent_id: int | None = None
-        if parent_ticket_key:
-            parent = self._ticket_by_key(tracker.id, parent_ticket_key)
-            parent_id = parent.id
-        now = _utcnow()
-        ticket = self._create_ticket_row(
-            tracker=tracker,
-            task=task,
-            key=key,
-            title=title,
-            goal=goal,
-            status=status,
-            kind=kind,
-            assignee=assignee,
-            priority_key=priority_key,
-            lane_key=lane_key,
-            parent_ticket_id=parent_id,
-            blocker_reason=blocker_reason,
-            outcome=outcome,
-            effort=effort,
-            source_kind=source_kind,
-            source_json=source_json,
-            definition_of_done_json=definition_of_done_json,
-            constraints_json=constraints_json,
-            expected_changes_json=expected_changes_json,
-            allowed_paths_json=allowed_paths_json,
-            completion_evidence_json=completion_evidence_json,
-            context_json=context_json,
-            metadata_json=metadata_json,
-            run_plan_id=run_plan_id,
-            run_plan_step_id=run_plan_step_id,
-            created_by=created_by,
-            now=now,
-        )
-        for dependency_key in dependency_keys or []:
-            dependency = self._ticket_by_key(tracker.id, dependency_key)
-            self._add_dependency(tracker, ticket, dependency)
-        for reference in references_json or []:
-            self._add_reference(tracker, ticket, reference)
-        self._sync_task_status(task, now=now)
-        self._record_revision(
-            tracker,
-            actor=created_by,
-            change_kind="create",
-            entity_kind="ticket",
-            entity_id=ticket.id,
-            entity_key=ticket.key,
-            summary=f"Created ticket {ticket.key}.",
-            after_json=self._ticket_snapshot(ticket),
-            commit=False,
-        )
+        if not commit:
+            # SQLite legacy transaction control does not BEGIN for SAVEPOINT.
+            # Without an outer transaction, RELEASE would commit this caller's work.
+            connection = self._s.connection()
+            if (
+                connection.dialect.name == "sqlite"
+                and not connection.connection.driver_connection.in_transaction
+            ):
+                connection.exec_driver_sql("BEGIN")
+        with self._s.begin_nested():
+            tracker = self.ensure_tracker(project_id=project_id)
+            task = self._task_by_key(tracker.id, task_key)
+            old_column = task_columns(self._s, [task])[task.id]
+            key = _slug(key, fallback="ticket", max_length=180)
+            if self._ticket_by_key(tracker.id, key, missing_ok=True) is not None:
+                raise ConflictError("tracker ticket key already exists", data={"ticket_key": key})
+            parent_id: int | None = None
+            if parent_ticket_key:
+                parent = self._ticket_by_key(tracker.id, parent_ticket_key)
+                parent_id = parent.id
+            now = _utcnow()
+            ticket = self._create_ticket_row(
+                tracker=tracker,
+                task=task,
+                key=key,
+                title=title,
+                goal=goal,
+                status=status,
+                kind=kind,
+                assignee=assignee,
+                priority_key=priority_key,
+                lane_key=lane_key,
+                parent_ticket_id=parent_id,
+                blocker_reason=blocker_reason,
+                outcome=outcome,
+                effort=effort,
+                source_kind=source_kind,
+                source_json=source_json,
+                definition_of_done_json=definition_of_done_json,
+                constraints_json=constraints_json,
+                expected_changes_json=expected_changes_json,
+                allowed_paths_json=allowed_paths_json,
+                completion_evidence_json=completion_evidence_json,
+                context_json=context_json,
+                metadata_json=metadata_json,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                created_by=created_by,
+                now=now,
+            )
+            self._validate_delivery_scope(
+                tracker,
+                task.id,
+                ticket.metadata_json,
+                ticket.status,
+                parent_ticket_key,
+                ticket_key=ticket.key,
+            )
+            for dependency_key in dependency_keys or []:
+                dependency = self._ticket_by_key(tracker.id, dependency_key)
+                self._add_dependency(tracker, ticket, dependency)
+            for reference in references_json or []:
+                self._add_reference(tracker, ticket, reference)
+            self._sync_task_status(task, now=now, old_column=old_column)
+            self._record_revision(
+                tracker,
+                actor=created_by,
+                change_kind="create",
+                entity_kind="ticket",
+                entity_id=ticket.id,
+                entity_key=ticket.key,
+                summary=f"Created ticket {ticket.key}.",
+                after_json=self._ticket_snapshot(ticket),
+                patch_json={"lane_key": lane_key} if status in TERMINAL_TRACKER_STATUSES else None,
+                commit=False,
+            )
         if commit:
             self._s.commit()
             self._s.refresh(ticket)
@@ -346,6 +413,7 @@ class TrackerMutationMixin:
         task = self._task_by_key(tracker.id, task_key)
         before = self._task_snapshot(task)
         old_status = task.status
+        old_column = task_columns(self._s, [task])[task.id]
         self._apply_task_patch(task, patch_json)
         self._record_tracker_task_status_event(
             task,
@@ -353,6 +421,7 @@ class TrackerMutationMixin:
             task.status,
             actor=actor,
             reason="tracker.update_task",
+            old_column=old_column,
         )
         self._record_revision(
             tracker,
@@ -380,6 +449,397 @@ class TrackerMutationMixin:
             ),
             project_id=project_id,
         )
+
+    def update_task_board(
+        self,
+        *,
+        project_id: int,
+        task_key: str,
+        expected_status: TrackerItemStatus,
+        expected_updated_at: datetime,
+        idempotency_key: str,
+        priority_key: str | None = None,
+        board_column: BoardColumn | None = None,
+        anchor_task_key: str | None = None,
+        placement: str | None = None,
+        actor: str | None = None,
+    ) -> Envelope[TrackerTaskBoardOut]:
+        """Save one explicit priority or same-column neighbor intent atomically."""
+        priority_edit = priority_key is not None
+        column_edit = board_column is not None
+        if column_edit:
+            if board_column not in {"backlog", "todo"} or any(
+                value is not None for value in (priority_key, anchor_task_key, placement)
+            ):
+                raise ValidationError("placement accepts only Backlog or Todo")
+        elif priority_edit:
+            if (
+                priority_key not in {"p0", "p1", "p2", "p3"}
+                or anchor_task_key is not None
+                or placement is not None
+            ):
+                raise ValidationError("priority save accepts only p0, p1, p2 or p3")
+        elif not anchor_task_key or placement not in {"before", "after"}:
+            raise ValidationError("reorder requires an anchor task and before/after placement")
+        if not idempotency_key or self._s.new or self._s.dirty or self._s.deleted:
+            raise ValidationError(
+                "Board save requires an intent key and clean repository transaction"
+            )
+        expected = (
+            expected_updated_at.astimezone(UTC).replace(tzinfo=None)
+            if expected_updated_at.tzinfo
+            else expected_updated_at
+        )
+        intent = {
+            "project_id": project_id,
+            "task_key": task_key,
+            "expected_status": _status_value(expected_status),
+            "expected_updated_at": expected.isoformat(),
+            "priority_key": priority_key,
+            "anchor_task_key": anchor_task_key,
+            "placement": placement,
+            **({"board_column": board_column} if column_edit else {}),
+        }
+        fingerprint = hashlib.sha256(json.dumps(intent, sort_keys=True).encode()).hexdigest()
+        operation = (
+            "tracker.placeTask"
+            if column_edit
+            else "tracker.updateTaskPriority"
+            if priority_edit
+            else "tracker.reorderTask"
+        )
+        try:
+            # Reserve the SQLite writer before reading status, anchors or retry receipts.
+            self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            self._s.expire_all()
+            tracker = self._tracker_or_none(project_id=project_id)
+            if tracker is None:
+                raise NotFoundError("tracker task not found", data={"task_key": task_key})
+            task = self._task_by_key(tracker.id, task_key)
+            prior = self._s.exec(
+                select(IdempotencyKey).where(
+                    IdempotencyKey.project_id == project_id,
+                    IdempotencyKey.tool_name == operation,
+                    IdempotencyKey.idempotency_key == idempotency_key,
+                )
+            ).first()
+            if prior is not None:
+                saved = prior.response_json or {}
+                if saved.get("data", {}).get("request_sha256") != fingerprint:
+                    raise ConflictError(
+                        "idempotency key belongs to a different Board intent",
+                        data={"task_key": task_key, "next_operations": ["tracker.get"]},
+                    )
+                replay = Envelope[TrackerTaskBoardOut].model_validate(saved)
+                replay.data.replayed = True
+                self._s.commit()
+                return replay
+            if task.status != expected_status or task.updated_at != expected:
+                raise ConflictError(
+                    "task changed; refresh before saving again",
+                    data={
+                        "task_key": task.key,
+                        "current_status": _status_value(task.status),
+                        "current_updated_at": task.updated_at.isoformat(),
+                        "next_operations": ["tracker.get"],
+                    },
+                )
+            changed_rows: list[TrackerTask] = []
+            rank_changes: set[int | None] = set()
+            before: dict[str, Any]
+            after: dict[str, Any]
+            if column_edit:
+                from stackos.repositories.tracker.schema import TaskDeliveryStateOut
+
+                handoff = TaskDeliveryStateOut.from_metadata(task.metadata_json)
+                if task.status != TrackerItemStatus.NOT_STARTED or (
+                    handoff is not None and handoff.status != "complete"
+                ):
+                    raise ValidationError(
+                        "placement requires nonstarted work without an open delivery handoff; "
+                        "resume deferred work explicitly"
+                    )
+                current_column = task_columns(self._s, [task])[task.id]
+                before = {"lane_key": task.lane_key, "board_column": current_column}
+                if current_column != board_column:
+                    self.ensure_tracker(project_id=project_id)
+                    task.lane_key = "backlog" if board_column == "backlog" else "implementation"
+                    task.order_index = next_task_position(
+                        self._s,
+                        task.tracker_id,
+                        task.status,
+                        exclude_task_id=task.id,
+                        board_column=board_column,
+                    )
+                    changed_rows = [task]
+                after = {"lane_key": task.lane_key, "board_column": board_column}
+            elif priority_edit:
+                before = {"priority_key": task.priority_key}
+                if task.priority_key != priority_key:
+                    task.priority_key = priority_key
+                    changed_rows = [task]
+                after = {"priority_key": task.priority_key}
+            else:
+                # Same comparator as the Board projection: integer rank, newest
+                # creation first for ties, then descending stable numeric ID.
+                column = task_column_rows(
+                    self._s,
+                    _required_id(tracker.id, "tracker"),
+                    project_id,
+                    task_columns(self._s, [task])[task.id],
+                )
+                anchor = next((row for row in column if row.key == anchor_task_key), None)
+                if anchor is None:
+                    raise ConflictError(
+                        "anchor changed; refresh the column before moving again",
+                        data={
+                            "task_key": task.key,
+                            "anchor_task_key": anchor_task_key,
+                            "next_operations": ["tracker.get"],
+                        },
+                    )
+                reordered = list(column)
+                if anchor.id != task.id:
+                    reordered.remove(task)
+                    reordered.insert(reordered.index(anchor) + (placement == "after"), task)
+                before = {
+                    "order": [
+                        {"task_key": row.key, "order_index": row.order_index} for row in column
+                    ]
+                }
+                if [row.id for row in reordered] != [row.id for row in column]:
+                    for index, row in enumerate(reordered):
+                        if row.order_index != index:
+                            row.order_index = index
+                            changed_rows.append(row)
+                            rank_changes.add(row.id)
+                    # Moving within tied ranks can retain the moved task's
+                    # integer while changing its relative position. Invalidate
+                    # its snapshot and selected-task stream as well.
+                    if task not in changed_rows:
+                        changed_rows.append(task)
+                after = {
+                    "order": [
+                        {"task_key": row.key, "order_index": row.order_index} for row in reordered
+                    ]
+                }
+            for row in changed_rows:
+                row.updated_at = max(_utcnow(), row.updated_at + timedelta(microseconds=1))
+                self._s.add(row)
+            if changed_rows:
+                self._record_revision(
+                    tracker,
+                    actor=actor,
+                    change_kind="board",
+                    entity_kind="task",
+                    entity_id=task.id,
+                    entity_key=task.key,
+                    summary=f"Updated task Board state {task.key}.",
+                    before_json=before,
+                    after_json=after,
+                    patch_json=intent,
+                    metadata_json={"operation": operation, "idempotency_key": idempotency_key},
+                )
+                if priority_edit or column_edit:
+                    fields = (
+                        ["lane_key", "board_column", "order_index"]
+                        if column_edit
+                        else ["priority_key"]
+                    )
+                    self._record_tracker_task_change_event(task, fields, actor=actor)
+                else:
+                    self._record_tracker_tasks_change_event(
+                        project_id=project_id,
+                        tracker_id=_required_id(tracker.id, "tracker"),
+                        rev=tracker.rev,
+                        changes=[
+                            TrackerTaskChange(
+                                task_id=_required_id(row.id, "task"),
+                                task_key=row.key,
+                                changed_fields=[
+                                    "order_index" if row.id in rank_changes else "order"
+                                ],
+                                url_path=_tracker_task_path(row),
+                            )
+                            for row in changed_rows
+                        ],
+                        actor=actor,
+                    )
+            result = Envelope(
+                data=TrackerTaskBoardOut(
+                    task=self._task_out(task),
+                    affected_task_keys=[row.key for row in changed_rows],
+                    changed=bool(changed_rows),
+                    rev=tracker.rev,
+                    idempotency_key=idempotency_key,
+                    request_sha256=fingerprint,
+                ),
+                project_id=project_id,
+            )
+            self._s.add(
+                IdempotencyKey(
+                    project_id=project_id,
+                    tool_name=operation,
+                    idempotency_key=idempotency_key,
+                    response_json=result.model_dump(mode="json"),
+                )
+            )
+            self._s.commit()
+            return result
+        except Exception:
+            self._s.rollback()
+            raise
+
+    def update_task_content(
+        self,
+        *,
+        project_id: int,
+        task_key: str,
+        expected_updated_at: datetime,
+        idempotency_key: str,
+        description: str | None = None,
+        additional_input: str | None = None,
+    ) -> Envelope[TrackerTaskContentOut]:
+        """Atomically save human content and its intent-bound retry receipt.
+
+        This entry point owns its transaction. It deliberately avoids the broad
+        task patcher, whose terminal-state normalization can also change lanes.
+        """
+        if description is None and additional_input is None:
+            raise ValidationError("description or additional_input is required")
+        for value in (description, additional_input):
+            if value is not None and (not isinstance(value, str) or len(value) > 20_000):
+                raise ValidationError("task content must be a string of at most 20000 characters")
+        if additional_input is not None and not additional_input.strip():
+            raise ValidationError("additional_input must contain text")
+        if self._s.new or self._s.dirty or self._s.deleted:
+            raise ValidationError("task content save requires a clean repository transaction")
+        expected = (
+            expected_updated_at.astimezone(UTC).replace(tzinfo=None)
+            if expected_updated_at.tzinfo is not None
+            else expected_updated_at
+        )
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "project_id": project_id,
+                    "task_key": task_key,
+                    "expected_updated_at": expected.isoformat(),
+                    "description": description,
+                    "additional_input": additional_input,
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        operation = "tracker.updateTaskContent"
+        try:
+            # Reserve the SQLite writer before reading the task, revision or
+            # receipt. Concurrent callers cannot append from the same snapshot.
+            self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            self._s.expire_all()
+            tracker = self._tracker_or_none(project_id=project_id)
+            if tracker is None:
+                raise NotFoundError("tracker task not found", data={"task_key": task_key})
+            task = self._task_by_key(tracker.id, task_key)
+            prior = self._s.exec(
+                select(IdempotencyKey).where(
+                    IdempotencyKey.project_id == project_id,
+                    IdempotencyKey.tool_name == operation,
+                    IdempotencyKey.idempotency_key == idempotency_key,
+                )
+            ).first()
+            if prior is not None:
+                saved = prior.response_json or {}
+                receipt = saved.get("data", {})
+                if receipt.get("request_sha256") != fingerprint:
+                    raise ConflictError(
+                        "idempotency key belongs to a different task content submission",
+                        data={"task_key": task_key, "idempotency_key": idempotency_key},
+                    )
+                replay = Envelope[TrackerTaskContentOut].model_validate(saved)
+                replay.data.replayed = True
+                self._s.commit()
+                return replay
+            if task.updated_at != expected:
+                raise ConflictError(
+                    "task changed; refresh its details before saving again",
+                    data={
+                        "task_key": task.key,
+                        "expected_updated_at": expected.isoformat(),
+                        "current_updated_at": task.updated_at.isoformat(),
+                        "next_operations": ["tracker.get"],
+                    },
+                )
+            before = self._task_snapshot(task)
+            now = max(_utcnow(), task.updated_at + timedelta(microseconds=1))
+            appended = None
+            patch: dict[str, Any] = {}
+            if additional_input is not None:
+                context = deepcopy(task.context_json or {})
+                existing = context.get("operator_inputs", [])
+                try:
+                    if not isinstance(existing, list):
+                        raise ValueError("operator_inputs is not a list")
+                    for item in existing:
+                        TrackerTaskInputOut.model_validate(item)
+                except (ValueError, PydanticValidationError) as exc:
+                    raise ValidationError(
+                        "task operator inputs need repair before another input can be added",
+                        data={"task_key": task.key, "field": "context_json.operator_inputs"},
+                    ) from exc
+                if any(item["id"] == idempotency_key for item in existing):
+                    raise ConflictError("input id already exists; refresh before retrying")
+                appended = TrackerTaskInputOut(
+                    id=idempotency_key,
+                    text=_clean_text(additional_input),
+                    created_at=now,
+                    actor="local-user:operator",
+                )
+                context["operator_inputs"] = [*existing, appended.model_dump(mode="json")]
+                task.context_json = context
+                patch["additional_input"] = appended.model_dump(mode="json")
+            if description is not None:
+                task.description = _clean_text(description)
+                patch["description"] = task.description
+            task.updated_at = now
+            self._s.add(task)
+            self._record_revision(
+                tracker,
+                actor="local-user:operator",
+                change_kind="content",
+                entity_kind="task",
+                entity_id=task.id,
+                entity_key=task.key,
+                summary=f"Updated task content {task.key}.",
+                before_json=before,
+                after_json=self._task_snapshot(task),
+                patch_json=patch,
+                metadata_json={"operation": operation, "idempotency_key": idempotency_key},
+            )
+            result = Envelope(
+                data=TrackerTaskContentOut(
+                    task=self._task_out(task),
+                    rev=tracker.rev,
+                    input=appended,
+                    idempotency_key=idempotency_key,
+                    request_sha256=fingerprint,
+                ),
+                project_id=project_id,
+            )
+            self._s.add(
+                IdempotencyKey(
+                    project_id=project_id,
+                    tool_name=operation,
+                    idempotency_key=idempotency_key,
+                    response_json=result.model_dump(mode="json"),
+                )
+            )
+            self._s.commit()
+            return result
+        except Exception:
+            self._s.rollback()
+            raise
 
     def reopen_task(
         self,
@@ -679,15 +1139,15 @@ class TrackerMutationMixin:
         commit: bool = True,
         dry_run: bool = False,
     ) -> Envelope[TrackerMutationOut]:
-        tracker = self.ensure_tracker(project_id=project_id)
+        tracker = self._tracker_or_none(project_id=project_id)
+        if tracker is None:
+            raise NotFoundError("tracker ticket not found", data={"ticket_key": ticket_key})
         ticket = self._ticket_by_key(tracker.id, ticket_key)
         task = self._s.get(TrackerTask, ticket.task_id)
         if task is None:
             raise NotFoundError("ticket task not found", data={"ticket_key": ticket_key})
-        self._validate_ticket_patch_fields(patch_json)
         if dry_run:
-            self._validate_workflow_ticket_patch_status(ticket, patch_json)
-            dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
+            dependency_preview = self._validate_ticket_patch(tracker, ticket, patch_json)
             warnings = dependency_preview.warnings if dependency_preview is not None else []
             return Envelope(
                 data=TrackerMutationOut(
@@ -712,9 +1172,12 @@ class TrackerMutationMixin:
                 ),
                 project_id=project_id,
             )
+        old_task_column = task_columns(self._s, [task])[task.id]
         before = self._ticket_snapshot(ticket)
         old_status = ticket.status
         self._apply_ticket_patch(tracker, ticket, patch_json)
+        if "completion_evidence_json" in patch_json:
+            self._record_tracker_usage_event(ticket, task, before.get("completion_evidence_json"))
         self._record_tracker_ticket_status_event(
             ticket,
             old_status,
@@ -723,7 +1186,7 @@ class TrackerMutationMixin:
             actor=actor,
             reason="tracker.update_ticket",
         )
-        self._sync_task_status(task, now=_utcnow())
+        self._sync_task_status(task, now=_utcnow(), old_column=old_task_column)
         self._record_revision(
             tracker,
             actor=actor,
@@ -777,6 +1240,7 @@ class TrackerMutationMixin:
                 task = self._task_by_key(tracker.id, str(task_key))
                 before = self._task_snapshot(task)
                 old_status = task.status
+                old_column = task_columns(self._s, [task])[task.id]
                 self._apply_task_patch(task, task_patch)
                 self._record_tracker_task_status_event(
                     task,
@@ -784,6 +1248,7 @@ class TrackerMutationMixin:
                     task.status,
                     actor=actor,
                     reason="tracker.patch_task",
+                    old_column=old_column,
                 )
                 changed_task = task
                 self._record_revision(
@@ -808,6 +1273,7 @@ class TrackerMutationMixin:
                 if ticket_task is None:
                     raise NotFoundError("ticket task not found", data={"ticket_key": ticket.key})
                 before = self._ticket_snapshot(ticket)
+                old_task_column = task_columns(self._s, [ticket_task])[ticket_task.id]
                 old_status = ticket.status
                 self._apply_ticket_patch(tracker, ticket, ticket_patch)
                 self._record_tracker_ticket_status_event(
@@ -818,7 +1284,7 @@ class TrackerMutationMixin:
                     actor=actor,
                     reason="tracker.patch_ticket",
                 )
-                self._sync_task_status(ticket_task, now=_utcnow())
+                self._sync_task_status(ticket_task, now=_utcnow(), old_column=old_task_column)
                 changed_task = ticket_task
                 changed_tickets.append(ticket)
                 self._record_revision(
@@ -920,6 +1386,7 @@ class TrackerMutationMixin:
         allow_workflow_status_from_run_plan: bool = False,
     ) -> TrackerTicket:
         now = now or _utcnow()
+        self._validate_correction_intent(context_json)
         self._validate_workflow_task_ticket_binding(
             task=task,
             key=key,
@@ -934,9 +1401,9 @@ class TrackerMutationMixin:
             allow_workflow_status_from_run_plan=allow_workflow_status_from_run_plan,
         )
         row = TrackerTicket(
-            tracker_id=tracker.id,
+            tracker_id=_required_id(tracker.id, "tracker"),
             project_id=tracker.project_id,
-            task_id=task.id,
+            task_id=_required_id(task.id, "task"),
             parent_ticket_id=parent_ticket_id,
             run_plan_id=run_plan_id,
             run_plan_step_id=run_plan_step_id,
@@ -1044,9 +1511,45 @@ class TrackerMutationMixin:
                 },
             )
 
+    def _redact_task_metadata(self, task: TrackerTask, metadata: Any) -> Any:
+        """Preserve verified ticket-to-role selectors, not arbitrary metadata."""
+        from stackos.operations.tracker.schemas import AgentRole
+
+        safe = redact_secrets(metadata)
+        delivery = metadata.get("delivery") if isinstance(metadata, dict) else None
+        if not isinstance(delivery, dict):
+            return safe
+        assignments = delivery.get("agent_assignments")
+        agents = safe["delivery"].get("agents")
+        if not isinstance(assignments, dict) or not isinstance(agents, dict):
+            return safe
+        ticket_keys = set(
+            self._s.exec(
+                select(TrackerTicket.key).where(
+                    TrackerTicket.task_id == task.id,
+                    TrackerTicket.tracker_id == task.tracker_id,
+                )
+            )
+        )
+        for key, role in assignments.items():
+            try:
+                TypeAdapter(AgentRole).validate_python(role)
+            except PydanticValidationError:
+                continue
+            if key in ticket_keys and isinstance(agents.get(role), dict):
+                # Admission already checks these selectors. Recheck their actual
+                # owners here before restoring the reference after generic
+                # key-based redaction. Agent contents and all other metadata
+                # retain normal redaction, including nested secret-like keys.
+                safe["delivery"]["agent_assignments"][key] = role
+        return safe
+
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
         self._validate_task_patch_fields(patch_json)
         self._validate_workflow_task_patch(task, patch_json)
+        old_priority = task.priority_key
+        old_status = task.status
+        old_column = task_columns(self._s, [task])[task.id]
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -1088,11 +1591,22 @@ class TrackerMutationMixin:
             "metadata_json",
         ):
             if field in patch_json:
-                setattr(task, field, redact_secrets(_jsonable(patch_json[field])))
+                value = _jsonable(patch_json[field])
+                setattr(
+                    task,
+                    field,
+                    self._redact_task_metadata(task, value)
+                    if field == "metadata_json"
+                    else redact_secrets(value),
+                )
         if task.status in TERMINAL_TRACKER_STATUSES:
             task.lane_key = "done"
+        if task.priority_key != old_priority:
+            self._record_tracker_task_change_event(task, ["priority_key"])
         task.updated_at = now
         self._s.add(task)
+        if old_status == task.status:
+            self._record_task_board_entry(task, old_column)
 
     def _validate_workflow_task_patch(
         self,
@@ -1118,19 +1632,12 @@ class TrackerMutationMixin:
         ticket: TrackerTicket,
         patch_json: dict[str, Any],
     ) -> None:
-        self._validate_ticket_patch_fields(patch_json)
-        self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
+        dependency_preview = self._validate_ticket_patch(tracker, ticket, patch_json)
+        metadata = self._ticket_metadata_after_patch(ticket, patch_json)
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
             if ticket.status != new_status:
-                self._validate_workflow_ticket_status_change(ticket, new_status)
-                validate_transition(
-                    ticket.status,
-                    new_status,
-                    TRACKER_ITEM_STATUS_TRANSITIONS,
-                    label="tracker_ticket.status",
-                )
                 ticket.status = new_status
                 if new_status == TrackerItemStatus.IN_PROGRESS:
                     ticket.started_at = ticket.started_at or now
@@ -1145,16 +1652,7 @@ class TrackerMutationMixin:
                         ticket.blocker_reason = None
                 else:
                     ticket.completed_at = None
-        for field in (
-            "title",
-            "goal",
-            "assignee",
-            "priority_key",
-            "lane_key",
-            "blocker_reason",
-            "outcome",
-            "effort",
-        ):
+        for field in _TICKET_TEXT_PATCH_FIELDS:
             if field in patch_json:
                 value = patch_json[field]
                 setattr(ticket, field, _clean_text(value) if isinstance(value, str) else value)
@@ -1166,81 +1664,180 @@ class TrackerMutationMixin:
             parent_key = patch_json["parent_ticket_key"]
             parent = self._ticket_by_key(tracker.id, str(parent_key)) if parent_key else None
             ticket.parent_ticket_id = parent.id if parent is not None else None
-        for field in (
-            "source_json",
-            "definition_of_done_json",
-            "constraints_json",
-            "expected_changes_json",
-            "allowed_paths_json",
-            "completion_evidence_json",
-            "context_json",
-            "metadata_json",
-        ):
+        for field in _TICKET_JSON_PATCH_FIELDS:
             if field in patch_json:
                 setattr(ticket, field, redact_secrets(_jsonable(patch_json[field])))
-        if "dependency_keys" in patch_json:
-            if "add_dependency_keys" in patch_json or "remove_dependency_keys" in patch_json:
-                raise ValidationError(
-                    "dependency_keys cannot be combined with add_dependency_keys or "
-                    "remove_dependency_keys"
-                )
-            if not isinstance(patch_json["dependency_keys"], list):
-                raise ValidationError("dependency_keys must be a list")
+        ticket.metadata_json = metadata
+        if dependency_preview is not None:
+            final_keys = dependency_preview.final_dependency_keys
             for dep in self._dependency_rows_for_ticket(ticket.id):
-                self._s.delete(dep)
+                dependency = self._s.get(TrackerTicket, dep.depends_on_ticket_id)
+                if dependency is not None and dependency.key not in final_keys:
+                    self._s.delete(dep)
             self._s.flush()
-            for dependency_key in patch_json["dependency_keys"]:
-                dependency = self._ticket_by_key(tracker.id, str(dependency_key))
-                self._add_dependency(tracker, ticket, dependency)
-        if "add_dependency_keys" in patch_json:
-            if not isinstance(patch_json["add_dependency_keys"], list):
-                raise ValidationError("add_dependency_keys must be a list")
-            for dependency_key in dict.fromkeys(
-                str(key) for key in patch_json["add_dependency_keys"]
-            ):
+            for dependency_key in final_keys:
                 dependency = self._ticket_by_key(tracker.id, dependency_key)
                 self._add_dependency(tracker, ticket, dependency)
-        if "remove_dependency_keys" in patch_json:
-            if not isinstance(patch_json["remove_dependency_keys"], list):
-                raise ValidationError("remove_dependency_keys must be a list")
-            for dependency_key in dict.fromkeys(
-                str(key) for key in patch_json["remove_dependency_keys"]
-            ):
-                dependency = self._ticket_by_key(tracker.id, dependency_key)
-                edge = self._s.exec(
-                    select(TrackerTicketDependency).where(
-                        TrackerTicketDependency.ticket_id == ticket.id,
-                        TrackerTicketDependency.depends_on_ticket_id == dependency.id,
-                    )
-                ).first()
-                if edge is None:
-                    raise ValidationError(
-                        "ticket dependency edge does not exist",
-                        data={"ticket_key": ticket.key, "depends_on": dependency.key},
-                    )
-                self._s.delete(edge)
         if "references_json" in patch_json:
-            if not isinstance(patch_json["references_json"], list):
-                raise ValidationError("references_json must be a list")
             for reference in patch_json["references_json"]:
-                if not isinstance(reference, dict):
-                    raise ValidationError("references_json entries must be objects")
                 self._add_reference(tracker, ticket, reference)
         if ticket.status in TERMINAL_TRACKER_STATUSES:
             ticket.lane_key = "done"
         ticket.updated_at = now
         self._s.add(ticket)
 
-    def _validate_workflow_ticket_patch_status(
+    def _validate_ticket_patch(
         self,
+        tracker: TaskTracker,
         ticket: TrackerTicket,
         patch_json: dict[str, Any],
+        *,
+        dependency_overrides: dict[int, list[int]] | None = None,
+    ) -> TrackerDependencyPreviewOut | None:
+        """Validate without changing rows, timestamps, revisions or emitting events."""
+        self._validate_ticket_patch_fields(patch_json)
+        self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
+        for field in _TICKET_TEXT_PATCH_FIELDS + _TICKET_JSON_PATCH_FIELDS:
+            if field not in patch_json:
+                continue
+            value = patch_json[field]
+            try:
+                if field in _TICKET_JSON_PATCH_FIELDS:
+                    value = redact_secrets(_jsonable(value))
+                elif isinstance(value, str):
+                    value = _clean_text(value)
+                TypeAdapter(TrackerTicket.model_fields[field].rebuild_annotation()).validate_python(
+                    value, strict=True
+                )
+                if field in _TICKET_JSON_PATCH_FIELDS:
+                    json.dumps(value)
+            except PydanticValidationError as exc:
+                raise ValidationError(
+                    "invalid tracker ticket patch value",
+                    data={
+                        "field": field,
+                        "errors": exc.errors(include_input=False, include_url=False),
+                    },
+                ) from exc
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    "invalid tracker ticket patch value",
+                    data={
+                        "field": field,
+                        "errors": [{"type": "json_type", "msg": "Value must be JSON serializable"}],
+                    },
+                ) from exc
+            if field == "context_json":
+                self._validate_correction_intent(value)
+        if "status" in patch_json:
+            try:
+                new_status = _status_value(str(patch_json["status"]))
+            except ValueError as exc:
+                raise ValidationError(
+                    "invalid tracker ticket status",
+                    data={
+                        "field": "status",
+                        "allowed": [status.value for status in TrackerItemStatus],
+                    },
+                ) from exc
+            if ticket.status != new_status:
+                self._validate_workflow_ticket_status_change(ticket, new_status)
+                validate_transition(
+                    ticket.status,
+                    new_status,
+                    TRACKER_ITEM_STATUS_TRANSITIONS,
+                    label="tracker_ticket.status",
+                )
+        if "kind" in patch_json:
+            try:
+                TrackerTicketKind(str(patch_json["kind"]))
+            except ValueError as exc:
+                raise ValidationError(
+                    "invalid tracker ticket kind",
+                    data={"field": "kind", "allowed": [kind.value for kind in TrackerTicketKind]},
+                ) from exc
+        if patch_json.get("parent_ticket_key"):
+            self._ticket_by_key(tracker.id, str(patch_json["parent_ticket_key"]))
+        if {"status", "parent_ticket_key", "metadata_json"} & patch_json.keys():
+            parent = (
+                self._s.get(TrackerTicket, ticket.parent_ticket_id)
+                if ticket.parent_ticket_id is not None
+                else None
+            )
+            parent_key = patch_json.get("parent_ticket_key", parent.key if parent else None)
+            self._validate_delivery_scope(
+                tracker,
+                ticket.task_id,
+                self._ticket_metadata_after_patch(ticket, patch_json),
+                str(patch_json.get("status", ticket.status)),
+                parent_key,
+                ticket_key=ticket.key,
+            )
+        dependency_preview = self._preview_dependency_patch(
+            tracker, ticket, patch_json, dependency_overrides=dependency_overrides
+        )
+        if "references_json" in patch_json:
+            if not isinstance(patch_json["references_json"], list):
+                raise ValidationError("references_json must be a list")
+            for reference in patch_json["references_json"]:
+                if not isinstance(reference, dict):
+                    raise ValidationError("references_json entries must be objects")
+                ticket_reference_ref(reference)
+        return dependency_preview
+
+    def _ticket_metadata_after_patch(
+        self, ticket: TrackerTicket, patch_json: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        metadata = redact_secrets(_jsonable(patch_json.get("metadata_json", ticket.metadata_json)))
+        if "metadata_json" not in patch_json and metadata and "delivery_scope" in metadata:
+            parent = (
+                self._s.get(TrackerTicket, ticket.parent_ticket_id)
+                if ticket.parent_ticket_id is not None
+                else None
+            )
+            parent_key = parent.key if parent else None
+            reparented = (
+                "parent_ticket_key" in patch_json and patch_json["parent_ticket_key"] != parent_key
+            )
+            reactivated = "status" in patch_json and str(patch_json["status"]) not in {
+                "skipped",
+                "aborted",
+                "deferred",
+            }
+            if reparented or reactivated:
+                metadata = {
+                    key: value for key, value in metadata.items() if key != "delivery_scope"
+                }
+        return metadata
+
+    def _validate_delivery_scope(
+        self,
+        tracker: TaskTracker,
+        task_id: int | None,
+        metadata: dict[str, Any] | None,
+        status: str,
+        parent_key: str | None,
+        *,
+        new_parent_keys: set[str] | None = None,
+        ticket_key: str | None = None,
     ) -> None:
-        if "status" not in patch_json:
-            return
-        new_status = _status_value(str(patch_json["status"]))
-        if ticket.status != new_status:
-            self._validate_workflow_ticket_status_change(ticket, new_status)
+        try:
+            scope = TrackerDeliveryScopeExclusion.from_metadata(
+                metadata, status=status, parent_ticket_key=parent_key
+            )
+            if scope is None:
+                return
+            if parent_key == ticket_key:
+                raise ValueError("delivery_scope requires a distinct parent ticket")
+            if parent_key not in (new_parent_keys or set()):
+                parent = self._ticket_by_key(tracker.id, str(parent_key), missing_ok=True)
+                if parent is None or parent.task_id != task_id:
+                    raise ValueError("delivery_scope parent must belong to the same task")
+        except ValueError as exc:
+            raise ValidationError(
+                "invalid metadata_json.delivery_scope",
+                data={"field": "metadata_json.delivery_scope", "reason": str(exc)},
+            ) from exc
 
     def _validate_workflow_mirror_ticket_patch_fields(
         self,
@@ -1435,6 +2032,15 @@ class TrackerMutationMixin:
     def _validate_ticket_patch_fields(self, patch_json: dict[str, Any]) -> None:
         self._validate_patch_fields(patch_json, allowed=_TICKET_PATCH_FIELDS, entity_kind="ticket")
 
+    @staticmethod
+    def _validate_correction_intent(context: dict[str, Any] | None) -> None:
+        try:
+            TrackerCorrectionIntent.from_context(context)
+        except PydanticValidationError as error:
+            raise ValidationError(
+                "Invalid context_json.correction candidate intent", data={"errors": str(error)}
+            ) from error
+
     def _validate_patch_fields(
         self,
         patch_json: dict[str, Any],
@@ -1449,12 +2055,18 @@ class TrackerMutationMixin:
                 data={"fields": unknown, "entity_kind": entity_kind},
             )
 
-    def _sync_task_status(self, task: TrackerTask, *, now: datetime) -> None:
+    def _sync_task_status(
+        self, task: TrackerTask, *, now: datetime, old_column: BoardColumn | None = None
+    ) -> None:
         tickets = list(self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task.id)))
         if not tickets:
             return
-        if self._sync_workflow_task_status(task, now=now):
+        if self._sync_workflow_task_status(task, now=now, old_column=old_column):
             return
+        # Ticket aggregation is also a task lifecycle producer. Preserve its
+        # before/after state in the existing revision feed, in this transaction.
+        # A shallow row copy avoids serializing prompts on unchanged updates.
+        previous = task.model_copy()
         old = task.status
         if (
             task.metadata_json
@@ -1515,9 +2127,29 @@ class TrackerMutationMixin:
                 old,
                 task.status,
                 reason="tracker.sync_task_status",
+                old_column=old_column,
             )
+            tracker = self._s.get(TaskTracker, task.tracker_id)
+            if tracker is None:
+                raise NotFoundError("tracker not found")
+            self._record_revision(
+                tracker,
+                actor="system",
+                change_kind="update",
+                entity_kind="task",
+                entity_id=task.id,
+                entity_key=task.key,
+                summary=f"Aggregated task {task.key} status.",
+                before_json=self._task_snapshot(previous),
+                after_json=self._task_snapshot(task),
+                commit=False,
+            )
+        elif old_column is not None:
+            self._record_task_board_entry(task, old_column)
 
-    def _sync_workflow_task_status(self, task: TrackerTask, *, now: datetime) -> bool:
+    def _sync_workflow_task_status(
+        self, task: TrackerTask, *, now: datetime, old_column: BoardColumn | None = None
+    ) -> bool:
         run_plan_id = self._workflow_task_run_plan_id(task)
         if run_plan_id is None:
             return False
@@ -1557,12 +2189,16 @@ class TrackerMutationMixin:
                 old,
                 task.status,
                 reason="tracker.sync_workflow_task_status",
+                old_column=old_column,
             )
+        elif old_column is not None:
+            self._record_task_board_entry(task, old_column)
         return True
 
-    def _next_task_position(self, tracker_id: int | None) -> int:
-        rows = self._task_rows(tracker_id)
-        return max((row.order_index for row in rows), default=-1) + 1
+    def _next_task_position(
+        self, tracker_id: int | None, status: TrackerItemStatus = TrackerItemStatus.NOT_STARTED
+    ) -> int:
+        return next_task_position(self._s, _required_id(tracker_id, "tracker"), status)
 
     def _next_ticket_position(self, task_id: int | None) -> int:
         task_id = _required_id(task_id, "task")
@@ -1596,12 +2232,23 @@ class TrackerMutationMixin:
         commit: bool = False,
     ) -> None:
         now = _utcnow()
-        tracker.rev += 1
-        tracker.updated_at = now
-        self._s.add(tracker)
+        # Parallel task jobs can hold the same old ORM revision. Allocate from
+        # the database row, in the entity mutation's transaction, rather than
+        # incrementing either session's stale value. Flush other tracker fields
+        # first and mark the returned fields clean so a later flush cannot undo it.
+        self._s.flush()
+        revision = self._s.execute(
+            update(TaskTracker)
+            .where(col(TaskTracker.id) == _required_id(tracker.id, "tracker"))
+            .values(rev=col(TaskTracker.rev) + 1, updated_at=now)
+            .returning(col(TaskTracker.rev))
+            .execution_options(synchronize_session=False)
+        ).scalar_one()
+        set_committed_value(tracker, "rev", revision)
+        set_committed_value(tracker, "updated_at", now)
         self._s.add(
             TrackerRevision(
-                tracker_id=tracker.id,
+                tracker_id=_required_id(tracker.id, "tracker"),
                 project_id=tracker.project_id,
                 rev=tracker.rev,
                 actor=actor,
@@ -1612,7 +2259,9 @@ class TrackerMutationMixin:
                 summary=summary,
                 before_json=redact_secrets(before_json) if before_json is not None else None,
                 after_json=redact_secrets(after_json) if after_json is not None else None,
-                patch_json=redact_secrets(patch_json) if patch_json is not None else None,
+                patch_json=redact_secrets(_jsonable(patch_json))
+                if patch_json is not None
+                else None,
                 metadata_json=redact_secrets(metadata_json) if metadata_json is not None else None,
                 created_at=now,
             )

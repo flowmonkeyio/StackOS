@@ -1,0 +1,114 @@
+{
+  "checked_at": "2026-10-28T15:08:22.406247+00:00",
+  "passed": true,
+  "cases": [
+    {
+      "width": 1280,
+      "scenario": "escape",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 1280,
+      "scenario": "settings",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 1280,
+      "scenario": "history",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 1280,
+      "scenario": "folder",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 390,
+      "scenario": "escape",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 390,
+      "scenario": "settings",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 390,
+      "scenario": "history",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 390,
+      "scenario": "folder",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 320,
+      "scenario": "escape",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 320,
+      "scenario": "settings",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 320,
+      "scenario": "history",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    },
+    {
+      "width": 320,
+      "scenario": "folder",
+      "stable": true,
+      "focus": "Manage",
+      "no_settings_write": true,
+      "scrollY": 0,
+      "mainScroll": 0
+    }
+  ]
+}

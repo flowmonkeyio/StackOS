@@ -8,7 +8,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from stackos.host_mcp.bridge import default_home
+from stackos.host_mcp.bridge import command_matches, default_home
 
 STATE_FILE = "host-mcp-restarts.json"
 DEFAULT_RESTART_HINT_SECONDS = 3600
@@ -45,8 +45,12 @@ def pending_restart(
         return None
     if config_path is not None and value.get("config_path") != config_path:
         return None
-    if command is not None and value.get("command") != command:
-        return None
+    if command is not None:
+        stored = value.get("command")
+        if not isinstance(stored, list) or not all(isinstance(part, str) for part in stored):
+            return None
+        if not command_matches(command, stored):
+            return None
     marked_at = value.get("marked_at")
     if isinstance(marked_at, int | float) and time.time() - marked_at > max_age_seconds:
         return None

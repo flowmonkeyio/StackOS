@@ -65,6 +65,13 @@ architecture decisions. This keeps one source of truth with multiple consumers
 or adapters instead of parallel helpers, services, repositories, policies, or
 pass-through layers.
 
+Engineering main-agent, planning and architecture guidance also teaches
+[selective shared pattern lookup](./agent-operating-model.md#shared-pattern-recommendations)
+through `pattern.list` and selected `pattern.get` reads. Recommendations preserve
+current project choices and confer no action authority. Empty/no-match results
+do not block unrelated work. Keep generic presets and project adaptations aligned;
+source edits do not refresh frozen sessions or prove installed activation.
+
 Workflow infrastructure setup uses one deterministic materialization policy:
 
 - every required role must be materialized when the host supports local agents,
@@ -128,6 +135,136 @@ StackOS presets are not local agent files and they are not registered back into
 StackOS as daemon-managed agents. They are generic contracts that a main agent
 may adapt into whatever the host/project supports: `.codex` agents, markdown
 frontmatter files, plugin-specific agent files, or no local files at all.
+
+Engineering setup requires the selected reviewer's own bounded native check when
+the effective method declares that role claim; generic coordinator success cannot
+substitute for it. Follow [setup evidence](workflow-templates.md#agent-workflow-setup-lifecycle)
+for applicable proof, reuse, execution bindings and observations, and
+[review-only replacement](task-tracker.md#explicit-review-only-replacement) for
+authorized recovery. Concrete checks belong to the project.
+
+### Actual project Codex definitions
+
+The local console operations `projectAgent.list`, `projectAgent.get`,
+`projectAgent.create`, and `projectAgent.update` manage actual Codex TOML files.
+These are separate from the generic preset catalog. The file is authoritative;
+there is no independently editable database prompt copy. Saving never launches
+an agent, adopts delivery defaults, or changes an admitted execution snapshot.
+
+Every call supplies `project_id`, explicit `project_dir`, and `host_key: codex`.
+The directory must match an existing workspace binding for that project.
+Association and filesystem authority are separate: these operations require an
+authenticated local-admin REST session and reject run tokens and CLI requests.
+They are browser-safe at `/api/v1/operations/{operation_name}/call`, with MCP and
+CLI disabled. This bounded file-management path does not grant a tool consumer
+general filesystem access or permission to read personal/global agent files.
+
+Discovery reads only `.codex/agents/*.toml` and existing
+`.codex/config.toml` `agents.<key>.config_file` references. The latter resolve
+relative to `.codex`, within the chosen tree. References such as
+`../.agents/subagents/delivery.toml` retain their existing registration and
+expose a normalized workspace-relative source identity. Same-source registrations
+deduplicate; duplicate native names, malformed files and unsafe references
+produce individual diagnostics. Legacy registered files may obtain missing
+name/description metadata from their registration. Symlinks, hard links,
+root escapes, nonregular sources and sources over 1 MiB are rejected. Resolving
+`..` never hides a symlink or missing directory component. Discovery is
+bounded to 1,000 sources, with explicit failure above that limit. Refresh reads
+current files without a watcher or a last-used-folder fallback.
+
+The Agents editor shows Codex project-file context and the exact source path.
+Its model and reasoning pickers share the Setup/Update launch form's presentation
+helpers and `hostMcp.status` loader. The host's `agent_execution.models` and
+reasoning capabilities own supported choices. Inherited, saved values outside the catalog,
+and custom native names remain selectable. Catalog loading or retry never
+replaces the source draft, and a listed model does not establish account access.
+An unknown inherited effort stays inherited; the UI does not guess the host's
+effective value. A deliberate incompatible model change clears the affected
+effort visibly; compatible choices survive. Native Codex sources may retain
+supported effort with an inherited model. For inherited/custom models the editor
+uses `native_reasoning_efforts` from the typed project-agent responses, derived
+from the native definition enum; named model pairs still use host capabilities.
+These syntax choices do not establish the inherited model or account access.
+The editor keeps one region for
+pending, loaded and error states, including while switching sources; late or
+mismatched reads cannot change the accepted draft or the identity of a save error.
+The normal page omits the project-folder path; missing or mismatched setup
+still provides an actionable error. Agents resolves the selected project's
+primary folder through `project.get`, including on Refresh and Retry. It shows
+directoryless, missing, unavailable and conflicting binding states separately;
+directoryless projects remain usable without onboarding. Repair uses the existing
+explicit project/binding setup owner and never a manual folder picker or recent
+worktree inference. Project changes clear the previous list and editor before
+loading the next folder, and late reads or saves cannot replace the current view.
+
+`source_ref` is `{host_key, native_name, source_path}`, where `source_path` is
+the exact workspace-relative path. Reads return the SHA256 `digest`, editable
+`fields`, native settings, inherited field names, unsupported field names,
+registration metadata, capabilities and diagnostics. Compact reads keep every
+identity/digest/diagnostic and omit full instructions; request `raw` for editing.
+Unknown native values are preserved on disk but are not exposed as settings or
+claimed to be supported by execution. File fields never grant provider,
+credential, sandbox, permission or MCP authority.
+
+Create accepts `fields` with `name`, `description`, `developer_instructions`
+and optional native settings. It exclusively creates
+`.codex/agents/<name>.toml`. The supported standalone format needs no new config
+registration. Update accepts `source_ref`, `expected_digest` and a `patch`.
+Omitted fields survive; null optional fields inherit. Nested setting patches
+preserve untouched siblings and comments. Supported settings include model,
+reasoning effort/summary, verbosity, `sandbox_mode` (`read-only` or
+`workspace-write`), and reduction-only native feature/skill restrictions. A
+source sandbox pin may narrow the caller's mode; it never broadens a read-only
+request. The native command and launch receipt use that effective mode, including
+resumes of frozen source settings. Unsupported or authority-expanding patches
+reject. Writes retain full instructions, unknown keys, comments and file
+permissions, recheck source and registration identity before replacement, and
+verify exact saved-byte readback. Writes are raw-only; neither compact nor ack
+can hide a failed save.
+Retries recheck authority, workspace and current bytes in the handler. Exclusive
+create collisions and stale updates reject safely, without replaying prompt
+content from generic database idempotency storage. A write failure reports
+whether the source was untouched, rolled back, or remains unconfirmed.
+
+Native-name changes keep the filename stable. Reassign saved project defaults
+and legacy registrations before renaming a referenced identity;
+rejection returns safe reference IDs and reassign-first guidance. The service
+never moves files, rewrites references, or edits active/historical snapshots.
+`stale_source` means refresh and reconcile the draft, `ambiguous_identity`
+requires repairing duplicate names, and `write_failed` means inspect current
+bytes before retrying. Errors do not echo parser contents. This source service
+does not itself establish native launch or installed-host consumption; those
+consumers use its exact source identity and settings under their own authority.
+
+### Workflow setup
+
+The agent infers workflows from ordinary goals, repository intent and current
+configured methods, using the catalog's outcomes/use boundaries. Users need not
+learn workflow names. Both setup entrypoints consume the authored
+`workflowTemplate.authoringGuide.project_setup_method`; its mode instructions
+and report contract own adoption and the previous/local/new update comparison.
+Map required/recommended role decisions and the full applicable source obligations
+to exact adapted files/session packets, with main-agent guidance separate from
+specialists. Preserve compatible overrides and conditional resilience rules;
+justify adaptations and only source-permitted omissions. Material unresolved
+loss prevents completion. Host syntax/registration, references, actual behavior
+and loading/reload each require evidence; saved versions alone prove none of them.
+
+Ordinary Setup/Update requests `ready_to_use`; only explicit `infrastructure_only`
+stops at preparation without execution state. Use the effective workflow method;
+engineering's `setup_activation_method` policy and presets require canonical saved
+defaults/readback, compatible local lifecycle rules and actual native consumption.
+First reuse current covered completed delivery, distinct independent review and
+closeout evidence, then run only missing or invalidated small harmless checks in
+the owning setup/task. Record covered/missing claims and the current
+project/source/default/native/environment basis. A separate full verification
+task/workflow, tracker parent or review workflow must not be created merely for
+readiness. Existing parent independent review remains; standalone setup follows
+its method and genuine current evidence. Aborted, incomplete, simulated or foreign
+evidence cannot complete activation. Missing authority or required proof remains
+unfinished, never `activation_pending` success. Preserve supported host preferences,
+compatible customization and frozen sessions; task overrides cannot prove missing
+defaults. Other domains use their own safe methods without unrelated business actions.
 
 Engineering setup uses the same workflow path as other domains. Start with the
 workflow that matches the work, resolve its agents with
@@ -251,13 +388,22 @@ presets carry no model/version pins. Host capabilities, operator preferences,
 risk and observed performance guide selection; a requested model and its
 effective fallback must not be reported as the same when the host overrides it.
 
-The orchestrator coordinates at most three active ticket assignments by
-default, including implementation, queued review, review and repair. Ready
+For terminal-managed delivery, the orchestrator coordinates at most three active
+ticket assignments by default, including implementation, queued review, review
+and repair. Ready
 reviews take priority over starting new tickets. Capacity must allow an
 independent reviewer: reserve and reuse a reviewer slot when completed agent
 threads cannot be retired. A reviewer can review multiple tickets, but cannot
 review work it implemented. Each agent has one active assignment; queue work
 without retasking a busy reviewer.
+
+This ticket-assignment default and host child/reviewer slots are separate from
+automatic project task limits (default 3, range 1..32). Each project has its own
+persisted limit, shared with managed setup through the existing capacity owner;
+there is no aggregate global project-task cap. Lowering a limit affects future
+admissions only. Every admitted/running task continues unchanged, counts may
+exceed the new limit, and other projects are unaffected. Capacity edits never
+stop, abort, cancel, restart or evict work or reset sessions and repair evidence.
 
 The ticket packet includes current operator and acceptance refs, design,
 accepted prerequisites, contract/assignment identity, owned paths and shared
@@ -267,27 +413,337 @@ and stop conditions. Read the full targeted `tracker.brief` with
 the specialist a bounded packet. Keep durable facts in existing run/ticket
 context and evidence, and reference them from schema-valid phase outputs.
 
-Ticket-local acceptance must be distinct from integration-only obligations.
+Apply [internal handoffs and complete deliverables](agent-operating-model.md#internal-handoffs-and-complete-deliverables)
+when authoring or adapting presets. Keep the decisive outcome/scope, candidate,
+proof and limitations in the summary for summary-only prerequisite readers.
+Detailed proof and scoped findings live once in outputs or existing evidence;
+required fields and substantive deliverables remain complete. Use exact owner,
+project, record/step and candidate refs for necessary detail, with explicit gaps
+for stale or unavailable evidence. Repair/resume carries current feedback,
+unresolved obligations and remaining repair allowance, preserving native history.
+Shipped source versions describe future adaptation inputs; local files, saved
+defaults and frozen sessions require their own explicit adoption and evidence.
+For StackOS changes, choose the affected setup, contract, UI or lifecycle case
+from the [project verification map](./integration-testing.md#select-proof-for-a-stackos-change).
+The proof-continuity revision is a scoped source amendment in the StackOS local
+planning, test-design, delivery, review and orchestrator files. Their recorded
+base adaptations and unrelated pending deltas remain; this claims source readiness,
+not saved-default adoption, installed activation or fresh native consumption.
+
+For a required cross-task input, planning names the producer task/ticket,
+independent acceptance evidence (or pending producer work), applicability, target
+integration owner, receiving source/artifact identity and affected checks. Main
+confirms admitted prerequisites during preparation or exceptional reconciliation.
+After automatic handoff, the assigned delivery or verification owner verifies
+actual presence and applicability in its receiving tree/environment before
+dependent work or lengthy proof, using accepted source or independently reviewed
+integration evidence. Distinguish unfinished producer work from accepted-but-absent
+source; tracker status alone is insufficient. StackOS sequences work; main retains
+explicit source admission/integration and affected recheck. Reuse the existing
+owner handoff and hold only affected work. Already available accepted inputs need
+no extra wait or duplicate implementation ticket. Optional unrelated changes
+remain nonblocking followups; this grants no automatic merge or sibling-write
+authority.
+
+Plans, listed paths, design and proof are fallible evidence, not exhaustive
+boundaries. Each agent owns its assigned outcome, investigates obstacles and
+takes the smallest proportionate action within existing authority and role to
+resolve necessary omissions or routine setup, tooling and integration gaps.
+Verify and record the change, necessity, affected consumers and proof. Delivery
+may change in-scope implementation/proof; independent review executes checks and
+may prepare or repair its verification environment, but sends product fixes back
+to delivery without editing product/acceptance tests or weakening criteria.
+Explicit exclusions, new or unavailable authority, actual ownership conflicts,
+materially different outcomes or compromised review independence stop affected
+work for reconciliation; continue unaffected work. Unrelated naming/style/debt
+stays in nonblocking followups; reject drift, unnecessary abstractions and
+duplicate ownership, not justified unlisted changes.
+
+Carry one bounded proof selection through existing plans, ticket briefs and
+receipts: outcome/criterion -> actual owner and affected consumers -> decisive
+scenario and maintained check -> candidate and evidence or gap. Test design
+refines discovery; planning packages it; delivery reconciles it with actual
+changes; review independently challenges it; repair retains the failed invariant
+and unresolved original obligations. Reuse current linked discovery rather than
+repeating it at each handoff. Project guidance owns concrete selectors and routes.
+This adds no report, schema or stage and does not make prior claims acceptance.
+
+Ticket-local acceptance remains distinct from integration-only obligations. Choose
+the smallest convincing proof for the requested flow and directly affected
+consumers, following a demonstrated shared cause through implicated transitions.
+Stop when assigned obligations are answered unless new evidence, material changes
+or a mandatory gate warrants more. Broad suites on every child and exhaustive
+matrices are not defaults; integration and final signoff keep their owners.
+
+Pass claims require actual command exit status, completion and unhandled errors,
+tested candidate and covered scope. Green assertions cannot conceal a failed
+command. Preserve failed, blocked and skipped observations; fix affected fixtures
+without weakening guarantees. Reuse complete current proof with explicit scope,
+candidate, prerequisite and environment justification; rerun invalidated or missing
+required proof. Check uncertain required capabilities before lengthy dependent
+work. Ordinary approval need uses normal scoped approval for authorized actions;
+actual denial stops that action and dependent work without bypass. Distinguish
+unavailable capability, repairable owned defect and explicit cancellation using
+concrete tool evidence; manual exceptions cover only their named proof. Continue
+unaffected work and keep unavailable required proof blocked.
+
+The proportionate-proof revision assessed official
+[Codex review rules](https://developers.openai.com/blog/custom-code-review-rules-for-codex)
+(published 2026-07-20), [skills evaluation guidance](https://developers.openai.com/blog/eval-skills)
+(published 2026-01-22), and [agent approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security)
+on 2026-11-13. Applicability: scoped invariants with safe alternatives and unrelated
+controls, observed actions beyond phrase checks, and distinct capability/approval
+boundaries. Use the existing scenario fixture and independent review; no new
+evaluation service, host/model policy or installed-activation claim follows.
+
+Focused supervision uses existing compact activity/revision reads before relevant
+expansion; unchanged observations stay in the occurrence summary, while authorized
+context writes preserve unrelated fields and history. Resume/handoff re-resolves
+guidance at its owner. Complete content can be reused only against matching
+owner/ref and revision/digest evidence and only by a receiving agent that actually
+read it. Fresh consumers read their applicable retained artifacts; changed/unknown
+contracts and truncated responses require complete targeted recovery. These rules
+do not refresh frozen native snapshots or weaken required guidance consumption.
+
+The supervision revision rechecked the same official review-rule and skills-eval
+sources on 2026-11-13. Applicability: scoped rules with a safe path and unrelated
+controls, captured actions and artifacts, and measured usage rather than an assumed
+gain from shorter text. The existing rehearsal corpus includes unchanged and
+changed observations plus a fresh consumer; independent review judges the trace.
+
 An interface ticket can pass its contract checks before a consumer is built;
 the complete user journey remains an open workflow obligation. Readiness
 checks coverage against authoritative operator input as well as derived
 criteria, and rejects dependencies that make a ticket's required proof depend
 on its own blocked consumers.
 
-Implementation and self-check produce a candidate. A separate reviewer checks
-that candidate against the assigned requirements and actual evidence. The main
+After final edits, delivery reconciles the whole diff and actual consumers with
+the carried proof selection and executes applicable tests, lint and area checks,
+including changed tests, helpers and maintained scripts. New/moved tests must be
+collected and executed through ordinary project configuration; custom-root proof
+alone does not establish maintained coverage. A temporary probe exposing a
+durable in-scope defect prompts an equivalence check against maintained coverage;
+retain only the smallest missing regression with safe fixtures. Keep private
+captures and scratch logs/scripts outside Git. Bind commands/results and gaps to
+the actual candidate, prerequisites and environment in the existing receipt.
+Failed or unavailable required proof prevents candidate-ready; self-signoff does
+not replace independent acceptance.
+
+Test design derives independent expectations at the real caller/producer/consumer
+and authorization boundary. Stateful proof names starting state, tested action
+and distinguishing observation so prior effects, other actors or permissive
+fixtures cannot satisfy it accidentally. Delivery verifies those preconditions
+and attribution; review challenges them and declared mocks/substitutions. Select
+relevant asynchronous lifetime risks rather than a fixed state matrix. Keep
+dependency mutation exclusive against consuming checks and readiness after the
+relevant transition; retrieve bounded current sources and expand for gaps.
+
+Source implementation and repairs produce separate scoped commits after self-checks.
+A separate reviewer checks that exact commit against the assigned
+requirements and actual evidence, returning the full `commit_sha`. The main
 agent adjudicates findings, routes repairs, integrates the reviewed result,
-rechecks affected evidence, then marks the ticket complete. Until acceptance,
+rechecks affected evidence, then marks the ticket complete in terminal-managed
+delivery. An explicit `tracker.startDelivery` handoff instead lets StackOS
+mechanically complete approved ordinary tickets and advance serially through all
+remaining dependency-ready task work. Mirrors execute their remaining frozen
+contract once using an existing selected role; only RunPlanRepository records
+their lifecycle. A valid scoped
+rejection is persisted before each of up to three automatic repair passes in the
+same native delivery session, with a separate new descendant repair commit and
+re-verification in the same independent review session. The consumed count survives explicit
+requeue; blocked required verification, native/access/model/resume failure,
+candidate mismatch or rejection after the third repair stops that task.
+This count covers ordinary review rejections. Integration-origin correction after
+prior child approval preserves the count and may requeue at `repair_count=3`;
+its independent ordinary review may approve, but a rejection there permits no
+fourth ordinary repair. This is not a total cap on corrections from all origins.
+Main retains scope admission and final claims. In automatic delivery, assigned agents execute
+integration and workflow phase gates; main observes without lifecycle writes.
+Defaults use `TaskTracker.config_json.delivery`
+via local-admin REST-only `tracker.configureDelivery`, merged with task overrides by role once.
+Fresh Codex handoff selects actual project sources; non-Codex hosts retain inline
+contracts. Explicit native model/effort wins, omitted values inherit task, project
+then host choices. Supported source restrictions can only reduce capabilities.
+Reusable presets recommend no fixed models. The shared
+host capability owner selects test-capable native permissions and approval review and uses
+normal native sessions for Gemini and Hermes reviewers with review-only
+instructions, truthfully reporting no enforced read-only isolation. Until acceptance,
 the ticket stays `in-progress`. There is no separate review ticket by default
 and no new tracker status. Main-agent scheduling and acceptance are guidance,
 not daemon-enforced leases or semantic verification.
+
+Planning, delivery, review and the main orchestrator apply the shared
+[Board contract](task-tracker.md#board-priority-and-order-writes): Backlog is
+uncommitted backlog, Todo is waiting for development, and Stopped is a validated
+execution projection, not cancellation. `tracker.placeTask` changes eligible
+nonstarted lane placement only. A column move or reorder supplies no dispatch,
+stop, resume, completion or abort authority. Delivery/review/repair remains
+lifecycle `in-progress`; queued work before its first actual invocation is Todo,
+while previously invoked work between calls stays In progress. Deferred work
+retains its resume condition and normal explicit resume owner. Source guidance
+changes apply to supported future admissions; active, queued, historical and
+resumed native snapshots stay frozen. Source refs already selected by a project
+need no copied-prompt refresh. Any saved-source adoption remains main-owned
+reviewed preview/write/readback with expected digests through the existing
+`tracker.configureDelivery` path, preserving overrides and host settings.
+
+Backlog remains unscheduled; Todo placement alone is not authorization. A
+prepared, explicitly enabled `tracker.startDelivery` handoff admits fresh Todo
+work, checking its saved placement before queue metadata changes the projection.
+Valid workflow first handoffs retain their lifecycle and invocation history;
+Stopped work needs explicit authorized recovery and rehandoff, with native
+sessions, receipts, attempts and consumed repair allowance preserved. Managed
+setup is a separate existing consumer and needs no tracker Todo placement.
+Source-ready guidance, saved adoption/readback, actual fresh native consumption
+and installed activation are distinct evidence; never rewrite an admitted
+snapshot to claim a newer source was consumed.
+
+Reviewers independently derive coverage from current requirements/amendments,
+the whole diff, actual affected consumers and project rules. They execute
+relevant planned specs and integration checks, plus necessary omitted tests,
+lint, area and interaction checks themselves,
+reporting commands/results/current SHA and clean unchanged HEAD for reject and
+approve. Failed required specs reject; genuinely unavailable required checks
+block. Within ticket plus integration scope, review business regression,
+architecture gaps, inaccurate wiring and canonical ownership where relevant.
+Required repairs cite scoped criteria/evidence. Unrelated findings go only in
+separate nonblocking `followups` text objects, never required-repair summary,
+dependencies or actionable repair prompts. All current automatic launches return
+`status` (success/repair/blocked/failed), `summary`, `outputs` (a JSON-encoded
+object string), and `followups` (text objects). Only success advances; ordinary
+review repair uses the bounded loop. Supported persisted correction/reopen returns
+to dependency scanning; mirror repair without progress stops. Agents explicitly map
+domain verdicts to status and return declared frozen mirror outputs. Honor an
+older installed launcher's actual occurrence schema. Source changes and repairs
+require exact scoped commits in `outputs.commit_sha`; observation may cite
+unchanged HEAD and non-Git work needs no fabricated commit. Ordinary test outputs are
+allowed; production files, acceptance tests and commits remain review-only.
+
+Only delivery and reviewer contracts carry the detailed bounded
+[automatic correction method](task-tracker.md#agent-owned-automatic-corrections).
+Other roles retain the authority boundary and return findings without those
+mutations; recommended tools and role names grant no lifecycle authority.
+An assigned automatic verifier/reviewer full-reads and merges scoped feedback on
+the existing owning ticket, preserving source/target/attempt/candidate identity,
+failed criterion/check/evidence, required outcome/recheck, unrelated context and
+all sessions/receipts/consumed allowance. It saves failed outputs before rewind,
+requeues affected children and calls `tracker.reopen` at the earliest affected
+bound gate as its final mutation, then returns `repair`. It finishes checks and
+quiesces other affected work first, without waiting for itself to terminate.
+Only the runner resumes original sessions and records workflow lifecycle.
+Fresh persisted correction outranks historical approval; corrected source needs
+a separate descendant commit and independent exact-SHA review. This exception
+does not permit self-acceptance, claim/record, dispatch, new work from followups,
+or bypass of actual execution errors or the ordinary three-pass repair limit.
+Terminal-managed specialists still return evidence for main to route.
 
 Review must identify its candidate, assignment attempt, contract revision and
 relevant environment. Disjoint file ownership does not prove independence: a
 check may import another ticket's unaccepted helper or use a shared fixture.
 Wait for the actual dependency or isolate and rerun against an accepted base.
+Parallel engineering assignments follow
+[task-local native routing](task-tracker.md#task-local-native-tool-routing):
+clean distinct trees, a frozen task-only route reference, canonical per-tree
+tools and same-project bindings, independent native review, and explicit
+integration by the named owner. A working-directory flag alone cannot establish
+MCP targeting. Source/local guidance changes do not update saved instructions
+or running snapshots; adoption and installed proof remain separately owned.
 Final verification/review covers assembled behavior and remaining obligations,
 reusing valid ticket receipts instead of automatically repeating them.
+
+Attribute introduced defects against the admitted ticket/task baseline and use
+the rejected candidate separately for the repair delta. An immediate-parent diff
+or accepted intermediate child cannot relabel a task-introduced defect as unrelated
+baseline. Repair includes applicable checks on changed implementation, tests and
+helpers, then review reassesses original coverage as well as the fix. In the existing
+receipt, distinguish checks executed on the current candidate, valid unchanged
+evidence with scope/prerequisite/environment justification, invalidated evidence
+requiring rerun, and never-executed required checks. A repair-only slice cannot
+inherit an incomplete original review. Preserve failed proof as history; identify
+original omissions separately from later operator amendments.
+
+Each material claim needs its distinct applicable obligation, actual
+producer/consumer boundary and matching evidence or explicit gap in that receipt
+or proof plan. A mocked array cannot establish the real API envelope; a broad
+green suite or unrelated check cannot cover a required unexecuted obligation.
+A reproduced defect calls for proportionate repair and proof of the same invariant
+across affected retained consumers and implicated neighboring transitions within
+the original outcome and existing authority. Evidence determines breadth; fixed
+edit counts, universal matrices and unrelated cleanup do not.
+
+Main chooses and verifies the [StackOS browser lifecycle and native CLI](browser-automation.md#client-flow)
+route before dispatch or resume and supplies current profile/session, tab ownership
+and login prerequisites. Delivery, review and test design use that route
+for browser work, with the installed skill/cookbook, authorized profile and pinned
+ticket tab. Computer Use/native desktop control will not be enabled and must not
+be requested or planned as a prerequisite. Preserve required outcome proof and
+explicit scoped manual ownership; identify any actual unsupported boundary and
+missing evidence truthfully rather than inventing a waiver.
+
+Orchestration reuses complete current proof with its covered scope, candidate,
+accepted prerequisites and environment basis. Changed or contradictory evidence
+and never-covered obligations need focused proof; retain one final mandatory
+project signoff at the existing gate. Diagnose stop prerequisites before repeating
+dependent checks, route required work to existing owners, and clear only proven
+resolved blockers. An explicitly authorized resume requires readback of runnable
+pending owned work, with receipts, native sessions and repair allowance preserved;
+an in-progress ticket alone is insufficient. No automatic reset/retry or broader
+worker lifecycle authority follows from this guidance.
+
+For visual changes, delivery and review compare the candidate with the approved
+design and current amendments: exact wording, content applicability, hierarchy,
+actual consumer widths and the reported interaction and relevant states. Record
+design/source refs and observed environment. Screenshots and passing counts alone
+do not prove behavior. Source, installed and external observations remain distinct;
+missing required visual or interaction proof blocks the affected claim.
+
+The role revision reviewed official provider guidance on 2026-11-08. OpenAI's
+[skills and prompts guidance](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra)
+supports applicable context and clear completion boundaries; its model-specific
+advice does not remove this project's required executed checks.
+[Codex review rules](https://developers.openai.com/blog/custom-code-review-rules-for-codex)
+and [Claude Code practices](https://code.claude.com/docs/en/best-practices)
+support consequential, scoped review against the specification and executable
+evidence. [Google's prompting guidance](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/prompts/prompt-design-strategies)
+informs review of the assembled instructions for ambiguity and unnecessary
+overlap. These are design inputs, not effectiveness proof. Raw/compact resolution
+and source/local contract checks prove instruction availability; the assigned
+native rehearsal must demonstrate omitted-check discovery, final tests/lint,
+truthful self-signoff, independent review and restraint on unrelated cleanup.
+No source-only check proves saved adoption or current native/installed consumption.
+
+The focused source revision reviewed the supplied official guidance on 2026-11-09:
+[issue-to-tested-PR](https://learn.chatgpt.com/use-cases/issue-to-tested-pr#how-to-use)
+informs repository-specific baseline, regression and final-diff proof;
+[Codex review rules](https://learn.chatgpt.com/docs/agent-configuration/agents-md#add-code-review-rules)
+informs concise applicable instructions with a violation and safe alternative.
+These are instruction-design inputs. A bounded exercise after explicit consumption
+must demonstrate actual-caller/lifetime gap discovery, exact-payload revalidation,
+readback before uncertain retry, justified proof reuse, exclusive setup and restraint
+on unrelated cleanup. Retain consumed candidate/hashes and observed actions outside
+Git. Phrase assertions alone establish availability, not effectiveness or adoption.
+The orchestration revision rechecked [Codex review rules](https://developers.openai.com/blog/custom-code-review-rules-for-codex)
+on 2026-11-11 for scoped invariants, safe alternatives and unrelated-change
+restraint. Its bounded recovery/browser exercise is source-use evidence, not
+measured production prevention or installed activation.
+
+The source-prerequisite revision rechecked the same official Codex guidance on
+2026-11-12. Applicability is limited to concise scoped instructions and the
+violation/safe/unrelated exercise: unfinished production, accepted source absent
+from the receiver, admitted source with affected proof, and already available or
+optional inputs. This does not establish behavior in other harnesses, saved
+adoption, production prevention or installed activation. Preserve frozen native
+sessions, history, repair allowance and exact operator/manual exception scope.
+
+The bounded automated planning permission was reviewed on 2026-11-09 against
+[Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
+and the OpenAI skills/prompt guidance linked above. Applicability: state the
+permitted child-materialization path and its completion boundary alongside the
+prohibited lifecycle writes, without adding model-specific workflow policy.
+Source/local parity checks establish availability; a bounded native rehearsal
+must exercise child creation, refusal of self-claim/record/dispatch, the safe
+return of outputs, and preservation of unrelated work. Scheduled main-agent
+launch and explicit workflow execution remain separate integration boundaries.
 
 Source upgrades do not rewrite existing run-plan snapshots or host-local
 files. Existing runs keep their frozen structure and output contracts. Local
@@ -297,12 +753,42 @@ local prompts as current. During a scoped source revision, use an explicit
 current session packet where needed. The workflow's required outputs remain
 schema-valid even when preparation is concise.
 
+Adoption is manual per project. Method belongs in reusable/local guidance;
+occurrence phase/attempt/SHA/persisted scoped feedback belongs in prompts, and
+models remain StackOS configuration. Use the current occurrence and task/ticket
+amendments to resolve mutable facts, including a later authorized delivery
+instruction superseding an earlier
+preparation hold. Keep builds/tests and all proof outside a named exception
+required. Report current selected source and retained native source separately;
+source edits do not replace the resumed session's developer instructions or
+history. See the [occurrence contract](./task-tracker.md#automated-task-delivery).
+After independent source/local review, the main agent may explicitly adopt
+selected Codex source references through local-admin REST-only
+`tracker.configureDelivery` using expected-digest preview/write/readback.
+Preserve every other setting, including absent/null fields; retain source
+references instead of editable instruction copies. For other hosts, explicitly
+authorized instruction-only saved-default adoption may occur during a running
+task after that review, using the same local-admin owner.
+Installed application/runtime replacement is separately authorized and main-owned,
+coordinated with the active runtime owner. Workflow/default activation explicitly
+included in the current outcome must finish there rather than being deferred until
+closure. Adoption alone does not authorize restarting the daemon orchestrating the
+active task.
+Source edits alone update neither saved instructions nor active
+or historical task snapshots. Queued/running executions retain their snapshot;
+an explicit rehandoff after completed/stopped execution resolves current defaults
+and overrides while preserving prior ticket receipts, sessions and consumed repair
+allowance. Completed tasks and frozen run/templates stay unchanged. Prove a subsequent handoff receives the new
+instructions. Other projects adapt individually; there is no synchronizer,
+watcher, automatic rollout or requirement for a `.codex` folder.
+
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing
 `.codex/agents/*.toml` before proposing new files or updates. For other hosts,
-look for that host's agent convention first. StackOS does not scan, write, or
-register those host-local files; it only provides the generic preset contracts
-and workflow role requirements. If no convention is available, use the resolved
+look for that host's agent convention first. Preset resolution provides generic
+contracts and workflow role requirements without scanning or writing local files.
+Actual Codex file management uses the explicit local-admin operations described
+above; other host formats have no definition editor. If no convention is available, use the resolved
 workflow agents as operating guidance in the current session or ask the
 operator which host format to use. Preserve unrelated operator-authored content
 and do not create a second competing agent registry.
@@ -343,8 +829,8 @@ In this repository their main-agent adaptation is
 boundary. Finance remains independently usable without this package.
 
 From a standalone business directory or an agency root, the finance main agent
-uses one selected external financial master per business. Client engagements are
-descriptive context, not nested StackOS projects or inherited access. Optional
+uses one automatically managed Finance master per StackOS project. Client
+engagements are descriptive context, never shared storage or inherited access. Optional
 `external_project_ref` on billing versions and prepared bookkeeping records
 retains sourced attribution; receipt custody needs no project. Company-wide costs
 remain unassigned, and no allocation/profitability engine is implied. Provider
@@ -395,8 +881,9 @@ mutable setup. `FINANCE.md` is guidance/navigation, reports are derived explanat
 and CSV is import/export, not another master. Originals stay immutable evidence;
 providers own their actual state and JSON stores dated observations. Packet refs
 resolve to stable JSON record IDs and scoped immutable versions, not separate
-editable packet files. First-time setup uses a new workspace from the empty
-JSON/schema and guidance templates, without overwriting existing files.
+editable packet files. Authenticated `finance.status` provisions only an enabled
+project's never-initialized managed store. Missing/corrupt existing data requires
+repair; standalone helper initialization does not create its ownership metadata.
 
 There is one writer per materialization:
 specialists return packets, then the delegated sole writer compares actual
@@ -480,7 +967,7 @@ All presets are expected to work through the existing StackOS tracker:
   evidence and blockers rather than independently pulling or completing work
 - verifier and reviewer agents compare completion claims with actual evidence
 - reviewers verify evidence before closeout
-- reviewer findings are claims until the orchestrator adjudicates them against
+- reviewer findings are claims to check against
   evidence, root cause, and user/business impact
 - tracker truth reviewers check that durable state matches code, docs, tests,
   run-plan steps, and verification outcomes

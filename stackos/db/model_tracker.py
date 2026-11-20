@@ -6,11 +6,14 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     ForeignKey,
     Index,
     Text,
     UniqueConstraint,
+    event,
+    inspect,
 )
 from sqlalchemy.types import JSON
 from sqlmodel import Field, SQLModel
@@ -22,6 +25,42 @@ from stackos.db.model_enums import (
     TrackerSourceKind,
     TrackerTicketKind,
 )
+
+
+class ManagedUpgrade(SQLModel, table=True):
+    """Installation fence and references only; task owners retain checkpoint evidence."""
+
+    __tablename__ = "managed_upgrades"
+    __table_args__ = (
+        CheckConstraint("active IS NULL OR active = 1", name="ck_managed_upgrade_active"),
+    )
+
+    upgrade_id: str = Field(primary_key=True, max_length=160)
+    active: int | None = Field(default=1, unique=True)
+    source_identity: str = Field(max_length=240)
+    target_identity: str = Field(max_length=240)
+    revision: int = Field(default=1, nullable=False)
+    status: str = Field(default="preparing", max_length=40)
+    checkpoint_refs_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    postflight_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class TaskDeliveryCapacity(SQLModel, table=True):
+    """A project's admission preference in the existing backed-up database."""
+
+    __tablename__ = "task_delivery_capacity"
+    __table_args__ = (
+        CheckConstraint(
+            "concurrent_tasks BETWEEN 1 AND 32", name="ck_task_delivery_capacity_limit"
+        ),
+    )
+
+    project_id: int = Field(
+        sa_column=Column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    )
+    concurrent_tasks: int = Field(default=3, nullable=False)
 
 
 class TaskTracker(SQLModel, table=True):
@@ -249,6 +288,57 @@ class TrackerTicket(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
+
+
+class TrackerReceiptProjection(SQLModel, table=True):
+    """Rebuildable, date-indexed statistics inputs; ticket evidence remains authoritative."""
+
+    __tablename__ = "tracker_receipt_projections"
+    __table_args__ = (
+        Index("ix_tracker_receipts_launch", "inventory", "launch_at", "ticket_id"),
+        Index("ix_tracker_receipts_ticket_launch", "ticket_id", "inventory", "launch_at"),
+        Index("ix_tracker_receipts_review_finish", "inventory", "review_outcome", "finished_at"),
+        Index("ix_tracker_receipts_finish", "timing", "finished_at", "launch_at"),
+    )
+
+    ticket_id: int = Field(
+        sa_column=Column(
+            ForeignKey("tracker_tickets.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+    )
+    attempt: int = Field(primary_key=True)  # zero is the canonical unknown identity
+    phase: str = Field(primary_key=True)
+    inventory: str = Field(primary_key=True)  # usage, or a distinct timing-only observation
+    observation_key: str = Field(
+        default="", primary_key=True
+    )  # retained interruption discriminator
+    timing: bool
+    current: bool
+    position: int
+    launch_at: datetime | None = None  # validated offset-aware source time, stored as UTC
+    finished_at: datetime | None = None
+    closed: bool = False
+    review_outcome: str | None = None
+    receipt_json: str = Field(sa_column=Column(Text, nullable=False))
+
+
+@event.listens_for(TrackerTicket, "after_insert")
+@event.listens_for(TrackerTicket, "after_update")
+def _project_ticket_receipts(_mapper: Any, connection: Any, target: TrackerTicket) -> None:
+    """All ORM receipt writers share the same transactional derived index."""
+    state = inspect(target)
+    assert state is not None and target.id is not None
+    if state.pending or state.attrs.completion_evidence_json.history.has_changes():
+        from stackos.repositories.tracker.receipt_projection import sync_receipt_projection
+
+        prior = state.attrs.completion_evidence_json.history.deleted
+        sync_receipt_projection(
+            connection,
+            target.id,
+            target.completion_evidence_json,
+            prior[0] if prior else None,
+        )
 
 
 class TrackerTicketDependency(SQLModel, table=True):

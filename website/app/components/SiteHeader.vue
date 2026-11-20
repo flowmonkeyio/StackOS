@@ -10,7 +10,7 @@ function closeMenu() {
 <template>
   <header class="site-header">
     <div class="shell site-header__inner">
-      <NuxtLink class="brand" to="/" aria-label="StackOS home" @click="closeMenu">
+      <NuxtLink class="brand" to="/" @click="closeMenu">
         <img src="/images/stackos-icon.png" alt="" width="36" height="36" />
         <span>StackOS</span>
         <small>Work, organized</small>

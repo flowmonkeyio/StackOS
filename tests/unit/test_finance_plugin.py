@@ -21,6 +21,7 @@ EXPECTED_WORKFLOW_KEYS = {
     "finance.payment-request-followups",
     "finance.cashflow-management",
     "finance.tax-estimates",
+    "finance.management-review",
 }
 COMMON_REQUIRED_INPUTS = {
     "workspace_ref",
@@ -45,8 +46,10 @@ def test_finance_scope_remains_standalone_with_optional_agency_context() -> None
         inputs = _by_key(workflow["inputs"])
         assert inputs["workspace_ref"]["required"] is True
         assert (
-            "standalone business directory or agency root" in inputs["workspace_ref"]["description"]
+            "owning StackOS project" in inputs["workspace_ref"]["description"]
+            or "owning StackOS project's" in inputs["workspace_ref"]["description"]
         )
+        assert inputs["workspace_ref"]["name"] == "Project Finance Source Ref"
         assert not any(
             "agency" in item["key"] for item in workflow.get("capability_requirements", [])
         )
@@ -86,6 +89,12 @@ def _summary_schema(workflow: dict) -> dict:
 
 def _truthful_preflight_summaries() -> dict[str, dict]:
     return {
+        "finance.management-review": {
+            "status": "scoped",
+            "request_id": 1,
+            "source_snapshot": {"revision": 1, "sha256": "a" * 64},
+            "exception_refs": [],
+        },
         "finance.receipt-intake": {
             "status": "scoped",
             "acknowledgement_state": "pending",
@@ -139,6 +148,28 @@ def _truthful_preflight_summaries() -> dict[str, dict]:
 
 def _terminal_summaries() -> dict[str, tuple[dict, tuple[str, ...]]]:
     return {
+        "finance.management-review": (
+            {
+                "status": "published",
+                "request_id": 1,
+                "source_snapshot": {"revision": 1, "sha256": "a" * 64},
+                "exception_refs": [],
+                "result_digest_sha256": "b" * 64,
+                "report_sha256": "c" * 64,
+                "control_review_ref": "external-review:fixture",
+                "external_result_ref": "finance-analysis:1",
+                "result_sha256": "d" * 64,
+                "outcome": "no-supported-opportunity",
+            },
+            (
+                "result_digest_sha256",
+                "report_sha256",
+                "control_review_ref",
+                "external_result_ref",
+                "result_sha256",
+                "outcome",
+            ),
+        ),
         "finance.receipt-intake": (
             {
                 "status": "cleaned-up",
@@ -275,7 +306,7 @@ def _terminal_summaries() -> dict[str, tuple[dict, tuple[str, ...]]]:
     }
 
 
-def test_finance_package_defines_exactly_the_six_external_backend_workflows() -> None:
+def test_finance_package_defines_exactly_the_seven_external_backend_workflows() -> None:
     workflows = _workflows()
 
     assert set(workflows) == EXPECTED_WORKFLOW_KEYS
@@ -563,7 +594,7 @@ def test_followup_authored_email_uses_selected_route_and_step_grant() -> None:
     auth = _by_key(followups["auth_requirements"])
     capabilities = _by_key(followups["capability_requirements"])
     steps = {item["id"]: item for item in followups["steps"]}
-    assert followups["version"] == "0.7.4"
+    assert followups["version"] == "0.7.5"
     assert "default" not in inputs["followup_route"]
     assert inputs["followup_route"]["schema"]["enum"] == ["stripe-resend", "smtp-email"]
     assert inputs["followup_route"]["required"] is False
@@ -679,6 +710,14 @@ def test_settlement_only_summary_cannot_claim_a_resend_or_financial_contents() -
 def test_finance_output_schemas_accept_truthful_preflight_without_future_refs() -> None:
     workflows = _workflows()
     future_ref_fields = {
+        "finance.management-review": {
+            "external_result_ref",
+            "result_sha256",
+            "result_digest_sha256",
+            "report_sha256",
+            "control_review_ref",
+            "outcome",
+        },
         "finance.receipt-intake": {
             "receipt_record_ref",
             "source_identity_ref",
@@ -1142,7 +1181,7 @@ def test_finalized_pdf_is_available_before_customer_send_without_draft_issuance(
     assert "no customer send approval or send attempt is needed" in send
     assert "PDF action rejects drafts" in send
     assert (
-        "Verify custody in the external finance workspace before stripe_invoice_pdf_cleanup" in send
+        "Verify custody in the project Finance directory before stripe_invoice_pdf_cleanup" in send
     )
     assert "do not authorize a review-email route" in send
 
@@ -1151,8 +1190,8 @@ def test_finance_records_existing_owner_approval_without_new_decision_ceremony()
     workflows = _workflows()
     payment = workflows["finance.payment-request"]
     followups = workflows["finance.payment-request-followups"]
-    assert payment["version"] == "0.5.5"
-    assert followups["version"] == "0.7.4"
+    assert payment["version"] == "0.5.6"
+    assert followups["version"] == "0.7.5"
     for workflow in (payment, followups):
         guidance = " ".join(
             instruction
@@ -1277,3 +1316,32 @@ def test_finance_capabilities_and_technical_approvals_are_fully_bound() -> None:
     assert "receipt-exception-review" not in approval_guidance
     assert "owner-exception-recovery-review" not in approval_guidance
     assert "owner-cashflow-exception-recovery" not in approval_guidance
+
+
+def test_management_navigation_and_method_bind_reviewed_report() -> None:
+    manifest = yaml.safe_load((ROOT / "plugins/finance/plugin.yaml").read_text())
+    assert manifest["ui"]["nav"]["items"] == [{"label": "Finance", "to": "finance"}]
+    workflow = _workflows()["finance.management-review"]
+    assert workflow["action_contracts"] == []
+    assert workflow["auth_requirements"] == []
+    assert workflow["capability_requirements"] == []
+    assert {
+        item["agent_preset_ref"]
+        for item in workflow["agent_requirements"]
+        if item["requirement"] == "required"
+    } == {"stackos.finance.bookkeeping-preparer", "stackos.finance.control-reviewer"}
+    text = " ".join(
+        instruction for step in workflow["steps"] for instruction in step["instructions"]
+    )
+    for contract in (
+        "agentRequest.prepareRunPlan",
+        "report_sha256",
+        "result_digest",
+        "publish_result",
+        "read_result",
+        "agentRequest.complete",
+        "create_request=false",
+        "awaiting-agent",
+        "no-supported-opportunity",
+    ):
+        assert contract in text

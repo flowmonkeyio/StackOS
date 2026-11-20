@@ -4,131 +4,225 @@ import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
+import { useProjectsStore } from '@/stores/projects'
 import HomeConsoleView from './HomeConsoleView.vue'
-import { portfolioFixture, ticketSummaryFixture } from './home/overviewFixtures'
+import { portfolioFixture } from './home/overviewFixtures'
+import { activeTaskFixture, activeTasksFixture } from './home/activeTaskFixtures'
+import { agentStatsFixture } from './home/agentStatsFixtures'
+import { localActivityFilters } from '@/lib/agentActivity'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
-vi.mock('@/lib/client', async (original) => ({ ...(await original<object>()), apiFetch: vi.fn() }))
+vi.mock('@/lib/client', async original => ({ ...(await original<object>()), apiFetch: vi.fn() }))
 
 beforeEach(() => {
   vi.mocked(callOperation).mockReset()
   vi.mocked(apiFetch).mockReset()
   vi.mocked(callOperation).mockImplementation(async (name, args) => {
-    if (name === 'tracker.ticketCounts')
-      return ticketSummaryFixture({ project_id: Number(args.project_id), is_active: null }) as never
-    if (name === 'project.portfolio')
-      return {
-        items: [portfolioFixture({ id: Number(args.project_id) })],
-        next_cursor: null,
-      } as never
-    if (name === 'workflowExtension.list')
-      return {
-        extensions: [
-          { workflow_key: 'finance.followups', enabled: true },
-          { workflow_key: 'seo.audit', enabled: false },
-        ],
-      } as never
+    const id = Number(args.project_id)
+    if (name === 'tracker.deliveryCapacity') return { scope: 'project', projects: [{ project_id: id, project_name: `Project ${id}`, project_slug: `project-${id}`, configured_limit: id === 1 ? 7 : 4, running_count: 2, queued_count: 1 }], supported_min: 1, supported_max: 32 } as never
+    if (name === 'projectSetup.get') return { project_id: id, eligible: true, folder_status: 'available', status: 'setup_needed', update_count: 0, current_attempt: null } as never
+    if (name === 'tracker.agentStats') return agentStatsFixture({ project_id: id }) as never
+    if (name === 'tracker.activeTasks') return activeTasksFixture(id, [activeTaskFixture({ project_id: id, key: 'work / beta' })]) as never
+    if (name === 'project.portfolio') return { items: [portfolioFixture({ id })], next_cursor: null } as never
     return {} as never
   })
-  vi.mocked(apiFetch).mockImplementation(async (url) => {
-    if (url.includes('/connections/accounts'))
-      return {
-        accounts: [
-          {
-            credential_ref: 'cred_one',
-            provider_key: 'stripe',
-            display_name: 'My Stripe',
-            status: 'connected',
-            setup_required: false,
-            last_test: { ok: false },
-          },
-        ],
-      } as never
-    if (url.includes('/workflow-templates'))
-      return {
-        templates: [
-          { key: 'finance.followups', name: 'Finance follow-ups', plugin_slug: 'finance' },
-          { key: 'seo.audit', name: 'SEO audit', plugin_slug: 'seo' },
-          { key: 'branding.write', name: 'Writing', plugin_slug: 'branding' },
-        ],
-      } as never
-    return {
-      items: [{ ...portfolioFixture(), locale: 'en', niche: null, schedule_json: null }],
-      next_cursor: null,
-    } as never
-  })
+  vi.mocked(apiFetch).mockImplementation(async url => url.includes('/connections/accounts')
+    ? { accounts: [{ credential_ref: 'cred_one', provider_key: 'stripe', display_name: 'My Stripe', status: 'connected', setup_required: false, last_test: { ok: false } }] } as never
+    : /^\/api\/v1\/projects\/\d+$/.test(url) ? portfolioFixture({ id: Number(url.split('/').at(-1)) }) as never
+    : { items: [], next_cursor: null } as never)
 })
-afterEach(() => {
-  document.body.innerHTML = ''
-})
+afterEach(() => { document.body.innerHTML = '' })
 
 async function mountProject() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/projects/:id', component: HomeConsoleView },
-      { path: '/projects/:id/tasks', component: { template: '<div>Work tickets</div>' } },
+      { path: '/projects/:id/tasks', component: { template: '<div>Task graph</div>' } },
+      { path: '/projects/:id/connections', component: { template: '<div>Connections</div>' } },
+      { path: '/other', component: { template: '<div>Other page</div>' } },
     ],
   })
   await router.push('/projects/1')
   await router.isReady()
-  const wrapper = mount(
-    { template: '<RouterView :key="$route.params.id" />' },
-    {
-      global: {
-        plugins: [router, createPinia()],
-        stubs: { TicketStatusChart: true, teleport: true },
-      },
-    },
-  )
+  const pinia = createPinia()
+  const wrapper = mount({ template: '<RouterView :key="$route.params.id" />' }, {
+    global: { plugins: [router, pinia], stubs: { AgentActivityChart: true, DeliveryTrendChart: true, teleport: true } },
+  })
   await flushPromises()
-  return { wrapper, router }
+  return { wrapper, router, projects: useProjectsStore(pinia) }
 }
 
-describe('project ticket overview', () => {
-  it('shows current ticket counts and terminal work, and only actual configured workflows/Account state', async () => {
+describe('project Home active work', () => {
+  it('reserves the cold setup reminder region while useful content loads independently', async () => {
+    const read = vi.mocked(callOperation).getMockImplementation()!
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectSetup.get'
+      ? new Promise(resolve => { finish = resolve }) : read(name, args))
+    const { wrapper } = await mountProject()
+    try {
+      const slot = wrapper.get('.home-setup-slot').element
+      const actions = wrapper.get('.home-header-actions').element
+      const setupAction = wrapper.get('.home-setup-action').element
+      expect(wrapper.find('.active-task-row__link').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(false)
+      expect(wrapper.find('.home-setup-slot [aria-busy="true"]').exists()).toBe(true)
+      finish({ project_id: 1, eligible: true, status: 'updates_available', folder_status: 'available', update_count: 3, current_attempt: null })
+      await flushPromises()
+      expect(wrapper.get('.home-setup-slot').element).toBe(slot)
+      expect(wrapper.get('.home-header-actions').element).toBe(actions)
+      expect(wrapper.get('.home-setup-action').element).toBe(setupAction)
+      expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toContain('3 workflows')
+    } finally { wrapper.unmount() }
+  })
+  it.each(['updates_available', 'current'])('retains the %s setup reminder above accepted return data while its read is pending', async status => {
+    const read = vi.mocked(callOperation).getMockImplementation()!
+    // A current preparation receipt still needs activation. It retains the
+    // same reminder on return without retaining launch/ready authority.
+    const state = { project_id: 1, eligible: true, status, folder_status: 'available', update_count: 3, current_attempt: null }
+    vi.mocked(callOperation).mockImplementation(async (name, args) => name === 'projectSetup.get' ? state as never : read(name, args))
     const { wrapper, router } = await mountProject()
-    expect(callOperation).toHaveBeenCalledWith('tracker.ticketCounts', { project_id: 1 })
-    expect(wrapper.text()).toContain('Tickets by status')
-    expect(wrapper.text()).toContain('Current snapshot · 4 tickets')
-    expect(wrapper.text()).not.toContain('Latest action calls')
-    expect(wrapper.text()).not.toContain('7 days')
-    expect(wrapper.findComponent({ name: 'TicketStatusChart' }).props('total')).toBe(4)
-    expect(wrapper.text()).toContain('Delivered report')
-    expect(wrapper.text()).toContain('Complete')
-    expect(wrapper.text()).toContain('Test failed')
-    expect(wrapper.text()).toContain('Finance follow-ups')
-    expect(wrapper.text()).not.toContain('SEO audit')
-    expect(wrapper.text()).not.toContain('Writing')
-    expect(wrapper.text()).not.toContain('Agents are working')
-    expect(
-      wrapper.find('a[href="/projects/1/workflow-templates?plugin_slug=finance"]').exists(),
-    ).toBe(true)
-    wrapper.findComponent({ name: 'TicketStatusChart' }).vm.$emit('select', 'failed')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/projects/1/tasks')
-    expect(router.currentRoute.value.query).toEqual({ view: 'tickets', status: 'failed' })
-    wrapper.unmount()
+    try {
+      const reminderText = wrapper.get('[aria-label="Project setup reminder"]').text()
+      expect(reminderText).toContain(status === 'updates_available' ? '3 workflows' : 'Set up project')
+      await router.push('/other'); await flushPromises()
+      let finish!: (value: unknown) => void
+      vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectSetup.get'
+        ? new Promise(resolve => { finish = resolve }) : read(name, args))
+      await router.push('/projects/1'); await flushPromises()
+      const reminder = wrapper.get('[aria-label="Project setup reminder"]').element
+      expect(wrapper.find('.active-task-row__link').exists()).toBe(true)
+      expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toBe(reminderText)
+      finish(state); await flushPromises()
+      expect(wrapper.get('[aria-label="Project setup reminder"]').element).toBe(reminder)
+      await router.push('/projects/2'); await flushPromises()
+      expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(false)
+      finish({ ...state, project_id: 2, eligible: false }); await flushPromises()
+      expect(vi.mocked(callOperation).mock.calls.every(([name]) => !name.match(/projectSetup\.(start|answer|continue|cancel|setReminders)/))).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+  it('saves only the current queue without refreshing Usage, work or setup', async () => {
+    const { wrapper } = await mountProject()
+    try {
+      expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === 'tracker.deliveryCapacity')).toBe(false)
+      const before = vi.mocked(callOperation).mock.calls.length
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      await wrapper.get('input[type="number"]').setValue(5)
+      vi.mocked(callOperation).mockResolvedValueOnce({ data: { scope: 'project', supported_min: 1, supported_max: 32,
+        projects: [{ project_id: 1, project_name: 'Project 1', project_slug: 'project-1', configured_limit: 5, running_count: 2, queued_count: 1 }] } })
+      await wrapper.get('form').trigger('submit'); await flushPromises()
+      expect(vi.mocked(callOperation).mock.calls.slice(before)).toEqual([
+        ['tracker.deliveryCapacity', { project_id: 1 }],
+        ['tracker.setDeliveryCapacity', { updates: [{ project_id: 1, max_concurrent_tasks: 5 }] }],
+      ])
+      expect(wrapper.find('[aria-label="Agent activity"]').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Connected tools"]').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+  it('scopes task queues to the selected project and discards drafts on navigation', async () => {
+    const { wrapper, router } = await mountProject()
+    try {
+      expect(wrapper.get('[data-popover-trigger]').text()).toBe('Task queues')
+      await wrapper.get('[data-popover-trigger]').trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+      expect(wrapper.get('tbody tr').text()).toContain('Project 1')
+      await wrapper.get('input[type="number"]').setValue(12)
+      await router.push('/projects/2')
+      await flushPromises()
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+      expect(wrapper.get('tbody tr').text()).toContain('Project 2')
+      expect(wrapper.get('tbody tr').text()).not.toContain('Project 1')
+      expect((wrapper.get('input[type="number"]').element as HTMLInputElement).value).toBe('4')
+      const capacityCalls = vi.mocked(callOperation).mock.calls.filter(([name]) => name.includes('Capacity'))
+      expect(capacityCalls.length).toBeGreaterThanOrEqual(2)
+      expect(capacityCalls.every(([name, args]) => name === 'tracker.deliveryCapacity' && [1, 2].includes(Number(args.project_id)))).toBe(true)
+      expect(capacityCalls.some(([, args]) => args.project_id === 2)).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+  it('uses the selected scope, retained Usage and connections in order, and opens its graph', async () => {
+    const { wrapper, router } = await mountProject()
+    try {
+      expect(wrapper.findAll('[aria-label="Active tasks"], [aria-label="Agent activity"], [aria-label="Connected tools"]').map(node => node.attributes('aria-label')))
+        .toEqual(['Active tasks', 'Agent activity', 'Connected tools'])
+      expect(callOperation).toHaveBeenCalledWith('tracker.activeTasks', { project_id: 1, limit: 200 })
+      expect(callOperation).toHaveBeenCalledWith('tracker.agentStats', { project_id: 1, ...localActivityFilters() })
+      expect(apiFetch).toHaveBeenCalledWith('/api/v1/projects/1/connections/accounts?summary_only=true')
+      expect(callOperation).not.toHaveBeenCalledWith('project.portfolio', expect.anything())
+      expect(wrapper.findComponent({ name: 'AgentActivitySection' }).props('summary').totals.reported_usage.total).toBe(100)
+      expect(wrapper.text()).not.toContain('Delivered report')
+      expect(wrapper.text()).not.toContain('Tickets by status')
+      expect(wrapper.text()).not.toContain('Configured workflows')
+      expect(wrapper.find('[aria-label="Connected tools"] [role="img"][aria-label="Test failed"]').exists()).toBe(true)
+      expect(wrapper.get('a[href="/projects/1/connections?section=services"]').text()).toBe('Manage connections')
+      expect(wrapper.find('.active-task-row__project').exists()).toBe(false)
+      const active = wrapper.get('[aria-label="Active tasks"]')
+      const before = active.text()
+      const reads = vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'tracker.activeTasks').length
+      wrapper.findComponent({ name: 'AgentActivitySection' }).vm.$emit('filters', { start_date: '2026-11-02', end_date: '2026-11-05' })
+      await flushPromises()
+      expect(active.text()).toBe(before)
+      expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'tracker.activeTasks')).toHaveLength(reads)
+      await active.get('a').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/projects/1/tasks')
+      expect(router.currentRoute.value.query).toEqual({ view: 'graph', task: 'work / beta' })
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
   })
 
-  it('does not expose a late response from the previous project', async () => {
+  it('polls compact connections without polling task lifetime metrics, Usage or portfolio', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = await mountProject()
+    try {
+      const count = (operation: string) => vi.mocked(callOperation).mock.calls.filter(([name]) => name === operation).length
+      const usage = count('tracker.agentStats'), active = count('tracker.activeTasks')
+      const connections = vi.mocked(apiFetch).mock.calls.filter(([url]) => url.includes('/connections/accounts')).length
+      let finish!: (value: unknown) => void
+      const read = vi.mocked(apiFetch).getMockImplementation()!
+      vi.mocked(apiFetch).mockImplementation(url => url.includes('/connections/accounts')
+        ? new Promise(resolve => { finish = resolve }) : read(url))
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(wrapper.get('.ui-page-header').findAll('button').find(button => button.text() === 'Refresh')!.attributes('aria-busy')).toBeUndefined()
+      expect(wrapper.find('[aria-label="Connected tools"] [role="img"][aria-label="Test failed"]').exists()).toBe(true)
+      expect(count('tracker.agentStats')).toBe(usage)
+      expect(count('tracker.activeTasks')).toBe(active)
+      expect(count('project.portfolio')).toBe(0)
+      expect(vi.mocked(apiFetch).mock.calls.filter(([url]) => url.includes('/connections/accounts')).length).toBeGreaterThan(connections)
+      finish({ accounts: [] }); await flushPromises()
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
+  it('does not expose old-scope Usage or task data after switching projects', async () => {
     let resolveOld!: (value: unknown) => void
-    const old = new Promise((resolve) => {
-      resolveOld = resolve
-    })
+    const old = new Promise(resolve => { resolveOld = resolve })
     const existing = vi.mocked(callOperation).getMockImplementation()!
-    vi.mocked(callOperation).mockImplementation(async (name, args) => {
-      if (name === 'tracker.ticketCounts' && args.project_id === 1) return (await old) as never
-      if (name === 'tracker.ticketCounts')
-        return ticketSummaryFixture({ project_id: 2, total_count: 9 }) as never
-      return existing(name, args)
-    })
+    vi.mocked(callOperation).mockImplementation(async (name, args) =>
+      (name === 'tracker.activeTasks' || name === 'tracker.agentStats') && args.project_id === 1
+        ? await old as never : existing(name, args))
     const { wrapper, router } = await mountProject()
-    await router.push('/projects/2')
-    await flushPromises()
-    resolveOld(ticketSummaryFixture({ project_id: 1, total_count: 99 }))
-    await flushPromises()
-    expect(wrapper.findComponent({ name: 'TicketStatusChart' }).props('total')).toBe(9)
-    wrapper.unmount()
+    try {
+      await router.push('/projects/2')
+      await flushPromises()
+      resolveOld(activeTasksFixture(1, [activeTaskFixture({ title: 'Stale old project work' })]))
+      await flushPromises()
+      expect(wrapper.text()).not.toContain('Stale old project work')
+      expect(wrapper.findComponent({ name: 'AgentActivitySection' }).props('summary').project_id).toBe(2)
+      expect(wrapper.get('.active-task-row__link').attributes('href')).toContain('/projects/2/tasks')
+    } finally { wrapper.unmount() }
+  })
+
+  it('keeps the canonical newer project heading after a delayed overview', async () => {
+    const { wrapper, projects } = await mountProject()
+    try {
+      projects.items = [{ ...portfolioFixture(), locale: 'en', niche: null, schedule_json: null, order_index: 0,
+        name: 'Renamed canonical project', updated_at: '2026-11-11T20:00:00Z' }] as never
+      await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('h1').text()).toContain('Renamed canonical project')
+    } finally { wrapper.unmount() }
   })
 })

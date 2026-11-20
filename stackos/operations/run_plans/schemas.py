@@ -12,6 +12,11 @@ from stackos.db.models import (
     RunPlanStepStatus,
 )
 from stackos.mcp.contract import MCPInput
+from stackos.repositories.run_plan_views import RunPlanOut
+
+
+class RunPlanAbortOut(RunPlanOut):
+    cancellation: dict[str, Any]
 
 
 class RunPlanValidateInput(MCPInput):

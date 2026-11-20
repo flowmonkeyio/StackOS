@@ -8,6 +8,7 @@ Lifespan ensures dirs/seed/token before the first request lands.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import secrets
 import stat
@@ -16,6 +17,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 
+from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,11 +34,13 @@ from stackos.actions.durable_dispatcher import DurableActionDispatcher
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.api import register_routers
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
+from stackos.backups import run_due_backup
 from stackos.config import Settings, get_settings
 from stackos.crypto import cleanup_old_backup
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.db.connection import make_engine
 from stackos.db.migrate import upgrade_to_head
+from stackos.install import bundled_patterns_source
 from stackos.integrations.telegram_tdlib.daemon import (
     build_telegram_runtime,
     restore_telegram_accounts,
@@ -53,8 +57,10 @@ from stackos.jobs.scheduler import (
     RUNS_REAPER_JOB_ID,
     build_scheduler,
 )
+from stackos.jobs.workflow_schedules import WorkflowScheduleRuntime
 from stackos.logging import configure_logging, get_logger
 from stackos.mcp import register_mcp
+from stackos.repositories.patterns import PatternRepository
 from stackos.repositories.runs import RunRepository
 
 _SEED_BYTES = 32
@@ -72,6 +78,7 @@ _PUBLIC_INGRESS_PREFIXES: tuple[str, ...] = (
 _OAUTH_CALLBACK_PATH = "/api/v1/auth/oauth/callback"
 _SLOW_REQUEST_MS = 100
 _PRIVATE_TRANSFER_STAGING_ROOTS = ("imap-transfers", "stripe-invoice-transfers")
+BACKUP_MAINTENANCE_JOB_ID = "background-encrypted-backups"
 
 
 class GeneratedAssetsStaticFiles(StaticFiles):
@@ -263,6 +270,16 @@ def _build_lifespan(
         engine = make_engine(settings.db_path)
 
         SQLModel.metadata.create_all(engine)
+        try:
+            with Session(engine) as session:
+                refreshed = PatternRepository(session).refresh_bundle(
+                    bundled_patterns_source().read_text(encoding="utf-8")
+                )
+            log.info("pattern_bundle_refreshed", **refreshed)
+        except Exception as exc:
+            # Invalid/missing package assets must preserve local content and
+            # leave the console available for repair. Never log bundle bodies.
+            log.warning("pattern_bundle_refresh_failed", error_type=type(exc).__name__)
         app.state.settings = settings
         app.state.token = token
         app.state.ui_token = derive_ui_token(token)
@@ -299,7 +316,17 @@ def _build_lifespan(
         # The sweep's effects are idempotent (rows that aren't stale are
         # skipped) so re-running on every boot is fine.
         scheduler = build_scheduler(settings, engine)
+        from stackos.operations.maintenance import upgrade_runtime
+
+        upgrade_runtime(scheduler)  # Identify loaded target generation; never continue at startup.
         app.state.scheduler = scheduler
+        workflow_schedules = WorkflowScheduleRuntime(scheduler, lambda: Session(engine))
+        app.state.workflow_schedules = workflow_schedules
+        app.state.operation_services.update(
+            scheduler=scheduler,
+            session_factory=lambda: Session(engine),
+            schedule_reconcile=workflow_schedules.reconcile,
+        )
 
         # Crash-recovery sweep: any ``status='running' AND
         # heartbeat_at < now - 5 min`` row gets ``aborted`` with
@@ -329,6 +356,18 @@ def _build_lifespan(
             jobstore="memory",
             misfire_grace_time=REAPER_MISFIRE_GRACE_SECONDS,
         )
+        scheduler.add_job(
+            run_due_backup,
+            kwargs={"settings": settings},
+            trigger=IntervalTrigger(minutes=5),
+            id=BACKUP_MAINTENANCE_JOB_ID,
+            name="encrypted local backup maintenance",
+            replace_existing=True,
+            jobstore="memory",
+            executor="long",
+            coalesce=True,
+            max_instances=1,
+        )
 
         try:
             scheduler.start()
@@ -349,18 +388,30 @@ def _build_lifespan(
             yield
         finally:
             log.info("daemon.shutdown.clean")
+            if workflow_schedules.connection is not None:
+                workflow_schedules.disconnect(workflow_schedules.connection)
+            from stackos.host_mcp.service import shutdown_usage
+
+            shutdown_usage()
             try:
                 await delivery.stop()
             finally:
                 try:
                     await telegram_runtime.close_all()
                 finally:
-                    # Drain the scheduler before disposing the engine so any
-                    # in-flight short job finishes its DB writes cleanly.
+                    # AsyncIOScheduler.shutdown queues a callback. Await its
+                    # completion event before disposing state; wait=True drains
+                    # the long executor's backup thread inside that callback.
                     import contextlib as _ctx_lib
 
                     with _ctx_lib.suppress(Exception):  # pragma: no cover — defensive
-                        scheduler.shutdown(wait=True)
+                        if scheduler.running:
+                            stopped = asyncio.Event()
+                            scheduler.add_listener(
+                                lambda _event: stopped.set(), EVENT_SCHEDULER_SHUTDOWN
+                            )
+                            scheduler.shutdown(wait=True)
+                            await stopped.wait()
                     app.state.scheduler_running = False
                     engine.dispose()
 

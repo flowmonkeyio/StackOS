@@ -2,62 +2,28 @@
 
 from __future__ import annotations
 
-from stackos.mcp.server import ToolRegistry
-from stackos.mcp.tools import (
-    actions,
-    agent_presets,
-    agent_requests,
-    artifacts,
-    auth,
-    browser,
-    communications,
-    context,
-    cost,
-    execution_contexts,
-    guides,
-    meta,
-    operations,
-    plugins,
-    projects,
-    readiness,
-    resources,
-    runs,
-    sitemap,
-    tool_profiles,
-    tracker,
-    workflows,
-    workspaces,
-)
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from stackos.mcp.tool_registry import ToolRegistry
+    from stackos.operations.registry import OperationRegistry
 
 
-def register_all(registry: ToolRegistry) -> None:
-    """Populate ``registry`` with the core StackOS tool catalog."""
-    from stackos.operations.adapters.mcp import register_mcp_operation_names
+def register_all(
+    registry: ToolRegistry, *, operation_registry: OperationRegistry | None = None
+) -> None:
+    """Expose the canonical MCP surface from one operation registry.
 
-    register_mcp_operation_names(registry, ("hostMcp.status",))
-    agent_requests.register(registry)
-    actions.register(registry)
-    projects.register(registry)
-    auth.register(registry)
-    browser.register(registry)
-    communications.register(registry)
-    tool_profiles.register(registry)
-    agent_presets.register(registry)
-    tracker.register(registry)
-    context.register(registry)
-    runs.register(registry)
-    cost.register(registry)
-    execution_contexts.register(registry)
-    guides.register(registry)
-    meta.register(registry)
-    operations.register(registry)
-    plugins.register(registry)
-    readiness.register(registry)
-    resources.register(registry)
-    artifacts.register(registry)
-    sitemap.register(registry)
-    workflows.register(registry)
-    workspaces.register(registry)
+    App composition supplies the same registry used by its dispatcher. Direct
+    catalog consumers can omit it to build one independent registry here.
+    """
+    from stackos.operations.adapters.mcp import register_mcp_operations
+
+    if operation_registry is None:
+        from stackos.operations.registry import build_operation_registry
+
+        operation_registry = build_operation_registry()
+    register_mcp_operations(registry, operation_registry)
 
 
 __all__ = ["register_all"]

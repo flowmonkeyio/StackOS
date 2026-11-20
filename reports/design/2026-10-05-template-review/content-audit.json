@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-05",
+  "status": "Option 3 selected and implemented locally; visual QA passed",
+  "implementation_run_plan_id": 555,
+  "implementation_ticket": "website-content-evidence-layout-555",
+  "implementation_evidence": "implementation/browser-verification.json",
+  "implementation_candidate": "97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b",
+  "task_key": "website-template-design-review-20261005",
+  "scope": "Improve content presentation while retaining the current page shell, header, navigation, hero, colors and typography. Show each concept within the actual page context.",
+  "source_screenshot": "screenshots/article-context.png",
+  "reference_url": "https://stackos.flowmonkey.io/library/articles/how-to-do-keyword-research-for-ai-search/",
+  "evidence": "Eight representative live pages reviewed through StackOS browser; article/workflow/catalog mobile openings inspected; independent source and screenshot critique completed.",
+  "source_copy": "website/content/articles/how-to-do-keyword-research-for-ai-search.md",
+  "current_concepts": [
+    {
+      "display_order": 1,
+      "file": "content-concepts/01-calm-reading.png"
+    },
+    {
+      "display_order": 2,
+      "file": "content-concepts/02-case-ledger.png"
+    },
+    {
+      "display_order": 3,
+      "file": "content-concepts/03-annotated-evidence.png"
+    }
+  ],
+  "generation": {
+    "mode": "built-in image_gen",
+    "intent": "edit with current screenshot reference",
+    "prompt_set": "content-prompts-final.json"
+  },
+  "template_application": [
+    {
+      "template": "Article prose",
+      "change": "Improve paragraph spacing, comfortable reading measure and heading scale; reserve callout emphasis for the specific point."
+    },
+    {
+      "template": "Article evidence tables",
+      "change": "Improve column widths, cell padding, row separators and top alignment; consider grouped evidence rows for long text."
+    },
+    {
+      "template": "Workflow operator and agent content",
+      "change": "Keep the existing sequence and comparison, with clearer numbered steps and lighter grouping."
+    },
+    {
+      "template": "Workflow prerequisites and proof",
+      "change": "Improve list indentation and distinguish illustrative examples from verification details without rewriting claims."
+    },
+    {
+      "template": "Integration facts and actions",
+      "change": "Use consistent label/value alignment and compact existing action rows with read/write labels."
+    },
+    {
+      "template": "Agent and orchestrator contract content",
+      "change": "Use clearer hierarchy and lighter lists for responsibilities, boundaries, handoff inputs and outputs."
+    }
+  ],
+  "out_of_scope": [
+    "Page shell or hero redesign",
+    "Navigation changes",
+    "Rebranding",
+    "Production implementation or deployment"
+  ],
+  "preserve": [
+    "Exact meaning and approved voice",
+    "All four article evidence records and their limitations",
+    "Existing URLs, canonical metadata, links and server-rendered content",
+    "Source ownership in Markdown and workflow/preset contracts"
+  ],
+  "limits": [
+    "Raster concepts demonstrate layout intent; exact copy and shell are to be preserved from source in implementation.",
+    "Image generation can introduce small visual/text differences; these are not proposed copy changes.",
+    "No measured accessibility or SEO outcome claim."
+  ],
+  "superseded": {
+    "file": "review.html",
+    "reason": "Initial concepts changed too much of the whole page; user narrowed scope."
+  }
+}

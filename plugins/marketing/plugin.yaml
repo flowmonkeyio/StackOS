@@ -360,15 +360,14 @@ resources:
       record_kind: campaign-evidence
       agent_guidance: Record one verdict per reviewed manifest entry or page with rendered evidence refs; separate blocking findings from notes explicitly.
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Marketing
     items:
-      - key: marketing.resources
-        label: Data
-        to: resources?plugin_slug=marketing
+      - key: marketing.domain
+        label: Marketing
+        to: plugins/marketing
         matchPrefix: true
-      - key: marketing.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=marketing
 config:
   schema_version: stackos.plugin.v1

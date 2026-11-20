@@ -28,6 +28,47 @@ granted actions, and recording results.
 8. Inspect execution through `runPlan.get`, `runPlan.checkConsistency`,
    `run.get`, and `run.list`.
 
+The exact `operator_authorization` field in plan metadata (including step
+metadata) may record a nonsecret operator instruction. Workflow template root
+metadata accepts the same field. This does not grant execution authority or
+exempt its contents from secret validation: nested credential fields, bearer
+text, passwords and private keys still reject. Other authorization-like field
+names retain their secret checks. Opaque credential selectors and exact
+`$secret_ref` markers keep their existing run-plan paths; templates still cannot
+embed concrete credentials.
+
+Run-plan repository secret rejections retain `rule: "raw_secret"` and the
+existing safe `paths` array. They also include `findings`, each containing a
+safe `path` and a `kind` of `key_name` or `value_pattern`, plus
+`classification_complete`. One canonical traversal produces both forms;
+path-only callers keep the existing interface. Diagnostics never include
+arbitrary raw keys, values or matched text. Paths retain the fixed diagnostic
+vocabulary, masking, eight-finding limit and 256-character per-path limit.
+
+The scan stops at eight findings and conservatively marks every saturated
+result `classification_complete: false`, including one with exactly eight
+findings. Later values may be unexamined. Callers must treat missing, unknown
+or incomplete classification as ineligible for key-only reporting correction;
+the displayed paths alone cannot establish absence of value-pattern findings.
+Complete key-only classification describes the rejection cause, not the safety
+of the value. Suspicious keys still reject numeric, boolean and prose values;
+no field allowlist or semantic prose exemption is introduced. Secret validation
+precedes step/result and tracker-mirror writes, so a rejected `recordStep`
+commits none of those changes. Successful results retain the existing
+validation and transaction path.
+
+Automatic delivery may use complete trusted key-only diagnostics for one
+[report-only continuation](task-tracker.md#automated-task-delivery) in the same
+retained session. It prepares the comparison basis using the runner's admitted
+workspace semantics before consuming the allowance: committed Git work retains
+its fingerprints; non-Git and unborn work need no invented commit or directory
+snapshot. It persists the allowance before resuming, preserves the
+candidate, proof and work state, and omits rejected bodies from receipts. Missing
+proof, unsettled actions, incomplete classification or any value finding is
+ineligible. Corrected results still enter `recordStep` through all original
+schema, secret, dependency, authority and lifecycle checks, with one accepted
+write. No accepted step or action is replayed by this reporting path.
+
 `runPlan.create` also mirrors the plan into the project task tracker: one task
 for the run plan and one ticket per concrete step. Agents can use
 `tracker.next`, `tracker.brief`, and `tracker.verify` to navigate work without
@@ -38,6 +79,49 @@ For mirrored workflow tickets, `tracker.brief` includes a compact
 to run-plan execution: inspect `runPlan.get`, start the plan if no run exists,
 claim the matching step, inspect granted tools, then record the step result.
 The tracker packet does not grant execution by itself.
+
+For explicit taskwide `tracker.startDelivery` handoff, the running step is entry
+context rather than a traversal limit. The existing generic runner selects all
+remaining dependency-ready task work. It claims mirrors through RunPlanRepository,
+waits for accepted required descendants or valid [explicit child exclusions](task-tracker.md#workflow-mirroring),
+and launches each remaining frozen contract once. Exclusions settle containment
+without satisfying success dependencies or becoming accepted source.
+Zero-child mirrors launch directly; groups never launch. The selected agent
+returns declared outputs without claiming or recording its own step. Only the
+run-plan owner validates frozen schemas and writes mirror/plan/run terminal state.
+Frozen step `extensions.agent_assignment` may select `delivery_agent` or
+`review_agent`; explicit task `agent_assignments` take precedence. There is no
+phase-name dispatch table. Models and instructions remain project/task settings.
+The current result envelope is status/summary/outputs/followups; outputs is a
+JSON-encoded object string. Agents map domain conclusions to explicit generic
+status; only success accepts a gate. A supported persisted correction/reopen
+returns to dependency scanning after native validation; mirror repair without
+progress stops. Integration and final
+workflow gates still need actual proof, without observation-only commits.
+Git identity is optional evidence: a noncoding gate can run in a dirty Git folder
+without a fabricated commit. Supplied candidate SHAs retain current-HEAD,
+cleanliness and ancestry checks. Project, role and frozen workflow guidance owns
+the permitted work and source-commit method; the generic mirror launch does not
+prohibit source edits universally. Existing owned-work receipts retain strict
+ticket/session/base/snapshot matching and never adopt pre-existing dirt.
+An explicit rehandoff after a completed/stopped job may refresh that task's
+execution settings. It never rewrites frozen templates, grants, outputs or
+completed task snapshots, and preserves prior ticket receipts/sessions/repair
+allowance. Queued/running execution snapshots never refresh silently.
+
+An assigned automatic verifier/reviewer can use the bounded
+[agent-owned correction method](task-tracker.md#agent-owned-automatic-corrections)
+when the runtime and assignment support it. Full-read/merge feedback and retain
+current findings/outputs outside step results, reconcile affected ordinary
+children, finish checks and quiesce other affected work, then call `tracker.reopen`
+at the earliest affected bound gate as the final mutation and immediately return
+`repair`. The caller must remain active for that last call. RunPlanRepository
+still owns reclaim/record; the runner retains superseded observations and resumes
+original sessions through persisted dependencies. Fresh correction outranks old
+approval; descendant source commits require independent exact review, preserving
+history and consumed repair allowance. No self-acceptance, dispatch, controller
+token or phase-specific repair engine is introduced. Terminal-managed writers
+remain unchanged, and source updates never rewrite frozen jobs or grants.
 
 When the operator has already made an explicit approval decision, the agent
 records it with `runPlan.update` through the normal workspace-bound MCP toolbox.
@@ -50,6 +134,18 @@ Recording a decision does not invent authority or broaden what the operator
 approved. If a decision is missing or its scope is unclear, the gate stays
 unresolved.
 
+Approval `decision_json` may include the optional root fields `prior_tokens` and
+`cumulative_planning_exposure_tokens`. Each must be an integer from `0` through
+`9007199254740991` inclusive; booleans, floats, strings, null, containers, and
+secret-reference markers are rejected. Either field may be supplied alone, and
+no relationship between them is enforced. This bound preserves exact JSON/JavaScript
+integer representation; it does not authorize execution or define a token budget.
+Accepted numbers are preserved in raw update/get responses and new idempotent
+replays. Other keys, nested copies, spelling variants, and other run-plan payloads
+retain the existing secret checks. The complete update is validated before changing
+approval state or accompanying metadata, so rejected patches leave both unchanged.
+This write validation does not sanitize pre-existing rows or cached responses.
+
 This uses the existing approval writer and status transitions. A controller
 token scopes the mutation to its project before any write; direct daemon MCP
 calls without a token must supply `project_id`. No active step grant, new run,
@@ -59,7 +155,7 @@ normal grants, credentials, and audit boundaries still apply after approval.
 
 Run-plan execution has one canonical lifecycle. A started run plan is durable
 workflow state, not a five-minute daemon job. The stale-run reaper preserves
-live started run plans and refreshes the linked audit heartbeat so normal
+live started run plans and leaves the linked audit heartbeat unchanged so normal
 long-running agent work, browser checks, or local tests do not get aborted just
 because no run-plan operation was called for a few minutes. If a linked audit
 run is already terminal, StackOS reconciles the linked run plan, unfinished
@@ -69,9 +165,13 @@ not leave `run_plans.status='started'` while the run is `aborted`.
 and `runPlan.checkConsistency` returns the same diagnostics as a compact
 agent-facing check.
 
-`runPlan.claimStep` and `runPlan.recordStep` still refresh the linked audit run
-heartbeat, but agents do not need to keep calling `run.heartbeat` during normal
-workflow-backed delivery.
+`runPlan.claimStep`, `runPlan.recordStep`, and recovery refresh the linked audit
+run heartbeat, but agents do not need to keep calling `run.heartbeat` during
+normal workflow-backed delivery. Run detail shows this recorded audit activity;
+neither the heartbeat nor a recorded status verifies worker progress, success,
+termination, or settled effects. Preserving an old timestamp does not abort a
+resumable plan, and historical heartbeats refreshed by older maintenance sweeps
+cannot establish when actual work last occurred.
 
 ### Workflow contract changes on upgrade or resume
 
@@ -133,6 +233,9 @@ delegates to `runPlan.reopen`, revives the linked audit run, resets the selected
 step and later steps to pending, and mirrors `workflow-{run_plan_id}` back to
 `in-progress`. If the target is a manual tracker task with no run plan, only the
 task is reopened. Agents should not decide which side of the mirror to patch.
+Pass `step_id` for the earliest affected gate. When omitted, reopening selects
+the first failed or blocked step, otherwise the last step; no workflow phase
+name receives special treatment.
 
 Agents must not use tracker mirror ticket status as a second workflow execution
 path. Mirrored workflow step tickets are controlled by `runPlan.claimStep` and
@@ -148,6 +251,39 @@ run plan first, then mirroring the tracker task and unfinished tickets to
 
 ## Grants
 
+### Explicit run abort
+
+`runPlan.abort` uses the existing plan/run/tracker lifecycle owner and coordinates
+automatic delivery at its launch and result-acceptance boundaries. It cancels the
+matching queued job and stops only the exact invocation registered by StackOS for
+that project and task, using its private native process handle. On POSIX, the
+invocation owns a new process group; termination uses bounded TERM then KILL waits.
+It never finds processes by name, model, PID search or native session identifier.
+External sessions, including the operator's main agent, remain open.
+
+The response's `cancellation.status` distinguishes `managed_stopped` (owned work
+exited and observation retired, or launch was prevented) from `state_only` (no
+managed invocation). An unconfirmed stop returns a structured conflict with
+`status=aborted` and `cancellation.status=stop_unconfirmed`: the durable abort has
+already happened, but native termination is not claimed. A saved unfinished
+managed launch without a live handle also reports this uncertainty. Retrying can
+check a still-owned invocation; it never reconstructs ownership after restart.
+
+Late success, errors and exceptions may retain their session, receipt and actual
+available usage, but cannot accept work, mark it failed, requeue, launch review or
+advance an aborted plan. The runner retains the original invocation's cancellation
+signal through result validation and exception handling after native registry
+retirement. Reopening the plan cannot revive that cancelled result or launch its
+reviewer; fresh work requires its own explicit delivery handoff.
+Completed work, previous receipts and schedules remain;
+aborting one occurrence does not disable later future ticks or undo external effects.
+The linked audit-run abort and workflow rejection adapters use the same coordinator;
+tracker rejection retains its separate rejection semantics.
+
+Runs row menus, Board task menus and the Graph task header use one shared Abort run
+confirmation. Only real run-plan links receive the action. Pending requests disable
+repeat submission, while a stop error remains visible with an explicit retry.
+
 Run-plan grants are frozen in `run_plans.grant_snapshot_json`.
 
 The daemon dispatcher requires:
@@ -157,6 +293,27 @@ The daemon dispatcher requires:
 - exactly one running step
 - matching `project_id`
 - an explicit grant for the requested tool/action/resource/context fields
+
+### Canonical ownership grants
+
+Canonical ownership operations use the same frozen grant owner. Each
+`run.ownerAcquire`, `run.ownerCheckpoint`, `run.ownerStop`,
+`run.ownerReassign`, `run.ownerConsume`, or `run.ownerRecordAttempt` grant must
+declare exact `targets` such as `ticket:231`; an unscoped `step_tools` entry
+cannot grant these writes. The canonical ticket must already carry this plan
+and active step's IDs. A task fallback needs both IDs explicitly in its existing
+`source_json`; workflow parentage alone grants nothing. Existing templates and
+grant snapshots are unchanged by this source addition. New eligibility in the
+tool catalog is not an issued grant.
+
+```json
+{"step_id":"write","tool":"run.ownerCheckpoint","targets":["ticket:231"]}
+```
+
+This illustrates a future reviewed snapshot, not permission to change the
+current run. Ownership writes revalidate current grants and canonical continuity
+inside their transaction before audit/commit. Read-only `run.ownerResolve` and
+`run.ownerGet` require no started workflow and grant no execution.
 
 ## Validation Warnings
 

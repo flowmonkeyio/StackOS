@@ -9,7 +9,6 @@ Official docs verified:
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import time
 from collections.abc import Mapping
@@ -20,6 +19,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session
+from stackos_connectors.connectors.slack_bot.auth import verify_signature_v0
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text
@@ -154,10 +154,7 @@ async def _verify_signature(
         project_id=project_id,
         credential_ref=profile.credential_ref,
     )
-    basestring = b"v0:" + timestamp.encode("utf-8") + b":" + raw_body
-    digest = hmac.new(signing_secret.encode("utf-8"), basestring, hashlib.sha256).hexdigest()
-    expected = f"v0={digest}"
-    if not hmac.compare_digest(expected, signature):
+    if not verify_signature_v0(signing_secret, timestamp, raw_body, signature):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
 
 

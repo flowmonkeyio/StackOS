@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const downloadUrl = useDownloadUrl()
 const { workflows } = useLibraryCatalog()
-const homepageDescription = 'Keep working in Codex, Claude Code, Gemini, and the business tools you already use. StackOS turns requests into clear, trackable workflows on your Mac.'
+const homepageDescription = 'StackOS runs on your Mac and gives AI clients connected tools, saved project context, and a record of the actions they take.'
 const homepageFaq = [
   {
     question: 'What does StackOS do?',
@@ -59,8 +59,8 @@ useSchemaOrg([
             </div>
             <h1>Your AI can do the work.<br /><em>StackOS keeps it on track.</em></h1>
             <p class="hero__lede">
-              Keep working in Codex, Claude Code, Gemini, or another AI tool. StackOS turns each
-              request into a clear plan, moves it through your existing apps, and remembers every step.
+              Keep using Codex, Claude Code, or Gemini CLI. StackOS runs on your Mac, gives your
+              agent access to connected tools, and keeps the project plan and results available when you return.
             </p>
             <div class="hero__actions">
               <a
@@ -77,6 +77,10 @@ useSchemaOrg([
                 <span aria-hidden="true">↓</span>
               </a>
             </div>
+            <p class="hero__guides">
+              Start with the <NuxtLink to="/library/articles/use-codex-claude-gemini-with-existing-tools/">AI client setup guide</NuxtLink>
+              or <NuxtLink to="/library/workflows/">choose a workflow for your first task</NuxtLink>.
+            </p>
             <ul class="hero__proof" aria-label="StackOS product traits">
               <li><span>01</span> Keep your current AI tool</li>
               <li><span>02</span> Connect the apps you already use</li>
@@ -141,6 +145,9 @@ useSchemaOrg([
 </template>
 
 <style scoped>
+.hero__guides { max-width: 500px; margin: 20px 0 0; color: var(--ink-soft); font-size: 14px; line-height: 1.65; }
+.hero__guides a { color: var(--signal); text-underline-offset: 3px; }
+
 .hero {
   position: relative;
   min-height: 820px;

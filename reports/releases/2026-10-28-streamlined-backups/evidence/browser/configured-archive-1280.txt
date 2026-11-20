@@ -1,0 +1,166 @@
+[viewport] Viewport set to 1280x800
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured (200)
+
+[js] true
+
+[js] Export backup
+
+[eval] {
+  "action": "Export backup",
+  "url": "http://127.0.0.1:5197/backup-qa?state=configured",
+  "viewport": 1280,
+  "before": {
+    "Restore backup": {
+      "x": 1102.90625,
+      "y": 26,
+      "width": 123.09375,
+      "height": 32,
+      "disabled": false
+    },
+    "Back up now": {
+      "x": 1042,
+      "y": 120,
+      "width": 128,
+      "height": 32,
+      "disabled": false
+    },
+    "Refresh backups": {
+      "x": 1178,
+      "y": 120,
+      "width": 32,
+      "height": 32,
+      "disabled": false
+    },
+    "Export backup": {
+      "x": 1109.703125,
+      "y": 303,
+      "width": 116.296875,
+      "height": 32,
+      "disabled": false
+    },
+    "Export key": {
+      "x": 1114,
+      "y": 378,
+      "width": 112,
+      "height": 32,
+      "disabled": false
+    },
+    "Manage": {
+      "x": 1129.953125,
+      "y": 498,
+      "width": 96.046875,
+      "height": 32,
+      "disabled": false
+    }
+  },
+  "during": {
+    "Restore backup": {
+      "x": 1102.90625,
+      "y": 26,
+      "width": 123.09375,
+      "height": 32,
+      "disabled": true
+    },
+    "Back up now": {
+      "x": 1042,
+      "y": 120,
+      "width": 128,
+      "height": 32,
+      "disabled": true
+    },
+    "Refresh backups": {
+      "x": 1178,
+      "y": 120,
+      "width": 32,
+      "height": 32,
+      "disabled": true
+    },
+    "Export backup": {
+      "x": 1109.703125,
+      "y": 303,
+      "width": 116.296875,
+      "height": 32,
+      "disabled": true
+    },
+    "Export key": {
+      "x": 1114,
+      "y": 378,
+      "width": 112,
+      "height": 32,
+      "disabled": true
+    },
+    "Manage": {
+      "x": 1129.953125,
+      "y": 498,
+      "width": 96.046875,
+      "height": 32,
+      "disabled": true
+    }
+  },
+  "after": {
+    "Restore backup": {
+      "x": 1102.90625,
+      "y": 26,
+      "width": 123.09375,
+      "height": 32,
+      "disabled": false
+    },
+    "Back up now": {
+      "x": 1042,
+      "y": 120,
+      "width": 128,
+      "height": 32,
+      "disabled": false
+    },
+    "Refresh backups": {
+      "x": 1178,
+      "y": 120,
+      "width": 32,
+      "height": 32,
+      "disabled": false
+    },
+    "Export backup": {
+      "x": 1109.703125,
+      "y": 303,
+      "width": 116.296875,
+      "height": 32,
+      "disabled": false
+    },
+    "Export key": {
+      "x": 1114,
+      "y": 378,
+      "width": 112,
+      "height": 32,
+      "disabled": false
+    },
+    "Manage": {
+      "x": 1129.953125,
+      "y": 498,
+      "width": 96.046875,
+      "height": 32,
+      "disabled": false
+    }
+  },
+  "shifts": [],
+  "frames": 160,
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    },
+    {
+      "native": "exportLatestBackup"
+    }
+  ],
+  "focus": "Export backup",
+  "overflow": {
+    "mainClient": 1010,
+    "mainScroll": 1010,
+    "documentClient": 1280,
+    "documentScroll": 1269
+  },
+  "feedback": [
+    "Completed. /Volumes/Recovery/StackOS"
+  ]
+}

@@ -18,13 +18,13 @@ test.describe('StackOS console — generic project surfaces', () => {
     const routes = [
       // The overview is the project home — its h1 is the project name.
       { path: 'overview', heading: 'Console Project' },
-      { path: 'inbox', heading: 'Inbox' },
+      { path: 'inbox', heading: 'Attention' },
       { path: 'activity', heading: 'Activity' },
-      { path: 'setup', heading: 'Setup' },
+      { path: '/setup', heading: 'Backups' },
       { path: 'plugins', heading: 'Plugins' },
       { path: 'capabilities', heading: 'Capabilities' },
       { path: 'connections', heading: 'Connections' },
-      { path: 'workflow-templates', heading: 'Workflow library' },
+      { path: 'workflow-templates', heading: 'Workflow templates' },
       { path: 'runs', heading: /^Runs/ },
       { path: 'data', heading: 'Project data' },
       { path: 'resources', heading: 'Data explorer' },
@@ -33,7 +33,7 @@ test.describe('StackOS console — generic project surfaces', () => {
     ] as const
 
     for (const route of routes) {
-      await page.goto(`/projects/${project.id}/${route.path}`)
+      await page.goto(route.path.startsWith('/') ? route.path : `/projects/${project.id}/${route.path}`)
       await expect(page.getByRole('heading', { level: 1, name: route.heading })).toBeVisible()
     }
 

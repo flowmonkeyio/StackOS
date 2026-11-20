@@ -9,6 +9,8 @@ from typing import Any
 
 from stackos.actions.connectors import ActionValidationIssue
 from stackos.actions.manifest import ExecutableActionManifest
+from stackos.actions.provider_utils import ELEVENLABS_VOICES_LIST_REF
+from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import AuthRepository
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.execution_contexts import ExecutionContextRepository
@@ -59,6 +61,7 @@ class ActionValidationMixin:
             context_ref=context_ref,
             credential_ref=resolved_ref,
         )
+        self._ensure_payload_has_no_secrets(manifest, payload)
         provider_context = self._normalize_provider_context(provider_context_json)
         runtime_context = self._resolve_runtime_context(
             project_id=project_id,
@@ -267,15 +270,25 @@ class ActionValidationMixin:
         embedded = payload.pop("credential_ref", None)
         if embedded is not None and not isinstance(embedded, str):
             raise ValidationError("credential_ref must be a string")
-        resolved_ref = credential_ref or embedded
-        secret_paths = find_run_plan_secret_paths(payload)
+        return payload, credential_ref or embedded
+
+    def _ensure_payload_has_no_secrets(
+        self, manifest: ExecutableActionManifest, payload: dict[str, Any]
+    ) -> None:
+        cursor_paths = []
+        if manifest.action_ref == ELEVENLABS_VOICES_LIST_REF and "page_token" in payload:
+            cursor = payload["page_token"]
+            if cursor is None or isinstance(cursor, str):
+                payload = {key: value for key, value in payload.items() if key != "page_token"}
+                if isinstance(cursor, str) and redact_secret_text(cursor) != cursor:
+                    cursor_paths.append("$.page_token")
+        secret_paths = cursor_paths + find_run_plan_secret_paths(payload)
         if secret_paths:
             raise ValidationError(
                 "action input must not contain secrets as raw values; use secret.set and an exact "
                 "$secret_ref marker for payload values; credential_ref is only for provider auth",
                 data={"paths": secret_paths[:8]},
             )
-        return payload, resolved_ref
 
     def _validate_payload(
         self,

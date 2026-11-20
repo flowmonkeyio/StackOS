@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Literal
+import re
+from datetime import date, datetime
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from stackos.db.models import (
     TrackerItemStatus,
@@ -13,6 +14,54 @@ from stackos.db.models import (
     TrackerSourceKind,
     TrackerTicketKind,
 )
+
+
+class TrackerCorrectionIntent(BaseModel):
+    """Typed candidate intent within the existing, otherwise opaque correction record."""
+
+    work_intent: Literal["evidence_only", "source_repair"]
+    candidate_commit_sha: str = Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+    target_attempt: int = Field(strict=True, gt=0)
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None) -> TrackerCorrectionIntent | None:
+        correction = context.get("correction") if isinstance(context, dict) else None
+        if not isinstance(correction, dict) or "work_intent" not in correction:
+            return None  # Historical prose/records never authorize candidate relaxation.
+        return cls.model_validate(correction)
+
+
+class TrackerDeliveryScopeExclusion(BaseModel):
+    """An explicit scope decision; it never satisfies a success dependency."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    disposition: Literal["excluded"]
+    parent_ticket_key: str = Field(pattern=r"\S")
+    reason: str = Field(pattern=r"\S")
+    source_ref: str = Field(pattern=r"\S")
+    resume_owner_ref: str | None = Field(default=None, pattern=r"\S")
+    resume_condition: str | None = Field(default=None, pattern=r"\S")
+
+    @classmethod
+    def from_metadata(
+        cls, metadata: dict[str, Any] | None, *, status: str, parent_ticket_key: str | None
+    ) -> TrackerDeliveryScopeExclusion | None:
+        marker = (metadata or {}).get("delivery_scope")
+        if marker is None:
+            return None
+        scope = cls.model_validate(marker)
+        if status not in {"skipped", "aborted", "deferred"}:
+            raise ValueError(
+                "delivery_scope exclusion requires skipped, aborted or deferred status"
+            )
+        if not parent_ticket_key or scope.parent_ticket_key != parent_ticket_key:
+            raise ValueError("delivery_scope exclusion must name the exact attached parent")
+        if status == "deferred" and not (scope.resume_owner_ref and scope.resume_condition):
+            raise ValueError(
+                "deferred delivery_scope requires resume_owner_ref and resume_condition"
+            )
+        return scope
 
 
 class TrackerLaneOut(BaseModel):
@@ -41,6 +90,7 @@ class TrackerSummaryOut(BaseModel):
     name: str
     description: str
     rev: int
+    config_json: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -55,6 +105,15 @@ class TrackerReferenceOut(BaseModel):
     title: str | None
     metadata_json: dict[str, Any] | None
     created_at: datetime
+
+
+class TrackerOwnerItemOut(BaseModel):
+    """Native work identity used by ownership; aliases do not own another key."""
+
+    project_id: int
+    item_kind: Literal["task", "ticket"]
+    item_id: int
+    canonical_item_id: str
 
 
 class TrackerLinkOut(BaseModel):
@@ -95,12 +154,94 @@ class TrackerTaskTicketSummaryOut(BaseModel):
     terminal_count: int = 0
     in_progress_count: int = 0
     blocked_count: int = 0
+    blocked_by_titles: list[str] = Field(default_factory=list)
     status_counts: dict[str, int] = Field(default_factory=dict)
     assignees: list[str] = Field(default_factory=list)
     search_text: str = ""
 
 
+class UsageIntervalOut(BaseModel):
+    """One invocation's change, before combining lifetime counters across calls."""
+
+    kind: Literal["baseline", "checkpoint", "batched", "reset"]
+    start_at: str | None = None
+    input: int | None = None
+    output: int | None = None
+    total: int | None = None
+    cache_read: int | None = None
+    cache_write: int | None = None
+    reasoning: int | None = None
+    remaining_input: int | None = None
+
+
+class UsageSampleOut(BaseModel):
+    at: str
+    input: int
+    output: int
+    total: int
+    cache_read: int | None = None
+    cache_write: int | None = None
+    reasoning: int | None = None
+    remaining_input: int | None = Field(
+        default=None, description="Cumulative non-cache Input from paired measurements only."
+    )
+    source: Literal["native", "final"] | None = None
+    intervals: list[UsageIntervalOut] | None = Field(
+        default=None,
+        description="Per-invocation temporal evidence; null on legacy counter-only payloads.",
+    )
+
+
+class LiveUsageSnapshotOut(BaseModel):
+    unit: Literal["tokens"] = "tokens"
+    status: Literal["measured"] = "measured"
+    measured: AgentStatsUsageOut
+
+
+class LiveUsageOut(BaseModel):
+    usage: LiveUsageSnapshotOut
+    measured_at: str
+    samples: list[UsageSampleOut] = Field(default_factory=list, max_length=120)
+
+
+class ExecutionIdentityOut(BaseModel):
+    """Recorded actual execution, without prompts, native paths or live state."""
+
+    invocation_id: str | None = None
+    agent: str
+    host_key: str
+    model: str | None
+    started_at: str
+    ticket_key: str
+
+
+class ActiveExecutionOut(ExecutionIdentityOut):
+    """Actual host-call identity; absent when no call is registered in this daemon."""
+
+    invocation_id: str
+    live_usage: LiveUsageOut | None = None
+
+
+class WorkDurationOut(BaseModel):
+    """Union of recorded invocation wall intervals, never lifecycle elapsed time."""
+
+    total_seconds: float | None = None
+    observed_at: str | None = None
+    endpoint_at: str | None = None
+    coverage: Literal["complete", "partial", "unavailable"] = "unavailable"
+    recorded_intervals: int = 0
+    unavailable_intervals: int = 0
+    issues: list[str] = Field(default_factory=list)
+    # Only these exact owned identities can extend the union after observed_at.
+    live: list[ExecutionIdentityOut] = Field(default_factory=list)
+
+
 class TrackerTaskOut(BaseModel):
+    board_column: Literal[
+        "backlog", "todo", "in-progress", "stopped", "done", "aborted", "failed", "skipped"
+    ] = Field(default="todo", description="Projected Board column; lifecycle status is unchanged.")
+    active_execution: ActiveExecutionOut | None = None
+    work_duration: WorkDurationOut | None = None
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -130,6 +271,217 @@ class TrackerTaskOut(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     ticket_summary: TrackerTaskTicketSummaryOut | None = None
+    delivery: TaskDeliveryStateOut | None = None
+    agent_stats: AgentStatsMetricsOut | None = Field(
+        default=None,
+        description=(
+            "Whole-task receipt metrics, including all tickets regardless of visible filters."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def legacy_board_column(self) -> TrackerTaskOut:
+        if "delivery" not in self.model_fields_set:
+            self.delivery = TaskDeliveryStateOut.from_metadata(self.metadata_json)
+        # Old intent receipts predate this additive field. Reuse the same
+        # projection rather than replaying a fabricated Todo for terminal work.
+        if "board_column" not in self.model_fields_set:
+            from stackos.repositories.tracker.board import task_column
+
+            self.board_column = task_column(
+                self,
+                has_execution=bool(
+                    self.active_execution or (self.agent_stats and self.agent_stats.last_execution)
+                ),
+            )
+        return self
+
+
+class TaskDeliveryStopContextOut(BaseModel):
+    """Bounded mechanical facts; never exception payloads, prompts or native paths."""
+
+    code: Literal[
+        "unknown",
+        "no_ready_work",
+        "candidate_validation",
+        "native_failure",
+        "output_validation",
+        "agent_blocked",
+        "agent_failed",
+        "repair_limit",
+        "workflow_changed",
+        "execution_requirement",
+    ]
+    phase: Literal["delivery", "review"] | None = None
+    facts: list[
+        Literal["explicit_blocker", "dependency_wait", "non_pending_work", "containment_wait"]
+    ] = Field(default_factory=list, max_length=4)
+    evidence_refs: list[
+        Annotated[
+            str,
+            Field(
+                max_length=160,
+                pattern=r"^tracker-ticket:[1-9][0-9]*:[1-9][0-9]*(?::attempt:[1-9][0-9]*:(?:delivery|review))?$",
+            ),
+        ]
+    ] = Field(default_factory=list, max_length=8)
+    next_owner: Literal["main_agent", "operator"] | None = None
+    next_action: (
+        Literal[
+            "reconcile_prerequisites",
+            "inspect_retained_evidence",
+            "reconcile_candidate",
+            "resolve_blocker",
+        ]
+        | None
+    ) = None
+    resume_condition: (
+        Literal["prerequisites_ready", "explicit_rehandoff", "valid_candidate"] | None
+    ) = None
+
+    @classmethod
+    def from_value(cls, value: Any) -> TaskDeliveryStopContextOut | None:
+        if not isinstance(value, dict):
+            return None
+        # Only these fields cross public projections. Bad optional data must not
+        # break a legacy task read or forward arbitrary nested metadata.
+        bounded = {key: value[key] for key in cls.model_fields if key in value}
+        for key in ("phase", "next_owner", "next_action", "resume_condition"):
+            if not isinstance(bounded.get(key), str):
+                bounded[key] = None
+        for key, limit in (("facts", 4), ("evidence_refs", 8)):
+            items = bounded.get(key)
+            bounded[key] = (
+                [item for item in items[:limit] if isinstance(item, str)]
+                if isinstance(items, list)
+                else []
+            )
+        try:
+            return cls.model_validate(bounded)
+        except ValidationError:
+            return None
+
+
+class TaskDeliveryStateOut(BaseModel):
+    """Public handoff facts, excluding frozen agents, prompts and native paths."""
+
+    status: Literal["queued", "running", "stopped", "complete"]
+    ticketKey: str | None = None
+    reason: str | None = None
+    stop_context: TaskDeliveryStopContextOut | None = None
+
+    @staticmethod
+    def safe_reason(value: Any) -> str | None:
+        from stackos.artifacts import redact_secret_text
+
+        if not isinstance(value, str) or not value.strip():
+            return None
+        text = redact_secret_text(value.strip())
+
+        def mask_path(match: re.Match[str]) -> str:
+            if match["url"]:
+                return match["url"]
+            if match["quote"]:
+                return f"{match['quote']}[local path]{match['quote']}"
+            # Keep sentence/quote delimiters around the masked path. Match the
+            # whole file URI first so its scheme/host cannot escape masking.
+            path = match[0]
+            return "[local path]" + path[len(path.rstrip(".,;:!?)]}")) :]
+
+        return re.sub(
+            r"(?P<url>https?://[^\s'\"<>]+)|"
+            r"(?P<quote>['\"])(?:file:/+|[A-Za-z]:[\\/]|/|\\\\)"
+            r"(?:(?!(?P=quote))[^\r\n<>])*(?P=quote)|"
+            r"(?<![\w/])(?:file:/+|[A-Za-z]:[\\/]|\\\\)[^\s'\"<>]+|"
+            r"(?<![\w:/])/[^\s'\"<>]+",
+            mask_path,
+            text,
+            flags=re.IGNORECASE,
+        )[:500]
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, Any] | None) -> TaskDeliveryStateOut | None:
+        delivery = (metadata or {}).get("delivery")
+        if not isinstance(delivery, dict):
+            return None
+
+        def nonempty(value: Any) -> bool:
+            return isinstance(value, str) and bool(value.strip())
+
+        if not isinstance(delivery.get("status"), str) or delivery["status"] not in {
+            "queued",
+            "running",
+            "stopped",
+            "complete",
+        }:
+            return None
+        if not nonempty(delivery.get("job_ref")):
+            return None
+        for role in ("delivery_agent", "review_agent"):
+            agent = delivery.get(role)
+            if not isinstance(agent, dict) or not all(
+                nonempty(agent.get(field)) for field in ("name", "instructions")
+            ):
+                return None
+        return cls.model_validate(
+            {
+                "status": delivery["status"],
+                "ticketKey": delivery["ticket_key"].strip()
+                if nonempty(delivery.get("ticket_key"))
+                else None,
+                "reason": cls.safe_reason(delivery.get("reason"))
+                if delivery["status"] == "stopped"
+                else None,
+                "stop_context": TaskDeliveryStopContextOut.from_value(delivery.get("stop_context"))
+                if delivery["status"] == "stopped"
+                else None,
+            }
+        )
+
+
+class ActiveTaskProjectOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    slug: str
+    domain: str
+    is_active: bool
+    updated_at: datetime
+
+
+class ActiveTaskOut(BaseModel):
+    """Whitelisted task-index projection; identity is (project_id, key)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    key: str
+    title: str
+    goal: str
+    status: TrackerItemStatus
+    priority_key: str
+    owner: str | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    project: ActiveTaskProjectOut
+    delivery: TaskDeliveryStateOut | None
+    ticket_summary: TrackerTaskTicketSummaryOut | None
+    agent_stats: AgentStatsMetricsOut | None
+    active_execution: ActiveExecutionOut | None
+    work_duration: WorkDurationOut | None = None
+
+
+class ActiveTasksOut(BaseModel):
+    read_token: str | None = None
+    scope: Literal["project", "global"]
+    project_id: int | None
+    as_of: datetime
+    items: list[ActiveTaskOut]
+    next_cursor: int | None = None
 
 
 class TrackerDependencyOut(BaseModel):
@@ -141,6 +493,8 @@ class TrackerDependencyOut(BaseModel):
 
 
 class TrackerTicketOut(BaseModel):
+    active_execution: ActiveExecutionOut | None = None
+    work_duration: WorkDurationOut | None = None
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -183,8 +537,12 @@ class TrackerTicketOut(BaseModel):
     completed_at: datetime | None
     dependency_keys: list[str] = Field(default_factory=list)
     blocked_by: list[str] = Field(default_factory=list)
+    blocked_by_titles: list[str] = Field(default_factory=list)
     reference_count: int = 0
     link_count: int = 0
+    agent_stats: AgentStatsMetricsOut | None = Field(
+        default=None, description="This ticket's own deduplicated invocation receipt metrics."
+    )
 
 
 class TrackerGraphNodeOut(BaseModel):
@@ -214,15 +572,267 @@ class TrackerGraphOut(BaseModel):
     layout_hints: dict[str, Any] = Field(default_factory=dict)
 
 
+class TrackerMetricDemand(BaseModel):
+    """Exact current UI demand. Empty means no metrics, never all metrics."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task_keys: list[str] = Field(default_factory=list, max_length=200)
+    ticket_keys: list[str] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def bounded_batch(self) -> TrackerMetricDemand:
+        if len(self.task_keys) + len(self.ticket_keys) > 200:
+            raise ValueError("metric demand supports at most 200 identities including overscan")
+        if any(not key.strip() for key in [*self.task_keys, *self.ticket_keys]):
+            raise ValueError("metric demand keys must be nonempty")
+        self.task_keys = list(dict.fromkeys(self.task_keys))
+        self.ticket_keys = list(dict.fromkeys(self.ticket_keys))
+        return self
+
+
+class TrackerUsageDemand(BaseModel):
+    """Composite identity for the existing project/global usage transport."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    projects: dict[int, TrackerMetricDemand] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def bounded_scope(self) -> TrackerUsageDemand:
+        if any(project_id <= 0 for project_id in self.projects):
+            raise ValueError("Demand project ids must be positive")
+        if sum(len(d.task_keys) + len(d.ticket_keys) for d in self.projects.values()) > 200:
+            raise ValueError("UI feed demand supports at most 200 identities including overscan")
+        return self
+
+
+class TrackerTaskSummaryOut(BaseModel):
+    """Complete discovery/filter facts; primary instructions belong to a full read."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    tracker_id: int
+    key: str
+    title: str
+    goal: str
+    description: str
+    status: TrackerItemStatus
+    board_column: str
+    priority_key: str
+    lane_key: str
+    owner: str | None
+    task_type: str
+    order_index: int
+    source_kind: TrackerSourceKind
+    source_json: dict[str, Any] | None
+    metadata_json: dict[str, Any] | None = Field(
+        default=None,
+        description="Only delivery_scope.resume_condition, for the retained Board display.",
+    )
+    delivery: TaskDeliveryStateOut | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    ticket_summary: TrackerTaskTicketSummaryOut | None = None
+    agent_stats: AgentStatsMetricsOut | None = None
+    work_duration: WorkDurationOut | None = None
+    active_execution: ActiveExecutionOut | None = None
+
+
+class TrackerTicketSummaryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    tracker_id: int
+    task_id: int
+    task_key: str = ""
+    parent_ticket_id: int | None
+    parent_ticket_key: str | None = None
+    run_plan_id: int | None
+    run_plan_step_id: int | None
+    run_id: int | None
+    key: str
+    title: str
+    goal: str
+    source_kind: TrackerSourceKind
+    metadata_json: dict[str, Any] | None = None
+    status: TrackerItemStatus
+    kind: TrackerTicketKind
+    assignee: str | None
+    priority_key: str
+    lane_key: str
+    order_index: int
+    blocker_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    dependency_keys: list[str] = Field(default_factory=list)
+    blocked_by: list[str] = Field(default_factory=list)
+    blocked_by_titles: list[str] = Field(default_factory=list)
+    reference_count: int = 0
+    link_count: int = 0
+    agent_stats: AgentStatsMetricsOut | None = None
+    work_duration: WorkDurationOut | None = None
+    active_execution: ActiveExecutionOut | None = None
+
+
 class TrackerSnapshotOut(BaseModel):
     tracker: TrackerSummaryOut
     lanes: list[TrackerLaneOut]
     priorities: list[TrackerPriorityOut]
-    tasks: list[TrackerTaskOut]
-    tickets: list[TrackerTicketOut]
+    tasks: list[TrackerTaskOut] | list[TrackerTaskSummaryOut]
+    tickets: list[TrackerTicketOut] | list[TrackerTicketSummaryOut]
     dependencies: list[TrackerDependencyOut]
     links: list[TrackerLinkOut]
     graph: TrackerGraphOut | None = None
+    projection: Literal["full", "ui"] = "full"
+    scope_complete: bool = True
+    metric_scope: Literal["all", "demand"] = "all"
+    metric_demand: TrackerMetricDemand | None = None
+
+
+class AgentStatsUsageOut(BaseModel):
+    unit: Literal["tokens"] = "tokens"
+    input: int | None
+    output: int | None
+    total: int | None
+    cache_read: int | None = None
+    cache_write: int | None = None
+    reasoning: int | None = None
+    remaining_input: int | None = Field(
+        default=None,
+        description=(
+            "Input less cache read, only for receipts with known cache read. Includes cache write."
+        ),
+    )
+    input_with_unknown_cache: int | None = Field(
+        default=None,
+        description=(
+            "Measured input whose cache-read split is unreported; "
+            "never assigned to remaining input."
+        ),
+    )
+
+
+class AgentStatsFieldCoverageOut(BaseModel):
+    measured_attempts: int
+    unavailable_attempts: int
+    status: Literal["empty", "complete", "partial", "unavailable"]
+
+
+class AgentStatsCoverageOut(BaseModel):
+    usage_measured_attempts: int
+    usage_unavailable_attempts: int
+    classification_known_attempts: int
+    classification_unknown_attempts: int
+    usage_status: Literal["empty", "complete", "partial", "unavailable"]
+    classification_status: Literal["empty", "complete", "partial", "unavailable"]
+    fields: dict[str, AgentStatsFieldCoverageOut] = Field(default_factory=dict)
+
+
+class AgentStatsMetricsOut(BaseModel):
+    samples: list[UsageSampleOut] = Field(default_factory=list, max_length=120)
+    last_execution: ExecutionIdentityOut | None = None
+    launch_attempts: int
+    recorded_reviewer_rejects: int
+    review_outcomes: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Explicit review-role validated outcomes only; "
+            "validation_failed is an explicit null outcome without evidenced cancellation."
+        ),
+    )
+    reported_usage: AgentStatsUsageOut
+    coverage: AgentStatsCoverageOut
+
+
+class AgentStatsRowOut(AgentStatsMetricsOut):
+    group_key: str
+    project_ids: list[int]
+    project_id: int | None
+    project_name: str | None
+    project_slug: str | None
+    agent_name: str | None
+    selected_role: str | None
+    host_key: str | None
+    model: str | None
+    model_basis: Literal["observed", "selected", "mixed"] | None = None
+
+
+class AgentStatsDayOut(AgentStatsMetricsOut):
+    date: date
+    by_agent: list[AgentStatsRowOut]
+    by_model: list[AgentStatsRowOut]
+    by_agent_model: list[AgentStatsRowOut]
+
+
+class DeliveryMetricCoverageOut(BaseModel):
+    status: Literal["empty", "complete", "partial", "unavailable"]
+    recorded: int = 0
+    unavailable: int = 0
+    issues: list[str] = Field(default_factory=list)
+
+
+class DeliveryCountOut(BaseModel):
+    total: int = 0
+    coverage: DeliveryMetricCoverageOut
+
+
+class FirstReviewAcceptanceOut(BaseModel):
+    accepted: int = 0
+    reviewed: int = 0
+    rate: float | None = None
+    coverage: DeliveryMetricCoverageOut
+
+
+class DeliveryWorkTimeOut(BaseModel):
+    total_seconds: float | None = None
+    coverage: DeliveryMetricCoverageOut
+
+
+class DeliveryTrendMetricsOut(BaseModel):
+    completed_tasks: DeliveryCountOut
+    completed_tickets: DeliveryCountOut
+    first_review_acceptance: FirstReviewAcceptanceOut
+    changes_requested: DeliveryCountOut
+    stops: DeliveryCountOut
+    work_time: DeliveryWorkTimeOut
+
+
+class DeliveryTrendDayOut(DeliveryTrendMetricsOut):
+    date: date
+
+
+class DeliveryTrendsOut(BaseModel):
+    totals: DeliveryTrendMetricsOut
+    daily: list[DeliveryTrendDayOut]
+
+
+class TrackerAgentStatsOut(BaseModel):
+    read_token: str | None = None
+    project_id: int | None
+    is_active: bool | None
+    as_of: datetime
+    totals: AgentStatsMetricsOut
+    rows: list[AgentStatsRowOut]
+    group_by: Literal["agent", "model", "agent_model"]
+    start_date: date | None
+    end_date: date | None
+    timezone: str
+    daily: list[AgentStatsDayOut]
+    delivery_trends: DeliveryTrendsOut
+    undated: AgentStatsMetricsOut = Field(
+        description=(
+            "Eligible receipts without a valid offset-aware launch.started_at, "
+            "excluded when a date range is supplied."
+        )
+    )
 
 
 class TrackerTicketCountsOut(BaseModel):
@@ -291,6 +901,27 @@ class TrackerChangedOut(BaseModel):
     changes: list[TrackerHistoryOut]
 
 
+class TrackerNotificationChangeOut(BaseModel):
+    rev: int
+    task_id: int
+    task_key: str
+    task_title: str
+    before_status: str | None
+    after_status: str | None
+    before_delivery_status: str | None
+    after_delivery_status: str | None
+
+
+class TrackerNotificationChangesOut(BaseModel):
+    projection: Literal["notifications"] = "notifications"
+    project_id: int
+    project_name: str
+    since_rev: int | None
+    current_rev: int
+    next_cursor: int | None = None
+    changes: list[TrackerNotificationChangeOut] = Field(default_factory=list)
+
+
 class TrackerSearchOut(BaseModel):
     project_id: int
     query: str
@@ -327,6 +958,35 @@ class TrackerListItemResultOut(BaseModel):
     dependency_preview: TrackerDependencyPreviewOut | None = None
     ticket: TrackerTicketOut | None = None
     error: str | None = None
+    error_data: dict[str, Any] | None = None
+
+
+class TrackerTaskInputOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    text: str
+    created_at: datetime
+    actor: str
+
+
+class TrackerTaskContentOut(BaseModel):
+    task: TrackerTaskOut
+    rev: int
+    input: TrackerTaskInputOut | None = None
+    idempotency_key: str
+    request_sha256: str
+    replayed: bool = False
+
+
+class TrackerTaskBoardOut(BaseModel):
+    task: TrackerTaskOut
+    affected_task_keys: list[str]
+    changed: bool
+    rev: int
+    idempotency_key: str
+    request_sha256: str
+    replayed: bool = False
 
 
 class TrackerMutationOut(BaseModel):
@@ -372,6 +1032,8 @@ __all__ = [
     "TrackerListItemResultOut",
     "TrackerMutationOut",
     "TrackerNextOut",
+    "TrackerNotificationChangeOut",
+    "TrackerNotificationChangesOut",
     "TrackerPriorityOut",
     "TrackerReferenceOut",
     "TrackerReopenOut",
@@ -379,9 +1041,13 @@ __all__ = [
     "TrackerSnapshotOut",
     "TrackerStatusOut",
     "TrackerSummaryOut",
+    "TrackerTaskBoardOut",
+    "TrackerTaskContentOut",
+    "TrackerTaskInputOut",
     "TrackerTaskOut",
     "TrackerTaskTicketSummaryOut",
     "TrackerTicketOut",
     "TrackerVerifyOut",
     "TrackerWorkflowHandoffOut",
+    "WorkDurationOut",
 ]

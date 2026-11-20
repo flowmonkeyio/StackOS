@@ -65,6 +65,7 @@ def operation_specs():
             ),
             mutating=True,
             grant_policy="local-admin-plugin-write",
+            browser_safe=True,
         ),
         operation_spec(
             name="plugin.disable",

@@ -1,0 +1,54 @@
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured (200)
+
+[js] true
+
+[snapshot] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+--- BEGIN UNTRUSTED EXTERNAL C​ONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+    @e1 [button] "Restore backup"
+      @e2 [button] "Back up now"
+      @e3 [button] "Refresh backups"
+      @e4 [button] "Export backup"
+      @e5 [button] "Export key"
+    @e6 [button] "Manage"
+
+── cursor-interactive (not in ARIA tree) ──
+@c1 [cursor:pointer] "img"
+@c2 [cursor:pointer] "StackOS
+Local runtime"
+@c3 [cursor:pointer] "StackOS"
+@c4 [cursor:pointer] "Local runtime"
+@c5 [cursor:pointer] "SL"
+@c6 [cursor:pointer] "StackOS Local
+stackos-local"
+@c7 [cursor:pointer] "StackOS Local"
+@c8 [cursor:pointer] "stackos-local"
+@c9 [cursor:pointer] "Home"
+@c10 [cursor:pointer] "Attention"
+@c11 [cursor:pointer] "Work"
+@c12 [cursor:pointer] "Activity"
+@c13 [cursor:pointer] "Connections"
+@c14 [cursor:pointer] "Automation"
+@c15 [cursor:pointer] "Spend"
+@c16 [cursor:pointer] "Plugins"
+@c17 [cursor:pointer] "Runs"
+@c18 [cursor:pointer] "Agent Requests"
+@c19 [cursor:pointer] "Action Calls"
+@c20 [cursor:pointer] "Workflow Templates"
+@c21 [cursor:pointer] "Agent Presets"
+@c22 [cursor:pointer] "Capabilities"
+@c23 [cursor:pointer] "Operations"
+@c24 [cursor:pointer] "Resources"
+@c25 [cursor:pointer] "Project Data"
+@c26 [cursor:pointer] "Overview"
+@c27 [cursor:pointer] "Accounts"
+@c28 [cursor:pointer] "Backups"
+@c29 [cursor:pointer] "Restore backup"
+@c30 [cursor:pointer] "Back up now"
+@c31 [cursor:pointer] "span"
+@c32 [cursor:pointer] "Export backup"
+@c33 [cursor:pointer] "Export key"
+@c34 [cursor:pointer] "Manage"
+--- END UNTRUSTED EXTERNAL C​ONTENT ---
+--- END UNTRUSTED EXTERNAL CONTENT ---
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/work-in-progress.png

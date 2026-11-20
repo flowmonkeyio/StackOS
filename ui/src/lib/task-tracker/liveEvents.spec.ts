@@ -5,6 +5,7 @@ import {
   projectTimelineEventFromMessage,
   SseMessageParser,
   trackerStatusStreamPath,
+  trackerEventTaskKeys, trackerEventRevision,
 } from './liveEvents'
 
 const { mockApiStream } = vi.hoisted(() => ({
@@ -46,6 +47,21 @@ describe('SseMessageParser', () => {
 })
 
 describe('projectTimelineEventFromMessage', () => {
+  it('preserves structured batch membership and revision through a split wire frame', () => {
+    const wire = `id: 24\nevent: tracker-status\ndata: ${JSON.stringify({
+      id: 24, project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: JSON.stringify({
+        rev: 42, task_key: 'lookalike', affected_task_keys: ['summary-only'],
+        affected_tasks: [{ task_key: 'a' }, { task_key: 'b' }, { task_key: 'a' }, null, { nested: { task_key: 'lookalike' } }],
+      }),
+    })}\n\n`
+    const parser = new SseMessageParser()
+    expect(parser.push(wire.slice(0, 70))).toEqual([])
+    const event = projectTimelineEventFromMessage(parser.push(wire.slice(70))[0]!)!
+    expect(trackerEventTaskKeys(event)).toEqual(['a', 'b'])
+    expect(trackerEventRevision(event)).toBe(42)
+    for (const rev of [-1, 0, '42', 1.5, null]) expect(trackerEventRevision({ ...event, metadata_json: { rev } })).toBeUndefined()
+    expect(trackerEventTaskKeys({ ...event, metadata_json: { affected_task_keys: ['summary-only'] } })).toEqual([])
+  })
   it('returns sanitized project timeline events for tracker-status messages', () => {
     const event = projectTimelineEventFromMessage({
       id: '22',
@@ -106,6 +122,7 @@ describe('projectTimelineEventFromMessage', () => {
 describe('openTrackerStatusStream', () => {
   it('opens a task-scoped stream with an after cursor and ignores heartbeats', async () => {
     const onEvent = vi.fn()
+    const onFrame = vi.fn(), onDisconnect = vi.fn()
     mockApiStream.mockResolvedValueOnce(
       streamResponse(
         [
@@ -120,6 +137,8 @@ describe('openTrackerStatusStream', () => {
       taskKey: 'workflow-142',
       afterId: 21,
       onEvent,
+      onFrame,
+      onDisconnect,
     })
     await flushAsync()
     stream.close()
@@ -130,6 +149,9 @@ describe('openTrackerStatusStream', () => {
     )
     expect(onEvent).toHaveBeenCalledTimes(1)
     expect(onEvent.mock.calls[0][0].id).toBe(22)
+    expect(onFrame).toHaveBeenCalledTimes(2)
+    expect(onFrame).toHaveBeenLastCalledWith(expect.any(Number))
+    expect(onDisconnect).toHaveBeenCalledTimes(1)
   })
 
   it('aborts the underlying request when closed', async () => {
@@ -149,9 +171,32 @@ describe('openTrackerStatusStream', () => {
 
     expect((capturedSignal as AbortSignal | undefined)?.aborted).toBe(true)
   })
+
+  it('reports disconnect on transport errors and does not reconnect after closing its retry wait', async () => {
+    vi.useFakeTimers()
+    try {
+      const cause = new Error('disconnected')
+      mockApiStream.mockRejectedValue(cause)
+      const onError = vi.fn(), onDisconnect = vi.fn()
+      const stream = openTrackerStatusStream({ projectId: 7, onEvent: vi.fn(), onError, onDisconnect })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(onError).toHaveBeenCalledWith(cause)
+      expect(onDisconnect).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(1)
+      stream.close()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(vi.getTimerCount()).toBe(0)
+      expect(mockApiStream).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('trackerStatusStreamPath', () => {
+  it('opens project-wide Board updates without a task filter', () => {
+    expect(trackerStatusStreamPath(7, {})).toBe('/api/v1/projects/7/context/timeline/stream?limit=50')
+  })
   it('omits after for a fresh selected task and includes it for same-task reconnects', () => {
     expect(trackerStatusStreamPath(7, { taskKey: 'task-b', afterId: null })).toBe(
       '/api/v1/projects/7/context/timeline/stream?task_key=task-b&limit=50',

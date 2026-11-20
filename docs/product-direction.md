@@ -37,9 +37,29 @@ readiness, visibility, approvals, recovery, and audit.
 - Main agents own interpretation, workflow adaptation, sequencing, specialist
   delegation, cross-step and cross-run coherence, and final claims.
 - Specialist agents own bounded reasoning, production, or review contracts.
-  Their findings are inputs for main-agent adjudication, not product policy.
+  For engineering work, plans, paths, design and proof are fallible evidence of
+  the original operator outcome. Delivery and independent review resolve
+  necessary omissions in real owners and affected consumers without routine
+  main-agent relay, recording the gap, necessity, proportionality and proof.
+  Explicit exclusions, unavailable
+  authority, actual ownership conflicts and materially different outcomes remain
+  boundaries for main reconciliation. Unrelated cleanup stays in nonblocking
+  followups; speculative abstractions and duplicate owners are rejected.
+  Findings inform acceptance without becoming product policy.
 - StackOS owns project scope, durable state, validation, scoped authority,
   daemon-held credentials, explicit execution, recovery state, and audit.
+- A planning agent may explicitly hand an independently prepared task to
+  automated delivery. It supplies the tickets, dependencies, and project-agent
+  instructions. StackOS then mechanically launches delivery and review through
+  an existing harness and traverses all remaining dependency-ready task work.
+  Ordinary tickets retain independent review; workflow mirrors execute frozen
+  contracts through selected existing roles and the canonical run-plan lifecycle
+  owner. Agents interpret domain outcomes and report explicit disposition;
+  runtime does not choose quality or strategy from phase names. Main retains
+  scope admission and final claims without competing lifecycle writes after
+  handoff. Generic tracker defaults own project execution settings; source
+  guidance adoption remains an explicit reviewed project action. The
+  terminal-managed path remains available.
 - Connectors own provider transport and protocol semantics. They do not invent
   workflow logic or business decisions.
 
@@ -49,6 +69,8 @@ StackOS uses one connected operating model:
 
 1. **Project**: the business/workspace boundary for durable context, setup,
    enabled plugins, account bindings, workflows, runs, records, and audit.
+   Plugin-owned files use private managed storage keyed by the permanent project
+   ID. Project files remain separate and are included in encrypted backup/recovery.
 2. **Plugin**: a domain package contributing capabilities, providers, actions,
    resource schemas, workflows, presets, and generic UI metadata.
 3. **Workflow template**: reusable operating setup for a valuable job,
@@ -63,6 +85,16 @@ StackOS uses one connected operating model:
 7. **Tracker, resources, artifacts, and audit**: durable navigation, evidence,
    and recovery across sessions without turning chat or scratch files into
    hidden state.
+
+The local installation also owns one shared **Patterns** catalog for reusable
+recommendations. Patterns are Markdown guidance with freeform tags, independent
+of project setup and onboarding. The same registered operations serve agents,
+CLI, HTTP and the console. Reading guidance does not select a project or
+authorize applying it. Core validates record structure and concurrent writes;
+agents and operators judge applicability and content quality. Package-owned
+engineering recommendations populate the catalog at startup while preserving
+local customizations and explicit deletions. Domain taxonomies, technology
+registries and automatic project copies are outside this owner.
 
 [`architecture.md`](./architecture.md) is the detailed contract for these
 layers.
@@ -104,6 +136,14 @@ Core stays domain-agnostic. Engineering, branding, SEO, media buying, GTM,
 publishing, communications, and other business methods belong in plugins. A
 domain need should become a core primitive only when it demonstrates an
 independently reusable platform gap with a clear owner and consumers.
+
+The existing project Finance console is a bounded presentation exception for
+operator inspection and sourced correction of project files. Its rationale,
+rejected generic alternatives and plugin ownership are recorded in
+[Project Finance files](architecture.md#project-finance-files). This does not
+authorize a custom core page for each domain or workflow; another exception
+requires its own demonstrated gap and explicit product decision. Shared scope,
+execution and audit remain generic, and Finance method stays with the plugin.
 
 ### Product-Aligned Delivery
 
@@ -169,8 +209,9 @@ Needed work now:
 - Clean uninstall that explains what will be removed and what will be
   preserved: app bundle, launchd job, agent-client registrations, plugin
   assets, local DB, generated assets, seed, auth token, and credentials.
-- Minimal backup/export before serious upgrades, with full restore treated as a
-  follow-up once the export contract is solid.
+- Encrypted backup before serious upgrades, explicit coverage of external
+  business folders, opt-in scheduling, and verified recovery into an inert
+  folder. Live adoption remains operator-controlled.
 - Doctor output written for both humans and agents, with exact repair steps.
 - Clear release/update expectations for local and GitHub distribution. Signed
   macOS distribution and a release-grade update channel are later hardening
@@ -203,11 +244,11 @@ Lifecycle contract:
   Data: the upgrade path preserves local state, migrations run locally, and
   postflight doctor confirms readiness. A signed update feed is hardening, not
   a dependency for the basic lifecycle.
-- Backup / restore. User: export enough local state before serious upgrades or
-  a machine move to avoid lock-in or silent loss. Data: the first version can
-  be a constrained export with explicit exclusions and verification. Full
-  restore, secret migration, and rollback can come after the export contract is
-  proven.
+- Backup / restore. User: configure a separate recovery key, enroll external
+  business folders, create an encrypted backup and optionally enable automatic
+  execution. Data: one lifecycle service snapshots the database and matching
+  seed/token with every enrolled folder. Restore authenticates and verifies
+  into an inert directory; local adoption and provider sign-in remain explicit.
 - Uninstall. User: choose default uninstall that preserves user-owned state, or
   a separate full cleanup that is clearly destructive. Data: app/service/client
   registrations are removed while DB, seed, token, credentials, and backups are
@@ -243,7 +284,7 @@ sequence without turning the document into a live board.
 | Detailed repair/doctor UX | Later | `phase1-repair-doctor` | Keep deeper doctor grouping and repair UX as hardening after the v0 loop is stable. |
 | Upgrade and desktop update lifecycle | Done | `phase1-upgrade-update` | Desktop install-state now has coverage for app/payload upgrade triggers, idempotent skips, forced reruns, failed first install, and failed upgrade preservation/retry behavior. |
 | Uninstall and state preservation | Done | `phase1-uninstall-preserve` | Default uninstall removes launchd, agent-client registrations, skill mirrors, plugin source/cache artifacts, and preserves DB, seed, and token; destructive full cleanup remains explicit future scope. |
-| Minimal backup/export before risky changes | Done | `phase1-backup-restore` | `stackos backup` now exports a private zip containing the DB, seed, token, and manifest. Automated restore remains future scope. |
+| Backup/export before risky changes | Done | `phase1-backup-restore` | `stackos backup` encrypts DB, seed, token, manifest and explicitly enrolled external folders. Automatic execution is opt-in; recovery verifies into a fresh inert directory. See [backups](./backups.md). |
 | Public signing and managed update hardening | In progress | `workflow-128` / `managed-desktop-updates` | Static HTTPS electron-updater feed, signing/notarization, local env-based update smoke, and release signoff are being planned under the managed desktop update workflow. FTP is a future upload/deploy transport only; the app consumes HTTPS. |
 | Lifecycle smoke verification | Done | `phase1-lifecycle-verification` | Public smoke checklist now covers targeted automation, temp-HOME manual smokes, lifecycle evidence, and closeout expectations. |
 
@@ -523,8 +564,9 @@ The clean framing is local-first with optional continuity.
   migration status, daemon restart, state preservation, and postflight doctor.
 - Polish uninstall: safe default cleanup, preserved-state messaging,
   package-mode parity, and explicit full-cleanup boundaries.
-- Add minimal export before risky lifecycle changes. Full restore, secret
-  migration, scheduled backups, and cloud continuity come later.
+- Preserve encrypted local backup, explicit external-folder coverage, opt-in
+  scheduling and verified inert recovery before risky lifecycle changes.
+  Automated live adoption, secret migration and cloud continuity come later.
 - Add smoke proofs for the delivered lifecycle slices.
 - Keep signed/notarized distribution and a managed update feed as public-release
   hardening unless broad distribution requires them immediately.

@@ -1,0 +1,327 @@
+{
+  "kind": "synthetic_fixture_description_restore",
+  "database": "/private/tmp/stackos-work-723/data/stackos.db",
+  "project_id": 4,
+  "task_id": 28,
+  "task_key": "qa-long-content",
+  "seed_source": "/tmp/stackos-work-724/seed_inspection_qa.py",
+  "before_length": 58,
+  "after_length": 6350,
+  "before_sha256": "cc1c4d7c108b847023ef7fdadaa1f85bc184519f1578f766fb271a774eb55f90",
+  "after_sha256": "cb29b730da1401132d926403f482046227864cfb9b515d035a19a50ff330c6b7",
+  "before_updated_at": "2026-10-29 01:45:34.925870",
+  "after_updated_at": "2026-10-29 01:48:59.557868",
+  "updated_at_strictly_increased": true,
+  "changed_fields": [
+    "description",
+    "updated_at"
+  ],
+  "exact_seed_description": true,
+  "sqlite_row_changes": 1,
+  "all_other_persisted_fields_and_rows_unchanged": true,
+  "preserved_table_fingerprints": {
+    "action_calls": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "action_delivery_admissions": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "action_versions": {
+      "count": 411,
+      "sha256": "79ddf35ab4baa33829a67095b6371a81fa2f910a3149886028db794f4be089fa"
+    },
+    "actions": {
+      "count": 411,
+      "sha256": "7890531d3683f21e7ff51520b2569eae41efd26e057edd534e85f3060bbf9ffb"
+    },
+    "agent_requests": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "agent_sessions": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "alembic_version": {
+      "count": 1,
+      "sha256": "00f9438642b47a02699eead655ed232ed148993f9b3730946e25f4feebeef8f0"
+    },
+    "approval_requests": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "apscheduler_jobs": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "artifacts": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "auth_providers": {
+      "count": 60,
+      "sha256": "8708b465769c8a2767d64a306c376687ed4578ce059c1c99bf69184f22fed208"
+    },
+    "browser_action_receipts": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "browser_profiles": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "browser_sessions": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "capabilities": {
+      "count": 53,
+      "sha256": "0961fd818b9b7f179e1ef16d507d3aad02b9b4a3a98b875257efbc5e686bfb3e"
+    },
+    "context_index_entries": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "context_snapshots": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "credential_accounts": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "credential_refresh_events": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "credential_scopes": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "credential_usage_events": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "credentials": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "decisions": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "durable_action_artifacts": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "durable_action_attempts": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "durable_action_items": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "durable_action_jobs": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "execution_context_artifacts": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "execution_context_links": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "execution_contexts": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "experiment_observations": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "experiment_variants": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "experiments": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "idempotency_keys": {
+      "count": 15,
+      "sha256": "4f1491ee4ab121ab3d30673e58c6c2b44c78e0ed6c80cf1783d6aa1196366bc9"
+    },
+    "integration_budgets": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "integration_credentials": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "learnings": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "metric_snapshots": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "oauth_states": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "payload_secrets": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "plugins": {
+      "count": 16,
+      "sha256": "2e15e312ff9be7de99c41327b713cfff24d40eb5dd0b260459f2d3de9b0025c7"
+    },
+    "project_credentials": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "project_events": {
+      "count": 9,
+      "sha256": "b3facb6c29a3236415bc969f4012eb66a87dc1d4e2e1eeb6c583c8ce559b602f"
+    },
+    "project_plugins": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "project_workflow_templates": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "projects": {
+      "count": 4,
+      "sha256": "69cdffdbcbf5d0b613caa81faa47d62fce50f8fbfd72bd3b95c38e39be44452a"
+    },
+    "provider_object_references": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "providers": {
+      "count": 60,
+      "sha256": "15e05fdec07ff6274766cb01589ba0c5afb45111a1eec100ddf4e0b27e637b96"
+    },
+    "resource_records": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "resources": {
+      "count": 74,
+      "sha256": "64a45e130d7cef42facb174eb2e9f3151b821bf2fcb6c9ac4fe26750cf8a03c5"
+    },
+    "run_plan_steps": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "run_plans": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "run_step_calls": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "run_steps": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "runs": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "scheduled_jobs": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "sqlite_sequence": {
+      "count": 1,
+      "sha256": "d588c404b13e6ca58f34e74127bead1e6afa6d51c531d2e776ed149ec7070f8f"
+    },
+    "task_tracker_lanes": {
+      "count": 12,
+      "sha256": "10ecf8dd7ebb67955ed011f7adcc45243ba2d11e90e79c7e66e5fc081201abab"
+    },
+    "task_tracker_priorities": {
+      "count": 12,
+      "sha256": "6911b5f8d09e17340c361457bb899cfc581932e1e7ee31d02c379927660d21f2"
+    },
+    "task_trackers": {
+      "count": 3,
+      "sha256": "8fd6fee0c42aa6367a585841e92f4d48d08a12ce751ce9bb9727cc9ac489b8e7"
+    },
+    "telegram_application": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "tracker_revisions": {
+      "count": 113,
+      "sha256": "acc813e2c4bd74553d37e3319ff32ec8fd72bdf7b0a12abae5144ed9646f60fb"
+    },
+    "tracker_tasks": {
+      "count": 28,
+      "sha256": "6b91d0483f5ed7311e6d693f2970e5da2ff5e4e3b41c4775bdf65275559b4858"
+    },
+    "tracker_ticket_dependencies": {
+      "count": 11,
+      "sha256": "784cdd22e34ad40c4f8b269de0593f8bc33a92b279466ff317da553edad25f41"
+    },
+    "tracker_ticket_links": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "tracker_ticket_references": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "tracker_tickets": {
+      "count": 65,
+      "sha256": "7c654077908a2a9a20040e94188d254c6c6048d98bee246cabf2238a7aa773ff"
+    },
+    "tracker_tombstones": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "work_item_ownership": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "workflow_template_extensions": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "workflow_template_versions": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "workflow_templates": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "workspace_bindings": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  },
+  "scope": "One synthetic fixture description and its monotonic timestamp; no tracker revision, receipt, lifecycle, other task, or other project writes.",
+  "previous_restores": [
+    {
+      "receipt": "/tmp/stackos-work-724/restore-long-description.restore-1.json",
+      "before_length": 54,
+      "after_length": 6350,
+      "before_updated_at": "2026-10-29 01:37:35.363786",
+      "after_updated_at": "2026-10-29 01:43:27.715358",
+      "all_other_persisted_fields_and_rows_unchanged": true
+    }
+  ]
+}

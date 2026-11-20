@@ -8,11 +8,13 @@ import time
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ValidationError as ModelValidationError
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 
 from stackos.api.deps import get_engine, get_session
 from stackos.api.envelopes import WriteResponse, write_response
@@ -34,8 +36,13 @@ from stackos.context import (
     ProjectEventOut,
 )
 from stackos.context.repository.utils import MAX_CONTEXT_LIMIT
+from stackos.host_mcp.service import usage_executions
+from stackos.repositories.base import Page
+from stackos.repositories.tracker.agent_stats import usage_read_token, usage_refresh
+from stackos.repositories.tracker.schema import TrackerMetricDemand, TrackerUsageDemand
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["project-memory"])
+global_router = APIRouter(prefix="/api/v1", tags=["project-memory"])
 
 TRACKER_STREAM_EVENT = "tracker-status"
 
@@ -210,31 +217,228 @@ async def context_timeline_stream(
     heartbeat_ms: int = Query(default=15_000, ge=1000, le=120_000),
     max_events: int | None = Query(default=None, ge=1, le=200),
     replay: bool = Query(default=False),
+    ui_demand: str | None = Query(default=None, max_length=20000),
     engine: Engine = Depends(get_engine),
 ) -> StreamingResponse:
     """Stream tracker status timeline updates as Server-Sent Events."""
+    return await run_in_threadpool(
+        _timeline_stream,
+        project_id,
+        request,
+        task_key,
+        after,
+        limit,
+        poll_ms,
+        heartbeat_ms,
+        max_events,
+        replay,
+        engine,
+        ui_demand,
+    )
+
+
+@global_router.get("/context/timeline/stream")
+async def global_context_timeline_stream(
+    request: Request,
+    after: int | None = Query(default=None, ge=0),
+    ui_demand: str | None = Query(default=None, max_length=20000),
+    engine: Engine = Depends(get_engine),
+) -> StreamingResponse:
+    """The same local-admin tracker transport for Overview's global usage scope."""
+    return await run_in_threadpool(
+        _timeline_stream,
+        None,
+        request,
+        None,
+        after,
+        50,
+        1000,
+        15_000,
+        None,
+        False,
+        engine,
+        ui_demand,
+    )
+
+
+def _timeline_stream(
+    project_id,
+    request,
+    task_key,
+    after,
+    limit,
+    poll_ms,
+    heartbeat_ms,
+    max_events,
+    replay,
+    engine,
+    ui_demand=None,
+) -> StreamingResponse:
+    demand = None
+    if ui_demand is not None:
+        if task_key is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="UI demand uses complete project scope; express selected keys in ui_demand",
+            )
+        try:
+            demand = TrackerUsageDemand.model_validate_json(ui_demand)
+        except ModelValidationError as exc:
+            raise HTTPException(status_code=422, detail="Invalid bounded UI metric demand") from exc
+        with Session(engine) as session:
+            _ui_usage_scope(session, project_id, task_key, demand)
+
+    def latest_cursor():
+        with Session(engine) as session:
+            return ContextRepository(session).latest_tracker_status_event_id(
+                project_id=project_id, task_key=task_key
+            )
+
+    def read_poll(cursor, scan_anchor, previous_usage, previous_projects):
+        # Construct, use and close each Session in its worker. Only detached
+        # event models and a serialized transient snapshot cross the await.
+        with Session(engine) as session:
+            read_token = usage_read_token(session, project_id) if demand is not None else None
+            repository = ContextRepository(session)
+            latest = repository.event_position(project_id=project_id)
+            watermark = latest[0] if latest is not None else 0
+            if project_id is None and scan_anchor is not None and scan_anchor[0] > (cursor or 0):
+                # Project purge can free event IDs for reuse. Validate private
+                # progress by its owning project, whose identity is never reused,
+                # even if new events already grew past the old maximum ID.
+                anchor = latest if watermark == scan_anchor[0] else None
+                if watermark > scan_anchor[0]:
+                    anchor = repository.event_position(project_id=None, event_id=scan_anchor[0])
+                if anchor != scan_anchor:
+                    scan_anchor = None
+            scan_cursor = cursor if scan_anchor is None else max(cursor or 0, scan_anchor[0])
+            page = (
+                repository.tracker_status_timeline(
+                    project_id=project_id,
+                    limit=limit,
+                    after_id=scan_cursor,
+                    task_key=task_key,
+                    include_total=False,
+                )
+                if scan_cursor is None or watermark > scan_cursor
+                else Page[ProjectEventOut](items=[])
+            )
+            # Exhausted reads also cover unmatched events. Keep that private
+            # progress separate from the durable cursor carried by status frames.
+            scanned = latest or (0, None)
+            if page.items and (page.next_cursor is not None or page.items[-1].id > watermark):
+                scanned = (page.items[-1].id, page.items[-1].project_id)
+
+            usage = usage_executions(project_id)
+            if task_key:
+                usage = [call for call in usage if call["task_key"] == task_key]
+            projects = None
+            if demand is not None and project_id is None:
+                projects = _ui_usage_scope(
+                    session, project_id, task_key, demand, allow_removed_projects=True
+                )
+            scope_changed = projects is not None and projects != previous_projects
+            # Full replaceable transient snapshot also repairs reconnect/exit state.
+            # It has no durable event ID and never advances the timeline cursor.
+            frame = None
+            if usage != previous_usage or page.items or scope_changed:
+                updates = None
+                current_demand = demand
+                if demand is not None:
+                    if projects is None:
+                        projects = _ui_usage_scope(session, project_id, task_key, demand)
+                    current_demand = TrackerUsageDemand(
+                        projects={
+                            pid: requested
+                            for pid, requested in demand.projects.items()
+                            if pid in projects
+                        }
+                    )
+                    scopes = _ui_usage_updates(session, projects, current_demand)
+                    updates = {
+                        # A changing source during this poll cannot acknowledge
+                        # a concurrent Home read. Null keeps normal invalidation.
+                        "read_token": read_token
+                        if read_token == usage_read_token(session, project_id)
+                        else None,
+                        "projection": "ui",
+                        "scope_complete": True,
+                        "metric_scope": "demand",
+                        "replace": True,
+                        # Coverage for same-poll status companions, including
+                        # legacy writers without a tracker revision. This is
+                        # not an SSE id and never advances the durable cursor.
+                        "covered_event_id": max((item.id for item in page.items), default=None),
+                        "scope": "project" if project_id is not None else "global",
+                        "project_id": project_id,
+                        "projects": [
+                            {key: scope[key] for key in ("project_id", "rev", "metric_demand")}
+                            for scope in scopes
+                        ],
+                        "tasks": [task for scope in scopes for task in scope["tasks"]],
+                        "tickets": [ticket for scope in scopes for ticket in scope["tickets"]],
+                    }
+                elif project_id is not None:
+                    affected = [
+                        item.metadata_json
+                        for item in page.items
+                        if isinstance(item.metadata_json, dict)
+                        and isinstance(item.metadata_json.get("task_key"), str)
+                        and isinstance(item.metadata_json.get("ticket_key"), str)
+                    ]
+                    updates = usage_refresh(
+                        session,
+                        project_id,
+                        None if previous_usage is None else [*usage, *previous_usage, *affected],
+                        task_key=task_key,
+                    )
+                    updates["replace"] = previous_usage is None
+                frame = sse_frame(
+                    event="tracker-usage",
+                    data={
+                        "executions": usage
+                        if current_demand is None
+                        else [
+                            call
+                            for call in usage
+                            if (
+                                (current := current_demand.projects.get(call["project_id"]))
+                                is not None
+                                and (
+                                    call["task_key"] in current.task_keys
+                                    or call["ticket_key"] in current.ticket_keys
+                                )
+                            )
+                        ],
+                        "updates": updates,
+                    },
+                )
+            return page, usage, projects, frame, scanned
 
     async def event_source():
         cursor = after
         emitted = 0
         next_heartbeat = time.monotonic() + heartbeat_ms / 1000
+        previous_usage = None
+        previous_projects = None
         if cursor is None and not replay:
-            with Session(engine) as session:
-                cursor = ContextRepository(session).latest_tracker_status_event_id(
-                    project_id=project_id,
-                    task_key=task_key,
-                )
+            cursor = await run_in_threadpool(latest_cursor)
+        scan_anchor = None
         while True:
             if await request.is_disconnected():
                 break
-
-            with Session(engine) as session:
-                page = ContextRepository(session).tracker_status_timeline(
-                    project_id=project_id,
-                    limit=limit,
-                    after_id=cursor,
-                    task_key=task_key,
-                )
+            page, usage, projects, frame, scanned = await run_in_threadpool(
+                read_poll, cursor, scan_anchor, previous_usage, previous_projects
+            )
+            # A disconnect during a slow read must not publish its late result
+            # or begin another operation. Worker cleanup owns the SQL lifetime.
+            if await request.is_disconnected():
+                break
+            scan_anchor = scanned
+            if frame is not None:
+                yield frame
+                previous_usage = usage
+                previous_projects = projects
 
             if page.items:
                 for item in page.items:
@@ -262,6 +466,149 @@ async def context_timeline_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _ui_usage_updates(session, projects, demand: TrackerUsageDemand) -> list[dict[str, Any]]:
+    """One authorized receipt batch across the global stream's composite demand."""
+    from sqlalchemy import false, or_
+    from sqlmodel import col, select
+
+    from stackos.db.models import TaskTracker, TrackerTask, TrackerTicket
+    from stackos.repositories.tracker.agent_stats import ReceiptProjection
+    from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
+
+    task_ids = (
+        set(
+            session.exec(
+                select(TrackerTask.id)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTask.tracker_id))
+                .where(
+                    TaskTracker.key == DEFAULT_TRACKER_KEY,
+                    or_(
+                        false(),
+                        *[
+                            (col(TrackerTask.project_id) == pid)
+                            & col(TrackerTask.key).in_(requested.task_keys)
+                            for pid, requested in demand.projects.items()
+                        ],
+                    ),
+                )
+            )
+        )
+        if any(d.task_keys for d in demand.projects.values())
+        else set()
+    )
+    ticket_ids = (
+        set(
+            session.exec(
+                select(TrackerTicket.id)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTicket.tracker_id))
+                .where(
+                    TaskTracker.key == DEFAULT_TRACKER_KEY,
+                    or_(
+                        false(),
+                        *[
+                            (col(TrackerTicket.project_id) == pid)
+                            & col(TrackerTicket.key).in_(requested.ticket_keys)
+                            for pid, requested in demand.projects.items()
+                        ],
+                    ),
+                )
+            )
+        )
+        if any(d.ticket_keys for d in demand.projects.values())
+        else set()
+    )
+    projection = ReceiptProjection(session)
+    projection.load(task_ids=task_ids, ticket_ids=ticket_ids)
+    return [
+        usage_refresh(
+            session,
+            pid,
+            None,
+            metric_demand=demand.projects.get(pid, TrackerMetricDemand()),
+            projection=projection,
+        )
+        for pid in projects
+    ]
+
+
+def _ui_usage_scope(
+    session,
+    project_id,
+    task_key,
+    demand: TrackerUsageDemand,
+    *,
+    allow_removed_projects: bool = False,
+) -> list[int]:
+    """Validate admission; an admitted global stream may drop unavailable projects."""
+    from sqlalchemy import func
+    from sqlmodel import col, select
+
+    from stackos.db.models import Project, TaskTracker, TrackerTask, TrackerTicket
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
+
+    if project_id is not None:
+        ProjectRepository(session).require_available(project_id)
+        projects = [project_id]
+    else:
+        projects = list(
+            session.exec(
+                select(Project.id)
+                .where(
+                    col(Project.is_active).is_(True),
+                    func.json_type(Project.cleanup_json).is_(None)
+                    | (func.json_type(Project.cleanup_json) == "null"),
+                )
+                .order_by(col(Project.id))
+            )
+        )
+    if not demand.projects.keys() <= set(projects) and not (
+        project_id is None and allow_removed_projects
+    ):
+        raise HTTPException(
+            status_code=422, detail="UI metric demand is outside the selected project scope"
+        )
+    for pid in projects:
+        requested = demand.projects.get(pid, TrackerMetricDemand())
+        if not (requested.task_keys or requested.ticket_keys or task_key is not None):
+            continue
+        tasks = dict(
+            session.exec(
+                select(TrackerTask.key, TrackerTask.id)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTask.tracker_id))
+                .where(
+                    TrackerTask.project_id == pid,
+                    TaskTracker.key == DEFAULT_TRACKER_KEY,
+                    TrackerTask.key == task_key if task_key is not None else True,
+                )
+            ).all()
+        )
+        if task_key is not None and task_key not in tasks:
+            raise HTTPException(status_code=404, detail="Task not found in selected project")
+        if not set(requested.task_keys) <= tasks.keys():
+            raise HTTPException(
+                status_code=422, detail="UI metric task demand is outside the selected scope"
+            )
+        tickets = (
+            set(
+                session.exec(
+                    select(TrackerTicket.key).where(
+                        TrackerTicket.project_id == pid,
+                        col(TrackerTicket.task_id).in_(tasks.values()),
+                        col(TrackerTicket.key).in_(requested.ticket_keys),
+                    )
+                )
+            )
+            if requested.ticket_keys
+            else set()
+        )
+        if tickets != set(requested.ticket_keys):
+            raise HTTPException(
+                status_code=422, detail="UI metric ticket demand is outside the selected scope"
+            )
+    return projects
 
 
 def sse_frame(*, event: str, data: dict[str, Any], event_id: str | None = None) -> str:

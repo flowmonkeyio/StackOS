@@ -1,0 +1,20 @@
+--prepared:/Applications/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app
+--prepared:/Applications/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.
+--validated:/Applications/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app
+--prepared:/Applications/StackOS.app/Contents/Frameworks/StackOS Helper.app
+--validated:/Applications/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.
+--validated:/Applications/StackOS.app/Contents/Frameworks/StackOS Helper.app
+--prepared:/Applications/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app
+--prepared:/Applications/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.
+--validated:/Applications/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app
+--validated:/Applications/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.
+--prepared:/Applications/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.
+--prepared:/Applications/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app
+--validated:/Applications/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app
+--validated:/Applications/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.
+--prepared:/Applications/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.
+--prepared:/Applications/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler
+--validated:/Applications/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler
+--validated:/Applications/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.
+/Applications/StackOS.app: valid on disk
+/Applications/StackOS.app: satisfies its Designated Requirement

@@ -30,8 +30,7 @@ from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import httpx
-from stackos_connectors import ConnectorClient
-from stackos_connectors.catalog import load_registry
+from stackos_connectors import get_default_client
 
 from stackos.actions.connectors import (
     ActionConnectorError,
@@ -41,7 +40,6 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.package_bridge import PackageActionConnector
 from stackos.actions.provider_utils import (
-    bearer_headers,
     credential_config,
     dict_field,
     int_range,
@@ -2261,8 +2259,6 @@ def _subscription_type_results(
 
 async def _resolved_contact_email(
     request: ActionConnectorRequest,
-    *,
-    headers: Mapping[str, str],
 ) -> tuple[Any, str]:
     refs, credential = _ref_context(request)
     contact = refs.resolve(
@@ -3322,7 +3318,9 @@ async def _download_bulk_export_artifact(
         if request.session is not None:
             artifact = (
                 ArtifactRepository(request.session)
-                .create(
+                .create_generated_file(
+                    asset_root=root,
+                    path=final_path,
                     project_id=request.project_id,
                     plugin_slug="gtm",
                     kind="hubspot-export",
@@ -4120,7 +4118,6 @@ class HubSpotActionConnector:
             ) from exc
 
     async def _execute(self, request: ActionConnectorRequest, receipt) -> ActionConnectorResult:
-        headers = bearer_headers(request, "access_token")
         payload = request.input_json
         match request.operation:
             case "bulk.exports.create":
@@ -4775,7 +4772,6 @@ class HubSpotActionConnector:
                 custom_properties = _transactional_custom_properties(payload)
                 contact, contact_email = await _resolved_contact_email(
                     request,
-                    headers=headers,
                 )
                 status, body, response_headers = await _native_call(
                     request,
@@ -4831,7 +4827,6 @@ class HubSpotActionConnector:
             case "marketing.contact_preferences.get":
                 contact, contact_email = await _resolved_contact_email(
                     request,
-                    headers=headers,
                 )
                 status, body, response_headers = await _native_call(
                     request,
@@ -4851,7 +4846,6 @@ class HubSpotActionConnector:
             case "marketing.contact_preferences.update":
                 contact, contact_email = await _resolved_contact_email(
                     request,
-                    headers=headers,
                 )
                 subscription = _resolved_optional_ref(
                     request,
@@ -5057,7 +5051,7 @@ __all__ = ["HubSpotActionConnector"]
 
 
 async def _native_call(request, operation, data, *, redact_values=(), receipt=None):
-    client = ConnectorClient(registry=load_registry("connectors/hubspot/catalog.json"))
+    client = get_default_client()
     adapter = PackageActionConnector("hubspot", client=client)
     try:
         result = await adapter.execute_native(

@@ -1,5 +1,12 @@
 # OAuth Provider Registration And Callback Setup
 
+Provider protocol facts and explicit token requests are implemented by the
+installed `stackos-connectors` package. This runbook remains the StackOS operator
+owner for application registration, callback origins and local Account setup.
+StackOS controls consent, state/PKCE custody, renewal timing, persistence and
+permissions; package discovery and action calls never start OAuth implicitly.
+See [auth ownership](auth-providers.md#protocol-and-lifecycle-owners).
+
 This is the operator runbook for registering the OAuth applications used by
 StackOS and for configuring the public callback transport. It complements the
 technical lifecycle in [`auth-providers.md`](./auth-providers.md) and the threat
@@ -138,8 +145,8 @@ The upload must:
 - reject every other origin or path in browser code without navigating to
   loopback;
 - require one bounded `state` value and exactly one success or failure outcome;
-- forward only the bounded fields StackOS consumes: `state`, `code`, and
-  `error`;
+- forward only the bounded fields StackOS consumes: `state`, `code`, `error`,
+  and an optional success-only `realmId` of 1–32 ASCII digits for QuickBooks;
 - ignore other provider-added query fields while ensuring they cannot affect
   the reconstructed local destination;
 - construct the destination from the constant loopback origin, port, and path;

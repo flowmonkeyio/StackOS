@@ -1,7 +1,9 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 
 import type {
-  SchemaActionOut,
+  SchemaActionListItemOut,
   SchemaCapabilityOut,
   SchemaPluginOut,
   SchemaProviderOut,
@@ -52,6 +54,21 @@ describe('plugin directory view model', () => {
     expect(
       providerDirectory.find((item) => item.provider.key === 'firecrawl')?.capabilityNames,
     ).toEqual(['Web crawling'])
+  })
+
+  it('joins availability by plugin slug and provider key without merging same-key providers', () => {
+    const sharedProviders = [
+      provider(11, 1, 'utils', 'shared', 'Utility provider'),
+      provider(12, 2, 'seo', 'shared', 'SEO provider'),
+    ]
+    const inventory = [
+      { plugin_slug: 'utils', provider_key: 'shared', state: 'connected',
+        total_action_count: 5, executable_action_count: 3, hidden_action_count: 2 },
+      { plugin_slug: 'seo', provider_key: 'shared', state: 'not_connected',
+        total_action_count: 8, executable_action_count: 1, hidden_action_count: 6 },
+    ]
+    const directory = buildProviderDirectory(buildPluginDirectory(plugins, sharedProviders, [], [], inventory))
+    expect(directory.map((entry) => entry.availability)).toEqual(inventory)
   })
 })
 
@@ -109,19 +126,16 @@ function capability(
 }
 
 function action(
-  id: number,
-  pluginId: number,
+  _id: number,
+  _pluginId: number,
   pluginSlug: string,
-  providerId: number,
+  _providerId: number,
   providerKey: string,
   capabilityKey: string,
   name: string,
-): SchemaActionOut {
+): SchemaActionListItemOut {
   return {
-    id,
-    plugin_id: pluginId,
     plugin_slug: pluginSlug,
-    provider_id: providerId,
     provider_key: providerKey,
     key: name.toLowerCase().replaceAll(' ', '-'),
     name,
@@ -131,13 +145,13 @@ function action(
     risk_level: 'low',
     operation: 'read',
     connector_key: providerKey,
-    input_schema_json: {},
-    output_schema_json: {},
-    config_json: null,
+    budget_kind: null,
     requires_credential: true,
     allows_credential: true,
-    enforce_budget: false,
-    availability: {} as SchemaActionOut['availability'],
-    exposure: {} as SchemaActionOut['exposure'],
+    executable: false,
+    availability_status: 'missing_credential',
+    credential_state: 'missing',
+    budget_state: 'not_required',
+    exposure: {} as SchemaActionListItemOut['exposure'],
   }
 }

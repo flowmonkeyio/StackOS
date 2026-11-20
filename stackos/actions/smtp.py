@@ -22,7 +22,6 @@ from stackos.actions.connectors import (
 from stackos.actions.provider_utils import (
     credential_config,
     credential_payload,
-    credential_value,
     issue,
     unknown_operation,
 )
@@ -81,8 +80,7 @@ class SmtpActionConnector:
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         if request.operation != "email.send":
             raise ValidationError(f"unsupported SMTP operation {request.operation!r}")
-        from stackos_connectors import ConnectorClient
-        from stackos_connectors.catalog import load_registry
+        from stackos_connectors import get_default_client
 
         from stackos.actions.package_bridge import PackageActionConnector
 
@@ -103,7 +101,7 @@ class SmtpActionConnector:
         if recipients > _MAX_RECIPIENTS:
             raise ValidationError(f"SMTP email can target at most {_MAX_RECIPIENTS} recipients")
         if self._client is None:
-            self._client = ConnectorClient(registry=load_registry("connectors/smtp/catalog.json"))
+            self._client = get_default_client()
         result = await PackageActionConnector(
             "smtp", client=self._client, options=self._options
         ).execute(replace(request, input_json=prepared))
@@ -143,13 +141,11 @@ def _smtp_settings(request: ActionConnectorRequest) -> dict[str, Any]:
         raise ValidationError("smtp credential tls_mode must be starttls, ssl, or none")
     if not _is_email(from_email):
         raise ValidationError("smtp credential from_email must be a valid email address")
-    password = credential_value(request, "password", "secret")
     return {
         "host": host,
         "port": port,
         "tls_mode": tls_mode,
         "username": username,
-        "password": password,
         "from_email": from_email,
         "from_name": _config_text(config, payload, "from_name", default=""),
         "reply_to": _config_text(config, payload, "reply_to", default=""),

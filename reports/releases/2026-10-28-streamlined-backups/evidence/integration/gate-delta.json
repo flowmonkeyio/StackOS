@@ -1,0 +1,16 @@
+{
+  "previous_candidate": "b09fa9822683bc7adf751ca3f1bed8a2b55e0c0b5d2fba27ae55ba88dc6b1da5",
+  "changed_paths": [
+    "docs/backups.md",
+    "docs/setup.md",
+    "ui/src/App.local-setup.spec.ts",
+    "ui/src/components/backups/BackupPanel.vue",
+    "ui/src/components/backups/BackupPanel.spec.ts",
+    "ui/src/views/LocalSetupView.vue",
+    "ui/src/components/ui/UiDropdownMenu.vue",
+    "ui/src/components/ui/UiDropdownMenu.spec.ts",
+    "ui/src/style.css"
+  ],
+  "proof_reused": "Unchanged Python/native source and evidence; full isolated signoff previously passed.",
+  "required_current_gate": "make test-ui-unit build-ui plus focused lint, actual-browser flow/geometry and independent design review"
+}

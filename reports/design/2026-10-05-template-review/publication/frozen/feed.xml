@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+  <rss version="2.0">
+    <channel>
+      <title>StackOS Library</title>
+      <link>https://stackos.flowmonkey.io/library/</link>
+      <description>Practical guides to AI agents, agentic workflows, and connected work.</description>
+      <language>en-us</language>
+      <item>
+      <title>Building an AI finance department for a one-person business</title>
+      <link>https://stackos.flowmonkey.io/library/articles/building-ai-finance-department-one-person-business/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/building-ai-finance-department-one-person-business/</guid>
+      <description>A practical design for AI-supported finance operations in a one-person business, with clear authority, verification, and escalation boundaries.</description>
+      <pubDate>Sun, 06 Sep 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>A customer paid. Why is the invoice still open?</title>
+      <link>https://stackos.flowmonkey.io/library/articles/customer-paid-invoice-still-open/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/customer-paid-invoice-still-open/</guid>
+      <description>A proposed payment-follow-up agent can match received money, preserve an open balance, and choose the next contact decision for a solo entrepreneur.</description>
+      <pubDate>Sun, 06 Sep 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>Managing a solo agency with AI agents</title>
+      <link>https://stackos.flowmonkey.io/library/articles/managing-a-solo-agency-with-ai-agents/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/managing-a-solo-agency-with-ai-agents/</guid>
+      <description>A proposed way to organize a solo agency with AI agents, keeping engagement work, cross-project commitments, and company finance in clear working contexts.</description>
+      <pubDate>Sun, 06 Sep 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>When is a receipt actually processed?</title>
+      <link>https://stackos.flowmonkey.io/library/articles/when-is-a-receipt-actually-processed/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/when-is-a-receipt-actually-processed/</guid>
+      <description>A proposed receipt agent can separate readable documents, preserve unresolved attachments, and prepare a clear handoff for a solo entrepreneur.</description>
+      <pubDate>Sun, 06 Sep 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How to separate issue investigation from implementation</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-to-separate-issue-investigation-from-implementation/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-to-separate-issue-investigation-from-implementation/</guid>
+      <description>Turn a software issue report into a supported conclusion, an authorized change, and acceptance checks. Follow a worked CSV export example.</description>
+      <pubDate>Tue, 28 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How an AI agent can explain a blocker without assigning the repair</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-ai-agents-should-explain-blockers-to-humans/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-ai-agents-should-explain-blockers-to-humans/</guid>
+      <description>Use a short blocker message to explain the waiting action, ask for help within the recipient&apos;s authority, and show what the agent must check before continuing.</description>
+      <pubDate>Mon, 27 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>Why an AI content workflow can still sound generic</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-to-build-ai-content-workflow-that-does-not-sound-generic/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-to-build-ai-content-workflow-that-does-not-sound-generic/</guid>
+      <description>Find why an AI-written draft feels generic. Use concrete examples to trace the problem to missing evidence, a vague brief, repeated structure, or wording.</description>
+      <pubDate>Mon, 27 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How to do keyword research for AI search</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-to-do-keyword-research-for-ai-search/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-to-do-keyword-research-for-ai-search/</guid>
+      <description>A case-led research method for deciding what a natural-language AI-search question can support when conventional keyword fields are missing.</description>
+      <pubDate>Mon, 27 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How to use product evidence without writing a product pitch</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-to-use-product-evidence-without-writing-a-product-pitch/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-to-use-product-evidence-without-writing-a-product-pitch/</guid>
+      <description>Choose product details that help a reader judge a claim. Work through a real connection-flow example, its test scope, and the decision it supports.</description>
+      <pubDate>Mon, 27 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>Fact-check AI-generated content one claim at a time</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-to-fact-check-ai-generated-content/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-to-fact-check-ai-generated-content/</guid>
+      <description>Check an AI-written claim against its source, work through a hypothetical example, and decide what to keep, qualify, remove, or send for specialist review.</description>
+      <pubDate>Sun, 26 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>AI workflow automation: automate the rules, not the judgment</title>
+      <link>https://stackos.flowmonkey.io/library/articles/ai-workflow-automation/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/ai-workflow-automation/</guid>
+      <description>Decide which workflow checks belong in code, which need an agent to interpret evidence, and when a person must supply missing intent or permission.</description>
+      <pubDate>Sun, 12 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How should an AI orchestrator triage feedback?</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-ai-orchestrators-triage-feedback/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-ai-orchestrators-triage-feedback/</guid>
+      <description>Work through a mixed review queue to decide which findings need a repair, who should make it, and what to check before calling the work complete.</description>
+      <pubDate>Sun, 12 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How to refine an AI agent workflow: best practices after the first working version</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-to-refine-ai-agent-workflow/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-to-refine-ai-agent-workflow/</guid>
+      <description>Refine a working AI agent workflow with fresh agent trials, post-run debriefs, trace checks, and bounded repairs. Includes a prompt and questions to use.</description>
+      <pubDate>Sun, 12 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>What should an AI agent handoff include?</title>
+      <link>https://stackos.flowmonkey.io/library/articles/what-ai-agent-handoff-should-include/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/what-ai-agent-handoff-should-include/</guid>
+      <description>Build an AI agent handoff with the objective, evidence, context, tools, expected result, and stopping rule. See how to continue after an interrupted update.</description>
+      <pubDate>Sun, 12 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>Agent experience: the missing layer in AI agent orchestration</title>
+      <link>https://stackos.flowmonkey.io/library/articles/ai-agent-experience/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/ai-agent-experience/</guid>
+      <description>Turn a vague review request into an assignment an agent can carry out. See how exact inputs, authority, evidence, recovery, and a stopping rule fit together.</description>
+      <pubDate>Sat, 11 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How to build an AI agent workflow: start with the problem</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-to-build-ai-agent-workflow/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-to-build-ai-agent-workflow/</guid>
+      <description>Design an AI agent workflow around a useful result. Follow one article-preparation example through inputs, dependencies, review, recovery, and a clear stopping point.</description>
+      <pubDate>Sat, 11 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>AI agent vs. workflow vs. orchestrator: what is the difference?</title>
+      <link>https://stackos.flowmonkey.io/library/articles/ai-agent-vs-workflow-vs-orchestrator/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/ai-agent-vs-workflow-vs-orchestrator/</guid>
+      <description>A workflow stores the execution contract. Agents own bounded responsibilities. The orchestrator reasons about the whole job and gates feedback, exceptions, and drift.</description>
+      <pubDate>Thu, 09 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How can AI agents use business accounts without seeing the login?</title>
+      <link>https://stackos.flowmonkey.io/library/articles/how-ai-agents-use-accounts-safely/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/how-ai-agents-use-accounts-safely/</guid>
+      <description>See how StackOS keeps credentials in its runtime, checks a Search Console action against separate permissions, and distinguishes three ways to remove account access.</description>
+      <pubDate>Thu, 09 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>How to use Codex, Claude Code, or Gemini CLI with the tools you already have</title>
+      <link>https://stackos.flowmonkey.io/library/articles/use-codex-claude-gemini-with-existing-tools/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/use-codex-claude-gemini-with-existing-tools/</guid>
+      <description>Keep your preferred AI client and existing business apps. Connect each client to the same durable project so plans, tool access, credentials, and receipts do not disappear with the chat.</description>
+      <pubDate>Thu, 09 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+<item>
+      <title>What is an agentic workflow? A practical guide to AI-powered work</title>
+      <link>https://stackos.flowmonkey.io/library/articles/what-is-an-agentic-workflow/</link>
+      <guid isPermaLink="true">https://stackos.flowmonkey.io/library/articles/what-is-an-agentic-workflow/</guid>
+      <description>An agentic workflow lets AI choose its next action from the evidence. Follow a content example through source checks, decisions, review, recovery, and a finished draft.</description>
+      <pubDate>Thu, 09 Jul 2026 12:00:00 GMT</pubDate>
+    </item>
+    </channel>
+  </rss>

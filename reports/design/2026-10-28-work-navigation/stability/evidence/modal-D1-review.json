@@ -1,0 +1,69 @@
+{
+  "recommendation": "repair",
+  "reviewer": "navigation_review",
+  "independence": "No implementation or acceptance-test edits, browser use, fixture mutation, backend work, build, or tracker-state writes. Only this review report written.",
+  "ticket": "work-persistent-detail-modal",
+  "ticket_id": 14749,
+  "project_id": 1,
+  "run_plan_id": 724,
+  "run_id": 718,
+  "step_id": 7594,
+  "attempt": "D1",
+  "contract_revision": 2,
+  "candidate_sha256": "7fe060d86d7761e1c313a3c8f8283893522204337ddedf61f5693c6c9b550f96",
+  "freshness": "All 20 listed file hashes independently matched. Aggregate SHA-256 independently recomputed with the receipt algorithm and matched the frozen candidate. Accepted M1 evidence reused for unchanged map behavior.",
+  "sources": [
+    ".codex/agents/sdlc-delivery-reviewer.toml",
+    "docs/product-direction.md",
+    "docs/ui-design-system.md",
+    "Main D1 contract2 dispatch and subsequent close/Teleport/shared-stack admissions",
+    "modal-D1-candidate.json and its 20 source paths",
+    "Accepted run723 snapshot for before/change comparison",
+    "Accepted map-M1-review.json",
+    "Root second behavioral pass on Vite5175, project4, qa-long-content"
+  ],
+  "coverage": {
+    "stable_frame": "Pass. One persistent Work UiDialog uses the optional shared detail layout; width follows existing lg672, height is min(880px,100dvh minus48px), header/footer remain outside the flexible scrolling body. Default content-sized layout remains opt-in compatible. Loading/error/task/ticket/disclosure state does not replace the frame.",
+    "ticket_access": "Pass. Every ticket remains rendered; 40px rows sit in a maximum240px keyboard-focusable scrolling region. Parameterized0/1/6/7/30-record tests cover all records and final-row opening. No wheel handler intercepts scroll chaining. Pixel geometry remains main-browser evidence.",
+    "drill_and_back_state": "Pass. Same-task ticket inspection preserves the task DOM with hidden/inert semantics, draft/editor, disclosures and list scroll. Explicit body-scroll capture and return focus restore the originating row. New task resets reading state. Route guards retain actual exit/task/project/save protection. Real-component route tests cover persistent node identity and restored state.",
+    "async_content_feedback_focus": "Repair required: D1-F1. Error/success feedback is below the input history in the scrolling task body; successful save can leave focus on document.body. Existing save/idempotency/conflict controller behavior is unchanged and tested, but current feedback placement/focus does not satisfy the complete stable inspection flow.",
+    "shared_close_control": "Pass. Shared icon-only UiButton wrapper centers the glyph; UiDialog uses a nonshrinking32px close target with16px registry icon. Shared primitive tests verify declared geometry; root owns measured pixel alignment.",
+    "shared_overlay_ownership": "Pass. overlayStack.ts is the sole stack/scroll/focus owner used only by UiDialog and UiSidePanel. Duplicated stacks and overflow snapshots were removed. Opening order determines layers; top checks happen at key-event handling; idempotent cleanup supports ordinary close and component unmount; lower-overlay removal rewrites surviving return targets.",
+    "mixed_overlay_consumer": "Pass. ActionCalls removes its obsolete stacking wrapper and retains confirmation operation handlers/payloads. Real mixed dialog/drawer tests cover ordering, top-only Escape/Tab, focus return, surviving scroll lock and lower-overlay unmount. ActionCalls confirmation tests exercise actual body portals.",
+    "backdrop_D7": "Pass. UiDialog follows the canonical outer Teleport-to-body pattern. Real portal regression verifies removal from a spaced/transformed/scrolling parent. Theme is inherited from documentElement. Root preliminary browser confirms viewport-origin backdrop; final both-theme visual QA remains integration-owned.",
+    "cleanup_and_authority": "Pass. One TrackerTicketDetailContent subtree is reused by the persistent modal and existing map inspector; superseded separate centered ticket wrapper removed. Docs describe the actual owners and navigation. No backend, operation, lifecycle-write or provider authority changes."
+  },
+  "independent_checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/components/ui/UiDialog.spec.ts src/components/ui/UiSidePanel.spec.ts src/components/ui/UiButton.spec.ts src/views/TaskTrackerView.spec.ts src/views/task-tracker/TrackerTaskDetailDialog.spec.ts src/views/task-tracker/useTrackerTaskContent.spec.ts src/screen-composition.spec.ts src/no-watch-ui.spec.ts src/read-only-ui.spec.ts src/views/ActionCallsView.spec.ts",
+      "result": "PASS, exit0. Same10-file focused scope as the candidate's77-test receipt. Existing ActionCalls mount warnings about route-record context were nonfatal."
+    },
+    {
+      "check": "Individual source hashes and sorted aggregate candidate hash",
+      "result": "PASS:20/20 and aggregate match"
+    }
+  ],
+  "findings": [
+    {
+      "id": "D1-F1",
+      "severity": "P2",
+      "status": "required repair",
+      "summary": "Async save feedback and focus disappear from the operator's current view on long task content.",
+      "source_evidence": [
+        "ui/src/views/task-tracker/TrackerTaskDetailDialog.vue:440 error callout is after all additional-input history in the scrolling body",
+        "ui/src/views/task-tracker/TrackerTaskDetailDialog.vue:457 success notice uses the same offscreen body placement",
+        "ui/src/views/task-tracker/TrackerTaskDetailDialog.vue:812 save control becomes disabled/relabelled after content.save without post-save focus recovery"
+      ],
+      "browser_evidence": "Root second behavioral pass on5175/project4/qa-long-content: description-only save succeeds with body scroll0; success notice is at y2283 while body visible range is130..719; focus falls to document.body when Save changes becomes disabled Add input. Reviewer independently verified the responsible source placement and missing recovery; did not repeat browser actions.",
+      "impact": "An operator can receive no visible confirmation or recovery explanation at the action area and lose keyboard position after saving. Conflict/retry feedback is subject to the same long-history placement.",
+      "required_repair": "Keep success/error/conflict/retry feedback visible near the fixed action area and restore/retain focus within the currently active inspection after async save. Preserve draft/retry semantics and avoid focusing the retained hidden task pane if the operator inspected a ticket during the request.",
+      "required_proof": "Long-history successful save at body top, conflict/uncertain retry feedback and recovery visibility, and active task/ticket focus after async completion; rerun only affected modal/route/overlay proof plus integration gates as needed."
+    }
+  ],
+  "remaining_integration_proof": [
+    "Bounded repair candidate and independent follow-up review for D1-F1.",
+    "Root Product Design both-theme geometry, short viewport, long content, actual scrolling and focus QA.",
+    "Root user-requested researched behavior pass and final integrated signoff."
+  ],
+  "next_disposition": "Main adjudicates the single repair finding and dispatches a bounded follow-up. Unchanged D1 and accepted M1 evidence may be reused."
+}

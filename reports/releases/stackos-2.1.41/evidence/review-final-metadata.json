@@ -1,0 +1,70 @@
+{
+  "reviewed_at_utc": "2026-10-29T03:24:43.221010+00:00",
+  "reviewer": "/root/navigation_review",
+  "release": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "verdict": "pass_final_metadata",
+  "files": {
+    "stackos-2.1.41-mac-arm64.zip": {
+      "bytes": 490271232,
+      "sha256": "89ba6a16d27fe85487c9dcafafa2e9b588c36f1be3e85b6ee70ea26d53f6261d",
+      "sha512_base64": "QkEEJT4fLZq9CflymqfwfoLQLhf1QOSUDZNsR3z7TD46pvLjaay8R72kf0hvWdRxfGOkbW9/rgvfhWIUbBFHQg==",
+      "feed_matches": true
+    },
+    "stackos-2.1.41-mac-arm64.dmg": {
+      "bytes": 485555719,
+      "sha256": "1a42cd1ba232bb2f2f0bfa6f6991979269575a860a0dee3e427aa4f218b21ab1",
+      "sha512_base64": "3diNpUnUuLKOW8FhiHqjkO80wX5hRg/qLdJo3k2C1/CYqVc0cZas9hwqQempoDdmon2EfnhScp8RiDe0gq7PDg==",
+      "feed_matches": true
+    },
+    "stackos-2.1.41-mac-arm64.dmg.blockmap": {
+      "bytes": 505310,
+      "sha256": "db70707a2e1124389760fda4861fcf8c2cff53475549bfa1340f2ccca1469752"
+    },
+    "stackos-2.1.41-mac-arm64.zip.blockmap": {
+      "bytes": 504983,
+      "sha256": "25d42ca7ab30bb0ff0fda5f7d6b86521664e0d61411c812c25d503c5b41ba66b"
+    },
+    "stackos-latest-mac-arm64.dmg": {
+      "bytes": 485555719,
+      "sha256": "1a42cd1ba232bb2f2f0bfa6f6991979269575a860a0dee3e427aa4f218b21ab1"
+    },
+    "latest-mac.yml": {
+      "bytes": 513,
+      "sha256": "6413511556f1438382b4fb21dc64df56730d9c6ad2c17838f83d01696046addd"
+    }
+  },
+  "blockmaps": {
+    "stackos-2.1.41-mac-arm64.dmg": {
+      "version": "2",
+      "chunks": 23275,
+      "covered_bytes": 485555719
+    },
+    "stackos-2.1.41-mac-arm64.zip": {
+      "version": "2",
+      "chunks": 23244,
+      "covered_bytes": 490271232
+    }
+  },
+  "feed": {
+    "version": "2.1.41",
+    "files": [
+      {
+        "url": "stackos-2.1.41-mac-arm64.zip",
+        "sha512": "QkEEJT4fLZq9CflymqfwfoLQLhf1QOSUDZNsR3z7TD46pvLjaay8R72kf0hvWdRxfGOkbW9/rgvfhWIUbBFHQg==",
+        "size": 490271232
+      },
+      {
+        "url": "stackos-2.1.41-mac-arm64.dmg",
+        "sha512": "3diNpUnUuLKOW8FhiHqjkO80wX5hRg/qLdJo3k2C1/CYqVc0cZas9hwqQempoDdmon2EfnhScp8RiDe0gq7PDg==",
+        "size": 485555719
+      }
+    ],
+    "path": "stackos-2.1.41-mac-arm64.zip",
+    "sha512": "QkEEJT4fLZq9CflymqfwfoLQLhf1QOSUDZNsR3z7TD46pvLjaay8R72kf0hvWdRxfGOkbW9/rgvfhWIUbBFHQg==",
+    "releaseDate": "2026-10-29T03:06:05.639Z"
+  },
+  "stable_alias_matches_versioned_dmg": true,
+  "zip_unchanged_since_independent_review": true,
+  "limits": "Local artifact and metadata integrity only; trust, installed lifecycle and publication have separate receipts."
+}

@@ -32,6 +32,7 @@ work, start here:
 | Understanding the product or evaluating a new product direction | [`docs/product-direction.md`](./docs/product-direction.md), [`docs/architecture.md`](./docs/architecture.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
 | Setup, local start, autostart, or repair | [`docs/setup.md`](./docs/setup.md), [`docs/upgrade.md`](./docs/upgrade.md), [`docs/security.md`](./docs/security.md) |
 | Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
+| Engineering planning and delivery readiness | [Main planning guidance](./.codex/orchestrator/sdlc-delivery-orchestrator.md), [planning](./.codex/agents/sdlc-planning.toml), [test design](./.codex/agents/sdlc-test-designer.toml), [independent review](./.codex/agents/sdlc-delivery-reviewer.toml) |
 | Callable operations or action execution | [`docs/operations.md`](./docs/operations.md), [`docs/action-executor.md`](./docs/action-executor.md), [`docs/extending.md`](./docs/extending.md) |
 | Provider auth or credentials | [`docs/auth-providers.md`](./docs/auth-providers.md), [`docs/security.md`](./docs/security.md) |
 | Plugins, resources, templates, runs, tasks, agent presets | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/agent-presets.md`](./docs/agent-presets.md), [`docs/run-plans.md`](./docs/run-plans.md), [`docs/task-tracker.md`](./docs/task-tracker.md) |
@@ -66,6 +67,16 @@ branded copy requires its applicable current foundation and independent voice
 review; missing brand does not block factual, technical or unrelated finance
 work. Existing project/source owners and action authority remain unchanged.
 
+For ordinary goals, inspect repository intent and current setup and select the
+applicable configured workflow by its outcome and boundaries; do not require the
+user to name a workflow. Harmless questions need no business run. A newly needed
+catalog workflow uses the shared `workflowTemplate.authoringGuide.project_setup_method`
+within current setup authority before execution. Both session and managed setup
+consume that canonical prompt and completion contract. Adopt valid legacy setup,
+compare previous/local/new sources on update, and preserve compatible local
+choices and the full applicable source obligations. Material unresolved loss
+prevents completion for the affected workflow; independent workflows can finish.
+
 Project-local main-agent mappings:
 
 - `engineering.tracked-delivery` ->
@@ -76,11 +87,16 @@ Project-local main-agent mappings:
   [`.codex/orchestrator/workflow-orchestrator.md`](./.codex/orchestrator/workflow-orchestrator.md)
 - `finance.receipt-intake`, `finance.bookkeeping-close`,
   `finance.payment-request`, `finance.payment-request-followups`,
-  `finance.cashflow-management`, and `finance.tax-estimates` ->
+  `finance.cashflow-management`, `finance.tax-estimates`, and `finance.management-review` ->
   [`.codex/orchestrator/finance-department-orchestrator.md`](./.codex/orchestrator/finance-department-orchestrator.md)
 
 ## Core Rules
 
+- Deliver a simple, complete end-to-end flow first, connecting existing components
+  through their canonical owners. Improve it afterward based on real needs and
+  evidence. Required behavior, correctness, security and proportionate verification
+  belong in that first delivery; optional breadth and speculative abstractions
+  wait. Apply this direction during planning, architecture, delivery and review.
 - The runtime layers are project -> workflow template -> run plan. Projects
   store durable state, templates define reusable setup, and run plans are
   concrete execution instances with scoped grants and audit history.
@@ -169,38 +185,56 @@ Project-local main-agent mappings:
 - Workflow execution writes such as `resource.upsert`, `artifact.create`,
   `learning.create`, `experiment.*`, `decision.record`, and `action.execute`
   require a started run plan, one running step, and an explicit grant snapshot.
-- Normal agent sessions are scoped by the repository/directory identity that
-  launched the StackOS bridge. Start with `workspace.startSession`: it creates
-  or reuses one daemon-owned project and binding for the current workspace when
-  reliable identity exists, then the bridge injects the resolved `project_id`
-  into project-scoped calls. Use `workspace.resolve` for read-only diagnostics.
-  The workspace-bound project is the source of truth; there is no global active
-  project or last-used project fallback in the agent path.
+- For a chosen working directory, `workspace.startSession` creates or reuses
+  its daemon-owned project binding when reliable identity exists. The bridge
+  then injects that `project_id` and refuses cross-project calls. An established
+  directory or named-workspace binding cannot be switched by this session.
+  `workspace.resolve` is read-only and never changes the session's scope.
+- For a known global chat or recurring task, make the first successful startup
+  `workspace.startSession(global_session=true, project_id=<chosen ID>)`.
+  Omit `project_id` to discover projects first. Global startup creates no
+  project or directory binding and ignores `auto_bootstrap`. Pass an explicit
+  positive existing `project_id` on every global project-scoped call, including
+  direct browser tools and `toolbox.describe` when requesting run context.
+  For `toolbox.call`, put it inside `arguments`. Startup, resolve, connect, and
+  bootstrap results never become a default project. There is no last-used
+  project fallback.
 - Workspace identity is directory-first, not Git-first. `--workspace-root` and
-  `STACKOS_WORKSPACE_ROOT` are explicit workspace hints; Claude Code can pass a
-  real project root through `CLAUDE_PROJECT_DIR`; process cwd is only a
-  fallback hint. Git remote/top-level detection is optional enrichment and must
-  not be required for non-technical users. Claude Desktop may launch StackOS
-  from global app config with no repo context. A cwd or path fingerprint for the
-  filesystem root `/` must be treated as missing workspace context, not as a
-  project to bind or bootstrap.
+  `STACKOS_WORKSPACE_ROOT` express deliberate StackOS workspace selection and
+  cannot be downgraded to global, including after a lookup failure.
+  `CLAUDE_PROJECT_DIR` retains priority over process cwd, but both are ambient
+  hints: neither proves that the user chose a folder. Existing valid bindings
+  stay protected. For unbound ambient hints, initialize/tools-list only resolve
+  read-only and leave startup pending. Known ChatGPT “Choose project / This
+  computer” and Claude “Local / No folder” intent uses global startup; if intent
+  is unknown, clarify before starting. Do not classify by runtime or path
+  pattern. Git is optional enrichment; `/` is missing workspace context.
+  An explicit project ID on non-global startup of an unbound directory is
+  rejected before writes; declare global intent or establish the intended
+  workspace binding first. Normal folder startup without an ID still works.
 - Project identity is user/business-facing metadata. StackOS may derive it from
   explicit workspace metadata, git remote basename, or chosen folder basename
   only when the candidate is reliable. Generic or app-internal names such as
   `Resources`, `Contents`, `MacOS`, `StackOS.app`, or `Project` must cause setup
   to ask for `project_name`, `project_slug`, or a deliberate `workspace_alias`
-  instead of creating a bad project. For desktop/global hosts with no cwd/git
-  signal, use `workspace.connect` to reuse an existing
-  `candidate_workspaces` alias or selected existing project; use
-  `workspace.bootstrap` only to create a new named workspace from explicit
-  project metadata. Do not create a project separately and assume the current
-  agent scope moved; the workspace binding must be created or verified by
-  `workspace.bootstrap` or `workspace.connect` in the same setup flow.
-  Caller-invented cwd/repo anchors are rejected by the
-  bridge. Later display-name fixes use the explicit
+  instead of creating a bad project. After global startup, use `project.list`
+  to choose an existing project, `workspace.connect` with its explicit ID for
+  intentional named setup, or `workspace.bootstrap` with explicit project
+  metadata to create one. Use the returned ID explicitly on subsequent calls;
+  setup does not move global session scope. A first startup with an existing
+  `workspace_alias` instead establishes a protected named-workspace session.
+  Caller-invented cwd/repo anchors are rejected. Later display-name fixes use the explicit
   local-admin `project.update` flow and must not move the workspace binding.
+- Save recurring task project IDs only after confirming the intended project.
+  After migration `0033_project_id_nonreuse`, deleted IDs are not allocated to
+  replacement projects. Pre-migration numeric-only references require explicit
+  reselection/confirmation; the migration cannot identify already reused IDs
+  or reconstruct deleted history. A missing saved ID stops the task; never
+  substitute a project by name or last use. Selection grants no filesystem or
+  action authority.
 - The agent-facing MCP bridge exposes only `workspace.startSession`,
-  `workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. Project
+  `workspace.resolve`, browser lifecycle tools, `toolbox.describe`, and
+  `toolbox.call` directly. Project
   setup, workflows, run plans, tracker, auth, resources, communications, and
   actions are called through the scoped toolbox. Use `toolbox.describe` with
   exact `tool_names`; do not request broad schemas. If operation names are not

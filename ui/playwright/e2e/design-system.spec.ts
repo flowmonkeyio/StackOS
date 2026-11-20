@@ -11,6 +11,8 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { createProject, resetProjects, trackConsoleErrors } from '../helpers'
 
+test.use({ reducedMotion: 'reduce' })
+
 const VIEWPORTS = [
   { width: 360, height: 740 },
   { width: 640, height: 800 },
@@ -23,12 +25,12 @@ const VIEWPORTS = [
 const ROUTES = [
   // overview redirects to the operations console (h1 = project name).
   { path: 'overview', heading: 'Protocol Project' },
-  { path: 'inbox', heading: 'Inbox' },
+  { path: 'inbox', heading: 'Attention' },
   { path: 'activity', heading: 'Activity' },
-  { path: 'setup', heading: 'Setup' },
+  { path: '/setup', heading: 'Backups' },
   { path: 'runs', heading: /^Runs/ },
   { path: 'connections', heading: 'Connections' },
-  { path: 'workflow-templates', heading: 'Workflow library' },
+  { path: 'workflow-templates', heading: 'Workflow templates' },
 ] as const
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
@@ -40,6 +42,7 @@ async function assertNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 async function runAxe(page: Page, label: string): Promise<void> {
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
@@ -69,7 +72,7 @@ test.describe('design system — responsive + accessibility protocol', () => {
     for (const route of ROUTES) {
       for (const viewport of VIEWPORTS) {
         await page.setViewportSize(viewport)
-        await page.goto(`/projects/${project.id}/${route.path}`)
+        await page.goto(route.path.startsWith('/') ? route.path : `/projects/${project.id}/${route.path}`)
         await expect(
           page.getByRole('heading', { level: 1, name: route.heading }),
         ).toBeVisible()
@@ -92,7 +95,7 @@ test.describe('design system — responsive + accessibility protocol', () => {
     for (const route of ROUTES) {
       for (const width of [360, 1280] as const) {
         await page.setViewportSize({ width, height: width < 600 ? 740 : 800 })
-        await page.goto(`/projects/${project.id}/${route.path}`)
+        await page.goto(route.path.startsWith('/') ? route.path : `/projects/${project.id}/${route.path}`)
         await expect(
           page.getByRole('heading', { level: 1, name: route.heading }),
         ).toBeVisible()
@@ -117,7 +120,7 @@ test.describe('design system — responsive + accessibility protocol', () => {
     for (const route of ROUTES) {
       for (const width of [360, 1280] as const) {
         await page.setViewportSize({ width, height: width < 600 ? 740 : 800 })
-        await page.goto(`/projects/${project.id}/${route.path}`)
+        await page.goto(route.path.startsWith('/') ? route.path : `/projects/${project.id}/${route.path}`)
         await expect(
           page.getByRole('heading', { level: 1, name: route.heading }),
         ).toBeVisible()
@@ -139,8 +142,8 @@ test.describe('design system — responsive + accessibility protocol', () => {
     // Boot auto-opens the active project, so reach the portfolio via the brand
     // link (SPA nav, not a full reload that would redirect again).
     await page.goto(`/projects/${project.id}`)
-    await page.getByRole('link', { name: 'StackOS home' }).click()
-    await expect(page.getByRole('heading', { level: 1, name: 'StackOS' })).toBeVisible()
+    await page.getByRole('link', { name: 'StackOS Local runtime home' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible()
 
     for (const viewport of VIEWPORTS) {
       await page.setViewportSize(viewport)

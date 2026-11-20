@@ -4390,6 +4390,12 @@ def test_hubspot_bulk_export_result_downloads_to_managed_artifact_without_signed
     httpx_mock: HTTPXMock,
     tmp_path,
 ) -> None:
+    from stackos.config import Settings
+    from stackos.project_cleanup import ProjectCleanupService
+    from stackos.repositories.projects import ProjectRepository
+
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
     credential_ref = _hubspot_credential(
         session,
         project_id=project_id,
@@ -4436,7 +4442,7 @@ def test_hubspot_bulk_export_result_downloads_to_managed_artifact_without_signed
     )
 
     result = asyncio.run(
-        ActionRepository(session, asset_dir=tmp_path).execute(
+        ActionRepository(session, asset_dir=settings.generated_assets_dir).execute(
             project_id=project_id,
             action_ref="gtm.hubspot.bulk.exports.result",
             input_json={"job_ref": job_ref, "max_bytes": 10_000_000},
@@ -4456,7 +4462,9 @@ def test_hubspot_bulk_export_result_downloads_to_managed_artifact_without_signed
     assert output["mime_type"] == "text/csv"
     assert output["size_bytes"] == len(file_content)
     assert output["sha256"] == hashlib.sha256(file_content).hexdigest()
-    artifact_path = tmp_path / output["artifact_ref"].removeprefix("/generated-assets/")
+    artifact_path = settings.generated_assets_dir / output["artifact_ref"].removeprefix(
+        "/generated-assets/"
+    )
     assert artifact_path.read_bytes() == file_content
     artifacts = ArtifactRepository(session).query(
         project_id=project_id,
@@ -4469,6 +4477,14 @@ def test_hubspot_bulk_export_result_downloads_to_managed_artifact_without_signed
     assert signed_url not in rendered
     assert "private-token-9004" not in rendered
     assert "buyer@example.test" not in rendered
+    target = ProjectRepository(session).get(project_id)
+    cleanup = asyncio.run(
+        ProjectCleanupService(session, settings).delete(
+            project_id,
+            confirmation={"permanent": True, "project_id": project_id, "project_slug": target.slug},
+        )
+    )
+    assert cleanup.status == "deleted" and not artifact_path.exists()
 
 
 def test_hubspot_bulk_export_requires_export_scope_before_provider_call(

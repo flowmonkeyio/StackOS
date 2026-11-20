@@ -1,0 +1,37 @@
+{
+  "path": "/Users/sergeyrura/Library/Logs/DiagnosticReports/notarytool-2026-10-06-154046.ips",
+  "captureTime": "2026-10-06 15:40:38.4967 -0700",
+  "procPath": "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+  "exception": {
+    "codes": "0x0000000000000002, 0x000000016f983fe0",
+    "rawCodes": [
+      2,
+      6167216096
+    ],
+    "type": "EXC_BAD_ACCESS",
+    "signal": "SIGBUS",
+    "subtype": "KERN_PROTECTION_FAILURE at 0x000000016f983fe0"
+  },
+  "termination": {
+    "flags": 0,
+    "code": 10,
+    "namespace": "SIGNAL",
+    "indicator": "Bus error: 10",
+    "byProc": "exc handler",
+    "byPid": 16939
+  },
+  "frames": [
+    "__sfvwrite",
+    "__vfprintf",
+    "_vsnprintf",
+    "snprintf_l",
+    "__CFStringAppendFormatCore",
+    "_CFStringCreateWithFormatAndArgumentsReturningMetadata",
+    "_CFStringCreateWithFormatAndArgumentsAux2",
+    "NSString.__allocating_init(format:locale:arguments:)",
+    "specialized withVaList<A>(_:_:)",
+    "String.init(format:_:)",
+    "{'imageOffset': 3392592, 'imageIndex': 0}",
+    "{'imageOffset': 3431600, 'imageIndex': 0}"
+  ]
+}

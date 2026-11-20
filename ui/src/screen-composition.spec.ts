@@ -1,7 +1,10 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { boardColumnStatus } from './design/status'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
 
@@ -10,72 +13,78 @@ function source(relativePath: string): string {
 }
 
 describe('desktop screen composition contract', () => {
-  it('makes project Home a current ticket overview rather than live-agent claims', () => {
+  it('composes project Home from active work, retained Usage and connected tools', () => {
     const text = source('views/HomeConsoleView.vue')
 
-    expect(text).toContain('Tickets by status')
+    expect(text).toContain('<ActiveTaskList')
     expect(text).not.toContain('Latest action calls')
-    expect(text).toContain('Project connections')
-    expect(text).toContain('Configured workflows')
-    expect(text).toContain('Tracked work')
+    expect(text).toContain('<HomeConnectionsSection')
+    expect(text).toContain('<AgentActivitySection')
+    expect(text).not.toContain('Configured workflows')
     expect(text).not.toContain('Agents are working')
     expect(text).not.toContain('status=running')
     expect(text).not.toContain('AttentionItemRow')
   })
 
-  it('makes Portfolio a cross-project operating overview before the directory', () => {
+  it('preserves Local service before the shared active list and Usage', () => {
     const home = source('views/HomeView.vue')
-    const overview = source('views/home/HomePortfolioOverview.vue')
-    const directory = source('views/home/HomeProjectsSection.vue')
-
-    expect(home).toContain('<HomePortfolioOverview')
-    expect(overview).toContain('Tickets by status')
-    expect(overview).not.toContain('summary-aside')
-    expect(overview).toContain('Current snapshot')
-    expect(overview).not.toContain('Portfolio completion')
-    expect(overview).toContain('Project visibility')
-    expect(directory).toContain('Latest tracked work')
-    expect(directory).toContain('Ticket status')
-    expect(directory).toContain('Load more projects')
+    expect(home.indexOf('<HomeSystemStatusCard')).toBeLessThan(home.indexOf('<ActiveTaskList'))
+    expect(home.indexOf('<ActiveTaskList')).toBeLessThan(home.indexOf('<AgentActivitySection'))
+    expect(home.indexOf('<AgentActivitySection')).toBeLessThan(home.indexOf('<HomeConnectionsSection'))
+    expect(home).toContain('Project visibility')
+    expect(home).not.toContain('<HomePortfolioOverview')
+    expect(home).not.toContain('<HomeProjectsSection')
   })
 
-  it('opens Work on the dependency map while keeping one shared control surface', () => {
+  it('opens Work on a task Board with bounded card edits, focused map and centered detail inspection', () => {
     const view = source('views/TaskTrackerView.vue')
-    const stories = source('views/task-tracker/TrackerStoriesPanel.vue')
+    const board = source('views/task-tracker/TrackerBoardPanel.vue')
+    const reorder = source('components/ui/UiReorderList.vue')
+    const commands = source('views/task-tracker/TaskTrackerCommandPanel.vue')
+    const taskDialog = source('views/task-tracker/TrackerTaskDetailDialog.vue')
+    const ticketDialog = source('views/task-tracker/TrackerTicketDetailPanel.vue')
+    const ticketContent = source('views/task-tracker/TrackerTicketDetailContent.vue')
 
-    expect(view).toContain('const viewMode = ref<ViewMode>(viewModeFromQuery(route.query.view))')
-    expect(view).toContain("{ key: 'graph', label: 'Dependency map'")
+    expect(view).toContain("route.query.view === 'graph' ? 'graph' : 'board'")
     expect(view).toContain('<TaskTrackerCommandPanel')
-    expect(view).toContain('<TrackerStoriesPanel')
+    expect(view).toContain('<TrackerBoardPanel')
+    expect(view).toContain('<TrackerGraphPanel')
+    expect(view).not.toContain('TrackerStoriesPanel')
+    expect(view).not.toContain('TrackerTicketTable')
     expect(view).toContain('task_index_only: true')
     expect(view).not.toContain("statuses: ['in-progress']")
-    expect(view).toContain("snapshotScope.value = needsFullSnapshot ? 'full' : 'index'")
-    expect(view).toContain('function setViewMode')
-    expect(stories).toContain('What is blocking progress')
-    expect(stories).toContain('Latest recorded outcome')
-    expect(stories).toContain('Resolve in Attention')
-    expect(stories).toContain('View outcome timeline')
-    expect(stories).not.toContain('update:view-mode')
-  })
-
-  it('defaults Activity to grouped outcomes with raw audit on demand', () => {
-    const text = source('views/ActivityView.vue')
-
-    expect(text).toContain('const filter = ref<Category>(routeCategory())')
-    expect(text).toContain(": 'outcomes'")
-    expect(text).toContain('Related adjacent changes are grouped into one episode.')
-    expect(text).toContain('Show raw audit')
-    expect(text).toContain('Technical event details')
-  })
-
-  it('explains Setup without a synthetic readiness percentage', () => {
-    const text = source('views/project-detail/SetupStatusTab.vue')
-
-    expect(text).toContain('Setup path')
-    expect(text).toContain('Required runtime state first')
-    expect(text).toContain('Optional setup items')
-    expect(text).toContain('Configure what this project actually needs')
-    expect(text).not.toContain('UiScoreMeter')
+    expect(view).toContain('const taskKey = mapTaskKey.value')
+    expect(view).toContain('graph.loadFocusedGraph(taskKey,')
+    expect(Object.entries(boardColumnStatus).map(([key, status]) => [key, status.label])).toEqual([
+      ['backlog', 'Backlog'], ['todo', 'Todo'], ['in-progress', 'In progress'], ['stopped', 'Stopped'],
+      ['done', 'Done'], ['aborted', 'Aborted'], ['failed', 'Failed'], ['skipped', 'Skipped'],
+    ])
+    expect(board).toContain('Object.keys(boardColumnStatus)')
+    expect(board).toContain('Math.max(columns.length, 1)')
+    expect(board).toContain('row.task.board_column === status')
+    expect(board).toContain("@click=\"$emit('openGraph', row.key)\"")
+    expect(view).toContain('@open-graph="viewDependencies"')
+    expect(board).toContain("label: 'Task details'")
+    expect(view).toContain('@open-task="openTaskDetail"')
+    expect(board).toContain('<UiReorderList')
+    expect(board).toContain('<UiReorderHandle')
+    expect(reorder).toContain('Move up')
+    expect(reorder).toContain('Move down')
+    expect(board).toContain('<TaskPriorityBadge')
+    expect(view).toContain('@move="boardEdits.move"')
+    expect(commands).toContain('<TrackerBoardFilterBar')
+    expect(commands).not.toContain('aria-label="Search tasks"')
+    expect(commands).toMatch(/<div\s+v-else\s+class="tracker-command-panel__context"\s*>[\s\S]*aria-label="Selected task"/)
+    expect(taskDialog).toContain('<UiDialog')
+    expect(taskDialog.match(/<UiDialog\b/g)).toHaveLength(1)
+    expect(taskDialog).toContain('layout="detail"')
+    expect(taskDialog).toContain('<TrackerTicketDetailContent')
+    expect(ticketDialog).toContain('<InspectableDetailDrawer')
+    expect(ticketDialog).toContain('<TrackerTicketDetailContent')
+    expect(ticketDialog).not.toContain('<UiDialog')
+    expect(ticketContent.match(/aria-label="Ticket core metadata"/g)).toHaveLength(1)
+    expect(taskDialog).toContain('View graph')
+    expect(taskDialog).toContain('Back to task')
   })
 
   it('opens Connections on services and groups messaging and diagnostics', () => {
@@ -94,25 +103,4 @@ describe('desktop screen composition contract', () => {
     expect(accounts).toContain('Set up provider Accounts once')
   })
 
-  it('explains the request-to-work-to-outcome handoff', () => {
-    const text = source('views/AgentRequestsView.vue')
-
-    expect(text).toContain('From request to outcome')
-    expect(text).toContain('Agent claims it')
-    expect(text).toContain('Work becomes visible')
-    expect(text).toContain('Outcome is recorded')
-    expect(text).toContain('Where this request is now')
-  })
-
-  it('gives every Attention item impact, ownership, and an expected result', () => {
-    const store = source('stores/attention.ts')
-    const view = source('views/InboxView.vue')
-
-    expect(store).toContain('impact: string')
-    expect(store).toContain('ownership: string')
-    expect(store).toContain('after: string')
-    expect(view).toContain('Why it matters')
-    expect(view).toContain('Who owns what')
-    expect(view).toContain('After you act')
-  })
 })

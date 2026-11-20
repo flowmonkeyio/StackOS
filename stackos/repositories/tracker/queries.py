@@ -3,13 +3,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import date
 from typing import (
     Any,
     Literal,
     overload,
 )
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_, true
 from sqlalchemy import select as sa_select
 from sqlmodel import (
     col,
@@ -17,6 +19,7 @@ from sqlmodel import (
 )
 
 from stackos.db.models import (
+    Project,
     RunPlan,
     RunPlanStatus,
     RunPlanStep,
@@ -30,23 +33,40 @@ from stackos.db.models import (
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
+    TrackerTicketKind,
     TrackerTicketLink,
     TrackerTicketReference,
 )
+from stackos.host_mcp.service import active_execution
 from stackos.repositories.base import (
     NotFoundError,
     Page,
     ValidationError,
     cursor_paginate,
 )
+from stackos.repositories.tracker.agent_stats import (
+    ReceiptProjection,
+    query_agent_stats,
+    query_task_agent_stats,
+    query_ticket_agent_stats,
+)
+from stackos.repositories.tracker.board import task_columns
 from stackos.repositories.tracker.counts import query_ticket_counts
 from stackos.repositories.tracker.schema import (
+    ActiveExecutionOut,
+    ActiveTaskOut,
+    ActiveTaskProjectOut,
+    ActiveTasksOut,
+    TaskDeliveryStateOut,
+    TrackerAgentStatsOut,
     TrackerBriefOut,
     TrackerChangedOut,
     TrackerHistoryOut,
     TrackerLaneOut,
     TrackerLinkOut,
+    TrackerMetricDemand,
     TrackerNextOut,
+    TrackerNotificationChangesOut,
     TrackerPriorityOut,
     TrackerReferenceOut,
     TrackerSearchOut,
@@ -57,16 +77,20 @@ from stackos.repositories.tracker.schema import (
     TrackerTaskTicketSummaryOut,
     TrackerTicketCountsOut,
     TrackerTicketOut,
+    TrackerTicketSummaryOut,
     TrackerVerifyOut,
     TrackerWorkflowHandoffOut,
+    WorkDurationOut,
 )
 from stackos.repositories.tracker.utils import (
     ACTIVATES_DEPENDENCY_TYPE,
+    DEFAULT_TRACKER_KEY,
     TERMINAL_TRACKER_STATUSES,
     _is_closed_tracker_scope,
     _is_dependency_satisfied,
     _is_terminal_tracker_status,
     _required_id,
+    _utcnow,
 )
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 from stackos.repositories.tracker.workflow_graph_analysis import (
@@ -77,8 +101,105 @@ from stackos.repositories.tracker.workflow_graph_analysis import (
 )
 
 
+def _execution_out(
+    project_id: int, task_key: str, ticket_key: str | None = None
+) -> ActiveExecutionOut | None:
+    execution = active_execution(project_id, task_key, ticket_key)
+    return ActiveExecutionOut.model_validate(execution) if execution else None
+
+
 class TrackerQueryMixin:
     """Tracker read/query helpers and response shaping."""
+
+    def active_tasks(
+        self, *, project_id: int | None = None, limit: int = 100, after_id: int | None = None
+    ) -> ActiveTasksOut:
+        """Bounded Home membership with the same batched facts as the task index."""
+        from stackos.repositories.projects import ProjectRepository
+        from stackos.repositories.tracker.agent_stats import usage_read_token
+
+        if project_id is not None:
+            ProjectRepository(self._s).require_available(project_id)
+        read_token = usage_read_token(self._s, project_id)
+        rows = list(
+            self._s.exec(
+                select(TrackerTask, Project)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTask.tracker_id))
+                .join(Project, col(Project.id) == col(TrackerTask.project_id))
+                .where(
+                    col(TaskTracker.key) == DEFAULT_TRACKER_KEY,
+                    col(TrackerTask.status) == TrackerItemStatus.IN_PROGRESS,
+                    col(TrackerTask.id) > after_id if after_id is not None else true(),
+                    col(Project.id) == project_id
+                    if project_id is not None
+                    else col(Project.is_active).is_(True),
+                    func.json_type(Project.cleanup_json).is_(None)
+                    | (func.json_type(Project.cleanup_json) == "null"),
+                )
+                .order_by(col(TrackerTask.id))
+                .limit(limit + 1)
+            ).all()
+        )
+        more = len(rows) > limit
+        rows = rows[:limit]
+        facts = self._task_out_many(
+            None, [task for task, _project in rows], include_ticket_summary=True
+        )
+        items = [
+            ActiveTaskOut.model_validate(
+                {
+                    **task.model_dump(),
+                    "project": ActiveTaskProjectOut.model_validate(project),
+                    "delivery": TaskDeliveryStateOut.from_metadata(task.metadata_json),
+                }
+            )
+            for task, (_row, project) in zip(facts, rows, strict=True)
+        ]
+        return ActiveTasksOut(
+            read_token=read_token,
+            scope="project" if project_id is not None else "global",
+            project_id=project_id,
+            as_of=_utcnow(),
+            items=items,
+            next_cursor=items[-1].id if more else None,
+        )
+
+    def agent_stats(
+        self,
+        *,
+        project_id: int,
+        group_by: Literal["agent", "model", "agent_model"] = "agent_model",
+        start_date: date | None = None,
+        end_date: date | None = None,
+        timezone: str = "UTC",
+    ) -> TrackerAgentStatsOut:
+        self._require_project(project_id)
+        return query_agent_stats(
+            self._s,
+            project_id=project_id,
+            group_by=group_by,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+        )
+
+    def agent_stats_all(
+        self,
+        *,
+        is_active: bool | None = True,
+        group_by: Literal["agent", "model", "agent_model"] = "agent_model",
+        start_date: date | None = None,
+        end_date: date | None = None,
+        timezone: str = "UTC",
+    ) -> TrackerAgentStatsOut:
+        return query_agent_stats(
+            self._s,
+            is_active=is_active,
+            group_by=group_by,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+        )
 
     def ticket_counts(self, *, project_id: int) -> TrackerTicketCountsOut:
         self._tracker_or_none(project_id=project_id)
@@ -130,7 +251,40 @@ class TrackerQueryMixin:
         assignee: str | None = None,
         include_graph: bool = True,
         task_index_only: bool = False,
+        projection: Literal["full", "ui"] = "full",
+        metric_demand: TrackerMetricDemand | None = None,
     ) -> TrackerSnapshotOut:
+        if projection == "ui":
+            from stackos.repositories.tracker.ui_projection import ui_snapshot
+
+            if any(
+                (
+                    statuses,
+                    ticket_keys,
+                    ticket_ids,
+                    block_state,
+                    dependency_ticket_key,
+                    run_plan_id,
+                    assignee,
+                )
+            ):
+                raise ValidationError(
+                    "UI discovery uses task scope; filter its complete lightweight facts"
+                )
+            if task_index_only and include_graph:
+                raise ValidationError("task_index_only requires include_graph=false")
+            return ui_snapshot(
+                self,
+                project_id=project_id,
+                task_key=task_key,
+                task_statuses=task_statuses,
+                workflow_key=workflow_key,
+                include_graph=include_graph,
+                task_index_only=task_index_only,
+                demand=metric_demand or TrackerMetricDemand(),
+            )
+        if projection != "full" or metric_demand is not None:
+            raise ValidationError("metric_demand requires projection=ui")
         if task_index_only:
             if include_graph:
                 raise ValidationError("task_index_only requires include_graph=false")
@@ -162,10 +316,11 @@ class TrackerQueryMixin:
                 graph=self._graph_out([], [], [], []) if include_graph else None,
             )
         task_status_set = set(task_statuses or [])
-        tasks = self._task_rows(tracker.id, statuses=task_status_set)
         if task_key is not None:
             task = self._task_by_key(tracker.id, task_key)
             tasks = [task] if not task_status_set or task.status in task_status_set else []
+        else:
+            tasks = self._task_rows(tracker.id, statuses=task_status_set)
         if workflow_key is not None:
             tasks = [
                 task
@@ -174,7 +329,7 @@ class TrackerQueryMixin:
                 or (task.source_json or {}).get("run_plan_key") == workflow_key
             ]
         if task_index_only:
-            task_out = self._task_out_many(tracker.id, tasks)
+            task_out = self._task_out_many(tracker.id, tasks, include_ticket_summary=True)
             return TrackerSnapshotOut(
                 tracker=self._tracker_out(tracker),
                 lanes=self._lane_out(tracker.id),
@@ -256,8 +411,9 @@ class TrackerQueryMixin:
             task_ids = {ticket.task_id for ticket in tickets}
             tasks = [task for task in tasks if task.id in task_ids]
 
-        task_out = [self._task_out(task) for task in tasks]
-        ticket_out = self._ticket_out_many(tickets)
+        receipt_projection = ReceiptProjection(self._s)
+        task_out = self._task_out_many(tracker.id, tasks, projection=receipt_projection)
+        ticket_out = self._ticket_out_many(tickets, projection=receipt_projection)
         dependencies = self._dependency_out_for_tickets(tickets)
         links = self._link_out_for_scope(
             tracker.id,
@@ -285,6 +441,9 @@ class TrackerQueryMixin:
         limit: int = 5,
         assignee: str | None = None,
         include_blocked: bool = True,
+        task_key: str | None = None,
+        pending_only: bool = False,
+        parent_ticket_key: str | None = None,
     ) -> TrackerNextOut:
         tracker = self._tracker_or_none(project_id=project_id)
         if tracker is None:
@@ -294,6 +453,20 @@ class TrackerQueryMixin:
                 explanation="No tracker work exists for this project yet.",
             )
         tickets = self._ticket_rows(tracker.id)
+        if task_key is not None:
+            task = self._task_by_key(tracker.id, task_key)
+            tickets = [ticket for ticket in tickets if ticket.task_id == task.id]
+        if pending_only:
+            tickets = [
+                ticket for ticket in tickets if ticket.status == TrackerItemStatus.NOT_STARTED
+            ]
+        if parent_ticket_key is not None:
+            parent = self._ticket_by_key(tracker.id, parent_ticket_key)
+            tickets = [
+                ticket
+                for ticket in tickets
+                if ticket.parent_ticket_id == parent.id and ticket.kind != TrackerTicketKind.GROUP
+            ]
         if assignee is not None:
             tickets = [ticket for ticket in tickets if ticket.assignee in {None, assignee}]
         ready = self._ready_ticket_rows(tracker.id, tickets=tickets)
@@ -477,12 +650,15 @@ class TrackerQueryMixin:
                         ),
                     }
                 )
-                bypassing_gate_children = self._workflow_bypassing_gate_child_keys(siblings)
+                declared_lanes = self._workflow_gate_lane_keys(siblings)
+                bypassing_gate_children = self._workflow_bypassing_gate_child_keys(
+                    siblings, declared_lanes=declared_lanes
+                )
+                declared_lane = declared_lanes.get(
+                    _required_id(ticket.id, "ticket"), ticket.lane_key
+                )
                 ticket_is_gate_child = is_workflow_gate_child(
-                    key=ticket.key,
-                    title=ticket.title,
-                    goal=ticket.goal,
-                    lane_key=ticket.lane_key,
+                    lane_key=declared_lane,
                 )
                 if ticket_is_gate_child or ticket.key in bypassing_gate_children:
                     checks.append(
@@ -490,8 +666,9 @@ class TrackerQueryMixin:
                             "key": "workflow-child-gate-contained",
                             "passed": ticket.key not in bypassing_gate_children,
                             "detail": (
-                                f"Workflow child {ticket.key} looks like verification, docs, "
-                                "signoff, or release work. It must be downstream of a sibling "
+                                f"Workflow child {ticket.key} declares gate lane "
+                                f"{declared_lane}. "
+                                "It must be downstream of every sibling "
                                 f"delivery child under {parent.key}, not ready beside it."
                             ),
                         }
@@ -631,26 +808,74 @@ class TrackerQueryMixin:
                 rows.append(dependency)
         return rows
 
+    def _workflow_gate_lane_keys(
+        self, tickets: Sequence[TrackerTicket | TrackerTicketOut]
+    ) -> dict[int, str]:
+        """Recover declarations hidden by the terminal/requeued display lane.
+
+        Revisions are the existing provenance owner. Read only lane values for
+        the requested tickets, in one query, rather than copying role state into
+        metadata or loading completion evidence from historical snapshots.
+        """
+        lanes = {ticket.id: ticket.lane_key for ticket in tickets if ticket.id is not None}
+        unresolved = {ticket_id for ticket_id, lane in lanes.items() if lane == "done"}
+        if not unresolved:
+            return lanes
+        revisions = self._s.execute(
+            sa_select(
+                col(TrackerRevision.entity_id),
+                col(TrackerRevision.change_kind),
+                col(TrackerRevision.patch_json)["lane_key"].as_string(),
+                col(TrackerRevision.after_json)["lane_key"].as_string(),
+                col(TrackerRevision.before_json)["lane_key"].as_string(),
+            )
+            .where(
+                col(TrackerRevision.entity_kind) == "ticket",
+                col(TrackerRevision.entity_id).in_(unresolved),
+                col(TrackerRevision.project_id).in_({ticket.project_id for ticket in tickets}),
+            )
+            .order_by(col(TrackerRevision.id).desc())
+        )
+        for ticket_id, change_kind, patch_lane, after_lane, before_lane in revisions:
+            if ticket_id not in unresolved:
+                continue
+            for lane in (patch_lane, after_lane, before_lane):
+                if isinstance(lane, str) and lane and lane != "done":
+                    lanes[ticket_id] = lane
+                    unresolved.remove(ticket_id)
+                    break
+            if change_kind in {"create", "list-create"}:
+                # A legacy creation may have lost its declaration. Do not reach
+                # past this entity's birth into an older reused numeric ID.
+                unresolved.discard(ticket_id)
+            if not unresolved:
+                break
+        return lanes
+
     def _workflow_bypassing_gate_child_keys(
         self,
         children: list[TrackerTicket],
+        *,
+        declared_lanes: dict[int, str] | None = None,
     ) -> list[str]:
+        if declared_lanes is None:
+            declared_lanes = self._workflow_gate_lane_keys(children)
         children_by_id = {child.id: child for child in children if child.id is not None}
         child_ids = list(children_by_id)
         gate_child_ids = {
             child_id
             for child_id, child in children_by_id.items()
             if is_workflow_gate_child(
-                key=child.key,
-                title=child.title,
-                goal=child.goal,
-                lane_key=child.lane_key,
+                lane_key=declared_lanes.get(child_id, child.lane_key),
             )
         }
         bypassing_ids = bypassing_workflow_gate_children(
             child_ids,
             gate_child_ids,
             self._workflow_dependency_edges(set(child_ids)),
+            unknown_child_nodes={
+                child_id for child_id in child_ids if declared_lanes.get(child_id) == "done"
+            },
         )
         return [children_by_id[child_id].key for child_id in bypassing_ids]
 
@@ -723,8 +948,19 @@ class TrackerQueryMixin:
         project_id: int,
         since_rev: int | None = None,
         limit: int = 50,
-    ) -> TrackerChangedOut:
+        projection: Literal["full", "notifications"] = "full",
+    ) -> TrackerChangedOut | TrackerNotificationChangesOut:
         tracker = self._tracker_or_none(project_id=project_id)
+        if projection == "notifications":
+            from stackos.repositories.tracker.notification_changes import notification_changes
+
+            return notification_changes(
+                self._s,
+                tracker,
+                project_id=project_id,
+                since_rev=since_rev,
+                limit=limit,
+            )
         if tracker is None:
             return TrackerChangedOut(since_rev=since_rev, current_rev=0, changes=[])
         stmt = select(TrackerRevision).where(TrackerRevision.tracker_id == tracker.id)
@@ -788,8 +1024,9 @@ class TrackerQueryMixin:
                 .limit(max(1, min(limit, 100)))
             )
         )
-        task_out = [self._task_out(row) for row in tasks]
-        ticket_out = self._ticket_out_many(tickets)
+        projection = ReceiptProjection(self._s)
+        task_out = self._task_out_many(tracker.id, tasks, projection=projection)
+        ticket_out = self._ticket_out_many(tickets, projection=projection)
         return TrackerSearchOut(
             project_id=project_id,
             query=query.strip(),
@@ -825,16 +1062,42 @@ class TrackerQueryMixin:
         ]
 
     def _task_out(self, row: TrackerTask) -> TrackerTaskOut:
-        return TrackerTaskOut.model_validate(row)
+        return self._task_out_many(row.tracker_id, [row])[0]
 
     def _task_out_many(
         self,
         tracker_id: int | None,
         rows: list[TrackerTask],
+        *,
+        include_ticket_summary: bool = False,
+        projection: ReceiptProjection | None = None,
     ) -> list[TrackerTaskOut]:
-        summaries = self._task_ticket_summaries(tracker_id, rows)
+        summaries = self._task_ticket_summaries(tracker_id, rows) if include_ticket_summary else {}
+        projection = projection or ReceiptProjection(self._s)
+        projection.load(
+            task_ids={row.id for row in rows if row.id is not None},
+            tracker_id=tracker_id,
+        )
+        columns = task_columns(self._s, rows, projection=projection)
+        durations: dict[int, WorkDurationOut] = {}
+        metrics = query_task_agent_stats(
+            self._s,
+            tracker_id=tracker_id,
+            task_ids={row.id for row in rows if row.id is not None},
+            work_durations=durations,
+            task_keys={row.id: row.key for row in rows if row.id is not None},
+            projection=projection,
+        )
         return [
-            self._task_out(row).model_copy(update={"ticket_summary": summaries.get(row.id)})
+            TrackerTaskOut.model_validate(row).model_copy(
+                update={
+                    "board_column": columns[row.id],
+                    "ticket_summary": summaries.get(row.id),
+                    "agent_stats": metrics.get(_required_id(row.id, "task")),
+                    "work_duration": durations.get(_required_id(row.id, "task")),
+                    "active_execution": _execution_out(row.project_id, row.key),
+                }
+            )
             for row in rows
         ]
 
@@ -843,7 +1106,6 @@ class TrackerQueryMixin:
         tracker_id: int | None,
         tasks: list[TrackerTask],
     ) -> dict[int | None, TrackerTaskTicketSummaryOut]:
-        tracker_id = _required_id(tracker_id, "tracker")
         task_ids = {task.id for task in tasks if task.id is not None}
         if not task_ids:
             return {}
@@ -860,18 +1122,20 @@ class TrackerQueryMixin:
                     TrackerTicket.key,
                     TrackerTicket.title,
                 ).where(
-                    TrackerTicket.tracker_id == tracker_id,
+                    TrackerTicket.tracker_id == tracker_id if tracker_id is not None else true(),
                     col(TrackerTicket.task_id).in_(task_ids),
                 )
             )
         )
         status_by_ticket_id = {row.id: row.status for row in rows if row.id is not None}
+        title_by_ticket_id = {row.id: row.title for row in rows if row.id is not None}
         open_ticket_ids = {
             row.id
             for row in rows
             if row.id is not None and row.status not in TERMINAL_TRACKER_STATUSES
         }
         incomplete_dependency_ticket_ids: set[int] = set()
+        prerequisite_titles: dict[int, set[str]] = {}
         if open_ticket_ids:
             dependencies = list(
                 self._s.exec(
@@ -886,13 +1150,18 @@ class TrackerQueryMixin:
                 if dependency.depends_on_ticket_id not in status_by_ticket_id
             }
             if missing_dependency_ids:
-                dependency_status_rows = self._s.exec(
-                    select(TrackerTicket.id, TrackerTicket.status).where(
-                        col(TrackerTicket.id).in_(missing_dependency_ids)
+                dependency_status_rows = list(
+                    self._s.exec(
+                        select(TrackerTicket.id, TrackerTicket.status, TrackerTicket.title).where(
+                            col(TrackerTicket.id).in_(missing_dependency_ids)
+                        )
                     )
                 )
                 status_by_ticket_id.update(
                     {row.id: row.status for row in dependency_status_rows if row.id is not None}
+                )
+                title_by_ticket_id.update(
+                    {row.id: row.title for row in dependency_status_rows if row.id is not None}
                 )
             incomplete_dependency_ticket_ids = {
                 dependency.ticket_id
@@ -905,6 +1174,14 @@ class TrackerQueryMixin:
                     )
                 )
             }
+            for dependency in dependencies:
+                prerequisite_id = dependency.depends_on_ticket_id
+                if prerequisite_id in status_by_ticket_id and not _is_dependency_satisfied(
+                    dependency.dependency_type, status_by_ticket_id[prerequisite_id]
+                ):
+                    prerequisite_titles.setdefault(dependency.ticket_id, set()).add(
+                        title_by_ticket_id[prerequisite_id]
+                    )
 
         rows_by_task: dict[int, list[Any]] = {task_id: [] for task_id in task_ids}
         for row in rows:
@@ -919,6 +1196,22 @@ class TrackerQueryMixin:
             )
             task_status = task_status_by_id.get(task_id)
             task_is_terminal = task_status is not None and _is_terminal_tracker_status(task_status)
+            open_tickets = [
+                row for row in task_tickets if row.status not in TERMINAL_TRACKER_STATUSES
+            ]
+            waiting_titles = (
+                sorted(
+                    {
+                        title
+                        for row in open_tickets
+                        for title in prerequisite_titles.get(row.id, set())
+                    }
+                )
+                if not task_is_terminal
+                and open_tickets
+                and all(row.id in incomplete_dependency_ticket_ids for row in open_tickets)
+                else []
+            )
             blocked_count = sum(
                 1
                 for row in task_tickets
@@ -941,6 +1234,7 @@ class TrackerQueryMixin:
                 terminal_count=terminal_count,
                 in_progress_count=status_counts.get(TrackerItemStatus.IN_PROGRESS.value, 0),
                 blocked_count=blocked_count,
+                blocked_by_titles=waiting_titles,
                 status_counts=status_counts,
                 assignees=assignees,
                 search_text=search_text,
@@ -959,6 +1253,7 @@ class TrackerQueryMixin:
             if item is not None
         ]
         blocked_by = []
+        blocked_by_titles = []
         for dependency in dependencies:
             item = self._s.get(TrackerTicket, dependency.depends_on_ticket_id)
             if item is not None and not _is_dependency_satisfied(
@@ -966,30 +1261,77 @@ class TrackerQueryMixin:
                 item.status,
             ):
                 blocked_by.append(item.key)
+                blocked_by_titles.append(item.title)
         base = TrackerTicketOut.model_validate(row).model_dump(
             exclude={
                 "task_key",
                 "parent_ticket_key",
                 "dependency_keys",
                 "blocked_by",
+                "blocked_by_titles",
                 "reference_count",
                 "link_count",
+                "agent_stats",
+                "active_execution",
+                "work_duration",
             }
+        )
+        durations: dict[int, WorkDurationOut] = {}
+        metrics = query_ticket_agent_stats(
+            self._s, ticket_ids={_required_id(row.id, "ticket")}, work_durations=durations
         )
         return TrackerTicketOut(
             **base,
+            work_duration=durations[_required_id(row.id, "ticket")],
+            agent_stats=metrics[_required_id(row.id, "ticket")],
+            active_execution=_execution_out(row.project_id, task.key, row.key) if task else None,
             task_key=task.key if task is not None else "",
             parent_ticket_key=parent.key if parent is not None else None,
             dependency_keys=dependency_keys,
             blocked_by=blocked_by,
+            blocked_by_titles=blocked_by_titles,
             reference_count=len(self._reference_rows_for_ticket(row.id)),
             link_count=len(self._link_rows_for_ticket(row.id)),
         )
 
-    def _ticket_out_many(self, rows: list[TrackerTicket]) -> list[TrackerTicketOut]:
+    @overload
+    def _ticket_out_many(
+        self,
+        rows: list[TrackerTicket],
+        *,
+        projection: ReceiptProjection | None = None,
+        summary: Literal[False] = False,
+        metric_ticket_ids: set[int] | None = None,
+    ) -> list[TrackerTicketOut]: ...
+
+    @overload
+    def _ticket_out_many(
+        self,
+        rows: list[TrackerTicket],
+        *,
+        projection: ReceiptProjection | None = None,
+        summary: Literal[True],
+        metric_ticket_ids: set[int] | None = None,
+    ) -> list[TrackerTicketSummaryOut]: ...
+
+    def _ticket_out_many(
+        self,
+        rows: list[TrackerTicket],
+        *,
+        projection: ReceiptProjection | None = None,
+        summary: bool = False,
+        metric_ticket_ids: set[int] | None = None,
+    ) -> list[TrackerTicketOut] | list[TrackerTicketSummaryOut]:
         ticket_ids = {row.id for row in rows if row.id is not None}
         if not ticket_ids:
             return []
+        durations: dict[int, WorkDurationOut] = {}
+        metrics = query_ticket_agent_stats(
+            self._s,
+            ticket_ids=ticket_ids if metric_ticket_ids is None else metric_ticket_ids,
+            work_durations=durations,
+            projection=projection,
+        )
 
         dependencies = list(
             self._s.exec(
@@ -1005,14 +1347,25 @@ class TrackerQueryMixin:
             if related_id is not None
         }
         related_ticket_ids.update(dependency.depends_on_ticket_id for dependency in dependencies)
-        related_tickets = list(
-            self._s.exec(select(TrackerTicket).where(col(TrackerTicket.id).in_(related_ticket_ids)))
-        )
+        from sqlalchemy.orm import load_only
+
+        related_query = select(TrackerTicket).where(col(TrackerTicket.id).in_(related_ticket_ids))
+        if summary:
+            related_query = related_query.options(
+                load_only(
+                    *[getattr(TrackerTicket, name) for name in ("id", "key", "title", "status")],
+                )
+            )
+        related_tickets = list(self._s.exec(related_query))
         tickets_by_id = {ticket.id: ticket for ticket in related_tickets if ticket.id is not None}
         task_ids = {row.task_id for row in rows}
         tasks_by_id = {
             task.id: task
-            for task in self._s.exec(select(TrackerTask).where(col(TrackerTask.id).in_(task_ids)))
+            for task in self._s.exec(
+                select(TrackerTask)
+                .where(col(TrackerTask.id).in_(task_ids))
+                .options(load_only(*[getattr(TrackerTask, name) for name in ("id", "key")]))
+            )
             if task.id is not None
         }
         dependencies_by_ticket_id: dict[int, list[TrackerTicketDependency]] = {}
@@ -1035,7 +1388,7 @@ class TrackerQueryMixin:
             if link_ticket_id is not None:
                 link_counts[link_ticket_id] = link_counts.get(link_ticket_id, 0) + 1
 
-        output: list[TrackerTicketOut] = []
+        output: list[Any] = []
         for row in rows:
             row_dependencies = dependencies_by_ticket_id.get(row.id or 0, [])
             dependency_tickets = [
@@ -1044,19 +1397,38 @@ class TrackerQueryMixin:
             ]
             task = tasks_by_id.get(row.task_id)
             parent = tickets_by_id.get(row.parent_ticket_id)
-            base = TrackerTicketOut.model_validate(row).model_dump(
+            model = TrackerTicketSummaryOut if summary else TrackerTicketOut
+            source = (
+                {
+                    name: getattr(row, name)
+                    for name in model.model_fields
+                    if name in TrackerTicket.model_fields and not name.endswith("_json")
+                }
+                if summary
+                else row
+            )
+            base = model.model_validate(source, from_attributes=True).model_dump(
                 exclude={
                     "task_key",
                     "parent_ticket_key",
                     "dependency_keys",
                     "blocked_by",
+                    "blocked_by_titles",
                     "reference_count",
                     "link_count",
+                    "agent_stats",
+                    "active_execution",
+                    "work_duration",
                 }
             )
             output.append(
-                TrackerTicketOut(
+                model(
                     **base,
+                    active_execution=_execution_out(row.project_id, task.key, row.key)
+                    if task and (metric_ticket_ids is None or row.id in metric_ticket_ids)
+                    else None,
+                    agent_stats=metrics.get(_required_id(row.id, "ticket")),
+                    work_duration=durations.get(_required_id(row.id, "ticket")),
                     task_key=task.key if task is not None else "",
                     parent_ticket_key=parent.key if parent is not None else None,
                     dependency_keys=[
@@ -1074,6 +1446,14 @@ class TrackerQueryMixin:
                             dependency.dependency_type,
                             ticket.status,
                         )
+                    ],
+                    blocked_by_titles=[
+                        ticket.title
+                        for dependency, ticket in zip(
+                            row_dependencies, dependency_tickets, strict=True
+                        )
+                        if ticket is not None
+                        and not _is_dependency_satisfied(dependency.dependency_type, ticket.status)
                     ],
                     reference_count=reference_counts.get(row.id or 0, 0),
                     link_count=link_counts.get(row.id or 0, 0),
@@ -1279,6 +1659,8 @@ class TrackerQueryMixin:
             "run_plan_step_id": step.id,
             "step_id": step.step_id,
             "template_key": plan.template_key,
+            "run_plan_status": plan.status,
+            "step_status": step.status,
         }
 
     def _ticket_for_step(
@@ -1314,17 +1696,33 @@ class TrackerQueryMixin:
         tracker_id: int | None,
         *,
         tickets: list[TrackerTicket] | None = None,
+        include_workflow: bool = False,
     ) -> list[TrackerTicket]:
         rows = tickets if tickets is not None else self._ticket_rows(tracker_id)
         return [
             ticket
             for ticket in rows
             if ticket.status not in TERMINAL_TRACKER_STATUSES
-            and not self._is_workflow_step_mirror_ticket(ticket)
+            and (include_workflow or not self._is_workflow_step_mirror_ticket(ticket))
             and not self._ticket_task_is_terminal(ticket)
             and not ticket.blocker_reason
             and not self._blocked_by_incomplete(tracker_id, ticket)
         ]
+
+    def delivery_ready(self, *, project_id: int, task_key: str) -> list[TrackerTicketOut]:
+        """Task automation uses the same dependency truth, including workflow mirrors."""
+        tracker = self.ensure_tracker(project_id=project_id)
+        task = self._task_by_key(tracker.id, task_key)
+        rows = [row for row in self._ticket_rows(tracker.id) if row.task_id == task.id]
+        ready = self._ready_ticket_rows(tracker.id, tickets=rows, include_workflow=True)
+        ready.sort(
+            key=lambda row: (
+                self._priority_rank(tracker.id, row.priority_key),
+                row.order_index,
+                row.id or 0,
+            )
+        )
+        return self._ticket_out_many(ready)
 
     def _is_workflow_step_mirror_ticket(self, ticket: TrackerTicket) -> bool:
         return (
@@ -1431,10 +1829,17 @@ class TrackerQueryMixin:
         return row.rank if row is not None else 100
 
     def _task_snapshot(self, task: TrackerTask) -> dict[str, Any]:
-        return self._task_out(task).model_dump(mode="json")
+        # Board membership needs invocation evidence, just like usage. History
+        # retains source lifecycle/placement facts, not a projection of a bare row.
+        return TrackerTaskOut.model_validate(task).model_dump(
+            mode="json",
+            exclude={"agent_stats", "active_execution", "work_duration", "board_column"},
+        )
 
     def _ticket_snapshot(self, ticket: TrackerTicket) -> dict[str, Any]:
-        return self._ticket_out(ticket).model_dump(mode="json")
+        return self._ticket_out(ticket).model_dump(
+            mode="json", exclude={"agent_stats", "active_execution", "work_duration"}
+        )
 
     def _count_statuses(self, statuses: list[TrackerItemStatus]) -> dict[str, int]:
         counts = {status.value: 0 for status in TrackerItemStatus}

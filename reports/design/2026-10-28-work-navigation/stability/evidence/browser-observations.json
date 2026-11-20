@@ -1,0 +1,54 @@
+{
+  "run_plan_id": 724,
+  "profile": "work-inspection-qa",
+  "session": "browser-session:project-1:work-inspection-qa:work-stability-20261028",
+  "tab": 3,
+  "source_url": "http://127.0.0.1:5175",
+  "fixture_project": 4,
+  "candidate_D1": "7fe060d86d7761e1c313a3c8f8283893522204337ddedf61f5693c6c9b550f96",
+  "observations": [
+    {
+      "scenario": "Task to ticket",
+      "viewport": [
+        1280,
+        800
+      ],
+      "theme": "dark",
+      "result": "Same 672x752 frame at x298.5 y24 before and after; ticket title receives focus."
+    },
+    {
+      "scenario": "Backdrop and close",
+      "result": "Overlay parent BODY, marginTop0, origin0,0, height800; close32x32, SVG16x16, center offset0."
+    },
+    {
+      "scenario": "Thirty rows",
+      "result": "30 records, list clientHeight240 and scrollHeight1200. Last row keyboard-focusable at scrollTop960. Enter opens ticket30; Back restores scrollTop960 and exact row focus."
+    },
+    {
+      "scenario": "Description draft during drill-in",
+      "result": "Unsaved description retained through last-ticket inspection and Back; footer Save changes remains available."
+    },
+    {
+      "scenario": "Combined description/input submission",
+      "result": "Successful synthetic write; composer cleared, editor exited and one input added. Existing atomic content intent preserved."
+    },
+    {
+      "scenario": "Seven rows light theme",
+      "result": "7 records, list clientHeight240/scrollHeight280; frame672x752; no horizontal document overflow."
+    }
+  ],
+  "findings": [
+    {
+      "id": "D1-P2-feedback-focus",
+      "status": "resolved_D2_independently_reviewed",
+      "scenario": "Description-only save with six long history entries",
+      "result": "Success notice top2283 lies outside body130..719 at scrollTop0. Active element became BODY after Save changed to disabled Add input.",
+      "repair": "Existing feedback moved near pinned actions; explicit focus recovery stays in active inspection. No request/idempotency change.",
+      "independent_review": "modal-D1-review.json"
+    }
+  ],
+  "limitations": "Local synthetic preview and source proof only; installed app not upgraded. Historical timeouts were inspected before retry and are not accepted proof. Later final keyboard and built-bundle scenarios passed. Operator drafts were preserved.",
+  "final_candidate": "09c506038cc3c8f755e9887659694fef3c4f5942a5042f61131f3ca12527f75d",
+  "final_result": "passed",
+  "final_proof": "signoff.json; modal-D3-review.json; design-qa.md"
+}

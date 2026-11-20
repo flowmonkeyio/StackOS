@@ -1,17 +1,17 @@
 ---
 title: 'Agent experience: the missing layer in AI agent orchestration'
-description: AI agent orchestration is experienced one claimed step at a time. Here is how context, authority, tools, recovery, and stopping rules shape whether an agent can execute.
+description: Turn a vague review request into an assignment an agent can carry out. See how exact inputs, authority, evidence, recovery, and a stopping rule fit together.
 publishedAt: '2026-07-11'
-updatedAt: '2026-07-11'
+updatedAt: '2026-10-04'
 author: StackOS team
 category: AI operations
 topics:
   - AI agent orchestration
   - agent experience
   - workflow design
-readingTime: 9 min read
+readingTime: 6 min read
 featured: true
-visual: roles
+visual: none
 searchIntent: Understand how to design the operating experience inside AI agent orchestration
 relatedWorkflows:
   - branding-content-production
@@ -26,110 +26,79 @@ relatedArticles:
   - how-to-build-ai-agent-workflow
 ---
 
-An orchestration plan can be logically correct and still fail at the moment an agent receives its next step. The workflow says “draft the article,” but the agent must discover the brief, infer the audience, locate the allowed tools, reconstruct prior decisions, decide what completion means, and determine where the result belongs.
+“Review the implementation” leaves the agent a second job: work out what it is supposed to review.
 
-That gap lives in the agent’s operating environment at the point of action.
+Which version, against which requirements, with permission to do what? The coordinating agent may already know those answers. If the assignment leaves them out, the reviewer has to search for them, ask, or guess before it can begin.
 
-::article-concept-visual{mode="roles" title="The workflow an agent actually receives" caption="Orchestration is experienced one claimed step at a time: context, authority, tools, outputs, recovery, and a stopping rule."}
-::
+Agent experience is the work an agent must do to understand and carry out its assigned step. You can inspect it through the inputs it receives, the actions available to it, and what happens when something is missing. Start at the moment the assignment arrives.
 
-Agent experience is the per-step operating layer that makes an orchestration plan executable for a fresh agent. Operationally, it is the burden a system places on that agent to search, guess, rediscover, and recover before it can perform valid work.
+## Replace the vague request with something usable
 
-This definition keeps the idea concrete. Search burden is time spent locating relevant state or instructions. Guessing burden appears when inputs, authority, or completion criteria are ambiguous. Rediscovery burden comes from reconstructing decisions the system already knows. Recovery burden is the work required to understand and repair a failed attempt.
+Here is a small, self-contained exercise. The task is to review a Python function that checks a file count. Everything needed for this review is below; there is no repository or hidden test fixture to discover.
 
-These burdens are separate from the distinctions among an [AI agent, workflow, and orchestrator](/library/articles/ai-agent-vs-workflow-vs-orchestrator). Those components may all be present while the claimed step remains difficult to execute.
+**Task:** compare `candidate-v1` with `requirements-v1` and return a review to the coordinating agent.
 
-## An assignment is not yet an executable step
+**Requirements, version 1:**
 
-“Review the implementation” is an assignment. It identifies an activity but leaves most operating questions unanswered.
+- The input is an integer. Type handling is outside this exercise.
+- Return `True` for a count from 1 through 5, inclusive.
+- Return `False` for every other integer, including zero and negative values.
 
-Which implementation? Review against which requirements? May the reviewer run tests, inspect external systems, or modify files? What evidence should the review produce? Does “ready” mean no defects, no blocking defects, or acceptance of documented risk? If the review finds a problem, who receives it and in what form?
+**Candidate, version 1:**
 
-A capable agent can often fill these gaps. That is precisely the problem: successful execution now depends on inference that the orchestration system could have resolved before dispatch.
+```python
+def valid_file_count(count):
+    return 0 <= count <= 5
+```
 
-An executable step should let an agent move from claim to first valid action without rebuilding the workflow in its own context window. This is especially important in an [agentic workflow](/library/articles/what-is-an-agentic-workflow), where later actions depend on runtime findings. Dynamic behavior increases the need for explicit local operating conditions; it does not remove it.
+**Scope:** inspect the supplied requirement and code. This review needs no tools. Do not run the code, edit it, install anything, search a repository, or contact an external service.
 
-The claimed step is therefore the useful unit for examining agent experience.
+**Return:** name the requirement and candidate versions reviewed, say whether the candidate meets the rule, and give the evidence for any discrepancy. Include the input that exposes it, the expected result, the result implied by the code, and the relevant expression. State the method used and any check not performed.
 
-## The claimed-step packet
+**Stop:** return that review to the coordinating agent. Any code change belongs to a subsequent assignment. If the required input is missing in an adaptation of this exercise, identify the missing version and the check it prevents; do not substitute another version or invent a requirement.
 
-When an agent claims a step, it should receive a bounded packet containing what that step needs now. This prepared execution surface selects from project state instead of passing all of it through.
+That is the whole assignment. In a real system, configure the host's available tools and permissions to match its scope. The instruction to avoid edits is useful guidance, but it does not itself remove a write capability.
 
-A useful packet includes:
+## Follow the receiver's first action
 
-- **Purpose:** why the work exists and what downstream decision or action it supports.
-- **Instructions and policies:** the relevant rules, already selected for this step.
-- **Completion criteria:** observable conditions that distinguish finished work from plausible-looking progress.
-- **Exact tools:** callable operations, expected use, and important limitations.
-- **Resolved inputs:** concrete artifact references, resource identifiers, prior outputs, and configuration values rather than instructions to “find the latest.”
-- **Bounded context:** enough history to understand the work without replaying the whole run.
-- **Output contracts:** required fields, artifact formats, evidence, and status semantics.
-- **Direct handoff:** where the result goes and what the next actor needs from it.
-- **Targeted recovery:** likely failure modes and the next safe action for each one.
-- **A stopping rule:** when to return control instead of expanding the task.
+The reviewer can begin by comparing the permitted range with the expression. At `count = 0`, the requirement says `False`, while `0 <= count <= 5` evaluates to `True`. The lower bound is wrong.
 
-These fields turn hidden orchestration knowledge into local operating knowledge.
+The other boundaries help delimit the finding. Counts 1 and 5 satisfy both the requirement and the expression. Negative integers and values greater than 5 are excluded by the expression. For the stated integer input, zero is the discrepancy.
 
-The distinction between resolved inputs and broad context matters. A packet should say which approved brief to use, not provide a folder and ask the agent to identify the authoritative version. It should name the relevant test command, not merely mention that tests exist. It should link a predecessor’s accepted artifact, not force the agent to search conversation history for the last apparently complete draft.
+A useful return could be:
+
+> Reviewed `candidate-v1` against `requirements-v1` by inspection. The candidate does not meet the count rule: for input `0`, the required result is `False`, but `0 <= 0 <= 5` is `True`. The lower bound admits zero. Code was not executed or changed. No required input was missing.
+
+This is the expected reasoning for the exercise, not a report from an executed agent trial. It gives the coordinator enough to inspect the finding and assign a repair. The reviewer has completed its part while the implementation still fails a requirement.
+
+That separation matters when assigning an [AI agent, workflow, and orchestrator](/library/articles/ai-agent-vs-workflow-vs-orchestrator/) their responsibilities. Here the reviewer supplies evidence; the coordinator decides what happens to delivery. Quietly changing the function would make the return about different code from the version the reviewer was asked to inspect.
+
+You can try the assignment with a fresh agent. Give it the assignment above without the worked answer, then inspect its actual return. Did it compare the supplied versions, identify zero, explain the discrepancy, state that it used inspection, and stop without editing? If it starts searching for a repository, find out whether the packet was incomplete, the tool setup was misleading, or the agent overlooked the supplied input. Record what happened before choosing a repair.
+
+## Select context for the work at hand
+
+The example is small enough to include every relevant input. A real review may need source files, requirements, test instructions, project rules, and earlier decisions. Resolve those references before dispatch where the workflow already knows which ones apply.
+
+A directory containing several drafts still leaves the reviewer to choose an authoritative version. An exact candidate reference and the applicable requirement resolve that choice. Keep additional history available when the task may need it, with a clear way to retrieve it.
 
 Context is useful when it reduces uncertainty. Beyond that point, it becomes another search surface.
 
-The same principle applies to recovery. “Retry if needed” transfers diagnosis back to the agent. A targeted recovery hint might instead say that a truncated handoff can be retrieved with one exact read, that an unavailable credential requires returning the step with a specific reason, or that a validation failure should go back to the producing step with the failed criterion attached.
+StackOS documents its claimed-step packet around this distinction: the active instructions, resolved inputs, selected context, expected outputs, allowed tools, and bounded results from direct predecessor steps. If supplied material is truncated, the documented response includes a targeted read for the full step result. That is a recovery path the receiver can follow without reconstructing where the input came from.
 
-A good recovery path narrows the next decision without pretending every failure can be anticipated.
+For your own assignments, name the recovery action that fits the gap. A missing requirement needs its reference or a decision from its owner. An unavailable test command needs a report of the check it prevents. The reviewer should not silently replace either with a guess. A good recovery path narrows the next decision without pretending every failure can be anticipated.
 
-## Authority should match the active step
+An [agentic workflow](/library/articles/what-is-an-agentic-workflow/) can choose later work from these findings. The current receiver still needs enough information to perform its own assignment and return control.
 
-Instructions alone do not define what an agent can do. The executable step also needs an authority boundary.
+## What one StackOS replay recorded
 
-A practical model grants tools and resources when the step becomes active, scoped to the operations and inputs required for that step. Completion, cancellation, or release of the step ends that authority. The agent does not need ambient access to every workflow capability, and it should not have to discover whether a documented operation is actually permitted.
+In a July 2026 StackOS foundation replay, a draft specialist reported needing no tools and no guessing for its bounded assignment. The same step record described its work as slow. Elsewhere, the replay notes recorded a fresh subagent missing its allotted execution window. A complete packet and an easy or fast run are separate things to investigate.
 
-The relationship should be legible: purpose leads to a permitted action, the action produces required evidence, and the evidence has a defined handoff.
+Another step's saved report says it recovered a truncated handoff through a targeted read of the prior result. The final step instructed the agent to return the handoff and stop. Its terminal record reports that the run ended without starting the next workflow, changing that workflow's setup, or creating content.
 
-If any link is missing, the agent must guess. If tools are described but unavailable, it enters recovery before substantive work begins. If broad tools are available without a step-level purpose, the system invites drift.
+These records preserve the agents' reports and the stopping instruction. They do not isolate what caused the reported behavior. The useful evidence is specific: what the receiver said it needed, how it reported recovering missing material, where it stopped, and which friction remained.
 
-Approval can be part of this boundary when risk or organizational policy calls for it, but approval is not inherently required for every step. The important property is that authority is explicit, scoped, and legible to the acting agent.
+## Put a missing decision where the next agent can find it
 
-## Review feedback does not own delivery
+When [building an AI agent workflow](/library/articles/how-to-build-ai-agent-workflow/), inspect the receiver's searches and questions alongside the work it was assigned. Investigating an undocumented behavior may be the substance of a review. Locating the approved requirement is avoidable reconstruction when the coordinator already selected it.
 
-Independent review is often represented as a simple gate after production. In operation, the reviewer also needs a claimed-step packet: the artifact under review, the governing criteria, relevant evidence, permitted verification tools, and a structured way to report findings.
-
-An independent reviewer still needs the relevant context. It evaluates the work against declared criteria rather than inheriting the producer’s conclusions as facts.
-
-The orchestrator has a different responsibility: adjudicating what the findings are allowed to change. A supported blocker can stop progression. A specific repair can return to the producing step. A preference can remain advice. An unsupported or out-of-scope finding should not expand the delivery.
-
-This is a feedback gate, but not a ritual approval step. It protects the agreed goal from review-driven drift while preserving independent scrutiny where it matters.
-
-## A bounded observation from one StackOS replay
-
-One recent StackOS cold-start replay provides a small implementation example. It should be read as first-party operating evidence, not as a productivity benchmark or universal proof.
-
-During that replay, a draft specialist reported that it had used no tools and made no guesses while completing its assigned work. That report records the agent’s operating behavior alongside the artifact. We did not run a comparative test to isolate why it needed no additional discovery.
-
-Another step received a truncated dependency handoff. Instead of searching broadly, the agent followed the packet’s targeted recovery hint and retrieved the one complete prior-step result it needed. Near the end of the run, the final stopping rule kept the active agent from starting another workflow, changing the workflow setup, or creating unrelated content after the requested outcome had been reached.
-
-The run still contained ordinary latency and friction. Agents had to process context, produce outputs, and move through orchestration boundaries. One fresh subagent missed its bounded execution window. The observation establishes neither lower overhead nor gains across models or workflows.
-
-Within that boundary, the replay records three useful behaviors: one specialist reported no guessing, targeted recovery constrained the response to a partial handoff, and an explicit stopping rule limited drift.
-
-## The vague cold-start test
-
-A direct way to inspect agent experience is to remove accumulated familiarity.
-
-Give a fresh agent the kind of vague request a real operator might provide. Do not give it the workflow key, the design rationale, or a warm context window containing earlier exploration. Then observe whether the system helps it discover the right workflow and whether the claimed step answers these questions:
-
-1. What is the first valid action?
-2. Which exact inputs should be used?
-3. Which tools are permitted and available?
-4. What observable criteria define completion?
-5. What must be produced, and where does it go?
-6. What should happen if the expected path fails?
-7. When must the agent stop and return control?
-
-The test exposes friction when the agent must search broadly for policy, infer which artifact is authoritative, guess whether it has permission, recreate prior decisions, or invent a recovery strategy. Those behaviors may still produce a successful result, but they reveal orchestration work leaking into the execution step.
-
-Teams can apply the same test while following a practical guide to [building an AI agent workflow](/library/articles/how-to-build-ai-agent-workflow). For each step, record the agent’s first action, unresolved questions, searches, inferred assumptions, unavailable tools, recovery attempts, and work performed after the completion condition. The result is a friction map grounded in behavior rather than a subjective rating.
-
-Some ambiguity belongs to the work, some discovery is intentional, and some failures require judgment. The design target is narrower: stop making each fresh agent reconstruct decisions that the system has already made.
-
-Orchestration determines what should happen next. Agent experience determines whether the next agent can actually do it.
+The file-count reviewer still has to reason about the comparison. The assignment supplies the rule, candidate, authority, and destination so that reasoning has a clear object. If a real reviewer has to ask which range was approved, put the answer and its source into the next assignment. Then it can spend its effort checking whether the code satisfies that rule.

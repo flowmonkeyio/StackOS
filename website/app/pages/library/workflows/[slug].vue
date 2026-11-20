@@ -142,21 +142,30 @@ useSchemaOrg([
 </template>
 
 <style scoped>
-.detail-link-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 30px; }
-.detail-link-grid a { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; padding: 18px; color: var(--ink); text-decoration: none; background: #eceae2; border: 1px solid var(--paper-border); border-radius: 12px; }
+.detail-link-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; margin-top: 30px; }
+.detail-link-grid a { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; padding: 20px 0; color: var(--ink); text-decoration: none; border-top: 1px solid var(--paper-border); }
+.detail-link-grid a:hover strong,
+.handoff-list a:hover strong { color: var(--cobalt); }
 .detail-link-grid span { grid-column: 1; color: var(--cobalt); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
 .detail-link-grid strong { font-size: 14px; }
 .detail-link-grid b { grid-row: 1 / 3; grid-column: 2; align-self: center; color: var(--cobalt); }
 .detail-space { margin-top: 80px; }
 .experience-grid,
-.readiness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 70px; }
+.readiness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px; margin-top: 70px; }
 .experience-grid article,
-.readiness-grid article { padding: clamp(24px, 4vw, 42px); color: var(--ink); background: #eceae2; border: 1px solid var(--paper-border); border-radius: 16px; }
+.readiness-grid article { min-width: 0; padding: 26px 0 0; color: var(--ink); border-top: 1px solid var(--paper-border); }
+.experience-grid .eyebrow--dark,
+.readiness-grid .eyebrow--dark { color: var(--cobalt); }
 .experience-grid ol,
-.readiness-grid ul { display: grid; gap: 13px; margin: 24px 0 0; padding-left: 22px; color: #404147; line-height: 1.6; }
+.readiness-grid ul { display: grid; gap: 18px; margin: 24px 0 0; padding-left: 26px; color: #404147; font-size: 17px; line-height: 1.65; }
+.experience-grid li,
+.readiness-grid li { padding-left: 7px; }
+.experience-grid li::marker,
+.readiness-grid li::marker { color: var(--cobalt); font-weight: 700; }
 .readiness-grid h3 { margin: 10px 0 0; font-size: 23px; letter-spacing: -.03em; }
-.handoff-list { display: grid; gap: 10px; margin-top: 26px; }
-.handoff-list a { display: grid; grid-template-columns: 100px 1fr; gap: 6px 18px; padding: 20px; color: var(--ink); text-decoration: none; background: #eceae2; border: 1px solid var(--paper-border); border-radius: 12px; }
+.handoff-list { display: grid; margin-top: 26px; }
+.handoff-list a { display: grid; grid-template-columns: 100px 1fr; gap: 8px 24px; padding: 24px 0; color: var(--ink); text-decoration: none; border-top: 1px solid var(--paper-border); }
+.handoff-list a:last-child { border-bottom: 1px solid var(--paper-border); }
 .handoff-list span { color: var(--cobalt); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
 .handoff-list strong { font-size: 15px; }
 .handoff-list p { grid-column: 2; margin: 0; color: #55565d; font-size: 14px; line-height: 1.55; }

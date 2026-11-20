@@ -1,0 +1,8 @@
+desktop mac build config dry run ok
+updateUrl=https://stackos.flowmonkey.io/StackOS/
+requireUpdateUrl=true
+releaseIntent=true
+signing=csc-name
+notarization=keychain-profile
+generatedConfig=
+generatedUpdateConfig=

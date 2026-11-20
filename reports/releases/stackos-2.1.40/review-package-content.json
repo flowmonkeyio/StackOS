@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-10-28 17:03:59 UTC",
+  "reviewer": "/root/reviewer",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "assignment_attempt_id": "release-1",
+  "scope": "Read-only package-content and source-identity review while Apple notarization/build remains in progress.",
+  "verdict": "pass_content_only",
+  "required_repairs": [],
+  "release": "2.1.40",
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "feature_commit": "9f005c0bdffbecf9f455c194732984290237626d",
+  "approved_source_candidate": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "reviewed_app": "/tmp/stackos-release-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app",
+  "identity": {
+    "bundle_identifier": "io.stackos.desktop",
+    "bundle_short_version": "2.1.40",
+    "bundle_version": "2.1.40",
+    "payload": {
+      "name": "stackos",
+      "version": "2.1.40",
+      "buildId": "20261028T164835Z",
+      "builtAt": "2026-10-28T16:48:35Z"
+    },
+    "asar_sha256": "b6115adb1ece903cf89615400923f6d93b5ed20179cb5bb97348b30febd9c07e"
+  },
+  "checks": [
+    {
+      "name": "Tracked StackOS package",
+      "result": "All533 tracked stackos files from git archive958f5542 match packaged bytes; no missing or mismatched tracked files.",
+      "file_hash_map_sha256": "cbe33fb2742aa664ae61c8e3eb808ce84ecd509f1b76384c3b13ed8732f21b4b"
+    },
+    {
+      "name": "UI inclusion",
+      "result": "Packaged stackos/ui_dist contains exactly89 files, with all hashes matching the accepted integrated72935f manifest. Reviewed UI is included unchanged."
+    },
+    {
+      "name": "Python backup inclusion",
+      "result": "backups/service.py, backups/filesystem.py and cli/backup_commands.py are present and byte-identical to release commit, covered by the complete533-file comparison."
+    },
+    {
+      "name": "Bundled plugin and skill assets",
+      "result": "All101 additional package files are under declared _assets force-include destinations and match their corresponding tracked plugins or plugins/stackos/skills source. No extra package files outside _assets.",
+      "file_hash_map_sha256": "d26d6a9677840e601d3940421da2c80f96062ffaacda667e8207419bee4df93a"
+    },
+    {
+      "name": "Electron source inclusion",
+      "result": "All9 src files in app.asar match the release commit, including backups.js, main.js, preload.js and service.js. No additional first-party source path is present."
+    },
+    {
+      "name": "Electron package metadata",
+      "result": "Version2.1.40 and main=src/main.js. Every retained package.json field matches source; builder removes only scripts, devDependencies and build. Packaged update-config.example.json matches source."
+    },
+    {
+      "name": "Production update configuration",
+      "result": "update-config.json and app-update.yml both point to https://stackos.flowmonkey.io/StackOS/; generic updater configuration is consistent."
+    },
+    {
+      "name": "Dirty-work isolation",
+      "result": "First-party runtime, UI and bundled plugin/skill bytes match the committed source rather than the original dirty workspace. No unrelated .mcp/.serena/report path was included in those first-party package surfaces."
+    }
+  ],
+  "electron_source_hashes": {
+    "src/backups.js": "4a2b99c0fb86d5f04dc56a68f9414cdfbdc2e8a979240a6710c9ac7075d37901",
+    "src/deep-links.js": "5293434713c9f15a967411f6085cb06f0d62ce8f0cc093881cb6a7be01095ebc",
+    "src/main.js": "7d9ad7ece4934db7093ece76adda436ec86e0fcf0a93e0be87294a9a3ecf481c",
+    "src/menu-template.js": "af444b2a99c230ab1e5c4f0cf50aac89f26ab95c89ef1785724488fdf3019686",
+    "src/notifications.js": "6f81f993ec53366e20a9c8dc434513ec300f4af1491a134d1ba5f372cf5168e2",
+    "src/preload.js": "12a9c94009df1a431edf34f77a1880a2a801a8eba859e0a28620f34d1b3d5d0a",
+    "src/service.js": "b142ffb59bc35eaf2f949723a18a5558aca277e24c58e720a34ad0724a3a512c",
+    "src/stackos-splash.png": "f039e468a597decbf0d6c1157af81e2f9db1490eeb1122f5dcff3bbc834d3a88",
+    "src/updates.js": "c33d3e50903ce591f20d3e30270a6258e1aaed7cb139d553c30897787ef9a9f6"
+  },
+  "method": {
+    "source": "Read git archive/show at immutable commit958f554223a438b404e72c67a568d573f4653ae5, independently of dirty workspace files.",
+    "asar": "Read with installed @electron/asar3.4.1 listPackage/extractFile API into memory; no app launch or runtime modification.",
+    "package": "Compare every tracked stackos file with installed wheel package; map additional_assets files through committed hatch force-include declarations.",
+    "hash_map_encoding": "SHA256 of UTF-8 sorted compact JSON path-to-file-SHA256 map, with no trailing newline.",
+    "suites_rerun": false,
+    "production_or_secret_reads": false,
+    "source_or_runtime_mutations": false
+  },
+  "evidence_sources": [
+    "reports/releases/2026-10-28-streamlined-backups/evidence/integration/integrated-candidate.json",
+    "reports/releases/stackos-2.1.40/release-review-version.json",
+    "Git commit958f554223a438b404e72c67a568d573f4653ae5",
+    "Packaged Contents/Info.plist, Resources/app.asar, stackos/build-info.json, update-config.json and app-update.yml",
+    "Packaged Resources/stackos/.venv/lib/python3.12/site-packages/stackos"
+  ],
+  "limits": [
+    "Apple job was reported in progress; this receipt makes no final notarization, signature, Gatekeeper or stapling claim.",
+    "DMG, ZIP, blockmaps and latest-mac.yml were not yet final and are outside this content-only verdict.",
+    "No installed-app lifecycle, recovery or hosted publication result is claimed here.",
+    "Third-party dependency correctness and signed native payload trust remain covered by subsequent release build/artifact checks; this review establishes first-party content identity.",
+    "Final artifact review must confirm continuity with this app.asar and payload build identity after packaging completes."
+  ],
+  "next_disposition": "Retain this content evidence for final artifact review; root owns remaining build, installation, publication and acceptance."
+}

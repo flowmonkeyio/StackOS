@@ -1,4 +1,5 @@
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
+import { resolveAgentHostLogo } from '@/lib/stackos/agentIdentity'
 
 export type AgentHostConnectionState =
   | 'connected'
@@ -53,20 +54,12 @@ const TONES: Record<
   error: 'danger',
 }
 
-const HOST_LOGOS: Record<string, string> = {
-  codex: '/images/openai.webp',
-  'claude-code': '/images/claude-code.webp',
-  'claude-desktop': '/images/claude.webp',
-  'gemini-cli': '/images/gemini.webp',
-  hermes: '/images/hermes.webp',
-}
-
 export function agentHostLabel(host: DesktopMcpHostStatus): string {
   return host.display_name || host.host_key
 }
 
 export function agentHostLogo(host: DesktopMcpHostStatus): string {
-  return HOST_LOGOS[host.host_key] || '/images/stackos-icon.png'
+  return resolveAgentHostLogo(host.host_key) ?? '/images/stackos-icon.png'
 }
 
 export function agentHostPresentation(host: DesktopMcpHostStatus): AgentHostPresentation {

@@ -1,0 +1,27 @@
+{
+  "capturedAt": "2026-10-28T17:10:47.035Z",
+  "mode": "update-state",
+  "endpoint": "http://127.0.0.1:9238",
+  "targetId": "9B46D96CE11389FBDFC8C238256777B3",
+  "targetUrl": "http://127.0.0.1:5180/",
+  "result": {
+    "reason": null,
+    "state": {
+      "enabled": true,
+      "status": "downloaded",
+      "updateUrl": "http://127.0.0.1:8765/",
+      "lastError": null,
+      "reason": null,
+      "updateInfo": {
+        "version": "2.1.40",
+        "releaseDate": "2026-10-28T17:06:12.708Z"
+      },
+      "progress": {
+        "percent": 100,
+        "transferred": 490264828,
+        "total": 490264828,
+        "bytesPerSecond": 1517847765
+      }
+    }
+  }
+}

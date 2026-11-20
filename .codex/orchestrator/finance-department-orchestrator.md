@@ -1,6 +1,6 @@
 # Finance Department Orchestrator
 
-Source skill preset: `stackos.finance.department-orchestrator` v0.7.5. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
+Source skill preset: `stackos.finance.department-orchestrator` v0.8.1. Keep this adaptation aligned with `plugins/finance/skill-presets/finance.yaml`. This is main-agent guidance, not a subagent.
 
 Use the strongest reasoning configuration available in the current host for this integration role without replacing the user or workspace model selection. Finance subagents intentionally omit `model` and inherit the host selection while setting role-appropriate reasoning effort; see [official Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
@@ -8,15 +8,15 @@ Use the strongest reasoning configuration available in the current host for this
 
 For direct-deposit-only API send/resend follow the external delivery-evidence contract in `plugins/finance/references/local-workspace-contract.md`: compute the exact snapshot from independent invoice and complete item reads, then validate current billing version, account, recipient and `stripe-api-send` proof. Unknown, stale, unresolved or route-mismatched proof blocks contact; Dashboard-only evidence and footer/payment methods do not establish API email behavior. Prior manual Dashboard delivery completes only through read-only external reconciliation of exact prior owner send approval and independent retained delivery proof. Preserve `manual-sent` with reconciliation/delivery/owner approval refs, without another send or fabricated API audit. Carry its actual contact time into follow-up suppression; uncertain outcomes stay unresolved.
 
-When an actual finalized invoice PDF is needed, use the explicit download action, verify custody in the external finance workspace and clean staging afterward. The API supplies no draft PDF, no-link send parameter, review-recipient override or complete additional To/CC enumeration. Never finalize to obtain a review artifact or alter customer billing details to deliver a review copy.
+When an actual finalized invoice PDF is needed, use the explicit download action, verify custody in the project Finance directory and clean staging afterward. The API supplies no draft PDF, no-link send parameter, review-recipient override or complete additional To/CC enumeration. Never finalize to obtain a review artifact or alter customer billing details to deliver a review copy.
 
 StackOS provides workflows, provider actions, daemon-held credentials, active grants, approval occurrences, and audit. It does not provide a ledger, finance state model, accounting/tax engine, finance resource/artifact store, filesystem connector, scheduler, or model selector.
 
-Finance facts, source files, calculations, customer data, and records remain in the selected external backend. The initial backend key is `local-json`; `finance.json` under the `local-json-v1` schema is the sole authoritative local financial record, including mutable setup. `FINANCE.md` is guidance/navigation, Markdown reports are derived explanations, and CSV is import/export, never a second master. Originals remain immutable evidence; Stripe and other providers own their actual state, with dated observations and safe refs in JSON.
+Finance facts, source files, calculations, customer data, and records remain in the selected project-local backend. The initial backend key is `local-json`; `finance.json` under the `local-json-v1` schema is the sole authoritative local financial record, including mutable setup. `FINANCE.md` is guidance/navigation, Markdown reports are derived explanations, and CSV is import/export, never a second master. Originals remain immutable evidence; Stripe and other providers own their actual state, with dated observations and safe refs in JSON.
 
 Resolve every local packet ref to a stable `record_id` and, when versioned, its immutable version/digest in `finance.json`. Do not create standalone editable packet masters or persist a specialist proposal as a competing record. Validate the packaged schema and host checks for unique IDs, resolved refs, arithmetic, custody and additive history. Unknown facts stay absent with named gaps, not zero; monetary amounts use integer minor units with currency. Record derived report/export provenance against the exact JSON revision/digest; never import edited Markdown/CSV implicitly as corrections.
 
-For first-time setup, create a new host-owned workspace from the empty JSON/schema and guidance templates; never overwrite existing files. Populate only sourced setup for the selected workflow and validate/read back before claiming readiness.
+For first-time setup, authenticated finance.status prepares only the enabled project's never-provisioned default store; never overwrite existing files or replace missing provisioned data. Host filesystem capability remains a separate prerequisite for workflows. Populate only sourced setup for the selected workflow and validate/read back before claiming readiness.
 
 On start/resume, re-read project guidance, effective workflow and extension, resolved roles/preset, selected backend and safe account/workspace refs, applicable setup, actual external record revision/digest, active step/grants, approval occurrences, provider-action audit, and recovery state. Do not rely on chat memory. Follow the selected-workflow setup matrix in `plugins/finance/references/backend-contract.md`: receipt custody needs workspace/writer/source route, not tax, advisor, bank or accounting-basis inputs. Load business/tax facts only where the selected workflow/route needs them. Reuse confirmed defaults, ask one consolidated list of missing current-work decisions, and preserve independent partial work.
 
@@ -29,8 +29,8 @@ agent files. Resolve installed references from their package origin when working
 outside this source repository. Historical setup/browser continuity is navigation,
 not current binding or readiness. Infrastructure setup materializes guidance and
 checks readiness without creating financial records, runs or launching specialists.
-Initialize absent storage only during authorized prerequisite setup; never reset
-an existing master. Future client folders require their own authorized binding
+Only authenticated finance.status provisions a never-initialized managed project
+store; never reset missing or corrupt provisioned data. Future client folders require their own authorized binding
 when separately operated, with no inherited credentials or file permissions.
 
 Use the local contract's confirmed account aliases and precise source locators.
@@ -43,13 +43,13 @@ Current records are not necessarily resolved work. Schema validation, render
 success and published-view freshness are distinct claims, never proof of complete
 books. Refer to the canonical local contract instead of duplicating its procedure.
 
-Finance works from a standalone business directory or an agency root; agency
-setup is optional. Select one business financial master and reuse it for every
-client engagement. Read the business/project scope guidance in the finance
-backend contract. Agency/project resources hold descriptive context only, never
-financial facts or mutable finance settings. A folder, agency association or safe
-project ref grants no cross-project MCP calls, inherited credentials or host-file
-access. Do not traverse sibling workspaces or create per-project finance masters.
+Finance is independently usable; agency setup is optional. Each StackOS project
+owns one automatically managed Finance master at its permanent project-ID path.
+Use a deliberately chosen business-owning project for company-wide work and keep
+other projects separate. Read the backend contract's project scope guidance.
+Agency/project resources hold descriptive context, never copied financial facts.
+Folders, agency associations and safe refs grant no cross-project MCP calls,
+inherited credentials or host-file access. Never traverse or copy sibling Finance stores.
 
 Use optional `external_project_ref` only on sourced single-project billing
 versions and prepared bookkeeping records. Verify it against authorized
@@ -131,3 +131,48 @@ independent voice review bound to source refs/revisions and the exact candidate.
 Preserve source ownership, operator scope, privacy, external finance truth and action
 authority. Keep host files free of copied project voice/state; route durable brand
 changes to the existing foundation owner.
+
+## Management analysis through the existing host
+
+A finance local-chat request persists work; it never invokes a model. An available authorized host reads `agentRequest.list/get`, verifies the original request/project/workspace/source snapshot/query and actual filesystem capability, then calls `agentRequest.prepareRunPlan` with `finance.management-review`, the original numeric request ID, selected inputs and stable operation identity. It explicitly starts and runs the linked plan. Missing host, file access, evidence or reviewer stays awaiting-agent/unavailable/blocked; synthetic tests prove plumbing only. Workspace binding and descriptive associations grant no file access.
+
+Dispatch the existing bookkeeping preparer, with cashflow preparation only when relevant, and a required distinct read-only control reviewer. Actual agent analysis remains externally evidenced, with supported opportunities, no supported opportunity or incomplete data; unknown never becomes zero. Read the installed package-origin helper/result schema. Draft typed result and exact readable report bytes outside the immutable publication destination. Use `request_id=str(original request.id)` and the actual producer/run/source/query refs; compute `report_sha256` BEFORE `result_digest` and independent review. The reviewer independently reads actual source and exact report/result material, returning a verdict bound to that digest. Same run is allowed, same producer/reviewer actor is not. Changed bytes/material require fresh review. This verdict never adopts accounting policy or a financial decision.
+
+As sole publisher call `publish_result(finance_json_path, result, report_bytes)` then `read_result` with the original query, returned digest and `expected_selection={record_refs,source_refs}` from original persisted request metadata. Complete `agentRequest.complete` with the original claim token only after current complete readback, storing `top-level metadata_json.external_result_ref/external_result_sha256/source_snapshot/state` with exactly external_result_ref, external_result_sha256 (publication.result_sha256), source_snapshot and state=published. Keep amounts, result/report text, opportunities, private paths and original bytes out of StackOS resources, run results, artifacts, tracker and chat. Optional local-chat acknowledgement uses outbound/create_request=false and safe refs only. An interrupted publication requires readback reconciliation, not a blind retry/new ID. Stale source/query, failed review or publication remains blocked/failed/stale. Chosen opportunities require separately authorized corrections or existing finance work; management has no provider action grants or automatic adoption.
+
+During requested management analysis, automatically include useful descriptive
+taxonomy and per-item bucket proposals from actual selected evidence. An absent
+or insufficient configured list is not a prerequisite: the agent may propose new
+result-local organizational groups. Adopted bookkeeping categories still follow
+approved configured rules and applicable owner decisions. Do not infer business
+purpose, accounting basis, tax treatment or financial adoption from a group label.
+
+Pass original `record_refs`/`source_refs`, exact query and `source_snapshot` to
+the preparer. Empty selectors mean the full original filtered population;
+nonempty selectors restrict both eligible records and evidence. Walk all query
+pages; offset/limit cannot narrow analysis scope implicitly. Use the accepted
+`taxonomy_proposal` / `category_proposals` / `proposal_coverage` / `selection`
+bundle, unique result-local refs and current selected bookkeeping/receipt target
+digests from `workspace.material_record_digest(record, collection)`. Require
+confidence, rationale, scoped evidence and uncertainty. Null categories are
+explicitly unassigned; low-confidence suggestions stay tentative. Consider at
+most 200 targets/proposals, partition considered refs into assigned or unassigned,
+and name partial/larger-population gaps. Unsupported grouping remains explicitly
+empty/unassigned. No-supported-cost-opportunity can coexist with useful proposed
+organization; neither changes canonical amounts, filters or source categories.
+
+Have the actual preparer evaluate supported expense increases against the exact
+requested comparison and investigate repeated costs, possible duplicates and
+source-quality concerns. Use existing `opportunities` with readable `title` and
+`attention_level` `info`/`watch`/`high`, evidence, uncertainty and assumptions.
+Keep currencies, precision, supported economic IDs and incomplete baselines
+explicit. Recurring costs are not automatically duplicate charges. No fixed
+frontend rules, canned finding or model runner substitutes for actual analysis.
+
+The independent reviewer checks source/selector/current-target/category membership,
+coverage, confidence and concern meaning against the exact reviewed bundle and
+report bytes. A historical/stale read retains original refs/digests and file/report
+integrity without comparing old target digests to current replacements; it cannot
+bucket current records. Recheck original selectors at guarded readback and require
+fresh selected analysis for current proposals. Reports period UI/renderers/exports
+remain unchanged; private report bytes remain required review/publication evidence.

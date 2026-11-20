@@ -1,0 +1,90 @@
+{
+  "run_plan_id": 716,
+  "run_id": 710,
+  "workflow": "engineering.tracked-delivery@0.4.0",
+  "base": "ed69afc30179784af091b7d0da3a0997990b77ef",
+  "source_manifest_sha256": "185af178153bcea9da12d9a3c1e274fcfbfd194520379dd865c5c9fc89e1915d",
+  "bundle_manifest_sha256": "5b29693f1872c2381e4b2b24916a9233e5f7367742166ca60d12cde35eb6725c",
+  "signoff": {
+    "command": "TPF_LLM_TOOL=codex tpf make signoff",
+    "cwd": "/private/tmp/stackos-workflow-716/candidate",
+    "exec_session": 7633,
+    "exit_code": 0,
+    "completed_at": "2026-10-28T05:25:18.458252+00:00",
+    "coverage": [
+      "ruff check",
+      "ruff format check",
+      "mypy stackos",
+      "complete Python suite",
+      "complete UI unit suite",
+      "production UI build"
+    ],
+    "output": "signoff-isolated-2.txt",
+    "output_note": "TPF-filtered output; zero make exit status proves sequential required targets passed. Test counts not retained in filtered log.",
+    "environment": "macOS; isolated tracked HEAD plus exact 43-path delivery overlay; no user .env; locked dependencies; source and all 89 bundle files verified byte-identical after integration"
+  },
+  "ticket_proof": {
+    "navigation": "46 UI / 75 Python passed; independent navigation-review-1 and formatting-only navigation-review-2 approve. AST identical after repair.",
+    "diagnostics": "36 UI tests pass worker and independent reviewer; immutable red-first Attention receipt retained."
+  },
+  "browser": {
+    "profile_key": "sidebar-scope-qa",
+    "session": "browser-session:project-1:sidebar-scope-qa:workflow-716",
+    "url": "http://127.0.0.1:5173",
+    "daemon": "http://127.0.0.1:5180",
+    "checked_at": "2026-10-28T05:29:48Z",
+    "viewports": [
+      "1280x800",
+      "1280x600"
+    ],
+    "passed": [
+      "App footer visible while project rail scrolls; scrollTop826 with footer positions unchanged at431/467/503 to467/503/539 in600px viewport.",
+      "Keyboard focus visible on Backups; Enter opens /setup.",
+      "Project switch from Backups retains /setup and updates project links.",
+      "Project switch from Plugins changes /projects/2/plugins to /projects/1/plugins and matching identity.",
+      "Plugins and Providers show server availability and neutral optional nonconnections.",
+      "Connections services repair URL opens Services with no attach dialog.",
+      "Automation, Spend and Attention load correct project pages.",
+      "Overview retains runtime version, uptime, storage and automation status.",
+      "No console errors during final retained-route walkthrough."
+    ],
+    "automated_fixture_coverage": [
+      "No-project shell covered in component tests; existing project selection retained live.",
+      "Failed Account and optional integration edge cases covered by deterministic tests; live Attention has no setup alerts."
+    ],
+    "history": [
+      "One401 during initial pre-verification browser startup at2026-10-28T05:04:32; preserved in session record, then console cleared before clean final flow.",
+      "Native scroll selector did not scroll inner rail; keyboard focus subsequently verified actual inner scrolling."
+    ],
+    "screenshot": "sidebar-final-only.png"
+  },
+  "cleanup": {
+    "reference_scan": "Only two intentional negative-route test assertions retain removed project Setup paths.",
+    "diff_check": "passed",
+    "protected_baseline_files": 2742,
+    "protected_files_changed": 0
+  },
+  "history": [
+    {
+      "attempt": "main workspace signoff",
+      "status": "failed",
+      "reason": "124 lint findings in pre-existing untracked report scripts; unrelated files preserved. Replaced environment with tracked base plus exact delivery overlay."
+    },
+    {
+      "attempt": "first isolated signoff",
+      "status": "failed",
+      "reason": "One owned test assertion needed Ruff formatting. Repaired and independently re-reviewed before successful full signoff."
+    }
+  ],
+  "release": {
+    "state": "source-ready",
+    "installed_app_changed": false,
+    "committed": false,
+    "published": false,
+    "generated_bundle_in_workspace": true
+  },
+  "durable_test_logs": [
+    "diagnostics-attention-red.txt",
+    "diagnostics-focused.txt"
+  ]
+}

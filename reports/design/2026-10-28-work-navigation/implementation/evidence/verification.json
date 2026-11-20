@@ -1,0 +1,111 @@
+{
+  "candidate_sha256": "4df1ab8ebdd011a335d82a0915591298b092d897008bedbfcd7bb24905ceabe8",
+  "checked_at": "2026-10-28T23:18:28.218285+00:00",
+  "scope": "Source implementation and local production bundle; no installed-app replacement, release, commit or external action.",
+  "signoff": {
+    "status": "passed",
+    "python": 5470,
+    "ui": 777,
+    "ui_files": 117,
+    "mypy_source_files": 405,
+    "ruff": "passed",
+    "format": "passed",
+    "ui_typecheck": "passed",
+    "production_build": "passed",
+    "method": "make signoff executed in isolated tracked-HEAD + reviewed overlay; completed unchanged Python/static checks reused when resuming changed UI stages. Failed attempts retained."
+  },
+  "browser": {
+    "profile": "work-design",
+    "session": "browser-session:project-1:work-design:work-tab-concepts-20261028",
+    "preview": "http://127.0.0.1:5185/projects/1/tasks",
+    "data": "Synthetic isolated projects1/2/3 in /tmp/stackos-work-723; live5180 untouched",
+    "viewports": [
+      [
+        1280,
+        800
+      ],
+      [
+        1440,
+        900
+      ],
+      [
+        1630,
+        965
+      ]
+    ],
+    "themes": [
+      "dark",
+      "light"
+    ],
+    "screenshots": [
+      "board-dark-1280.png",
+      "map-dark-1280.png",
+      "popup-dark-1280.png",
+      "board-dark-1440.png",
+      "map-dark-1440.png",
+      "popup-dark-1440.png",
+      "board-dark-1630.png",
+      "map-dark-1630.png",
+      "popup-dark-1630.png",
+      "board-light-1280.png",
+      "map-light-1280.png",
+      "popup-light-1280.png",
+      "board-light-1440.png",
+      "map-light-1440.png",
+      "popup-light-1440.png",
+      "board-light-1630.png",
+      "map-light-1630.png",
+      "popup-light-1630.png"
+    ],
+    "flows": [
+      "Filtered Board opens exact task; description save and reload; additional input save and reload.",
+      "Task ticket opens one dialog; Back to task; View dependencies selects exact task; Board restores search; browser Back/Forward restores modes.",
+      "Map selector includes all project tasks despite Board filter. Selecting another map task leaves Board filter and result count unchanged.",
+      "Unsaved close is declined: text and popup remain. Accepted discard closes. Keyboard Enter opens; Tab stays in popup; Escape closes and returns focus to originating card.",
+      "Concurrent content update produces conflict, retains draft, explicitly loads latest description for review and then saves with fresh revision.",
+      "Project-wide live event moves unrelated task from Not Started4 to In Progress5 without page navigation.",
+      "Empty project retains seven columns; no matches is explicit; missing task is unavailable; no tickets has empty graph message; three disconnected nodes remain visible.",
+      "Current production bundle loads Board and exact popup with saved content."
+    ],
+    "layout": "Desktop toolbar controls share one line (top112\u2013114px); no document overflow. Narrow board scroll is contained; dialogs retain footer with body scroll. Six-node wide map cards258x153 fit within canvas; minimap hidden<=1399 prevents narrow overlap.",
+    "diagnostics": "Fresh final window checked; expected earlier409 and intentional isolated restart500 retained as history; existing Vue Flow deprecation warning remains. No new runtime exception."
+  },
+  "persisted_invariants": {
+    "id": true,
+    "key": true,
+    "title": true,
+    "goal": true,
+    "status": true,
+    "lane_key": true,
+    "source_json": true,
+    "tickets": true,
+    "dependencies": true,
+    "one_input": true
+  },
+  "proof_reuse": "Late A6 stream-ownership fix has focused deferred-response tests. It changes no stable layout; wide and popup captures remain current. Narrow map CSS was recaptured and viewed in both themes. Backend unchanged since B1.",
+  "independent_reviews": {
+    "reviewer": "/root/navigation_review",
+    "accepted": [
+      "A3",
+      "A4",
+      "B1",
+      "C1",
+      "A5/C2 with A6/C3 repair",
+      "A6/C3",
+      "A7 test delta",
+      "documentation correction"
+    ],
+    "final_integrated_review": "pending"
+  },
+  "known_nonblocking": [
+    "Existing Vue Flow options deprecation warning and build chunk-size warning.",
+    "Small maps at1280 fit the whole chain; zoom and centered detail provide full-size reading."
+  ],
+  "historical_failures": [
+    "Sandbox denied loopback for13Python tests; rerun passed5470.",
+    "pnpm rejected isolated node_modules symlink; local copy repaired.",
+    "FullUI caught3watcher violations and2stale view assertions; explicit lifecycle and source tests repaired.",
+    "Review caught late-response stream resurrection; deferred-response regression and scope guards repaired.",
+    "One captured-key source assertion updated without runtime change."
+  ]
+}

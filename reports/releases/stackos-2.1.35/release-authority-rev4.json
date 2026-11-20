@@ -1,0 +1,17 @@
+{
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "contract_revision": 4,
+  "operator_source": "Just release. We'll figure out the wrangler later.",
+  "current_outcome": "Signed and notarized StackOS 2.1.35 including all current changes and QuickBooks wiring, published to the website for operator installation.",
+  "technical_scope": "quickbooks-rev3-scope.json remains applicable. Required canonical text-redaction boundary repair preserves legitimate SyncToken revision keys without weakening actual-secret redaction.",
+  "deferred_gate": {
+    "name": "Public Cloudflare callback page deployment",
+    "owner": "operator and later authorized deployment session",
+    "reason": "Operator explicitly chose release now and Wrangler later",
+    "blocks_desktop_release": false,
+    "limitation": "QuickBooks browser sign-in awaits deployment of the reviewed callback page. Its external access-token method does not depend on that page."
+  },
+  "unchanged_boundaries": ["No local app installation or restart", "No live financial actions", "No broad repeat test ceremony", "Signing and notarization remain mandatory", "Website publication remains authorized"],
+  "controller": "codex-main"
+}

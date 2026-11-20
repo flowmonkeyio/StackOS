@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import {
   UiBadge,
   UiButton,
@@ -8,12 +9,14 @@ import {
   UiSkeleton,
 } from '@/components/ui'
 import type { UiMetadataStripItem } from '@/components/ui/UiMetadataStrip.vue'
+import { formatAbsoluteDateTime, parseStackOsDate } from '@/lib/stackos/time'
 
 import HomeAgentHostStatus from './HomeAgentHostStatus.vue'
 import type { HostStatusState } from './useHomeAgentHostStatuses'
+import type { HomeSubscriptions } from './useHomeSubscriptions'
 import type { HealthState, SystemAction } from './useHomeSystemStatus'
 
-defineProps<{
+const props = defineProps<{
   health: HealthState
   isShell: boolean
   statusTone: 'success' | 'warning' | 'danger' | 'neutral'
@@ -22,7 +25,15 @@ defineProps<{
   systemBusy: SystemAction | null
   hostStatuses: HostStatusState
   hostStatusSummary: string
+  subscriptions: HomeSubscriptions
 }>()
+
+const clock = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+const checkedTime = computed(() => {
+  const checked = props.subscriptions.checked_at
+  const ms = checked ? parseStackOsDate(checked).getTime() : NaN
+  return Number.isFinite(ms) ? clock.format(ms) : null
+})
 
 defineEmits<{
   restart: []
@@ -69,17 +80,8 @@ const STATUS_DOT: Record<string, string> = {
       </UiButton>
     </template>
 
-    <div
-      v-if="health.kind === 'loading'"
-      class="space-y-2"
-    >
-      <UiSkeleton
-        shape="line"
-        width="22rem"
-      />
-    </div>
     <UiCallout
-      v-else-if="health.kind === 'down'"
+      v-if="health.kind === 'down'"
       tone="danger"
       title="Can't reach the local service"
     >
@@ -110,16 +112,19 @@ const STATUS_DOT: Record<string, string> = {
       class="space-y-3"
     >
       <UiMetadataStrip
+        v-if="health.kind === 'ok'"
         :items="systemFacts"
         aria-label="System facts"
       />
+      <UiSkeleton v-else shape="block" height="38px" />
       <HomeAgentHostStatus
         :state="hostStatuses"
         :summary="hostStatusSummary"
+        :subscriptions="subscriptions"
         @refresh="$emit('refreshHosts')"
       />
       <div
-        class="flex flex-wrap gap-2"
+        class="flex flex-wrap items-center gap-2"
       >
         <UiButton
           :disabled="!isShell"
@@ -141,6 +146,9 @@ const STATUS_DOT: Record<string, string> = {
         >
           Install or repair
         </UiButton>
+        <p v-if="checkedTime && subscriptions.checked_at" class="ml-auto text-2xs text-fg-muted">
+          Checked <time :datetime="subscriptions.checked_at" :title="formatAbsoluteDateTime(subscriptions.checked_at)">{{ checkedTime }}</time>
+        </p>
       </div>
       <p
         v-if="!isShell"

@@ -1,0 +1,103 @@
+
+ RUN  v2.1.9 /Users/sergeyrura/Bin/content-stack/ui
+
+ ❯ src/components/ui/UiDropdownMenu.spec.ts (3 tests | 1 failed) 29ms
+   × UiDropdownMenu > returns focus to its trigger when Escape dismisses the menu 21ms
+     → expected <body><div data-v-app>…(1)</div></body> to be <button …(2)></button> // Object.is equality
+ ❯ src/components/backups/BackupPanel.spec.ts (46 tests | 3 failed) 344ms
+   × local backup console > shows status errors and allows recovery without a configured installation 6ms
+     → expected 'Backup status unavailableChecking bac…' not to contain 'Checking backup status'
+   × local backup console > keeps settings focus inside the panel after a save is completed 10ms
+     → expected false to be true // Object.is equality
+   × local backup console > keeps settings focus inside the panel after a save is failed 10ms
+     → expected false to be true // Object.is equality
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 45 passed (49)
+   Start at  07:49:48
+   Duration  1.41s (transform 442ms, setup 20ms, collect 754ms, tests 373ms, environment 542ms, prepare 62ms)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/backups/BackupPanel.spec.ts > local backup console > shows status errors and allows recovery without a configured installation
+AssertionError: expected 'Backup status unavailableChecking bac…' not to contain 'Checking backup status'
+
+Expected: "Checking backup status"
+Received: "Backup status unavailableChecking backup status…Your existing settings will be preserved.Status unavailable"
+
+ ❯ src/components/backups/BackupPanel.spec.ts:489:68
+    487|     expect(wrapper.get('[role="alert"]').text()).toContain('Local cons…
+    488|     expect(wrapper.find('.ui-skeleton').exists()).toBe(false)
+    489|     expect(wrapper.get('[aria-label="Backup status"]').text()).not.toC…
+       |                                                                    ^
+    490|     expect(wrapper.get('[aria-label="Backup status"]').text()).toConta…
+    491|     expect(wrapper.text()).not.toContain('Enable backups')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/components/backups/BackupPanel.spec.ts > local backup console > keeps settings focus inside the panel after a save is completed
+ FAIL  src/components/backups/BackupPanel.spec.ts > local backup console > keeps settings focus inside the panel after a save is failed
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/components/backups/BackupPanel.spec.ts:682:87
+    680|       await flushPromises()
+    681| 
+    682|       expect(wrapper.get('[role="dialog"]').element.contains(document.…
+       |                                                                                       ^
+    683|       if (outcome === 'completed') {
+    684|         expect(saveButton.disabled).toBe(true)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/components/ui/UiDropdownMenu.spec.ts > UiDropdownMenu > returns focus to its trigger when Escape dismisses the menu
+AssertionError: expected <body><div data-v-app>…(1)</div></body> to be <button …(2)></button> // Object.is equality
+
+- Expected
++ Received
+
++ <body>
++   <div
++     data-v-app=""
++   >
++     <div
++       class="ui-dropdown relative inline-block"
++     >
++       
+        <button
+          data-dropdown-trigger=""
+          type="button"
+        >
+          Open
+        </button>
++       
++       <transition-stub
++         appear="false"
++         css="true"
++         enteractiveclass="transition duration-fast ease-enter"
++         enterfromclass="opacity-0 scale-[0.98]"
++         leaveactiveclass="transition duration-fast ease-exit"
++         leavetoclass="opacity-0 scale-[0.98]"
++         persisted="false"
++       >
++         <!--v-if-->
++       </transition-stub>
++     </div>
++   </div>
++ </body>
+
+ ❯ src/components/ui/UiDropdownMenu.spec.ts:28:36
+     26| 
+     27|     expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+     28|     expect(document.activeElement).toBe(trigger.element)
+       |                                    ^
+     29|     expect(wrapper.emitted('select')).toBeUndefined()
+     30|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+

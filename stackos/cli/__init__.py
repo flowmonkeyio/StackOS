@@ -28,6 +28,7 @@ from .app import (
     run_plans_app,
     tracker_app,
 )
+from .backup_commands import backup, restore
 from .constants import _LAUNCHD_LABEL, _LOOPBACK_HOSTS, _MCP_SERVER_NAME
 from .daemon_commands import (
     _autostart_bridge_daemon,
@@ -80,6 +81,7 @@ from .doctor_commands import (
     doctor,
     mcp_host_status,
 )
+from .finance_recovery_commands import finance_recover
 from .launchd import (
     _install_launchd_autostart,
     _launchctl,
@@ -93,16 +95,15 @@ from .launchd import (
     _uninstall_launchd_autostart,
 )
 from .local_commands import (
-    backup,
     init,
     install,
     migrate,
-    restore,
     rotate_seed,
     rotate_token,
     uninstall,
 )
 from .operation_commands import _operation_call
+from .upgrade_commands import finish_upgrade, prepare_upgrade, upgrade_identity
 
 # Import command modules for their Typer decorators. The imported symbols above
 # keep legacy private tests and smoke scripts working during the package split.

@@ -1,0 +1,29 @@
+{
+  "captured_at": "2026-10-29T03:32:53.291683+00:00",
+  "version": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "phase": "final",
+  "installed_version": "2.1.41",
+  "counts": {
+    "projects": 20,
+    "credentials": 26,
+    "account_links": 6,
+    "project_attachments": 32,
+    "encrypted_record_ids": 26
+  },
+  "identities_preserved": {
+    "projects": true,
+    "credentials": true,
+    "account_links": true,
+    "project_attachments": true,
+    "encrypted_record_ids": true
+  },
+  "files_unchanged": {
+    "seed.bin": true,
+    "auth.token": true,
+    "backup-policy.json": true,
+    "backup-key-exclusions.json": true
+  },
+  "schema_unchanged": true,
+  "passed": true
+}

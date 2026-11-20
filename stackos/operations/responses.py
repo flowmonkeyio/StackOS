@@ -78,6 +78,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "ok",
         "valid",
         "status",
+        "board_column",
         "state",
         "phase",
         "availability_status",
@@ -204,6 +205,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "summary",
         "used_usd",
         "auto_bootstrap",
+        "global_session",
         "claimed_by",
         "daemon_reached",
         "check_source",
@@ -482,7 +484,9 @@ def shape_operation_response(
     idempotency_replay: bool = False,
 ) -> dict[str, Any]:
     """Return the caller-facing response shape without mutating canonical payload."""
-    if response_mode == "raw":
+    # Validation results are repair instructions, even when ACK was requested.
+    # Retain their full structured context just as for raised operation errors.
+    if response_mode == "raw" or _data(payload).get("valid") is False:
         return _with_replay(copy.deepcopy(payload), idempotency_replay)
     if response_mode == "ack":
         return _with_replay(_ack_payload(spec, payload), idempotency_replay)
@@ -508,6 +512,74 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
+    if spec.name in {"pattern.list", "pattern.get", "pattern.upsert", "pattern.delete"}:
+        # Catalog pages/receipts already bound their summary payload. Preserve
+        # paging and etags exactly; only the explicit detail body is removed.
+        out = copy.deepcopy(payload)
+        (out.get("data") or out).pop("body", None)
+        return out
+    if spec.name in {
+        "projectSetup.start",
+        "projectSetup.report",
+        "projectSetup.cancel",
+        "projectSetup.answer",
+        "projectSetup.continue",
+    }:
+        out = _base_payload(spec, payload)
+        body = copy.deepcopy(data)
+        out["data"] = body
+        attempt = body.get("attempt", body)
+        attempt.pop("reports", None)
+        return out
+    if spec.name in {"projectSetup.get", "projectSetup.setReminders"}:
+        out = _base_payload(spec, payload)
+        out["data"] = {
+            key: copy.deepcopy(value) for key, value in data.items() if key != "workflows"
+        }
+        if isinstance(out["data"].get("current_attempt"), dict):
+            out["data"]["current_attempt"].pop("reports", None)
+        workflows = data.get("workflows", [])
+        out["data"]["workflow_count"] = len(workflows)
+        out["data"]["workflows"] = [
+            {
+                key: item.get(key)
+                for key in (
+                    "workflow_key",
+                    "receipt_id",
+                    "revision",
+                    "status",
+                    "diagnostic",
+                    "latest_status",
+                    "partial_changes",
+                    "attempt_ref",
+                    "result_ref",
+                    "requested_scope",
+                    "activation_status",
+                    "missing_activation_claims",
+                )
+            }
+            for item in workflows[:25]
+        ]
+        out["data"]["workflows_truncated"] = len(workflows) > 25
+        return out
+    if spec.name in {
+        "tracker.taskActivity",
+        "tracker.taskResults",
+        "tracker.activeTasks",
+        "tracker.activeTasksAll",
+        "tracker.deliveryCapacity",
+        "tracker.setDeliveryCapacity",
+        "maintenance.upgradeStatus",
+        "maintenance.prepareUpgrade",
+        "maintenance.finishUpgrade",
+    }:
+        # These pages already bound payload size and own their coverage contract.
+        # Generic page/mutation shaping would discard task scope and warnings.
+        return copy.deepcopy(payload)
+    if spec.name in {"projectAgent.list", "projectAgent.get"}:
+        out = _base_payload(spec, payload)
+        out["data"] = _compact_data(spec.name, data)
+        return out
     if "data" not in payload and "items" in payload:
         if spec.name == "tracker.history":
             out = _compact_page(spec, payload)
@@ -711,6 +783,7 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
         "read_only": item.get("read_only"),
         "mutating": item.get("mutating"),
         "grant_policy": item.get("grant_policy"),
+        "idempotency_policy": item.get("idempotency_policy", "dispatcher"),
         "secret_policy": item.get("secret_policy"),
     }
     surfaces = item.get("surfaces")
@@ -738,10 +811,88 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name == "tracker.startDelivery":
+        out = _compact_mapping(data)
+        if data.get("review_replacement"):
+            # The owner emits only bounded target/candidate/snapshot refs here.
+            out["review_replacement"] = copy.deepcopy(data["review_replacement"])
+        return out
+    if operation_name == "workspace.startSession":
+        out = _compact_mapping(data)
+        out["agent_session_id"] = data.get("id")
+        out["project_setup"] = copy.deepcopy(data.get("project_setup"))
+        return out
+    if operation_name in {"project.delete", "project.reconcileFileOwnership"}:
+        # These typed bounded receipts are already the complete repair contract.
+        return copy.deepcopy(data)
+    if operation_name in {"projectAgent.list", "projectAgent.get"}:
+        out = copy.deepcopy(data)
+        rows = out.get("items", [out])
+        for row in rows:
+            fields = row.get("fields")
+            if isinstance(fields, dict):
+                instructions = fields.pop("developer_instructions", None)
+                row["instructions_available"] = instructions is not None
+        return out
+    if operation_name == "schedule.remove":
+        return {key: data[key] for key in ("project_id", "job_id", "removed") if key in data}
+    if operation_name in {"schedule.list", "schedule.set", "schedule.toggle", "schedule.runs"}:
+        # Preserve state/repair fields and canonical metrics. Concrete setup remains in raw.
+        return {
+            key: copy.deepcopy(value)
+            for key, value in data.items()
+            if key not in {"goal", "inputs_json", "execution_json"}
+        }
+    if operation_name == "localAgentChat.createMessage":
+        out = {
+            k: copy.deepcopy(data[k])
+            for k in (
+                "project_id",
+                "thread_record_id",
+                "message_record_id",
+                "thread_ref",
+                "message_ref",
+            )
+            if k in data
+        }
+        request = data.get("agent_request")
+        out["agent_request"] = (
+            {
+                k: copy.deepcopy(request[k])
+                for k in (
+                    "id",
+                    "project_id",
+                    "status",
+                    "attention_status",
+                    "claimed_by",
+                    "claim_expires_at",
+                    "run_plan_id",
+                    "source_message_ref",
+                )
+                if k in request
+            }
+            if isinstance(request, dict)
+            else None
+        )
+        return out
+    if operation_name in {
+        "finance.status",
+        "finance.query",
+        "finance.record.get",
+        "finance.record.preview",
+        "finance.record.commit",
+    }:
+        # Ref-bounded console contracts: truncating source, exclusions, or money
+        # fields here would misrepresent current financial support/completeness.
+        return copy.deepcopy(data)
     if operation_name in {
         "account.application.status",
         "tracker.ticketCounts",
         "tracker.ticketCountsAll",
+        "tracker.agentStats",
+        "tracker.agentStatsAll",
+        "tracker.activeTasks",
+        "tracker.activeTasksAll",
         "project.portfolio",
         "browser.runtime.status",
     }:
@@ -774,6 +925,10 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return {key: value for key, value in data.items() if key in fields}
     if operation_name in {"action.run", "action.execute"}:
         return _compact_action_execution(data)
+    if operation_name.startswith("run.owner"):
+        # This bounded fence/continuity receipt must remain complete in compact:
+        # truncating epochs, revisions or policy refs would change its meaning.
+        return copy.deepcopy(data)
     if operation_name == "actionCall.get":
         return _compact_action_call_get(data)
     if operation_name == "resource.get":
@@ -831,6 +986,13 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_workflow_template_describe(data)
     if operation_name == "workflowTemplate.authoringGuide":
         return _compact_workflow_authoring_guide(data)
+    if operation_name in {"agentPreset.describe", "skillPreset.describe"}:
+        out = _compact_mapping(data)
+        # Description packets use the same actionable adaptation projection as
+        # workflow resolution, rather than the generic nested-field allowlist.
+        if "project_adaptation" in data:
+            out["project_adaptation"] = _compact_adaptation(data["project_adaptation"])
+        return out
     if operation_name == "agentPreset.resolveForWorkflow":
         return _compact_agent_preset_resolution(data)
     if operation_name == "skillPreset.resolveForWorkflow":
@@ -847,6 +1009,8 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
 
 
 def _compact_account_inventory(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("summary_only") is True:
+        return copy.deepcopy(data)
     out = _compact_mapping(data)
     accounts = data.get("accounts")
     if isinstance(accounts, list):
@@ -994,6 +1158,7 @@ def _compact_tracker_task_rollup(task: Any, ticket: Any) -> dict[str, Any]:
         "task_key": _compact_value(task.get("key")),
         "status": status,
         "lane_key": _compact_value(task.get("lane_key")),
+        "board_column": _compact_value(task.get("board_column")),
         "completion_evidence_present": evidence_present,
     }
     if isinstance(ticket, dict):
@@ -1056,6 +1221,8 @@ def _compact_run_plan_steps(steps: list[Any]) -> list[dict[str, Any]]:
 
 def _compact_run_plan(data: dict[str, Any]) -> dict[str, Any]:
     out = _compact_mapping(data)
+    if "cancellation" in data:
+        out["cancellation"] = data["cancellation"]
     if data.get("id") is not None and data.get("key") is not None:
         out["run_plan_id"] = data.get("id")
         out["run_plan_key"] = data.get("key")
@@ -1159,7 +1326,19 @@ def _compact_workflow_authoring_guide(data: dict[str, Any]) -> dict[str, Any]:
         "setup_completion_contract",
         "canonical_operations",
     )
-    return {key: _compact_value(data[key]) for key in keys if key in data}
+    out = {key: _compact_value(data[key]) for key in keys if key in data}
+    method = data.get("project_setup_method")
+    if isinstance(method, dict):
+        # Prompt consumers must fetch the complete instructions, never a clipped prompt.
+        out["project_setup_method"] = {
+            "version": method.get("version"),
+            "modes": list(method.get("mode_prompts", {})),
+            "guidance_ref": {
+                "tool_name": "workflowTemplate.authoringGuide",
+                "arguments": {"response_mode": "raw"},
+            },
+        }
+    return out
 
 
 def _compact_agent_preset_list(data: dict[str, Any]) -> dict[str, Any]:

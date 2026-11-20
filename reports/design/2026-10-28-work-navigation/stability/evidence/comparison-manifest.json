@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-10-29T01:50:29.998373+00:00",
+  "asset_directory": "/tmp/stackos-work-723/data/generated-assets/work-inspection-qa",
+  "index_url": "http://127.0.0.1:5185/generated-assets/work-inspection-qa/index.html",
+  "pixel_editing": false,
+  "rendering": "Two equal-width columns, maximum 640 CSS px each; originals remain 1280 \u00d7 800.",
+  "focused_rendering": {
+    "scale": 1,
+    "css_crop": {
+      "x": 290,
+      "y": 16,
+      "width": 690,
+      "height": 784
+    },
+    "recommended_minimum_viewport_width": 1428
+  },
+  "pairs": [
+    {
+      "key": "task-dark",
+      "url": "http://127.0.0.1:5185/generated-assets/work-inspection-qa/task-dark.html",
+      "focus_url": "http://127.0.0.1:5185/generated-assets/work-inspection-qa/task-dark-focus.html",
+      "status": "ready",
+      "captures": [
+        {
+          "source": "/tmp/stackos-work-724/source-task-1280.png",
+          "asset": "/tmp/stackos-work-723/data/generated-assets/work-inspection-qa/source-task-1280.png",
+          "width": 1280,
+          "height": 800,
+          "sha256": "7a48412b58363af5312ccc5b1b7b4ab2f7e47e6f18b362ef1d3c14f1b63f52ea",
+          "byte_identical_copy": true
+        },
+        {
+          "source": "/tmp/stackos-work-724/after-task-dark-1280.png",
+          "asset": "/tmp/stackos-work-723/data/generated-assets/work-inspection-qa/after-task-dark-1280.png",
+          "width": 1280,
+          "height": 800,
+          "sha256": "e2eae4794a597fdd695927bf7ff122a6abfd89a5bcc2ba73d14dac0128977f83",
+          "byte_identical_copy": true
+        }
+      ]
+    },
+    {
+      "key": "ticket-dark",
+      "url": "http://127.0.0.1:5185/generated-assets/work-inspection-qa/ticket-dark.html",
+      "focus_url": "http://127.0.0.1:5185/generated-assets/work-inspection-qa/ticket-dark-focus.html",
+      "status": "ready",
+      "captures": [
+        {
+          "source": "/tmp/stackos-work-724/source-ticket-1280.png",
+          "asset": "/tmp/stackos-work-723/data/generated-assets/work-inspection-qa/source-ticket-1280.png",
+          "width": 1280,
+          "height": 800,
+          "sha256": "aafee148e0b2c2b1f4de3d7c66e96d488d71463f9112fb693e0b257583834e96",
+          "byte_identical_copy": true
+        },
+        {
+          "source": "/tmp/stackos-work-724/after-ticket-dark-1280.png",
+          "asset": "/tmp/stackos-work-723/data/generated-assets/work-inspection-qa/after-ticket-dark-1280.png",
+          "width": 1280,
+          "height": 800,
+          "sha256": "ea12378838a47184d72735f6fd1c06df42f2f126337fedf5636740288fb43a92",
+          "byte_identical_copy": true
+        }
+      ]
+    },
+    {
+      "key": "long-light",
+      "url": "http://127.0.0.1:5185/generated-assets/work-inspection-qa/long-light.html",
+      "focus_url": "http://127.0.0.1:5185/generated-assets/work-inspection-qa/long-light-focus.html",
+      "status": "ready",
+      "captures": [
+        {
+          "source": "/tmp/stackos-work-724/source-long-1280.png",
+          "asset": "/tmp/stackos-work-723/data/generated-assets/work-inspection-qa/source-long-1280.png",
+          "width": 1280,
+          "height": 800,
+          "sha256": "e213b0116c06b16bb4df3590ac2ca10c18c189c61761a5a545564b0047840911",
+          "byte_identical_copy": true
+        },
+        {
+          "source": "/tmp/stackos-work-724/after-long-light-1280.png",
+          "asset": "/tmp/stackos-work-723/data/generated-assets/work-inspection-qa/after-long-light-1280.png",
+          "width": 1280,
+          "height": 800,
+          "sha256": "efecb2b5a43f9737c0907071fd8c104932aa61b5eda56783ceb5baef54463105",
+          "byte_identical_copy": true
+        }
+      ]
+    }
+  ]
+}

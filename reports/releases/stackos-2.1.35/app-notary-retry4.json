@@ -1,0 +1,32 @@
+{
+  "command": [
+    "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+    "submit",
+    "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+    "--keychain-profile",
+    "stackos-notary",
+    "--no-s3-acceleration",
+    "--no-wait",
+    "--output-format",
+    "json"
+  ],
+  "started_at": "2026-10-07T01:49:11.380371+00:00",
+  "finished_at": "2026-10-07T01:50:53.610135+00:00",
+  "archive": "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+  "archive_bytes": 515848394,
+  "archive_sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+  "exit_code": 0,
+  "log": "/private/tmp/stackos-release-2135-20261006/release/app-notary-retry4.log",
+  "log_sha256": "60c160afd7ebbf2ba9dbf63a7f395d382cfa9d9953d95fb8f6b020d47ec0f3b9",
+  "prior_attempt": "app-notary-retry3.json",
+  "retry_reason": "Operator resumed with Go now after a pause to allow later network change; native ARM uploader with direct S3 endpoint. Actual network change not asserted.",
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "local_app_activation": false,
+  "response": {
+    "id": "f0003c77-5049-4808-a868-857ff7d66dc4",
+    "message": "Successfully uploaded file",
+    "path": "/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip"
+  },
+  "upload_completed": true,
+  "notarization_accepted": false
+}

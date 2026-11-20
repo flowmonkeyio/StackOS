@@ -1,0 +1,81 @@
+{
+  "disposition": "candidate-ready; frozen for immediate independent review",
+  "assignment": "Integrated UI full-suite repair A5/C2",
+  "tickets": [
+    {
+      "key": "work-board-ui",
+      "id": 14730,
+      "attempt": "a5"
+    },
+    {
+      "key": "work-content-editor",
+      "id": 14732,
+      "attempt": "c2"
+    }
+  ],
+  "contract_revision": 1,
+  "project_id": 1,
+  "run_plan_id": 723,
+  "run_id": 717,
+  "base_head": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b",
+  "sources": [
+    "Main full-suite repair dispatch + explicit no-watch runtime admission and TrackerTaskDetailDialog syncTask connector admission",
+    "/Users/sergeyrura/.local/share/tpf/tee/20261028_160038_make.log",
+    "docs/ui-design-system.md",
+    "ui/src/no-watch-ui.spec.ts",
+    "Existing useProjectScopedLoader, ActionCallsView onBeforeRouteUpdate, TrackerGraphPanel nodes-initialized/onUpdated lifecycle owners"
+  ],
+  "prior_candidates": {
+    "A4": "67546571f33f49f2903e2839d74a2509050ac3ddc0d4ba9caf024d49f27a1eee",
+    "C1": "1910f3585405b448a2025e57e91550f559efaea5296401b072dc322bfec14197"
+  },
+  "repairs": [
+    {
+      "finding": "Stale source-contract tests read deleted Stories panel and expect graph-first three-mode UI",
+      "fix": "Replaced obsolete expectations with full-project Board default, seven canonical readonly columns, exactly one shared inline two-mode toolbar, map-only selector, focused graph, centered task/ticket popups and current navigation. Coverage preserved and strengthened."
+    },
+    {
+      "finding": "Strict no Vue watcher contract violated in three implementation files",
+      "fix": "Removed all watch imports/calls without changing ban or adding aliases/polling. Work reacts only to committed same-route router.afterEach events, with listener removal on scope exit; existing guards still reject dirty/inflight navigation. VueFlow actual mount resets nodesReady; nodes-initialized owns fitting. Content controller syncTask is explicitly called by accepted correct-identity loadDetail/refreshTaskContent results and detail clearing; dirty baseline retained."
+    }
+  ],
+  "focused_proof": [
+    "Aborted close/history/ticket/dependency/leave navigation retains draft and issues no additional reads.",
+    "Late task A response does not replace task B or clear Beta's draft.",
+    "Replacement graph mount waits for nodes-initialized before initial fit; saved viewport and large-graph focus remain.",
+    "Uncertain retry exact key/body, conflict draft review/refreshed revision, replay current readback and Board aggregates remain green.",
+    "No-watch source contract passes unchanged."
+  ],
+  "checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/no-watch-ui.spec.ts src/page-layout-contract.spec.ts src/screen-composition.spec.ts src/read-only-ui.spec.ts src/lib/task-tracker/graphModel.spec.ts src/views/TaskTrackerView.spec.ts src/views/task-tracker/useTrackerTaskContent.spec.ts src/views/task-tracker/TrackerTaskDetailDialog.spec.ts src/views/task-tracker/TrackerGraphPanel.spec.ts",
+      "result": "PASS48tests/9files"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui type-check",
+      "result": "PASS"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec eslint src/page-layout-contract.spec.ts src/screen-composition.spec.ts src/views/TaskTrackerView.vue src/views/TaskTrackerView.spec.ts src/views/task-tracker/TrackerGraphPanel.vue src/views/task-tracker/TrackerGraphPanel.spec.ts src/views/task-tracker/TrackerTaskDetailDialog.vue src/views/task-tracker/useTrackerTaskContent.ts src/views/task-tracker/useTrackerTaskContent.spec.ts",
+      "result": "PASS no errors;four preexisting GraphPanel test-stub warnings"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "gaps": "No useReactiveResource implementation exists in checkout; explicit canonical route/load/graph lifecycle used. Parent owns rerun of affected browser UI proof and full signoff. Python/B sources untouched.",
+  "preserved": "No no-watch allowlist, no backend edits, no commits or run/tracker state writes; unrelated workspace edits preserved.",
+  "files": {
+    "ui/src/page-layout-contract.spec.ts": "ac10d7b2c304fb72ffa547314d3bfe31496a9b08e5bf9ee28f7647fd30efd43b",
+    "ui/src/screen-composition.spec.ts": "b12da4446a25d1899a721b36b3b5848fcecd03d56ccfbe5d7ff2ae061d55aa8c",
+    "ui/src/views/TaskTrackerView.vue": "76a19e40bec79b937e12280a98bcc75e3ba8688ee5cbd6ff02161a32f6ce5d28",
+    "ui/src/views/TaskTrackerView.spec.ts": "b7868e7449ffbcdc016d0ee1eab1b1fc4cf04c9c67850f5c6f0ac663d7894463",
+    "ui/src/views/task-tracker/TrackerGraphPanel.vue": "8a96b79288fbdbe299d2637a400a352bf585bfffc660c25591be1f6ecfe6e4c8",
+    "ui/src/views/task-tracker/TrackerGraphPanel.spec.ts": "747b953697a353703d1aa724002eae4b6edfa5dd959af03b6d54bbd05fd73221",
+    "ui/src/views/task-tracker/TrackerTaskDetailDialog.vue": "577f1aabdeff3c9d46a4377f0c6948ad8b7dd200c8d32b652a01ecaf30aefcd9",
+    "ui/src/views/task-tracker/useTrackerTaskContent.ts": "102ca65ae7aef15313b1d9bd763f62e247cff192f5246374e85b226cd6febdbc",
+    "ui/src/views/task-tracker/useTrackerTaskContent.spec.ts": "8660079d3c31c67f9fe7ea901b97476b12324fa48d0011b1d8435a4df4785f89"
+  },
+  "candidate_sha256": "7fad7dea1d9f8edf1128fe8f794eff9ecf4219269f2f03dcc13e9c77af3f6b29"
+}

@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
 from stackos.db.models import AgentSession, Project, WorkspaceBinding
 from stackos.repositories.base import Envelope, NotFoundError, ValidationError
@@ -179,6 +179,8 @@ class AgentSessionOut(BaseModel):
     last_seen_at: datetime
     needs_connect: bool = False
     auto_bootstrap: bool = False
+    global_session: bool = False
+    project_setup: dict[str, Any] | None = None
     project_was_created: bool | None = None
     binding_was_created: bool | None = None
     candidate_workspaces: list[NamedWorkspaceCandidateOut] = Field(default_factory=list)
@@ -300,6 +302,7 @@ class WorkspaceRepository:
                         "requested_project_id": project_id,
                     },
                 )
+            self._protect_primary_root(row, normalized_root)
             row.project_id = project_id
             if git_remote_url is not None:
                 row.git_remote_url = git_remote_url
@@ -492,7 +495,7 @@ class WorkspaceRepository:
         cwd: str | None = None,
         workspace_alias: str | None = None,
     ) -> WorkspaceResolutionOut:
-        """Resolve a workspace by fingerprint, root directory, then git remote."""
+        """Resolve directory scope; remote identity only suggests project candidates."""
         row: WorkspaceBinding | None = None
         normalized_cwd = _normalize_path(cwd)
         usable_cwd = normalized_cwd if _is_usable_workspace_root(normalized_cwd) else None
@@ -502,7 +505,7 @@ class WorkspaceRepository:
         )
         if _is_filesystem_root_fingerprint(effective_fingerprint):
             effective_fingerprint = None
-        if effective_fingerprint:
+        if effective_fingerprint and not usable_cwd:
             row = self._s.exec(
                 select(WorkspaceBinding).where(
                     WorkspaceBinding.repo_fingerprint == effective_fingerprint
@@ -522,19 +525,40 @@ class WorkspaceRepository:
             ]
             if matching:
                 row = max(matching, key=lambda candidate: len(candidate.last_known_root or ""))
-        if row is None and git_remote_url:
-            row = self._s.exec(
-                select(WorkspaceBinding)
-                .where(WorkspaceBinding.git_remote_url == git_remote_url)
-                .order_by(col(WorkspaceBinding.updated_at).desc())
-            ).first()
         if row is None:
+            hinted_projects = self._hinted_projects(effective_fingerprint, git_remote_url)
+            next_step = _connect_required_next_step(
+                repo_fingerprint=effective_fingerprint,
+                git_remote_url=git_remote_url,
+                cwd=cwd,
+                project_identity_required=(
+                    _derive_project_name(
+                        normalized_repo_name=None,
+                        git_remote_url=git_remote_url,
+                        workspace_root=normalized_cwd,
+                    )
+                    is None
+                ),
+                has_workspace_identity=any((effective_fingerprint, git_remote_url, normalized_cwd)),
+            )
+            if usable_cwd and hinted_projects:
+                next_step = {
+                    "status": "connect_required",
+                    "call_via": "toolbox.call",
+                    "recommended_tool": "workspace.connect",
+                    "why": (
+                        "This directory is unbound. Repository fingerprints and shared Git "
+                        "remotes are only project candidate hints. Confirm the project, then "
+                        "connect this actual directory; no other binding is reused or moved."
+                    ),
+                    "recommended_arguments": {"project_id": "<operator-confirmed project id>"},
+                }
             return WorkspaceResolutionOut(
                 binding=None,
                 project_id=None,
                 needs_connect=True,
                 candidate_workspaces=self._named_workspace_candidates(),
-                candidate_projects=self._project_candidates(),
+                candidate_projects=hinted_projects or self._project_candidates(),
                 repo_hints=_repo_hints(
                     repo_fingerprint=effective_fingerprint,
                     git_remote_url=git_remote_url,
@@ -544,28 +568,9 @@ class WorkspaceRepository:
                 ),
                 ui_paths=_ui_paths(None),
                 setup_state=_setup_state(binding=None, needs_connect=True),
-                next_step=_connect_required_next_step(
-                    repo_fingerprint=effective_fingerprint,
-                    git_remote_url=git_remote_url,
-                    cwd=cwd,
-                    project_identity_required=(
-                        _derive_project_name(
-                            normalized_repo_name=None,
-                            git_remote_url=git_remote_url,
-                            workspace_root=normalized_cwd,
-                        )
-                        is None
-                    ),
-                    has_workspace_identity=any(
-                        (effective_fingerprint, git_remote_url, normalized_cwd)
-                    ),
-                ),
+                next_step=next_step,
             )
 
-        row.last_seen_at = _utcnow()
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
         out = _workspace_binding_out(row)
         return WorkspaceResolutionOut(
             binding=out,
@@ -628,8 +633,16 @@ class WorkspaceRepository:
         thread_id: str | None = None,
         client_session_id: str | None = None,
         auto_bootstrap: bool = True,
+        global_session: bool = False,
+        project_id: int | None = None,
     ) -> Envelope[AgentSessionOut]:
         """Register a plugin MCP bridge session and attach binding if known."""
+        if project_id is not None:
+            if not isinstance(project_id, int) or isinstance(project_id, bool) or project_id <= 0:
+                raise ValidationError("project_id must be a positive integer")
+            ProjectRepository(self._s).get(project_id)
+        if global_session and workspace_alias is not None:
+            raise ValidationError("global_session cannot select a workspace_alias; use project_id")
         resolution = self.resolve(
             repo_fingerprint=repo_fingerprint,
             git_remote_url=git_remote_url,
@@ -638,6 +651,73 @@ class WorkspaceRepository:
         )
         bootstrap: Envelope[WorkspaceBootstrapOut] | None = None
         normalized_cwd = _normalize_path(cwd)
+        effective_global = global_session or (
+            not _is_usable_workspace_root(normalized_cwd)
+            and workspace_alias is None
+            and resolution.binding is None
+        )
+        if effective_global:
+            # SQLite's writer reservation serializes this decision with every
+            # canonical binding writer. Re-read after acquiring it: preflight
+            # absence is not authority, and lookup errors must fail closed.
+            try:
+                self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+                resolution = self.resolve(
+                    repo_fingerprint=repo_fingerprint,
+                    git_remote_url=git_remote_url,
+                    cwd=cwd,
+                    workspace_alias=workspace_alias,
+                )
+                if resolution.binding is not None:
+                    raise ValidationError(
+                        "workspace is already bound; global_session cannot replace its scope",
+                        data={"project_id": resolution.project_id, "global_session": False},
+                    )
+                if project_id is not None:
+                    ProjectRepository(self._s).get(project_id)
+                row = AgentSession(
+                    project_id=project_id,
+                    workspace_binding_id=None,
+                    runtime=runtime or "unknown",
+                    thread_id=thread_id,
+                    client_session_id=client_session_id,
+                )
+                self._s.add(row)
+                self._s.commit()
+            except Exception:
+                self._s.rollback()
+                raise
+            self._s.refresh(row)
+            selected = project_id is not None
+            return Envelope(
+                data=AgentSessionOut.model_validate(row).model_copy(
+                    update={
+                        "global_session": True,
+                        "project_setup": self._project_setup_summary(project_id),
+                        "needs_connect": not selected,
+                        "candidate_workspaces": resolution.candidate_workspaces,
+                        "candidate_projects": resolution.candidate_projects if not selected else [],
+                        "repo_hints": resolution.repo_hints,
+                        "ui_paths": _ui_paths(project_id),
+                        "setup_state": {
+                            "state": "global_project_selected"
+                            if selected
+                            else "project_selection_required",
+                            "workspace_bound": False,
+                            "project_scoped_tools_usable": selected,
+                            "auto_bootstrap": False,
+                        },
+                        "next_step": _connected_next_step(project_id),
+                    }
+                ),
+                project_id=project_id,
+            )
+        if project_id is not None and project_id != resolution.project_id:
+            raise ValidationError(
+                "project_id must match the workspace binding; declare global_session=true "
+                "before selecting a project in an unbound global chat",
+                data={"project_id": resolution.project_id, "requested_project_id": project_id},
+            )
         has_derived_project_name = (
             _derive_project_name(
                 normalized_repo_name=None,
@@ -652,6 +732,7 @@ class WorkspaceRepository:
             and normalized_cwd is not None
             and _is_usable_workspace_root(normalized_cwd)
             and has_derived_project_name
+            and not self._hinted_projects(repo_fingerprint, git_remote_url)
         ):
             bootstrap = self.bootstrap(
                 repo_fingerprint=repo_fingerprint,
@@ -716,11 +797,39 @@ class WorkspaceRepository:
                     "next_step": resolution.next_step,
                 }
             )
+        out.project_setup = self._project_setup_summary(row.project_id)
         return Envelope(data=out, project_id=row.project_id)
+
+    def _project_setup_summary(self, project_id: int | None) -> dict[str, Any] | None:
+        if project_id is None:
+            return None
+        from stackos.repositories.project_setup import ProjectSetupRepository
+
+        return ProjectSetupRepository(self._s).startup_summary(project_id)
 
     def _project_candidates(self) -> list[WorkspaceProjectCandidateOut]:
         page = ProjectRepository(self._s).list(active_only=False, limit=10)
         return [_project_candidate(project) for project in page.items]
+
+    def _hinted_projects(
+        self, repo_fingerprint: str | None, git_remote_url: str | None
+    ) -> list[WorkspaceProjectCandidateOut]:
+        hints = []
+        if repo_fingerprint:
+            hints.append(col(WorkspaceBinding.repo_fingerprint) == repo_fingerprint)
+        if git_remote_url:
+            hints.append(col(WorkspaceBinding.git_remote_url) == git_remote_url)
+        if not hints:
+            return []
+        projects = self._s.exec(
+            select(Project)
+            .join(WorkspaceBinding, col(WorkspaceBinding.project_id) == col(Project.id))
+            .where(or_(*hints))
+            .distinct()
+            .order_by(col(Project.id))
+            .limit(10)
+        ).all()
+        return [_project_candidate(ProjectOut.model_validate(project)) for project in projects]
 
     def _named_workspace_candidates(self) -> list[NamedWorkspaceCandidateOut]:
         rows = self._s.exec(
@@ -830,6 +939,19 @@ class WorkspaceRepository:
     def _project_slug_exists(self, slug: str) -> bool:
         return self._s.exec(select(Project.id).where(Project.slug == slug)).first() is not None
 
+    def _protect_primary_root(self, row: WorkspaceBinding, new_root: str | None) -> None:
+        if new_root is None or new_root == row.last_known_root:
+            return
+        primary_owner = self._s.exec(
+            select(Project.id).where(Project.primary_workspace_binding_id == row.id)
+        ).first()
+        if primary_owner is not None:
+            raise ValidationError(
+                "The configured project folder cannot move implicitly. Use a distinct "
+                "directory binding for a task worktree. To relocate the primary folder, "
+                "clear its reference in project setup, update the binding, then select it again."
+            )
+
     def _update_binding_row(
         self,
         *,
@@ -845,6 +967,7 @@ class WorkspaceRepository:
         row = self._s.get(WorkspaceBinding, binding_id)
         if row is None:
             raise NotFoundError(f"workspace binding {binding_id} not found")
+        self._protect_primary_root(row, last_known_root)
         if row.repo_fingerprint != repo_fingerprint:
             conflict = self._s.exec(
                 select(WorkspaceBinding).where(
@@ -887,6 +1010,15 @@ class WorkspaceRepository:
         cwd: str | None,
     ) -> WorkspaceBootstrapOut:
         normalized_cwd = _normalize_path(cwd)
+        # Only initial folder-backed project setup records the primary folder.
+        # Connecting or revisiting an existing project (including task worktrees)
+        # never guesses or replaces its selection. Existing projects use project.update.
+        if project_was_created and binding.last_known_root:
+            project = (
+                ProjectRepository(self._s)
+                .update(project.id, primary_workspace_binding_id=binding.id)
+                .data
+            )
         return WorkspaceBootstrapOut(
             project_id=project.id,
             project=project,

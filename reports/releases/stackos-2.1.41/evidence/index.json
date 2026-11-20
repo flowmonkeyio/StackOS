@@ -1,0 +1,154 @@
+{
+  "curated_at": "2026-10-29T03:50:39.531620+00:00",
+  "version": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "tested_candidate": "04fddeae242325e5d82d9dc34b259d5bccd33772df435c5bc442e546dcc368eb",
+  "required_gates_passed": true,
+  "files": [
+    {
+      "path": "build-isolation.json",
+      "bytes": 561,
+      "sha256": "0c09407412129b3200e2414f39666759c4d8b4f360c59de15500f9c03c446087"
+    },
+    {
+      "path": "api-key-preflight.json",
+      "bytes": 637,
+      "sha256": "e254cec180f17a3d7c10723fa1ee31ed9f27bdc403849ce91d866f36778faac0"
+    },
+    {
+      "path": "api-key-build.json",
+      "bytes": 628,
+      "sha256": "b720508052331d72e46e7bf70dd76bd83843644668555022a20c8a5c6faccdd9"
+    },
+    {
+      "path": "source-scope.json",
+      "bytes": 3379,
+      "sha256": "cf9c58f8d2704bed050201c2b1e1a81b2f6aaf95073f0aa4d88e870c948b0b4b"
+    },
+    {
+      "path": "artifacts.json",
+      "bytes": 1753,
+      "sha256": "96a0198dcb064b3f7d0f97d7fd9dccb4ac9d0472af82c76700f8e2f47f9cc3e5"
+    },
+    {
+      "path": "review-preparation.json",
+      "bytes": 2371,
+      "sha256": "ffbb68df35032ff11921e8e4665fa290744cc17bd5a76902709ec0e304dbed47"
+    },
+    {
+      "path": "review-package-content.json",
+      "bytes": 2643,
+      "sha256": "8334b0fe5997de22a271b1de9218b718fd7a9112c0554451d8942c63939d8399"
+    },
+    {
+      "path": "review-app-zip.json",
+      "bytes": 13026,
+      "sha256": "26f8f62987607c85b07c3f8dfab8959bf7c00a4b4268103758ef4d1229ddc8a3"
+    },
+    {
+      "path": "review-final-metadata.json",
+      "bytes": 2590,
+      "sha256": "3e4ac5720c5654709ae95008392b498aa90609f693e50e41b75e808598c7d02c"
+    },
+    {
+      "path": "review-dmg-content.json",
+      "bytes": 2624,
+      "sha256": "0ec7d9dea3dc2e78b78ff39c61ec270c35e89572fb3aa6ed411b18c5a40ee42e"
+    },
+    {
+      "path": "review-final-artifacts.json",
+      "bytes": 10887,
+      "sha256": "601d6642889fe3ee37a1e41d1f49039e36b3999e7a4a3f93d5fa51c4abe834df"
+    },
+    {
+      "path": "review-installed-lifecycle.json",
+      "bytes": 5993,
+      "sha256": "bd8ea6925bc2361eae248b3c68d1ed416274e7b19f2e35899695752e57132762"
+    },
+    {
+      "path": "installed-lifecycle.json",
+      "bytes": 1882,
+      "sha256": "2ecf34dc42a35c79e35712692ed953ecd63c6e6b05bfa72cd745e067de90d4ea"
+    },
+    {
+      "path": "installed-ui-observed.json",
+      "bytes": 1501,
+      "sha256": "68362b14e3a795566ecfd106eaf616245ce0b38f544d96a78eb6d9eb1cad9f3e"
+    },
+    {
+      "path": "state-preservation-final.json",
+      "bytes": 707,
+      "sha256": "1a7d4801bd6d5af2139d7f93737184cb8bb47b824ad60cde954cca49e76fb0b6"
+    },
+    {
+      "path": "preupgrade-backup.json",
+      "bytes": 697,
+      "sha256": "cc4a0c645b35fed5294a16e4a3fcf47e552cd676c38a4f97a6c7bd960a42a17c"
+    },
+    {
+      "path": "update-feed-receipt.json",
+      "bytes": 626,
+      "sha256": "b2965f863923e521b355269dc09f9dc519671e1b17125e62ebd0d442479e6452"
+    },
+    {
+      "path": "update-available.json",
+      "bytes": 685,
+      "sha256": "d58b57825480e74b3e95df77bba05adedd0fc2532a6fa7bb32c9635e8ad78523"
+    },
+    {
+      "path": "update-downloaded.json",
+      "bytes": 807,
+      "sha256": "61179deef7168c312ae688c493dfab762574497bcc2aff5030d17699e053b323"
+    },
+    {
+      "path": "update-install.json",
+      "bytes": 818,
+      "sha256": "c5b717aeae9b5252e1f074ccecde2803b6e4585767326833c930d9678a090c63"
+    },
+    {
+      "path": "update-postflight-health.json",
+      "bytes": 126,
+      "sha256": "055fd59867d58c899418512f6704d85a57ef78b8e6cb12713da4cca607f6eb77"
+    },
+    {
+      "path": "public-staged.json",
+      "bytes": 2377,
+      "sha256": "f98dca350b24b45bf123bfe152c00bd6c0c946cd1da1958272898ca6e9329193"
+    },
+    {
+      "path": "public-channel.json",
+      "bytes": 858,
+      "sha256": "54a157ce5a6ae46a3b317e40e8009e331c717bd40ef1bfe4c1599ab402330088"
+    },
+    {
+      "path": "publication.json",
+      "bytes": 6981,
+      "sha256": "8b2db59edb07a2797a8d591ce160f9f3287dfdb919ad2e02dbddb12589f4ba59"
+    },
+    {
+      "path": "tag.json",
+      "bytes": 476,
+      "sha256": "e39f1d521fe7e1effc8f1b9c544dea03694d2c5f22addc9c9275fc9dc048c7f9"
+    },
+    {
+      "path": "review-publication.json",
+      "bytes": 4039,
+      "sha256": "6f6811b9374718142d0c783388875f9b29c8ddabf3e8d8078b96d8f5b60db532"
+    }
+  ],
+  "evidence_limits": {
+    "automatic_relaunch_observed": false,
+    "manual_normal_reopen": "Explicit normal open -a /Applications/StackOS.app after the updater replaced the signed app; normal startup ran install/repair and restarted daemon to 2.1.41.",
+    "native_screen_capture": "unavailable: macOS screencapture could not create image from rect; bounded resize retry failed and original window geometry was restored",
+    "installed_daemon_visual_review": "Root opened and inspected board and task popup captures; seven fixed columns, inline Board/Graph, 356 actual task cards, contained page width and stable task dialog were present.",
+    "native_pixels_after_normal_reopen_captured": false
+  },
+  "not_copied_or_read": [
+    "private state-before/after/final snapshots",
+    "raw application/Doctor/install logs",
+    "native or actual-project UI images",
+    "backup archives or recovery keys",
+    "provider raw response files"
+  ],
+  "policy": "Only explicit safe JSON receipts; byte-identical copies. Raw private proofs stay local. This index preserves observation limits and does not expand review scope."
+}

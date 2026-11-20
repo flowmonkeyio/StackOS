@@ -1,0 +1,16 @@
+{
+  "command": [
+    "pnpm",
+    "--dir",
+    "ui",
+    "exec",
+    "vitest",
+    "run",
+    "src/components/backups/BackupPanel.spec.ts",
+    "src/components/ui/UiDropdownMenu.spec.ts"
+  ],
+  "started_at": "2026-10-28T14:49:48.322419+00:00",
+  "exit_code": 1,
+  "log": "/tmp/stackos-workflow-718/ui-ui2-repair1-red.log",
+  "sha256": "abe5c2674b3f79bfea3ba801d985ebea77ad998749c5d837ea19c03ddc9951a1"
+}

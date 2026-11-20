@@ -105,7 +105,6 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
         size="sm"
         class="ticket-status-count"
         :aria-pressed="selectedStatus === status"
-        :aria-label="`${trackerStatus[status].label}: ${counts[status]} tickets`"
         @click="emit('select', status)"
       >
         <span class="flex min-w-0 flex-col gap-1 text-left">
@@ -118,6 +117,7 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
             <span>{{ trackerStatus[status].label }}</span>
           </span>
           <strong class="text-2xl font-semibold leading-6 text-fg-strong tabular-nums">{{ counts[status] }}</strong>
+          <span class="sr-only">tickets</span>
         </span>
       </UiButton>
     </div>

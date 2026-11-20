@@ -1,0 +1,126 @@
+{
+  "generated_at": "2026-10-29T02:32:57.297263+00:00",
+  "candidate_sha256_from_root": "04fddeae242325e5d82d9dc34b259d5bccd33772df435c5bc442e546dcc368eb",
+  "scope": "Evidence packaging only; no browser, build, app-source, tracker, or signoff changes. This package makes no QA acceptance claim.",
+  "root_design_qa_unchanged": true,
+  "pixel_editing": false,
+  "recommended_comparison_viewport": {
+    "width": 1600,
+    "height": 1000
+  },
+  "sections": {
+    "dark-full": {
+      "selector": "#dark-full",
+      "images": {
+        "css_width": 720,
+        "css_height": 500,
+        "scale": 0.5
+      },
+      "pair_width": 1456
+    },
+    "dark-focus": {
+      "selector": "#dark-focus",
+      "css_crop": {
+        "x": 280,
+        "y": 172,
+        "width": 768,
+        "height": 790
+      },
+      "scale": 1,
+      "pair_width": 1552
+    },
+    "light-full": {
+      "selector": "#light-full",
+      "images": {
+        "css_width": 720,
+        "css_height": 500,
+        "scale": 0.5
+      },
+      "pair_width": 1456
+    },
+    "light-focus": {
+      "selector": "#light-focus",
+      "css_crop": {
+        "x": 280,
+        "y": 172,
+        "width": 768,
+        "height": 790
+      },
+      "scale": 1,
+      "pair_width": 1552
+    },
+    "direction-reference": {
+      "selector": "#direction-reference",
+      "display_width_each": 720,
+      "pair_width": 1456,
+      "different_image_scales": true
+    }
+  },
+  "files": [
+    {
+      "filename": "before-dark.png",
+      "source": "/tmp/stackos-board-before-dark.png",
+      "sha256": "9d7c10e12788ea56bdfb8408da15c3f1fbe8fb064ef76b8115595ef76937b23b",
+      "bytes": 147912,
+      "mtime_ns": 1793240317284899789,
+      "width": 1440,
+      "height": 1000,
+      "byte_identical_copy": true,
+      "timestamps_preserved": true
+    },
+    {
+      "filename": "before-light.png",
+      "source": "/tmp/stackos-board-before-light.png",
+      "sha256": "e321d8e7bd09d615862b6ebb7f29c762373a84affe792eca3a43710d7f3180b1",
+      "bytes": 147948,
+      "mtime_ns": 1793240525117671670,
+      "width": 1440,
+      "height": 1000,
+      "byte_identical_copy": true,
+      "timestamps_preserved": true
+    },
+    {
+      "filename": "after-dark.png",
+      "source": "/tmp/stackos-board-after-dark.png",
+      "sha256": "8456358b9f0dfbcf531c7509c98bb2ab208d7466f547ace504a09437635d3b6f",
+      "bytes": 153483,
+      "mtime_ns": 1793240730218016365,
+      "width": 1440,
+      "height": 1000,
+      "byte_identical_copy": true,
+      "timestamps_preserved": true
+    },
+    {
+      "filename": "after-light.png",
+      "source": "/tmp/stackos-board-after-light.png",
+      "sha256": "87f8580fb06ca5b7cce2314a3c649d2b4597ee68affa3d7599efb84adf70401c",
+      "bytes": 153114,
+      "mtime_ns": 1793241065367333941,
+      "width": 1440,
+      "height": 1000,
+      "byte_identical_copy": true,
+      "timestamps_preserved": true
+    },
+    {
+      "filename": "linear-direction-reference.png",
+      "source": "/var/folders/kz/x3spv77x2rx83d1v72jsh4r80000gn/T/clipboard-2026-10-28-191642-C0AA140C.png",
+      "sha256": "e5d91e572533b3136ce1243ee8d38d3aae189b98794608c83cc5a3db38e67a11",
+      "bytes": 614853,
+      "mtime_ns": 1793240202874975743,
+      "width": 1958,
+      "height": 1023,
+      "byte_identical_copy": true,
+      "timestamps_preserved": true
+    },
+    {
+      "filename": "prior-popup-qa.md",
+      "source": "/Users/sergeyrura/Bin/content-stack/design-qa.md",
+      "sha256": "77d36f4f94161e766b229dc305d6ec4fce10888e05d071960aca4f6d2b4d50e1",
+      "bytes": 7061,
+      "mtime_ns": 1793239433326704386,
+      "byte_identical_copy": true,
+      "timestamps_preserved": true
+    }
+  ],
+  "html_sha256": "3a58146e8792585e690ebb00169fa5d058bd6c40d1e96f8e91a280a70a7f505c"
+}

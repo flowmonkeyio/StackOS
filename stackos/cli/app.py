@@ -60,6 +60,13 @@ autostart_app = typer.Typer(
 )
 app.add_typer(autostart_app, name="autostart")
 
+backups_app = typer.Typer(
+    name="backups",
+    help="Configure encrypted local backups and independent recovery-key custody.",
+    no_args_is_help=True,
+)
+app.add_typer(backups_app, name="backups")
+
 
 def _exit(code: int) -> None:
     """Exit via typer.Exit so context managers (e.g. uvicorn) unwind cleanly."""

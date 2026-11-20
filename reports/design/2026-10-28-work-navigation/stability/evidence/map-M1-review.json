@@ -1,0 +1,47 @@
+{
+  "recommendation": "approve",
+  "reviewer": "navigation_review",
+  "independence": "No implementation, test, browser, fixture, backend, or tracker-state changes. Only this review report written.",
+  "ticket": "work-map-entry-and-inspector",
+  "ticket_id": 14748,
+  "project_id": 1,
+  "run_plan_id": 724,
+  "run_id": 718,
+  "attempt": "M1",
+  "contract_revision": 1,
+  "candidate_sha256": "72c0697fb31fe242b6ec43470d229c90b225c15bcb9f0f04264d59ffb36115b1",
+  "freshness": "All 9 source hashes in map-M1-candidate.json independently matched the working tree before review. Changes compared with the accepted run723 source snapshot at /tmp/stackos-work-723/signoff.",
+  "sources": [
+    ".codex/agents/sdlc-delivery-reviewer.toml",
+    "docs/product-direction.md: Product Thesis, Product Contract, Product Principles",
+    "docs/ui-design-system.md",
+    "ui/src/design/DESIGN.md",
+    "Main M1 assignment and accepted selection/inspector contract",
+    "map-M1-candidate.json and all 9 listed source paths",
+    "ui/src/components/InspectableDetailDrawer.vue",
+    "Installed @vue-flow/core node click and keyboard event implementation"
+  ],
+  "per_acceptance": {
+    "M1_selection": "Pass. Resolve only after accepted project index: explicit URL, valid project memory, first unfiltered picker row. Invalid explicit URL remains unavailable. Stale remembered keys clear; empty/failed index does not default; retry may default. Canonicalization replaces history, and refresh retains valid selection despite newer tasks.",
+    "M1_async_scope": "Pass. Pending-index route change is read at response acceptance. Existing current-scope and request-sequence guards remain. Defaulting does not restart an obsolete project stream; canonical route commit owns stream restart. Pending old-project/unmount regressions pass.",
+    "M2_map_selection": "Pass. Pointer and Enter/Space share the existing node click path without popup URL changes. Installed Vue Flow confirms native keyboard selection alone does not emit nodeClick, supporting the bounded keyboard bridge.",
+    "M2_inspector": "Pass. Explicit Details uses graph-session detailPanelOpen and existing InspectableDetailDrawer/UiSidePanel. Node/edge/canvas/clear close the inspector. Ticket detail content remains a single subtree selected through the presentation wrapper.",
+    "M2_separation_cleanup": "Pass. Board popup identity remains independent of map task. Committed task popup entry closes the inspector. Old map-node popup handler removed; docs and admitted composition assertion reflect the replacement. No lifecycle or backend mutation added."
+  },
+  "independent_checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/views/TaskTrackerView.spec.ts src/views/task-tracker/TrackerGraphPanel.spec.ts src/views/task-tracker/viewModel.spec.ts src/screen-composition.spec.ts src/no-watch-ui.spec.ts",
+      "result": "PASS: 40 tests in 5 files"
+    },
+    {
+      "check": "All 9 candidate file SHA-256 values",
+      "result": "PASS: all match"
+    }
+  ],
+  "findings": [],
+  "remaining_integration_proof": [
+    "Main-owned real-browser keyboard selection, inspector clear/return and route behavior.",
+    "Subsequent modal contract2 integration, shared design-system changes, Product Design QA and mandatory final gates are outside M1 ticket acceptance."
+  ],
+  "next_disposition": "Main adjudicates M1 acceptance and dispatches the dependent modal ticket."
+}

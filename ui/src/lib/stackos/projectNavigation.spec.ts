@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 
 import { projectIdFromRoute, projectSwitchDestination } from './projectNavigation'
@@ -15,23 +17,17 @@ describe('projectIdFromRoute', () => {
 describe('projectSwitchDestination', () => {
   it.each([
     '',
-    'inbox',
-    'activity',
-    'setup',
     'schedules',
     'cost-budget',
+    'agents',
+    'library',
     'plugins',
-    'capabilities',
     'connections',
-    'operations',
-    'action-calls',
-    'agent-requests',
-    'agent-presets',
     'tasks',
-    'workflow-templates',
-    'data',
-    'resources',
-    'runs',
+    'plugins/seo',
+    'plugins/seo/workflows/seo.audit',
+    'workflows/customer.weekly-review',
+    'finance',
   ])('keeps the %s project surface', (surface) => {
     const suffix = surface ? `/${surface}` : ''
 
@@ -63,25 +59,40 @@ describe('projectSwitchDestination', () => {
       ),
     ).toEqual({
       path: '/projects/7/tasks',
-      query: { view: 'stories', status: 'in-progress' },
+      query: { view: 'stories' },
       hash: '#work-list',
     })
   })
 
-  it('returns to the project runs list from a project-specific run detail', () => {
+  it('preserves a workflow identity across projects without carrying record selection', () => {
     expect(
       projectSwitchDestination(
         {
-          path: '/projects/1/runs/162',
-          query: {},
+          path: '/projects/1/plugins/seo/workflows/seo.audit',
+          query: { item: 'artifact:162' },
           hash: '',
         },
         7,
       ),
     ).toEqual({
-      path: '/projects/7/runs',
+      path: '/projects/7/plugins/seo/workflows/seo.audit',
       query: {},
       hash: '',
+    })
+  })
+
+  it('keeps only Board/Graph placement while project-local preferences and entry intents stay isolated', () => {
+    expect(projectSwitchDestination({
+      path: '/projects/1/tasks', hash: '',
+      query: {
+        view: 'graph', status: 'complete,failed', status_op: 'is-not', priority: 'p0,p1', priority_op: 'is',
+        completed: 'all', hide_empty: '1', ticket_status: 'failed', focus: 'blocked',
+        search: 'old text', workflow: 'old workflow', workflow_op: 'is-not', assignee: 'old agent', assignee_op: 'is',
+        task: 'old-task', detail: 'old-task', ticket: 'old-ticket', work_entry: 'tickets:failed',
+      },
+    }, 7)).toEqual({
+      path: '/projects/7/tasks', hash: '',
+      query: { view: 'graph' },
     })
   })
 
@@ -102,19 +113,19 @@ describe('projectSwitchDestination', () => {
     })
   })
 
-  it('keeps resource filters while clearing a resource selected in the old project', () => {
+  it('keeps Library filters while clearing the previous project record identity', () => {
     expect(
       projectSwitchDestination(
         {
-          path: '/projects/1/resources',
-          query: { plugin_slug: 'branding', resource_key: 'old-resource' },
+          path: '/projects/1/library',
+          query: { tab: 'saved', plugin: 'branding', type: 'decision', item: 'decision:42' },
           hash: '',
         },
         7,
       ),
     ).toEqual({
-      path: '/projects/7/resources',
-      query: { plugin_slug: 'branding' },
+      path: '/projects/7/library',
+      query: { tab: 'saved', plugin: 'branding', type: 'decision' },
       hash: '',
     })
   })
@@ -132,11 +143,11 @@ describe('projectSwitchDestination', () => {
     ).toEqual({ path: '/projects/7' })
   })
 
-  it('keeps a global operating surface in place', () => {
+  it.each(['/accounts', '/setup'])('keeps the global %s surface in place', (path) => {
     expect(
       projectSwitchDestination(
         {
-          path: '/accounts',
+          path,
           query: { account: 'credential_123' },
           hash: '',
         },

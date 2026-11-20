@@ -1,0 +1,84 @@
+{
+  "example_kind": "fictional material with actual Codex CLI results",
+  "capture_date": "2026-10-07",
+  "model_or_reasoning_override": null,
+  "not_a_benchmark": true,
+  "trials": [
+    {
+      "stage": "baseline",
+      "tool": "Codex CLI",
+      "version": "0.160.1",
+      "started_at": "2026-10-07T16:04:14.632860+00:00",
+      "exit_code": 0,
+      "observed_read_commands": [
+        "/bin/zsh -lc 'cat AGENTS.md voice-guide.md facts.md'"
+      ],
+      "input_sha256": {
+        "AGENTS.md": "008329dc9063beadfcd620dc6a7eaa781268fa8fe7b2757d2ffeae100a136451",
+        "CLAUDE.md": "803159c89fccf2308e380e89c4e3de1c41b78e9a79fe8b204f23c04efed7cbf4",
+        "facts.md": "8a154eaa0643ae8dcc172f6568ec48d48b1544a2eb5ea8d0c66ae110dda1019a",
+        "prompt.txt": "c187f2551575ee0a75c9888fe93746ac6cdff69f3b850a15530348e140d2b14f",
+        "voice-guide.md": "ae523f521214bf5f113fc66a09f6c19cee1ad8407b3108ffd325333f8bfb8099"
+      },
+      "response": "Your article is waiting in harbor. While it’s pending your colleague’s review, you can enable review reminders for that draft. Draft Pier emails the assigned reviewer at 9 a.m. on weekdays, using your workspace’s time zone, with a link to the draft. It sends at most one reminder per pending draft per weekday. Your colleague decides whether to approve it or request changes; a reminder does not approve or publish it. You can disable reminders for that draft whenever you choose.\n\nSource note: Read `AGENTS.md`, `voice-guide.md`, and `facts.md`. Used `voice-guide.md` revision **1.0** for expression and `facts.md` for product behavior.",
+      "announcement_word_count_whitespace": 81,
+      "other_agent_messages": [
+        "I’ll read the local instructions, voice guide, and product facts before drafting.\n"
+      ],
+      "raw_stdout_sha256": "7d0e34fc006079126a0b78908cda978544c2490d999c66c403e6c247df2382ba",
+      "evidence_limit": "Read commands and their full returned contents are retained internally. This public derivative records commands and final output. It does not expose or establish the complete model context or all startup instruction loading."
+    },
+    {
+      "stage": "stale",
+      "tool": "Codex CLI",
+      "version": "0.160.1",
+      "started_at": "2026-10-07T16:05:14.791950+00:00",
+      "exit_code": 0,
+      "observed_read_commands": [
+        "/bin/zsh -lc 'cat voice-guide-copy.md facts.md'",
+        "/bin/zsh -lc 'cat AGENTS.md voice-guide.md'"
+      ],
+      "input_sha256": {
+        "AGENTS.md": "9a2572e47611079ec4cc98254d17a486414877f81fcf16f83684300e61e1d2ce",
+        "CLAUDE.md": "a17abfbe6ab0661d406f32d8f81510114cf21e65f7affb0704be5d947194344d",
+        "facts.md": "8a154eaa0643ae8dcc172f6568ec48d48b1544a2eb5ea8d0c66ae110dda1019a",
+        "prompt.txt": "c187f2551575ee0a75c9888fe93746ac6cdff69f3b850a15530348e140d2b14f",
+        "voice-guide-copy.md": "ae523f521214bf5f113fc66a09f6c19cee1ad8407b3108ffd325333f8bfb8099",
+        "voice-guide.md": "f08466617305f17b26bf3009f4dcacdff5b7851291723ca593379b15bb7ce57f"
+      },
+      "response": "Turn on review reminders for the colleague assigned to your article while it waits for review. Draft Pier emails them at 9 a.m. on weekdays, using your workspace’s time zone, with a link to the draft. Each pending draft gets at most one reminder per weekday. Your colleague decides whether to approve the draft or request changes; a reminder does not approve or publish it. You can enable or disable reminders for each draft.\n\nSource note: Used `voice-guide.md` (revision 2.0) and `facts.md` (revision 1.0). Also read `AGENTS.md` and `voice-guide-copy.md` (revision 1.0); the named copy is superseded by revision 2.0.",
+      "announcement_word_count_whitespace": 74,
+      "other_agent_messages": [
+        "I’ll read the local guide and facts, check which guide is current, then draft the announcement.\n",
+        "`AGENTS.md` names `voice-guide-copy.md` (revision 1.0), but `voice-guide.md` says revision 2.0 replaces it and removes metaphor openings. Following your request for the current guide, I’ll use revision 2.0 and the supplied facts.\n"
+      ],
+      "raw_stdout_sha256": "351b3f07adbccca14d2cd90a7eb6494f4a04427c796385bf5498af1f0693c636",
+      "evidence_limit": "Read commands and their full returned contents are retained internally. This public derivative records commands and final output. It does not expose or establish the complete model context or all startup instruction loading."
+    },
+    {
+      "stage": "repaired",
+      "tool": "Codex CLI",
+      "version": "0.160.1",
+      "started_at": "2026-10-07T16:07:43.271625+00:00",
+      "exit_code": 0,
+      "observed_read_commands": [
+        "/bin/zsh -lc 'cat AGENTS.md voice-guide.md facts.md'"
+      ],
+      "input_sha256": {
+        "AGENTS.md": "008329dc9063beadfcd620dc6a7eaa781268fa8fe7b2757d2ffeae100a136451",
+        "CLAUDE.md": "803159c89fccf2308e380e89c4e3de1c41b78e9a79fe8b204f23c04efed7cbf4",
+        "facts.md": "8a154eaa0643ae8dcc172f6568ec48d48b1544a2eb5ea8d0c66ae110dda1019a",
+        "prompt.txt": "c187f2551575ee0a75c9888fe93746ac6cdff69f3b850a15530348e140d2b14f",
+        "voice-guide-copy.md": "ae523f521214bf5f113fc66a09f6c19cee1ad8407b3108ffd325333f8bfb8099",
+        "voice-guide.md": "f08466617305f17b26bf3009f4dcacdff5b7851291723ca593379b15bb7ce57f"
+      },
+      "response": "Enable review reminders for your article while it waits for your colleague’s review. Draft Pier sends the assigned reviewer an email at 9 a.m. on weekdays, using your workspace’s time zone, with a link to the draft. Each pending draft gets at most one reminder per weekday. Your colleague decides whether to approve the draft or request changes; a reminder does not approve or publish it. You can enable or disable reminders for each draft.\n\nSource note: Read `AGENTS.md`, `voice-guide.md`, and `facts.md`. Used voice guide revision 2.0 and product facts revision 1.0.",
+      "announcement_word_count_whitespace": 75,
+      "other_agent_messages": [
+        "I’ll read the local instructions, voice guide, and product facts before drafting.\n"
+      ],
+      "raw_stdout_sha256": "2926ef1bb16cf07670400bbbfccfbd73122dfa04a23d7ac5f49c7e8858fa3930",
+      "evidence_limit": "Read commands and their full returned contents are retained internally. This public derivative records commands and final output. It does not expose or establish the complete model context or all startup instruction loading."
+    }
+  ]
+}

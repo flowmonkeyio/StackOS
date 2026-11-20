@@ -6,8 +6,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Any
 
-from stackos_connectors import CallOptions, ConnectorClient
-from stackos_connectors.catalog import load_registry
+from stackos_connectors import CallOptions
 from stackos_connectors.connectors.linear.contract import LINEAR_ACTION_SPECS as _NATIVE_SPECS
 
 from stackos.actions.connectors import (
@@ -580,7 +579,6 @@ def _native_adapter(request):
 
     return PackageActionConnector(
         "linear",
-        client=ConnectorClient(registry=load_registry("connectors/linear/catalog.json")),
         options=CallOptions(
             rate_limiter=get_bucket(
                 project_id=request.project_id, kind="linear", qps=LinearIntegration.default_qps

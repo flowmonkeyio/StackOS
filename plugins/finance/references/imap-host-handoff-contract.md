@@ -3,9 +3,9 @@
 ## Purpose and boundary
 
 This contract defines the bounded transfer of an untrusted IMAP email and its
-attachments into the selected external finance backend. It implements the
+attachments into the project's file-backed Finance storage. It implements the
 accepted finance architecture: StackOS owns workflow grants, provider
-authentication, protocol calls, and safe action audit. The external backend
+authentication, protocol calls, and safe action audit. The project-local backend
 owns finance evidence and records.
 
 For the initial `local-json` backend, the host agent—not StackOS—writes the
@@ -85,8 +85,8 @@ metadata and exact staging paths.
 
 The host agent maps the returned `staging_uri` through its own trusted local
 runtime mapping, reads only the exact manifest paths with its own filesystem
-tool, validates them, then writes the external finance workspace. StackOS never
-writes the external finance workspace. The URI is a host-filesystem-only
+tool, validates them, then writes the project Finance directory. The IMAP connector never
+writes the project Finance directory. The URI is a host-filesystem-only
 locator beneath the generated-assets root, not a daemon path, HTTP URL, or
 `host_handoff` object. Despite its `/generated-assets/imap-transfers/...` shape,
 that normalized subtree is rejected with HTTP 404 before static-file lookup;
@@ -235,7 +235,7 @@ sequence number, subject, or provider cursor alone as receipt identity.
 ## Store-before-ack flow
 
 ```text
-1. Host validates that the selected external backend is present and writable.
+1. Host validates that the selected project-local backend is present and writable.
 2. Search a bounded unseen UID page; record UIDVALIDITY only as an observation.
 3. Export exactly one UID in read-only `BODY.PEEK[]` mode into its staged directory.
 4. Host validates path containment, hashes, source identity, MIME structure,

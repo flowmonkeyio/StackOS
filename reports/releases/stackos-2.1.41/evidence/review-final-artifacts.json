@@ -1,0 +1,151 @@
+{
+  "reviewed_at_utc": "2026-10-29 03:25:47 UTC",
+  "reviewer": "/root/navigation_review",
+  "release": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "scope": "Independent finalized local app, ZIP, DMG, blockmaps, update feed and stable alias verification.",
+  "verdict": "pass_artifacts_pending_installed_lifecycle",
+  "required_repairs": [],
+  "artifacts": {
+    "stackos-2.1.41-mac-arm64.zip": {
+      "bytes": 490271232,
+      "sha256": "89ba6a16d27fe85487c9dcafafa2e9b588c36f1be3e85b6ee70ea26d53f6261d",
+      "sha512_base64": "QkEEJT4fLZq9CflymqfwfoLQLhf1QOSUDZNsR3z7TD46pvLjaay8R72kf0hvWdRxfGOkbW9/rgvfhWIUbBFHQg==",
+      "feed_matches": true
+    },
+    "stackos-2.1.41-mac-arm64.dmg": {
+      "bytes": 485555719,
+      "sha256": "1a42cd1ba232bb2f2f0bfa6f6991979269575a860a0dee3e427aa4f218b21ab1",
+      "sha512_base64": "3diNpUnUuLKOW8FhiHqjkO80wX5hRg/qLdJo3k2C1/CYqVc0cZas9hwqQempoDdmon2EfnhScp8RiDe0gq7PDg==",
+      "feed_matches": true
+    },
+    "stackos-2.1.41-mac-arm64.dmg.blockmap": {
+      "bytes": 505310,
+      "sha256": "db70707a2e1124389760fda4861fcf8c2cff53475549bfa1340f2ccca1469752"
+    },
+    "stackos-2.1.41-mac-arm64.zip.blockmap": {
+      "bytes": 504983,
+      "sha256": "25d42ca7ab30bb0ff0fda5f7d6b86521664e0d61411c812c25d503c5b41ba66b"
+    },
+    "stackos-latest-mac-arm64.dmg": {
+      "bytes": 485555719,
+      "sha256": "1a42cd1ba232bb2f2f0bfa6f6991979269575a860a0dee3e427aa4f218b21ab1"
+    },
+    "latest-mac.yml": {
+      "bytes": 513,
+      "sha256": "6413511556f1438382b4fb21dc64df56730d9c6ad2c17838f83d01696046addd"
+    }
+  },
+  "checks": {
+    "signed_build_exit_code": 0,
+    "signing_required": true,
+    "notarization_bypassed": false,
+    "dmg_signature_gatekeeper_stapling": "passed",
+    "dmg_app_signature_gatekeeper_stapling": "passed",
+    "built_zip_dmg_app_identity": "Same committed first-party source, build20261029T025156Z, asar aa8b0217edf4da2ccfc83e9e55744d6d6075e35fe7281a420a0adfc1948345ac and CDHash2762f9c69d8081a7afd2820b27f91aef6514fb9b.",
+    "tracked_runtime_files": 533,
+    "bundled_assets": 101,
+    "ui_files": 89,
+    "electron_source_files": 9,
+    "feed_size_sha512_matches": true,
+    "stable_alias_matches_versioned_dmg": true,
+    "zip_unchanged_since_independent_review": true,
+    "blockmap_metadata": {
+      "stackos-2.1.41-mac-arm64.dmg": {
+        "version": "2",
+        "chunks": 23275,
+        "covered_bytes": 485555719
+      },
+      "stackos-2.1.41-mac-arm64.zip": {
+        "version": "2",
+        "chunks": 23244,
+        "covered_bytes": 490271232
+      }
+    },
+    "read_only_mount_detached": true
+  },
+  "commands": {
+    "dmg_codesign": {
+      "chunk_id": "789793",
+      "wall_time_seconds": 0.406674792,
+      "exit_code": 0,
+      "original_token_count": 63,
+      "output": "/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/stackos-2.1.41-mac-arm64.dmg: valid on disk\n/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/stackos-2.1.41-mac-arm64.dmg: satisfies its Designated Requirement\n"
+    },
+    "dmg_gatekeeper": {
+      "chunk_id": "2c5b6c",
+      "wall_time_seconds": 0.548933041,
+      "exit_code": 0,
+      "original_token_count": 35,
+      "output": "/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/stackos-2.1.41-mac-arm64.dmg: accepted\nsource=Notarized Developer ID\n"
+    },
+    "dmg_staple": {
+      "chunk_id": "7f932a",
+      "wall_time_seconds": 0.062297666,
+      "exit_code": 0,
+      "original_token_count": 35,
+      "output": "Processing: /private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/stackos-2.1.41-mac-arm64.dmg\nThe validate action worked!\n"
+    },
+    "dmg_identity": {
+      "chunk_id": "808102",
+      "wall_time_seconds": 0.000005666,
+      "exit_code": 0,
+      "original_token_count": 240,
+      "output": "Executable=/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/stackos-2.1.41-mac-arm64.dmg\nIdentifier=stackos-2.1.41-mac-arm64\nFormat=disk image\nCodeDirectory v=20200 size=312 flags=0x0(none) hashes=1+6 location=embedded\nHash type=sha256 size=32\nCandidateCDHash sha256=9887a4b9d776860a15bf5ae63cd5721c19b1da6f\nCandidateCDHashFull sha256=9887a4b9d776860a15bf5ae63cd5721c19b1da6fefee8476deca7ae229f2f4e8\nHash choices=sha256\nCMSDigest=9887a4b9d776860a15bf5ae63cd5721c19b1da6fefee8476deca7ae229f2f4e8\nCMSDigestType=2\nPage size=none\nCDHash=9887a4b9d776860a15bf5ae63cd5721c19b1da6f\nSignature size=8972\nAuthority=Developer ID Application: SERGEY RURA (TSHN26FR48)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Oct 28, 2026 at 8:05:42 PM\nNotarization Ticket=stapled\nInfo.plist=not bound\nTeamIdentifier=TSHN26FR48\nSealed Resources=none\nInternal requirements count=1 size=184\nTotal signatures=1\nChosen signature=1\n"
+    },
+    "dmg_app_codesign": {
+      "chunk_id": "51c3c4",
+      "wall_time_seconds": 0.0000085,
+      "exit_code": 0,
+      "original_token_count": 687,
+      "output": "--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--prepared:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--validated:/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper.app\n/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app: valid on disk\n/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app: satisfies its Designated Requirement\n"
+    },
+    "dmg_app_gatekeeper": {
+      "chunk_id": "dac156",
+      "wall_time_seconds": 0.000003333,
+      "exit_code": 0,
+      "original_token_count": 28,
+      "output": "/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app: accepted\nsource=Notarized Developer ID\n"
+    },
+    "dmg_app_staple": {
+      "chunk_id": "3f210f",
+      "wall_time_seconds": 0.135499083,
+      "exit_code": 0,
+      "original_token_count": 28,
+      "output": "Processing: /private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app\nThe validate action worked!\n"
+    },
+    "dmg_app_identity": {
+      "chunk_id": "6f444d",
+      "wall_time_seconds": 0.026511667,
+      "exit_code": 0,
+      "original_token_count": 294,
+      "output": "Executable=/private/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app/Contents/MacOS/StackOS\nIdentifier=io.stackos.desktop\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded\nVersionPlatform=1\nVersionMin=786432\nVersionSDK=1703936\nHash type=sha256 size=32\nCandidateCDHash sha256=2762f9c69d8081a7afd2820b27f91aef6514fb9b\nCandidateCDHashFull sha256=2762f9c69d8081a7afd2820b27f91aef6514fb9bc44cf57851af9907a3eb4385\nHash choices=sha256\nCMSDigest=2762f9c69d8081a7afd2820b27f91aef6514fb9bc44cf57851af9907a3eb4385\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=2762f9c69d8081a7afd2820b27f91aef6514fb9b\nSignature size=8972\nAuthority=Developer ID Application: SERGEY RURA (TSHN26FR48)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Oct 28, 2026 at 7:57:51 PM\nNotarization Ticket=stapled\nInfo.plist entries=33\nTeamIdentifier=TSHN26FR48\nRuntime Version=26.0.0\nSealed Resources version=2 rules=13 files=20967\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+    },
+    "detach": {
+      "chunk_id": "d97196",
+      "wall_time_seconds": 0.000455166,
+      "exit_code": 0,
+      "original_token_count": 29,
+      "output": "hdiutil: WARNING: 'hdiutil detach ...' is deprecated. Please use 'diskutil eject ...' instead.\n\n\"disk4\" ejected.\n"
+    }
+  },
+  "reused_receipts": [
+    "review-preparation.json",
+    "review-package-content.json",
+    "review-app-zip.json",
+    "review-zip-content.json",
+    "review-dmg-content.json",
+    "review-final-metadata.json"
+  ],
+  "independence": {
+    "competing_build": false,
+    "installed_or_launched_app": false,
+    "source_git_provider_mutations": false,
+    "writes": "Reviewer scripts/receipts and private ZIP extraction only; DMG mounted read-only and detached."
+  },
+  "remaining_obligations": [
+    "Review root-owned installed updater, restart/repair, Doctor, normal UI and state-preservation evidence.",
+    "Verify exact accepted artifacts and feed over public HTTPS after authorized publication."
+  ],
+  "limits": "This passes local artifact integrity and trust. Installed lifecycle and public publication are not yet accepted by this receipt."
+}

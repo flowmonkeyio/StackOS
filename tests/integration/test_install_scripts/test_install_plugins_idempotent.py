@@ -30,6 +30,28 @@ def _snapshot(target: Path) -> dict[str, bytes]:
     }
 
 
+def _assert_isolated_bridge(server: dict, home: Path) -> None:
+    # Installed and cached plugins must retain the owning fixture's context.
+    assert server == {
+        "command": sys.executable,
+        "args": [
+            "-m",
+            "stackos",
+            "mcp-bridge",
+            "--host",
+            os.environ["STACKOS_HOST"],
+            "--port",
+            os.environ["STACKOS_PORT"],
+            "--data-dir",
+            str(home / ".local/share/stackos"),
+            "--state-dir",
+            str(home / ".local/state/stackos"),
+            "--runtime",
+            "codex",
+        ],
+    }
+
+
 def test_install_plugins_creates_plugin_and_marketplace(
     sandbox_home: Path, scripts_dir: Path
 ) -> None:
@@ -41,10 +63,7 @@ def test_install_plugins_creates_plugin_and_marketplace(
     assert "Installed 1 plugins" in output
     assert (plugin_root / ".codex-plugin" / "plugin.json").is_file()
     mcp = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
-    assert mcp["mcpServers"]["stackos"] == {
-        "command": sys.executable,
-        "args": ["-m", "stackos", "mcp-bridge", "--runtime", "codex"],
-    }
+    _assert_isolated_bridge(mcp["mcpServers"]["stackos"], sandbox_home)
     assert (plugin_root / "skills" / "stackos" / "SKILL.md").is_file()
     assert not (plugin_root / "skills" / "stackos-sdlc-delivery-orchestrator").exists()
     assert not (plugin_root / "skills" / "catalog").exists()
@@ -88,10 +107,7 @@ def test_install_plugins_refreshes_existing_codex_cache(
     assert not stale_file.exists()
 
     mcp = json.loads((cache / ".mcp.json").read_text(encoding="utf-8"))
-    assert mcp["mcpServers"]["stackos"] == {
-        "command": sys.executable,
-        "args": ["-m", "stackos", "mcp-bridge", "--runtime", "codex"],
-    }
+    _assert_isolated_bridge(mcp["mcpServers"]["stackos"], sandbox_home)
 
 
 def test_install_plugins_remove_preserves_marketplace_file(

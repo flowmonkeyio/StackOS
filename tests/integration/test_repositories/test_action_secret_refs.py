@@ -127,6 +127,45 @@ def _provider_credential_ref(session: Session, project_id: int) -> str:
     return status.accounts[0].credential_ref
 
 
+@pytest.mark.parametrize("field", ["input_json", "provider_context_json"])
+@pytest.mark.parametrize("alias", ["metadata", "metadata_json"])
+def test_action_validation_does_not_inherit_workflow_metadata_exception(
+    session: Session, project_id: int, field: str, alias: str
+) -> None:
+    _seed_tenant_action(session)
+    credential_ref = _provider_credential_ref(session, project_id)
+    action = session.exec(select(Action).where(Action.key == "account.create")).one()
+    action.input_schema_json = {"type": "object", "additionalProperties": True}
+    session.add(action)
+    session.commit()
+
+    class ProbeConnector:
+        key = "tenant.capture"
+        seen = False
+
+        def validate(self, request):
+            self.seen = True
+            return []
+
+        def estimate_cost_cents(self, request):
+            return 0
+
+    connector = ProbeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(connector)
+    repo = ActionRepository(session, connectors=registry)
+    with pytest.raises(ValidationError) as rejected:
+        repo.validate(
+            project_id=project_id,
+            action_ref="tenant-actions.account.create",
+            credential_ref=credential_ref,
+            **{field: {alias: {"operator_authorization": CANARY}}},
+        )
+    assert rejected.value.data["paths"] == [f"$.{alias}.operator_authorization"]
+    assert CANARY not in str(rejected.value)
+    assert not connector.seen
+
+
 class _CapturingConnector:
     key = "tenant.capture"
 

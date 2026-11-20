@@ -1,0 +1,222 @@
+{
+  "attempt": "restart605-a1",
+  "candidate": {
+    "attempt": "restart605-a1",
+    "base_commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+    "candidate_sha256": "eef0cd95be13a5991af9239b7347ff31ad97f3b5dafb10e7da6a0420a310b9c8",
+    "contract_revision": "r5-restart",
+    "diff_sha256": "218bddfd408b079a2762db5ad3478de70667a03638d16179738addb0a301d30f",
+    "files": {
+      "desktop/package.json": "2e68ea9bcf25fca0f17f4af81e996694914d41eeca484fa836454daaa4a7ae26",
+      "desktop/scripts/test-service-lifecycle.cjs": "cb4dc086522a0597b547d0064aef8c65a336d8fa5744d5e19bc513f98c278598",
+      "desktop/src/service.js": "233f851fa2213ec13705179c8d45231959124488f7225f1402673cd6ddbcdce8",
+      "docs/release-signoff.md": "8c42101d6cf0fb84f18783c4aa57e86e7cc5e322f7a5a4bda7473a4399473a00",
+      "docs/setup.md": "df950eddfb702514b39cb5de041484c93b449a5423979dfe7f9bf1dfa7541546"
+    },
+    "source_root": "/private/tmp/stackos-restart605-fix",
+    "ticket_id": 12919
+  },
+  "changed_files": [
+    {
+      "baseline_sha256": "50870b7e4f7c46f9a756adbf3cc2b77f2ce387b568a9b1140fae33b2c2782d55",
+      "differs_from_dispatch_baseline": true,
+      "new": false,
+      "path": "desktop/src/service.js",
+      "sha256": "233f851fa2213ec13705179c8d45231959124488f7225f1402673cd6ddbcdce8"
+    },
+    {
+      "baseline_sha256": null,
+      "differs_from_dispatch_baseline": true,
+      "new": true,
+      "path": "desktop/scripts/test-service-lifecycle.cjs",
+      "sha256": "cb4dc086522a0597b547d0064aef8c65a336d8fa5744d5e19bc513f98c278598"
+    },
+    {
+      "baseline_sha256": "7a7361b7216809a80277dcd06064126e115d7a069ca58e9fd4cce66de0eb5f41",
+      "differs_from_dispatch_baseline": true,
+      "new": false,
+      "path": "desktop/package.json",
+      "sha256": "2e68ea9bcf25fca0f17f4af81e996694914d41eeca484fa836454daaa4a7ae26"
+    },
+    {
+      "baseline_sha256": "5bf9c964c5f3762063dd8fe7e0650dbad3783a7103679914b53a6d26b9a791b3",
+      "differs_from_dispatch_baseline": true,
+      "new": false,
+      "path": "docs/setup.md",
+      "sha256": "df950eddfb702514b39cb5de041484c93b449a5423979dfe7f9bf1dfa7541546"
+    },
+    {
+      "baseline_sha256": "dfead2feab8b93185e56700c335c7f93e2cb114459da96e95206446021625fbb",
+      "differs_from_dispatch_baseline": true,
+      "new": false,
+      "path": "docs/release-signoff.md",
+      "sha256": "8c42101d6cf0fb84f18783c4aa57e86e7cc5e322f7a5a4bda7473a4399473a00"
+    }
+  ],
+  "checks": {
+    "desktop_check": {
+      "argv": [
+        "pnpm",
+        "--dir",
+        "/private/tmp/stackos-restart605-fix/desktop",
+        "check"
+      ],
+      "cwd": "/private/tmp/stackos-restart605-fix/desktop",
+      "exit_code": 0
+    },
+    "diff_check": {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "cwd": "/private/tmp/stackos-restart605-fix",
+      "exit_code": 0
+    },
+    "green": {
+      "command": "node --test desktop/scripts/test-service-lifecycle.cjs",
+      "cwd": "/private/tmp/stackos-restart605-fix",
+      "failed": 0,
+      "passed": 23,
+      "same_test_file_as_red": true
+    },
+    "red": {
+      "command": "node --test desktop/scripts/test-service-lifecycle.cjs",
+      "cwd": "/private/tmp/stackos-restart605-fix",
+      "failed": 11,
+      "passed": 12,
+      "production_preedit_sha256": "50870b7e4f7c46f9a756adbf3cc2b77f2ce387b568a9b1140fae33b2c2782d55"
+    }
+  },
+  "consumed_sources": [
+    "Native full raw tracker.brief ticket12919 this assignment",
+    "Current main assignment restart605-a1/r5-restart and operator installed2.1.36 timeout incident",
+    "Current AGENTS.md, product-direction.md and docs router",
+    "Full local sdlc-delivery.toml and delivery0.3.1 source preset with adaptation anchor",
+    "Workflow0.4.0/noextension resolved by main",
+    "Canonical guidance consumption, setup, upgrade and release-signoff affected sections",
+    "Independent approved restart-design-review-a1.json"
+  ],
+  "contract_revision": "r5-restart",
+  "created_at": "2026-10-10T06:21:24.170081+00:00",
+  "design_review": {
+    "path": "/tmp/stackos-global-planning-605/restart-design-review-a1.json",
+    "sha256": "f8012fff70457ca005369bd7ef227b842952642e264d17dec9981ce125160906"
+  },
+  "environment": {
+    "COREPACK_DEFAULT_TO_LATEST": "0",
+    "COREPACK_HOME": "/private/tmp/stackos-global605-package/corepack",
+    "NODE_PATH": "/private/tmp/stackos-global605-package/source/desktop/node_modules",
+    "dependency_reuse": "Cached frozen desktop dependencies; both pnpm-lock files compared byte-identical before desktop check. No dependency install or edits.",
+    "lock_sha256": "cf91a78339d5a20c61d6d63934cdb70a52e274fed21e66c1443c40c3cc29a703",
+    "node": "v22.23.1",
+    "platform": "macOS-15.6.1-arm64-arm-64bit-Mach-O",
+    "pnpm": "10.28.0 cached/pinned by desktop package"
+  },
+  "failures_and_deviations": [
+    "Red failed11 tests before production edit; raw retained log.",
+    "Desktop check attempt1 failed Corepack pnpm/latest DNS before tests because caller cwd was repo root. Changed cwd to desktop and used cached pinned pnpm.",
+    "Attempt2 stopped on missing electron-builder because isolated worktree had no node_modules. Identical-lock frozen dependency tree supplied read-only through NODE_PATH; attempt3 passed. No source workaround.",
+    "Serena initialized but JS symbols unsupported (active Python only); bounded file reads used without changing Serena project.",
+    "A scratch receipt-generation heredoc passed through TPF produced no output/file; replaced with a direct Python command. No production effect."
+  ],
+  "implementation": {
+    "default_readiness_seconds": 60,
+    "restart_watchdog": "3*T+120 seconds",
+    "scope": "One shared constant and existing timeout arguments/formulas; no runtime hooks, retries, fallback, state machine or Python source changes",
+    "start_watchdog": "T+120 seconds",
+    "unchanged": [
+      "Explicit numeric/options timeout values",
+      "CLI --timeout semantics",
+      "Install240/180 and status20 budgets",
+      "Nonzero failures remain failures",
+      "Automatic preparation skips Doctor; requested/forced Doctor retained",
+      "One restart and success-only prepared marker"
+    ]
+  },
+  "logs": {
+    "desktop_check": {
+      "exit_code": 0,
+      "path": "/tmp/stackos-global-planning-605/restart605-desktop-check-a3.log",
+      "sha256": "fc4efb5226af78a5d1c14222ea6f2e3a57942ccb1e7324465b5c3b36ffa94c57"
+    },
+    "desktop_setup1": {
+      "exit_code": 1,
+      "path": "/tmp/stackos-global-planning-605/restart605-desktop-check-a1.log",
+      "sha256": "13513ac251b57b5f3750e13da3e318bbb1fbd3f2f8ebf38df49a3a482e577662"
+    },
+    "desktop_setup2": {
+      "exit_code": 1,
+      "path": "/tmp/stackos-global-planning-605/restart605-desktop-check-a2.log",
+      "sha256": "4dd8e9116d6e89efcb16090039b8b5c6c6afa539dee669e4d2b7410992455f55"
+    },
+    "green": {
+      "exit_code": 0,
+      "path": "/tmp/stackos-global-planning-605/restart605-green-a1.log",
+      "sha256": "e89463bf5ca7597cc1f13e20160bfe28ff0840f8763576f1cd4eefa746d5ebb1"
+    },
+    "red": {
+      "exit_code": 1,
+      "path": "/tmp/stackos-global-planning-605/restart605-red-a1.log",
+      "sha256": "6817135c0ad8442570e77c3e6b002c80e8edffebbaf2c91883f1dee061e4d9b8"
+    }
+  },
+  "next_disposition": "Immediate independent review/main acceptance; source-only candidate. Matching package/installed proof remains separate.",
+  "per_acceptance": [
+    {
+      "criterion": "Healthy26s startup via real install/prepare; one restart; correct prepared marker; requested Doctor",
+      "evidence": "Tests1-4 VM-load actual service.js, simulated child/HTTP/time and isolated real marker files. No installOrRepairFn injection. Current prepared startup skips repeat install.",
+      "status": "passed"
+    },
+    {
+      "criterion": "60s default and explicit shorter caller values",
+      "evidence": "Tests5-13 start/restart/ensure; numeric20 and options20 fail at CLI deadline, not watchdog.",
+      "status": "passed"
+    },
+    {
+      "criterion": "Three-phase watchdog allowance and finite distinct budgets",
+      "evidence": "Tests14-20: restart survives287s and start169s; hung restart stops300s/start180s; install240/180 and status20 preserved.",
+      "status": "passed"
+    },
+    {
+      "criterion": "Never-ready/bootstrap/foreign-port failures do not mark preparation or run Doctor",
+      "evidence": "Tests21-23 retain exit1, exactly install+restart, zero later health probes even when another process is healthy, no prepared marker.",
+      "status": "passed"
+    },
+    {
+      "criterion": "Desktop checks and whitespace",
+      "evidence": "pnpm desktopcheck includes23/23 regressions and desktop Doctor; git diff--check exit0.",
+      "status": "passed"
+    },
+    {
+      "criterion": "CLI lifecycle regressions",
+      "evidence": "Main isolated frozen-env .venv/bin/python -m pytest tests/unit/test_cli_daemon.py -q:30passed0.55s. Not independently run by this worker.",
+      "status": "passed-reported-by-main"
+    },
+    {
+      "criterion": "Independent review",
+      "evidence": "Frozen manifest and diff supplied to main.",
+      "status": "pending"
+    },
+    {
+      "criterion": "Matching repaired package/installed lifecycle",
+      "evidence": "No build/install/restart authorized. Installed2.1.36 recovery remains separate main-owned proof, not proof this source fix is installed.",
+      "status": "not-executed-by-instruction"
+    }
+  ],
+  "preservation": {
+    "candidate_hashes_match": true,
+    "commit_push_build_deploy_install_restart": false,
+    "git_status": " M desktop/package.json\n M desktop/src/service.js\n M docs/release-signoff.md\n M docs/setup.md\n?? desktop/scripts/test-service-lifecycle.cjs\n",
+    "live_database_credentials_host_registrations_changed": false,
+    "original_dirty_checkout_touched": false,
+    "outside_owned_source_paths_changed": false
+  },
+  "project_id": 1,
+  "run_id": 599,
+  "run_plan_id": 605,
+  "status": "candidate-ready-source-only",
+  "step_key": "verify-delivery",
+  "ticket_id": 12919,
+  "ticket_key": "global-605-restart-readiness"
+}

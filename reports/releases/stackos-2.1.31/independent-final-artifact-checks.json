@@ -1,0 +1,1193 @@
+{
+  "checked_at": "2026-09-30T04:44:40.926632+00:00",
+  "status": "passed",
+  "manifest_sha256": "a613f8e38348645aa7533c6e2faed2f7e033146a0cd75f4f0c5706cf990e8d89",
+  "check_count": 230,
+  "checks": [
+    {
+      "check": "artifact bytes: stackos-2.1.31-mac-arm64.zip",
+      "passed": true,
+      "detail": {
+        "size": 492350159,
+        "sha256": "2efd67d04e583b19971bc026dee7a4a95da06d782b55047306e15e5f3bdc88d9",
+        "sha512": "fe16b0a2462052d1904e9d2145dcde8895091f2c6836e329edd96d44f437711c01d908cc7706b207cd99a9b6d432a0b47d8e93ff28087a1645e459082a100191",
+        "sha512_base64": "/hawokYgUtGQTp0hRdzeiJUJHyxoNuMp7dltRPQ3cRwB2QjMdwayB82ZqbbUMqC0fY6T/ygIehZF5FkIKhABkQ=="
+      }
+    },
+    {
+      "check": "artifact bytes: stackos-2.1.31-mac-arm64.dmg",
+      "passed": true,
+      "detail": {
+        "size": 487950163,
+        "sha256": "f165807ce78f81a96fb81c23d570b04b2f72e79944e0744cf710a96d3da87feb",
+        "sha512": "1bd0ff0595dd7a39f84a63ce0fcf2d4c3f58e12a032d0c84137bb848311b1ee69a99a4f6879cbbb9fd8d58e68bf13a061ceeb64aa828d2ec6c65a3bcd8d4421a",
+        "sha512_base64": "G9D/BZXdejn4SmPOD88tTD9Y4SoDLQyEE3u4SDEbHuaamaT2h5y7uf2NWOaL8ToGHO62Sqgo0uxsZaO82NRCGg=="
+      }
+    },
+    {
+      "check": "artifact bytes: stackos-2.1.31-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": {
+        "size": 511529,
+        "sha256": "e7f7bfd8f876d7bc5de25eee604bb4c685efff76b607c767dd32a0e3bcb25222",
+        "sha512": "c4d1a7b061959a1cac78962458e54643889615fbc76f28dcd91b3714ac2ed4b7443a7ce349c5e0205f814825157d22a716d444a39ae4603c810d29762cf06bbe",
+        "sha512_base64": "xNGnsGGVmhyseJYkWOVGQ4iWFfvHbyjc2Rs3FKwu1LdEOnzjScXgIF+BSCUVfSKnFtREo5rkYDyBDSl2LPBrvg=="
+      }
+    },
+    {
+      "check": "artifact bytes: stackos-2.1.31-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": {
+        "size": 507487,
+        "sha256": "c88b1cef925090e01b8c9dcbb0ec9daaee4b7fcbe83779e45d70b0624df1a3f3",
+        "sha512": "1f83146bb12a0070dac456f769682d2d2e406719c6e329f760bedc6287afab6b20a1a7952c8b9546adeb10e3c6e6764c9d39e754945cdf6b43835de084af3930",
+        "sha512_base64": "H4MUa7EqAHDaxFb3aWgtLS5AZxnG4yn3YL7cYoevq2sgoaeVLIuVRq3rEOPG5nZMnTnnVJRc32tDg13ghK85MA=="
+      }
+    },
+    {
+      "check": "artifact bytes: stackos-latest-mac-arm64.dmg",
+      "passed": true,
+      "detail": {
+        "size": 487950163,
+        "sha256": "f165807ce78f81a96fb81c23d570b04b2f72e79944e0744cf710a96d3da87feb",
+        "sha512": "1bd0ff0595dd7a39f84a63ce0fcf2d4c3f58e12a032d0c84137bb848311b1ee69a99a4f6879cbbb9fd8d58e68bf13a061ceeb64aa828d2ec6c65a3bcd8d4421a",
+        "sha512_base64": "G9D/BZXdejn4SmPOD88tTD9Y4SoDLQyEE3u4SDEbHuaamaT2h5y7uf2NWOaL8ToGHO62Sqgo0uxsZaO82NRCGg=="
+      }
+    },
+    {
+      "check": "artifact bytes: latest-mac.yml",
+      "passed": true,
+      "detail": {
+        "size": 513,
+        "sha256": "6890ae43526f0f0bcab4dc872c2616b895ea151ad6e97d77f0e271b422a471f9",
+        "sha512": "2aae182f7b53e75f0b7246028f1107e2bed87d17bf9a6f88449c1e54111fafe77fde3cfaef89b7a7d7646e022ab96af09f8adf04ec9bb656a505075bf7cdabc1",
+        "sha512_base64": "Kq4YL3tT518LckYCjxEH4r7YfRe/mm+IRJweVBEfr+d/3jz674m3p9dkbgIquWrwn4rfBOybtlalBQdb982rwQ=="
+      }
+    },
+    {
+      "check": "six expected artifacts",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "stable alias equals final notarized DMG",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "feed version and primary ZIP",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "feed primary SHA512",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "feed contains exact ZIP and DMG",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "feed checksum/size: stackos-2.1.31-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "feed checksum/size: stackos-2.1.31-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: Makefile",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: docs/action-executor.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: docs/auth-providers.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: docs/integration-contracts/connector-quality.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: docs/integration-contracts/current-connectors.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: docs/integration-contracts/google-indexing.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: docs/integration-contracts/google-search-console.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: docs/integration-contracts/google-service-accounts.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: docs/release-signoff.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: plugins/seo/plugin.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/actions/__init__.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/actions/google_indexing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/actions/google_search_console.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/auth_providers/google_service_account.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/auth_providers/oauth_contracts.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/auth_providers/repository/credentials.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/auth_providers/repository/oauth.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/auth_providers/repository/resolution.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/auth_providers/repository/testing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/integrations/__init__.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/integrations/_base.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/integrations/google_batch.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/integrations/google_indexing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: stackos/integrations/google_search_console.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_integrations/test_base_transport.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_integrations/test_google_indexing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_integrations/test_google_indexing_batch.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_integrations/test_google_search_console.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_integrations/test_google_search_console_batch.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_mcp/test_mcp_google_indexing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_mcp/test_mcp_google_service_accounts.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_repositories/test_actions.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_repositories/test_google_indexing_actions.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/integration/test_repositories/test_google_service_accounts.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/unit/test_google_service_account.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/unit/test_google_service_account_manifests.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/unit/test_oauth_provider_contracts.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "accepted source frozen: tests/unit/test_plugin_manifest.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/brand-channel-strategist.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/brand-claim-auditor.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/brand-evidence-curator.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/brand-narrative-writer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/brand-profile-architect.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/brand-sanitization-reviewer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/brand-voice-reviewer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/finance-billing-collections-operator.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/finance-bookkeeping-preparer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/finance-cashflow-preparer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/finance-control-reviewer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/finance-receipt-operator.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/finance-tax-preparer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/sdlc-architecture.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/sdlc-codebase-explorer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/sdlc-delivery-reviewer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/sdlc-delivery.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/sdlc-planning.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/sdlc-requirements-flow-definer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/sdlc-test-designer.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/seo-content-refresh.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/seo-keyword-research.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/agents/seo-website-analysis.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/orchestrator/branding-content-orchestrator.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/orchestrator/finance-department-orchestrator.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/orchestrator/sdlc-delivery-orchestrator.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: .codex/orchestrator/workflow-orchestrator.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/branding/README.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/branding/agent-presets/branding.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/branding/plugin.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/branding/references/natural-writing.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/branding/skill-presets/branding.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/branding/workflows/brand-foundation-setup.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/branding/workflows/content-production.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/engineering/workflows/tracked-delivery.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/seo/workflows/content-refresh.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: plugins/seo/workflows/website-analysis.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: reports/releases/stackos-2.1.30-2026-09-28.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: tests/integration/test_repositories/test_workflow_templates.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: tests/unit/test_agent_presets.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: tests/unit/test_skill_presets.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/CONTENT_OPERATIONS.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/app/components/CatalogIndex.vue",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/app/components/GscReportGuide.vue",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/app/data/library-catalog.generated.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/app/pages/index.vue",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/app/pages/library/index.vue",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/app/pages/library/integrations/[slug].vue",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/app/pages/library/workflows/index.vue",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/articles/use-codex-claude-gemini-with-existing-tools.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/branding-channel-strategist.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/branding-evidence-curator.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/branding-narrative-writer.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/branding-voice-reviewer.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/seo-workflow-content-refresh.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/seo-workflow-keyword-research.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/seo-workflow-website-analysis.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/stackos-sdlc-architecture.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/stackos-sdlc-codebase-explorer.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/stackos-sdlc-delivery-reviewer.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/stackos-sdlc-delivery.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/stackos-sdlc-planning.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/stackos-sdlc-requirements-flow-definer.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/agents/stackos-sdlc-test-designer.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/orchestrators/stackos-sdlc-delivery-orchestrator.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/workflows/engineering-tracked-delivery.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/workflows/marketing-campaign-production.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/workflows/seo-content-refresh.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/workflows/seo-keyword-research.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/catalog/workflows/seo-website-analysis.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "protected source frozen: website/content/sitemap-lastmod.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "release metadata frozen: pyproject.toml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "release metadata frozen: stackos/__init__.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "release metadata frozen: desktop/package.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "release metadata frozen: uv.lock",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "release metadata frozen: CHANGELOG.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/seo/plugin.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/actions/__init__.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/actions/google_indexing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/actions/google_search_console.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/auth_providers/google_service_account.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/auth_providers/oauth_contracts.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/auth_providers/repository/credentials.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/auth_providers/repository/oauth.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/auth_providers/repository/resolution.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/auth_providers/repository/testing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/integrations/__init__.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/integrations/_base.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/integrations/google_batch.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/integrations/google_indexing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: stackos/integrations/google_search_console.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/branding/README.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/branding/agent-presets/branding.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/branding/plugin.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/branding/references/natural-writing.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/branding/skill-presets/branding.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/branding/workflows/brand-foundation-setup.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/branding/workflows/content-production.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/engineering/workflows/tracked-delivery.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/seo/workflows/content-refresh.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged app source frozen: plugins/seo/workflows/website-analysis.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "final app/payload version",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/seo/plugin.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/actions/__init__.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/actions/google_indexing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/actions/google_search_console.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/auth_providers/google_service_account.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/auth_providers/oauth_contracts.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/auth_providers/repository/credentials.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/auth_providers/repository/oauth.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/auth_providers/repository/resolution.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/auth_providers/repository/testing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/integrations/__init__.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/integrations/_base.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/integrations/google_batch.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/integrations/google_indexing.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: stackos/integrations/google_search_console.py",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/branding/README.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/branding/agent-presets/branding.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/branding/plugin.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/branding/references/natural-writing.md",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/branding/skill-presets/branding.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/branding/workflows/brand-foundation-setup.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/branding/workflows/content-production.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/engineering/workflows/tracked-delivery.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/seo/workflows/content-refresh.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP source matches: plugins/seo/workflows/website-analysis.yaml",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "updater ZIP app/payload versions",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.22-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.26-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.28-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.28-combined-stripe-review-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.21-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.25-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.28-telegram-async-scope.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.30-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.26-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.22-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.25-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.21-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.30-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.28-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.22-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.28-telegram-async-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.28-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.21-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.20-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.24-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.25-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.29-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.26-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.28-combined-telegram-finance-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.25-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.26-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.22-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.21-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.28-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.23-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.27-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.30-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.20-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.29-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.29-mac-arm64.zip",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.23-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.24-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.27-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.20-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.24-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.27-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.30-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.27-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.23-mac-arm64.dmg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.24-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.29-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.20-mac-arm64.zip.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "prior artifact size/mtime preserved: stackos-2.1.23-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "canonical build successful",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Apple app accepted",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Apple DMG accepted",
+      "passed": true,
+      "detail": null
+    }
+  ],
+  "limits": [
+    "No test suite or installed lifecycle execution was performed.",
+    "Prior versioned artifact preservation compares retained size/mtime metadata; no prior content hash was captured.",
+    "Publication and user installation are subsequent work."
+  ]
+}

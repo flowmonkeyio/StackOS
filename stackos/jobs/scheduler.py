@@ -5,8 +5,9 @@ The scheduler is built once at daemon startup and held on
 
 1. **Background ops jobs** — the runs reaper is registered explicitly in
    the lifespan hook.
-2. **Future workflow schedules** — scheduled project work should start
-   native StackOS run plans, not a separate workflow engine.
+2. **Future project automations** — each admitted occurrence creates one
+   request-owned native main-agent thread. The agent may explicitly create an
+   applicable run plan through ordinary tools and approvals.
 
 The two jobstore tables are deliberately distinct:
 
@@ -14,15 +15,18 @@ The two jobstore tables are deliberately distinct:
   end-to-end by SQLAlchemyJobStore. Schema is *not* tracked by Alembic;
   the SDK creates it idempotently on first use. We never query this
   table from application code.
-- ``scheduled_jobs`` — operator-facing per-project cron metadata. The UI's
-  "Schedules" tab toggles ``enabled``; workflow-specific scheduling must
-  create native run-plan starts.
+- ``scheduled_jobs`` — operator-facing per-project goal, optional workflow and
+  cron configuration. Its runtime owns future-only request admission, while
+  request/native owners retain admitted execution and history.
 
 Per audit MAJOR-23 the executor map is:
 
 - ``default`` — ``AsyncIOExecutor`` for short jobs.
-- ``long`` — ``ThreadPoolExecutor(max_workers=2)`` for genuinely
-  blocking calls (e.g. a future synchronous backup tool).
+- ``long`` — ``ThreadPoolExecutor(max_workers=3)`` for genuinely
+  blocking calls, including encrypted backups.
+- ``task-delivery:<project_id>`` — lazily registered project pools of 32 workers.
+  The shared task/setup admission owner applies each persisted 1..32 project
+  limit before scheduling. Limit changes never replace or resize these pools.
 
 Job defaults:
 
@@ -38,16 +42,21 @@ Timezone is ``UTC`` for the scheduler globally.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
+from apscheduler.events import EVENT_JOB_MISSED, EVENT_SCHEDULER_STARTED
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.base import BaseScheduler
 from sqlalchemy.engine import Engine
+from sqlmodel import Session
 
 from stackos.config import Settings
+from stackos.task_capacity import MAX_TASK_CAPACITY
 
 # Stable job_id prefixes so operators and tests can find / cancel jobs by
 # predictable ids.
@@ -58,6 +67,18 @@ RUNS_REAPER_JOB_ID = "background-runs-reaper"
 JOB_DEFAULT_MISFIRE_GRACE_SECONDS = 3600  # 1h — generous default
 REAPER_MISFIRE_GRACE_SECONDS = 600  # 10 min — reaper should run promptly
 RUNNER_MISFIRE_GRACE_SECONDS = 7200  # 2h
+
+
+def task_executor(scheduler: BaseScheduler, project_id: int) -> str:
+    """Reuse APScheduler's executor owner without an aggregate project ceiling."""
+    alias = f"task-delivery:{project_id}"
+    # Use the scheduler's own registry lock for concurrent task/setup drains.
+    # add_executor starts a new pool when the scheduler is already running;
+    # scheduler shutdown owns its retirement along with every other executor.
+    with scheduler._executors_lock:
+        if alias not in scheduler._executors:
+            scheduler.add_executor(ThreadPoolExecutor(max_workers=MAX_TASK_CAPACITY), alias=alias)
+    return alias
 
 
 def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
@@ -75,7 +96,7 @@ def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
     _ = settings
     executors: dict[str, Any] = {
         "default": AsyncIOExecutor(),
-        "long": ThreadPoolExecutor(max_workers=2),
+        "long": ThreadPoolExecutor(max_workers=3),
     }
     jobstores: dict[str, Any] = {
         # Kept available for simple picklable jobs.
@@ -93,12 +114,35 @@ def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
         "max_instances": 1,
         "misfire_grace_time": JOB_DEFAULT_MISFIRE_GRACE_SECONDS,
     }
-    return AsyncIOScheduler(
+    scheduler = AsyncIOScheduler(
         executors=executors,
         jobstores=jobstores,
         job_defaults=job_defaults,
         timezone="UTC",
     )
+    from stackos.task_delivery import drain_delivery, missed_delivery_job
+
+    def started(_event):
+        scheduler.task_delivery_started = True
+
+    scheduler.add_listener(started, EVENT_SCHEDULER_STARTED)
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None  # Configuration-only callers need no live callback dispatcher.
+    if loop is not None:
+        scheduler.task_delivery_drain = lambda: loop.call_soon_threadsafe(
+            lambda: drain_delivery(session_factory=lambda: Session(engine), scheduler=scheduler)
+        )
+
+    scheduler.add_listener(
+        lambda event: missed_delivery_job(
+            event, session_factory=lambda: Session(engine), scheduler=scheduler
+        ),
+        EVENT_JOB_MISSED,
+    )
+    return scheduler
 
 
 __all__ = [

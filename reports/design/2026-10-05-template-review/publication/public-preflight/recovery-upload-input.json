@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "local_path": "/Users/sergeyrura/Bin/content-stack/reports/design/2026-10-05-template-review/publication/public-preflight/recovery/assets",
+      "remote_path": "/"
+    },
+    {
+      "local_path": "/Users/sergeyrura/Bin/content-stack/reports/design/2026-10-05-template-review/publication/public-preflight/recovery/documents",
+      "remote_path": "/"
+    },
+    {
+      "local_path": "/Users/sergeyrura/Bin/content-stack/reports/design/2026-10-05-template-review/publication/public-preflight/recovery/feeds",
+      "remote_path": "/"
+    }
+  ],
+  "conflict_policy": "overwrite",
+  "error_policy": "stop",
+  "follow_symlinks": false
+}

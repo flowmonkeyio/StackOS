@@ -1,0 +1,37 @@
+{
+  "ticket": 14668,
+  "attempt_id": "backend-1",
+  "contract_revision": 1,
+  "design_revision": 2,
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "step": "deliver-tickets",
+  "base": "1976d4bf96c8480652400e496534a7ed6b7e99d1",
+  "files": {
+    "stackos/backups/service.py": "1d01c4cc3e374857041dd14b6f401414a5269ea99ce8c29a72a33f1f1acd6c77",
+    "stackos/backups/filesystem.py": "1fbab88a89ceaedbefd5e152e598165dbe340b27ad6e1fe7da3993f260afef68",
+    "stackos/cli/backup_commands.py": "069478cae4163243c34131b7a8800fdfb3aa8659ab19aae498e596f9d916063b",
+    "tests/unit/test_backups.py": "0bf0ce69d61b98cae1fb0c324010d80c82088b0edd5332ab3797935c8ab8524a",
+    "tests/unit/test_backup_cli.py": "d1e501f09a2df682dbf1ee32a475cd401c993d82bf166e0c9a5d4dfb9afb4838",
+    "docs/backups.md": "3aa784c9f9d563b6ff17b47431acb64819dc92f9d8f5aaa9702ca8aa52ffde75"
+  },
+  "dependency_sha256": {
+    "pyproject.toml": "6bc45c7516ed81d7f372eed0922fccff10f456ef766dc83d08177019b99155a3",
+    "uv.lock": "035297c3298bf89100d0565ddfc764660ffb09ab1087f52d6a340026f66fcb04"
+  },
+  "test_environment": "darwin; Python 3.13.11; pytest 9.0.3; uv repository environment; synthetic tmp fixtures; -n0",
+  "candidate_sha256": "81c9fe3d48cffc22d43d5c224d0d3e5c664a611571d2a49fbd3bebf086be9cbc",
+  "diff_sha256": "9e8aee1dd3f8fbbb33e0742f0e27c14d6c2c9d1bb08b42ae79286373f03d0728",
+  "checks": {
+    "backend-focused-2.log": "15bb7f22b388db57a6f6b5e842bb9058bd65ee00262bff3aff633a5140cfc520",
+    "backend-focused.log": "f0be4943e158eaee8bc45f7449ba728bd59ae7ddb115a8fff105c61fa9ed81d9",
+    "backend-format-check.log": "f114d83b30c5c657ee43a847a45bafccaea255d82673feb87c26d252c61e29c1",
+    "backend-format.log": "a68018e0301d06e8ccd1518cd8a969c43dde8ed9a317509ad15bbc8d7198ea0f",
+    "backend-green-final.log": "0368b41f09e0a2b04821321c42db410e0d618281ac45bc50835c59fbc886bf6d",
+    "backend-green.log": "6bc14df0b5578931c3a1522ccb5ce60f53dcede080ff86c769ccc561d6f12c06",
+    "backend-lint-2.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "backend-lint.log": "d1a41dd2afd5ed1b21ba28d5ccc5a4ee9c8ee87be68fb6360aeb8a6316e0371a",
+    "backend-red.log": "dc53236a42c9acaa15e74518eb59455c1dfa8f520483c7450daf972405ec6d4b"
+  }
+}

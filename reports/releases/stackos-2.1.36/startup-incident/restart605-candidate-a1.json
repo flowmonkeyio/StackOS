@@ -1,0 +1,16 @@
+{
+  "attempt": "restart605-a1",
+  "contract_revision": "r5-restart",
+  "ticket_id": 12919,
+  "base_commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+  "source_root": "/private/tmp/stackos-restart605-fix",
+  "files": {
+    "desktop/src/service.js": "233f851fa2213ec13705179c8d45231959124488f7225f1402673cd6ddbcdce8",
+    "desktop/scripts/test-service-lifecycle.cjs": "cb4dc086522a0597b547d0064aef8c65a336d8fa5744d5e19bc513f98c278598",
+    "desktop/package.json": "2e68ea9bcf25fca0f17f4af81e996694914d41eeca484fa836454daaa4a7ae26",
+    "docs/setup.md": "df950eddfb702514b39cb5de041484c93b449a5423979dfe7f9bf1dfa7541546",
+    "docs/release-signoff.md": "8c42101d6cf0fb84f18783c4aa57e86e7cc5e322f7a5a4bda7473a4399473a00"
+  },
+  "candidate_sha256": "eef0cd95be13a5991af9239b7347ff31ad97f3b5dafb10e7da6a0420a310b9c8",
+  "diff_sha256": "218bddfd408b079a2762db5ad3478de70667a03638d16179738addb0a301d30f"
+}

@@ -31,10 +31,17 @@ def _mode(p) -> int:  # type: ignore[no-untyped-def]
     return stat.S_IMODE(p.stat().st_mode)
 
 
-def test_seed_and_token_generated_with_mode_0600(settings: Settings) -> None:
-    """First app build generates seed.bin and auth.token both at mode 0600."""
+def test_clean_startup_creates_private_state_and_logs_release(
+    settings: Settings,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """One clean startup creates private state and reports the canonical release."""
+    captured_log = Mock()
+    monkeypatch.setattr(server_module, "get_logger", lambda _name: captured_log)
     app = create_app(settings)
     with TestClient(app, base_url="http://127.0.0.1:5180"):
+        assert settings.data_dir.is_dir()
+        assert settings.state_dir.is_dir()
         assert settings.seed_path.exists()
         assert settings.token_path.exists()
         assert _mode(settings.seed_path) == 0o600
@@ -44,26 +51,6 @@ def test_seed_and_token_generated_with_mode_0600(settings: Settings) -> None:
         assert settings.seed_path.read_bytes().__len__() == 32
         token = settings.token_path.read_text(encoding="utf-8").strip()
         assert len(token) >= 32  # urlsafe-base64 inflation
-
-
-def test_state_and_data_dirs_exist_after_startup(settings: Settings) -> None:
-    """Lifespan creates both XDG dirs (mkdir -p) so first-run is hands-off."""
-    app = create_app(settings)
-    with TestClient(app, base_url="http://127.0.0.1:5180"):
-        assert settings.data_dir.is_dir()
-        assert settings.state_dir.is_dir()
-
-
-def test_startup_log_reports_canonical_release_identity(
-    settings: Settings,
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """The daemon startup event uses the package-owned version and milestone."""
-    captured_log = Mock()
-    monkeypatch.setattr(server_module, "get_logger", lambda _name: captured_log)
-
-    app = create_app(settings)
-    with TestClient(app, base_url="http://127.0.0.1:5180"):
         started_calls = [
             call for call in captured_log.info.call_args_list if call.args == ("daemon.started",)
         ]

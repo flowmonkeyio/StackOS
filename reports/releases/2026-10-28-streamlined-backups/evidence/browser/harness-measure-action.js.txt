@@ -1,0 +1,44 @@
+(async () => {
+  const action = window.qaAction || 'Back up now';
+  const nameOf = el => el.getAttribute('aria-label') || el.textContent.trim().replace(/\s+/g, ' ');
+  const controls = () => [...document.querySelectorAll('#cs-main button')].filter(el => el.getBoundingClientRect().width > 0);
+  const measure = () => Object.fromEntries(controls().map(el => {
+    const rect = el.getBoundingClientRect();
+    return [nameOf(el), { x: rect.x, y: rect.y, width: rect.width, height: rect.height, disabled: el.disabled }];
+  }));
+  const button = controls().find(el => nameOf(el) === action);
+  if (!button || button.disabled) throw new Error(`Action unavailable: ${action}`);
+  window.qaDelay = 550;
+  const before = measure();
+  const frames = [];
+  let observing = true;
+  const sample = () => { frames.push(measure()); if (observing) requestAnimationFrame(sample); };
+  requestAnimationFrame(sample);
+  button.focus();
+  button.click();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const during = measure();
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  observing = false;
+  const after = measure();
+  const aliases = { 'Enable backups': 'Back up now' };
+  const shifts = [];
+  for (const [name, initial] of Object.entries(before)) {
+    const finalName = after[name] ? name : aliases[name];
+    if (!finalName || !after[finalName]) continue;
+    for (const [index, frame] of frames.entries()) {
+      const rect = frame[name] || frame[finalName];
+      if (!rect) { shifts.push({ name, index, removed: true }); continue; }
+      const keys = ['x', 'y', 'width', 'height'].filter(key => Math.abs(initial[key] - rect[key]) > .25);
+      if (keys.length) shifts.push({ name, index, keys, rect });
+    }
+  }
+  const main = document.querySelector('#cs-main');
+  const result = { action, url: location.href, viewport: innerWidth, before, during, after, shifts,
+    frames: frames.length, calls: window.qaCalls, focus: nameOf(document.activeElement),
+    overflow: { mainClient: main.clientWidth, mainScroll: main.scrollWidth, documentClient: innerWidth, documentScroll: document.documentElement.scrollWidth },
+    feedback: [...document.querySelectorAll('[role="status"],[role="alert"]')].map(el => el.textContent.trim().replace(/\s+/g, ' ')),
+  };
+  window.qaGeometry = result;
+  return result;
+})()

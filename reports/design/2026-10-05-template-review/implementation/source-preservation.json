@@ -1,0 +1,81 @@
+{
+  "status": "passed",
+  "ticket": "website-content-evidence-layout-555",
+  "attempt_id": "content-layout-a1",
+  "contract_revision": 1,
+  "candidate_sha256": "97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b",
+  "changed_files": [
+    {
+      "path": "website/app/assets/css/library.css",
+      "sha256": "a1def691ffbd8541407f490ae2895f61f17a792b7a2581327c60e6368e0c6863"
+    },
+    {
+      "path": "website/app/pages/library/articles/[slug].vue",
+      "sha256": "0422aee7e00ee044ff4ec8f1e866ca523ea87e258c5f377f4e6f1b0be44fc72f"
+    },
+    {
+      "path": "website/app/pages/library/workflows/[slug].vue",
+      "sha256": "ae0a62b8532f3e017933630f1444fd87712e9cc1573d713a8e77e311e9062233"
+    },
+    {
+      "path": "website/app/pages/library/orchestrators/[slug].vue",
+      "sha256": "23992988f384e36eabbfb63a368fcb8c24fbf6dfc66c1dcdb116995ccd04b8ca"
+    },
+    {
+      "path": "website/app/pages/library/integrations/[slug].vue",
+      "sha256": "af6e1313184b1dc85595f925e2a94a717fa5ce53d7036bf159ac775229bf656a"
+    },
+    {
+      "path": "website/content/articles/how-to-do-keyword-research-for-ai-search.md",
+      "sha256": "5f12b206b961c9961a4d62ad8d6cd7c102c097f2ebff3729588ae3aea91c62e3"
+    },
+    {
+      "path": "website/content/articles/how-ai-orchestrators-triage-feedback.md",
+      "sha256": "7589c43f1c968dbebd9607e3f7b501dbbf33f905a30b4c01ef039aa7d6c1137b"
+    },
+    {
+      "path": "website/content/articles/how-to-refine-ai-agent-workflow.md",
+      "sha256": "f559851b7bc85673a3f6dd4be3102b80b40b49833fb7dfcf5a7bfbd7253bccfc"
+    },
+    {
+      "path": "website/tests/site.spec.ts",
+      "sha256": "bbcba80dfb9893cc7f4a6a1579ab0932a57499f67a503f3e0bb687a49d906628"
+    },
+    {
+      "path": "website/scripts/verify-generated-seo.mjs",
+      "sha256": "973fba0a379c2c8479a0f5817fe53d4c4346bd54f4f002d8e6e2016ac24d5a00"
+    },
+    {
+      "path": "website/app/components/content/ArticleEvidenceRow.vue",
+      "sha256": "ba057ce4fdc8e5b3bca1715b0ebe144af8ba325d044388d30e9bd76cd72a8169"
+    },
+    {
+      "path": "website/README.md",
+      "sha256": "7153ea4176f858be6ee8aca53fea382c44a9dd66a8999a545c215f580d97dd61"
+    }
+  ],
+  "articles": [
+    {
+      "article": "how-to-do-keyword-research-for-ai-search",
+      "exact_rows_preserved": 4,
+      "all_other_source_bytes_preserved": true
+    },
+    {
+      "article": "how-ai-orchestrators-triage-feedback",
+      "exact_rows_preserved": 5,
+      "all_other_source_bytes_preserved": true
+    },
+    {
+      "article": "how-to-refine-ai-agent-workflow",
+      "exact_rows_preserved": 5,
+      "all_other_source_bytes_preserved": true
+    }
+  ],
+  "shell_files_preserved": [
+    "website/app/assets/css/main.css",
+    "website/app/components/LibraryFrame.vue",
+    "website/app/components/SiteHeader.vue",
+    "website/app/pages/getting-started.vue"
+  ],
+  "source_files_unchanged_by_build": 119
+}

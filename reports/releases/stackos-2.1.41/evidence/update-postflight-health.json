@@ -1,0 +1,7 @@
+{
+  "daemon_uptime_s": 0.936,
+  "db_status": "ok",
+  "scheduler_running": true,
+  "version": "2.1.41",
+  "milestone": "M10"
+}

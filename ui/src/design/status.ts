@@ -46,6 +46,11 @@ export const runStatus = defineStatuses({
 });
 
 export const stepStatus = defineStatuses({
+  needs_setup: { label: 'Needs setup', tone: 'warning', icon: 'wrench' },
+  admitted: { label: 'Admitted', tone: 'info', icon: 'clock' },
+  started: { label: 'Started', tone: 'info', icon: 'loader', dot: true },
+  overlap: { label: 'Skipped · overlap', tone: 'neutral', icon: 'skip-forward' },
+  unavailable: { label: 'Skipped · unavailable', tone: 'warning', icon: 'skip-forward' },
   pending: { label: 'Pending', tone: 'neutral', icon: 'clock' },
   queued: { label: 'Queued', tone: 'neutral', icon: 'clock' },
   running: { label: 'Running', tone: 'info', icon: 'loader', dot: true, inFlight: true },
@@ -81,13 +86,64 @@ export const trackerStatus = defineStatuses({
   skipped: { label: 'Skipped', tone: 'neutral', icon: 'skip-forward' },
 });
 
+// Task execution metadata does not change its tracker/workflow lifecycle.
+// Ordered presentation of the repository's board_column, separate from lifecycle.
+export const boardColumnStatus = defineStatuses({
+  backlog: { label: 'Backlog', tone: 'neutral', icon: 'inbox' },
+  todo: { label: 'Todo', tone: 'neutral', icon: 'clock' },
+  'in-progress': { label: 'In progress', tone: 'info', icon: 'loader' },
+  stopped: { label: 'Stopped', tone: 'warning', icon: 'pause' },
+  done: { label: 'Done', tone: 'success', icon: 'check-circle' },
+  aborted: { label: 'Aborted', tone: 'danger', icon: 'circle-slash' },
+  failed: { label: 'Failed', tone: 'danger', icon: 'x-circle' },
+  skipped: { label: 'Skipped', tone: 'neutral', icon: 'skip-forward' },
+});
+
+export const deliveryStatus = defineStatuses({
+  queued: { label: 'Delivery queued', tone: 'neutral', icon: 'clock' },
+  running: { label: 'Delivering', tone: 'info', icon: 'loader', dot: true, inFlight: true },
+  stopped: { label: 'Delivery stopped', tone: 'warning', icon: 'pause' },
+  complete: { label: 'Delivery complete', tone: 'success', icon: 'check-circle' },
+});
+
 export const projectState = defineStatuses({
   archived: { label: 'Archived', tone: 'neutral', icon: 'archive' },
   setup: { label: 'Setup', tone: 'info', icon: 'settings' },
   blocked: { label: 'Blocked', tone: 'danger', icon: 'octagon-alert' },
 });
 
+// Shared project setup attempt and per-workflow receipt presentation.
+export const projectSetupStatus = defineStatuses({
+  preparing: { label: 'Preparing', tone: 'info', dot: true, inFlight: true },
+  verifying: { label: 'Verifying', tone: 'info', dot: true, inFlight: true },
+  prepared: { label: 'Prepared', tone: 'neutral', description: 'Workflow guidance is prepared; activation has not been verified.' },
+  ready: { label: 'Ready', tone: 'success', description: 'Workflow setup and activation are verified.' },
+  queued: { label: 'Queued', tone: 'neutral' },
+  running: { label: 'Running', tone: 'info', dot: true, inFlight: true },
+  needs_input: { label: 'Needs input', tone: 'warning', description: 'The last setup check requested input.' },
+  success: { label: 'Configured', tone: 'success', description: 'Workflow guidance is configured.' },
+  current: { label: 'Current', tone: 'success', description: 'Workflow guidance is configured.' },
+  partial: { label: 'Partly configured', tone: 'warning', description: 'Some setup results are complete; remaining work needs attention.' },
+  failed: { label: 'Failed', tone: 'danger', description: 'Setup could not finish; inspect the result before retrying.' },
+  interrupted: { label: 'Interrupted', tone: 'warning', description: 'Setup stopped before verification finished.' },
+  cancelled: { label: 'Cancelled', tone: 'neutral', description: 'Setup was stopped; completed results are kept.' },
+  unfinished: { label: 'Incomplete', tone: 'warning', description: 'Setup still needs checking.' },
+  unknown: { label: 'Not verified', tone: 'neutral', description: 'Setup has not been verified yet.' },
+  update_available: { label: 'Update available', tone: 'info', description: 'New workflow guidance is available.' },
+  source_unavailable: { label: 'Source unavailable', tone: 'warning', description: 'Restore the workflow source before checking setup.' },
+  activation_pending: { label: 'Verification pending', tone: 'warning', description: 'Preparation is recorded; workflow readiness still needs verification.' },
+  activation_blocked: { label: 'Verification blocked', tone: 'warning', description: 'Workflow readiness needs attention. Review the gap before continuing setup.' },
+});
+
 export const integrationHealth = defineStatuses({
+  provider_disabled: { label: 'Provider disabled', tone: 'neutral', icon: 'circle' },
+  connected_blocked: { label: 'Connected · actions blocked', tone: 'warning', icon: 'alert-triangle' },
+  connected: { label: 'Connected', tone: 'success', icon: 'check-circle' },
+  repair_required: { label: 'Account repair required', tone: 'danger', icon: 'wrench' },
+  partially_available: { label: 'Partially available', tone: 'neutral', icon: 'circle-dashed' },
+  not_connected: { label: 'Not connected', tone: 'neutral', icon: 'plug' },
+  ready_no_connection_required: { label: 'Ready · no connection required', tone: 'success', icon: 'check-circle' },
+  available: { label: 'Available', tone: 'neutral', icon: 'circle' },
   healthy: { label: 'Healthy', tone: 'success', icon: 'check-circle' },
   degraded: { label: 'Degraded', tone: 'warning', icon: 'alert-triangle' },
   failing: { label: 'Failing', tone: 'danger', icon: 'x-circle' },
@@ -168,11 +224,20 @@ export const memoryState = defineStatuses({
   archived: { label: 'Archived', tone: 'neutral', icon: 'archive' },
 });
 
+export const pluginStatus = defineStatuses({
+  enabled: { label: 'Enabled', tone: 'success', dot: true },
+  disabled: { label: 'Disabled', tone: 'neutral' },
+  available: { label: 'Available', tone: 'neutral' },
+});
+
 export const statusRegistry = {
+  plugin: pluginStatus,
   run: runStatus,
   step: stepStatus,
   tracker: trackerStatus,
+  delivery: deliveryStatus,
   project: projectState,
+  projectSetup: projectSetupStatus,
   integration: integrationHealth,
   budget: budgetState,
   connection: connectionStatus,

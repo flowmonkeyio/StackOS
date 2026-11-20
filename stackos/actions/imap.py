@@ -26,7 +26,6 @@ from stackos.actions.connectors import (
 from stackos.actions.provider_utils import (
     credential_config,
     credential_payload,
-    credential_value,
     issue,
     unknown_operation,
 )
@@ -182,8 +181,7 @@ class ImapActionConnector:
         )
 
     async def _native(self, request: ActionConnectorRequest, *, output_dir=None):
-        from stackos_connectors import CallOptions, ConnectorClient
-        from stackos_connectors.catalog import load_registry
+        from stackos_connectors import CallOptions, get_default_client
 
         from stackos.actions.package_bridge import PackageActionConnector
 
@@ -203,7 +201,7 @@ class ImapActionConnector:
         if request.operation == "message.export":
             prepared["limits"] = _export_limits()
         if self._client is None:
-            self._client = ConnectorClient(registry=load_registry("connectors/imap/catalog.json"))
+            self._client = get_default_client()
         options = self._options or CallOptions()
         if output_dir is not None:
             options = replace(options, output_dir=output_dir)
@@ -340,7 +338,6 @@ def _imap_settings(request: ActionConnectorRequest) -> dict[str, Any]:
         "tls_mode": tls_mode,
         "tls_ca_pem": config.get("tls_ca_pem"),
         "username": username,
-        "password": credential_value(request, "password", "secret"),
         "timeout_s": float(_config_int(config, payload, "timeout_s", default=30)),
         "default_mailbox": default_mailbox,
         "mailbox_refs": _mailbox_ref_map(config.get("mailbox_refs")),

@@ -7,6 +7,263 @@ from pydantic import BaseModel, ConfigDict, Field
 WORKFLOW_AUTHORING_GUIDE_VERSION = "stackos.workflow-authoring-guide.v2"
 WORKFLOW_AUTHORING_GUIDE_OPERATION = "workflowTemplate.authoringGuide"
 
+PROJECT_SETUP_NOTICES = {
+    "setup_needed": (
+        "Project workflow setup has not been verified. Inspect the existing setup and project "
+        "goals before proposing changes; ordinary questions can continue."
+    ),
+    "updates_available": (
+        "Workflow updates are available. Compare the applied sources and local choices before "
+        "updating; current work can continue under its retained contract."
+    ),
+    "folder_unavailable": (
+        "The selected project folder is unavailable. Restore access before changing setup; "
+        "saved setup evidence is preserved."
+    ),
+}
+
+
+class ProjectSetupMethod(BaseModel):
+    """Authored instructions shared by existing-session and managed setup entrypoints."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = "2"
+    shared_prompt: str
+    mode_prompts: dict[str, str]
+    inputs: dict[str, str]
+    session_start_notices: dict[str, str]
+    question_examples: dict[str, str]
+    result_messages: dict[str, str]
+    report_guidance: list[str]
+
+
+def project_setup_method() -> ProjectSetupMethod:
+    return ProjectSetupMethod(
+        shared_prompt=(
+            "Complete this project's selected workflow setup using workflow_setup_protocol, "
+            "agent_materialization_policy and setup_completion_contract below. Both existing-agent "
+            "and managed entrypoints use this same method with the selected mode instruction. "
+            "First inspect the repository's purpose, instruction entrypoints, current host files, "
+            "extensions and checked setup receipts. Infer suitable workflows from the user's "
+            "ordinary goals and the current catalog's outcomes, when_to_use and when_not_to_use; "
+            "the user need not know workflow names. Reuse configured methods that still fit. "
+            "Ask only for missing intent or a material incompatible choice, in concrete project "
+            "terms. Unknown legacy provenance is not missing setup: inspect and adopt valid "
+            "existing adaptations without inventing prior versions or forcing rewrites.\n\n"
+            "Resolve each selected effective workflow, extension, main-agent skill preset and "
+            "specialist presets from their actual origins. Read complete applicable sources, "
+            "including referenced rules, before adapting them. Map required/recommended/selected "
+            "optional roles to exact files or session packets; keep main-agent orchestration "
+            "distinct from specialists and installed skills. Preserve the full applicable "
+            "operating contract and intentional compatible local choices. Map source obligations "
+            "to adapted targets and evidence, including review independence, recovery/resume, "
+            "verification, scope/permissions, browser routes and nonblocking followups wherever "
+            "the selected sources declare them. Retain their conditions and ownership; never "
+            "impose engineering policy on unrelated workflows. Explain compatible adaptations "
+            "and only omit obligations where the source permits it, citing the policy and reason. "
+            "Material unresolved loss prevents that workflow's completion.\n\n"
+            "Keep internal setup handoffs concise and sufficient: disposition, actual scope "
+            "and outcome, project/attempt/revision, source-to-target role identities, decisive "
+            "proof, preserved or unresolved obligations, activation limits and next action. "
+            "Put detailed checks and obligation mappings once in the existing setup receipt; "
+            "a reference-only outcome is insufficient. Preserve every required report field "
+            "and the complete adapted operating guidance and requested deliverables. Do not "
+            "compact substantive content, nested domain followups or safety conditions into "
+            "a summary. Human updates explain outcomes and decisions without replaying proof. "
+            "References identify owner, project, record and applicable candidate/revision. "
+            "Recover workflow outputs through runPlan.getStep(raw), ordinary ticket receipts "
+            "through tracker.brief(raw), setup receipts through projectSetup.get(raw), and "
+            "artifacts/resources through their declared owners. Read necessary missing or "
+            "changed detail, not unchanged history. Missing, stale or inaccessible references "
+            "require safe authorized inline facts where permitted or an explicit gap. On "
+            "continuation pass current amendments, remaining obligations and evidence changes "
+            "with retained attempt/session identities; preserve partial and reused proof and "
+            "frozen native instructions. These are reporting rules, not new authority, phases "
+            "or length limits.\n\n"
+            "Use agent judgment, not a keyword router or semantic policy engine. Ordinary goals "
+            "later activate the matching configured method; a newly relevant goal can select and "
+            "set up a catalog workflow within current setup authority. A harmless question "
+            "does not require setup or a business run. Setup authority never authorizes business "
+            "execution, provider mutation or unrelated workflows. Offer a bounded safe alternative "
+            "when a requested expansion lacks authority. Preserve credentials, host/model "
+            "settings, "
+            "unrelated files and frozen queued/running execution snapshots. Re-read current "
+            "occurrence amendments on resume: later authorized scope can supersede an older "
+            "preparation hold, without rewriting reusable sources or historical snapshots.\n\n"
+            "Ordinary Setup and Update request ready_to_use: adaptation, canonical configuration "
+            "and verified activation. Only explicit infrastructure_only stops after preparation; "
+            "never silently downgrade requested activation. Resolve the smallest sufficient safe "
+            "activation method from the selected effective workflow and presets, not a core "
+            "domain rule. Inspect actual saved defaults, role bindings and local lifecycle rules "
+            "at their existing owners. Reconcile incompatible manual/automatic instructions and "
+            "use canonical reviewed adoption/readback within current permissions, preserving "
+            "compatible customization and supported host/model/provider preferences. Task "
+            "overrides cannot prove missing project defaults. Missing local-admin capability "
+            "stays an actionable required gap for the authorized owner; a worker cannot grant it. "
+            "An infrastructure-only invocation creates no execution state and returns remaining "
+            "activation obligations without acquiring execution authority.\n\n"
+            "Keep verification inside the existing owning setup/task. First reuse actual completed "
+            "delivery, independent review and closeout evidence only for claims covered at the "
+            "current project, source, saved-default, native-session and environment basis. Record "
+            "covered and missing claims explicitly; perform only missing or invalidated small "
+            "harmless native/configuration/behavior checks through the authorized existing owner. "
+            "Use existing setup/native continuation when fresh loading after adoption is required. "
+            "Consume required_role_claims from the effective setup_activation_method. When the "
+            "project requires reviewer test/scratch writes, declare execution_requirements."
+            "filesystem_write=true through canonical defaults adoption (or the bounded setup "
+            "role proposal); preserve explicit false for inspection-only review. When the "
+            "method requires reviewer tool, scratch-write or isolated-fixture capability, the "
+            "selected reviewer itself performs a project-selected bounded representative check. "
+            "A generic successful native conversation or coordinator verification_status cannot "
+            "cover that role. Bind the check to the current project/binding, actual role, host, "
+            "source ref/digest when source-backed, resolved settings, native invocation and "
+            "environment. Record setup_activation_checks in native outputs with claims, status, "
+            "environment_ref and evidence_ref pointing to command, exit and observed results. "
+            "Reference canonical completed task_phase evidence (task_id, ticket_id, attempt, "
+            "phase, invocation_id and outcome_digest), including retained historical attempts. "
+            "Fresh managed setup uses the existing native request continuation: verification "
+            "reports one missing role_verification_request with role, exact claims, bounded "
+            "project-selected instructions, environment_ref and evidence_ref. The owner freezes "
+            "the selected specialist, runs only that missing check in a distinct native session "
+            "under normal permissions, then resumes the retained coordinator with retired "
+            "completed_role_verifications. Bind its actual specialist native_request snapshot "
+            "in the same setup receipt; generic coordinator or workflow success cannot supply "
+            "that role. Explicit recovery retains each actual session; no new task/workflow, "
+            "receipt store, scheduler or fallback is needed. "
+            "Reuse unchanged covered claims; changed relevant source/settings/capability or "
+            "environment requires only the missing bounded checks. Normal approvals apply; a "
+            "denial stops that write and dependent proof, while authorized alternatives and "
+            "unaffected work continue. Missing required proof stays unfinished. Explicit stopped "
+            "review replacement belongs to the authorized recovery owner, preserving candidate, "
+            "delivery and failed reviewer history; never auto-replace or broaden global trust. "
+            "Do not automatically create a separate full verification task/workflow, tracker "
+            "parent or review workflow merely to establish readiness, or add nested "
+            "queue/wait/drain machinery solely for proof. Preserve independent review where "
+            "applicable; routine standalone setup follows its effective method and genuine current "
+            "evidence. Aborted, incomplete, simulated or another project's evidence cannot become "
+            "completed activation. Keep prepared files, canonical saved readback, actual native "
+            "consumption, reused evidence and newly executed checks distinct in the existing "
+            "receipt. Missing required proof leaves ready_to_use unfinished, never success with "
+            "activation_pending or a required followup. For non-engineering workflows choose their "
+            "own safe readiness method conditionally; never execute unrelated finance "
+            "transactions, publication, communications or trading to prove setup. An unavailable "
+            "safe method or "
+            "capability remains explicit; defer genuine per-run business inputs separately.\n\n"
+            "Check syntax, registration, required-role and reference coverage, and bounded actual "
+            "host behavior. Prove loading/reload before claiming active; hashes or phrase checks "
+            "alone do not prove it. Exercise ordinary matching/new goals, a harmless question, "
+            "an unauthorized expansion with a safe alternative and representative applicable "
+            "recovery/authority behavior. Use isolated fixtures, not a mandatory whole business "
+            "run. Report each workflow independently through the existing projectSetup report "
+            "contract with actual changes, proof, readiness and remaining gaps. Preserve earlier "
+            "success and partial edits when another workflow needs input or fails. In reports, "
+            "send each inspected source's exact kind/key/origin/ref/version/digest and omit its "
+            "content body. The receipt owner resolves matching current sources and retains full "
+            "snapshots; source reading, obligation coverage and actual proof are still required."
+        ),
+        mode_prompts={
+            "setup": (
+                "Inspect before writing. Derive the smallest relevant workflow set from known "
+                "project intent; ask about the missing goal only if the repository and request "
+                "do not establish it. Adopt verified existing setup where compatible. Materialize "
+                "only missing or demonstrated incomplete guidance within the authorized host "
+                "surface, then validate and report against requested_scope. Stop at infrastructure "
+                "readiness only for explicit infrastructure_only; otherwise complete required "
+                "activation through the authorized existing owners."
+            ),
+            "update": (
+                "Inspect before writing. Compare three inputs per workflow: previous successfully "
+                "applied source snapshots, current local adaptations/overrides, and new effective "
+                "template/orchestrator/specialist sources. Identify source changes and local "
+                "intent separately. Preserve compatible overrides and all applicable current "
+                "obligations. Unknown previous provenance stays unknown; inspect/adopt against "
+                "current sources. Ask a concrete question for a true incompatibility and finish "
+                "independent workflows. Revalidate affected guidance and only missing or "
+                "invalidated activation proof under requested_scope; report checked changes; "
+                "do not advance an unsuccessful workflow's applied sources."
+            ),
+        },
+        inputs={
+            "mode": "Exactly setup or update; select the matching mode_prompt, not another method.",
+            "requested_scope": (
+                "ready_to_use for ordinary Setup/Update, or explicit infrastructure_only. "
+                "Scope does not expand surface permissions or authorize business execution."
+            ),
+            "project_scope": (
+                "Observed project ID, selected folder and binding/session refs; "
+                "no invented anchors."
+            ),
+            "intent": (
+                "The user's goal and optional change note, plus relevant repository intent; "
+                "omit unknown values."
+            ),
+            "setup_state": (
+                "projectSetup.get detail_ref and checked per-workflow receipt revisions; "
+                "fetch evidence as needed."
+            ),
+            "attempt": (
+                "Existing attempt/request/session/revision and ownership refs, when admitted; "
+                "never expose claim tokens in prose."
+            ),
+            "workflow_selection": (
+                "Known relevant keys and reasons, if any; infer missing selections from goals, "
+                "never require a user tutorial."
+            ),
+        },
+        session_start_notices=PROJECT_SETUP_NOTICES,
+        question_examples={
+            "missing_goal": "What result should this project help you achieve first?",
+            "conflicting_override": (
+                "Your local setup permits publishing without review, but the updated method "
+                "requires independent review. Keep publication disabled while I retain your "
+                "other choices and prepare the required review path?"
+            ),
+        },
+        result_messages={
+            "success": (
+                "Workflow setup is checked. Here is what changed, what is ready and what "
+                "remains before execution."
+            ),
+            "adopted": (
+                "Existing setup was checked and adopted. Prior source versions remain unknown "
+                "where no evidence exists."
+            ),
+            "partial": (
+                "Some workflows are checked; others still need attention. Successful results "
+                "and partial edits are preserved."
+            ),
+            "needs_input": (
+                "A setup choice needs your answer. Independent workflow updates can still finish."
+            ),
+            "activation_pending": (
+                "Guidance is prepared, but loading is not verified. Reload the supported host "
+                "and recheck before calling it active."
+            ),
+        },
+        report_guidance=[
+            "Admit/attach through projectSetup.start only after inspection and workflow selection. "
+            "Only the owning session reports; attached callers do not receive writer authority.",
+            "Use projectSetup.report with the admitted session/request/claim, expected attempt "
+            "revision, progress evidence and workflow_results at their observed receipt revisions. "
+            "Keep existing-agent questions/answers in that same session; managed questions use "
+            "the supported attempt continuation.",
+            "For each success supply SetupResult.verification: actual source snapshots/digests, "
+            "role_mapping, source obligations and targets/reasons, local_adaptations, "
+            "syntax/registration/references/behavior checks, activation evidence and the separate "
+            "readiness tuple plus structural/strict validation refs and exact deferred inputs.",
+            "Agent and independent review judge semantic coverage; structural receipt validation "
+            "cannot prove it. Unresolved obligations, material loss or missing required proof "
+            "must not be reported as success. Report failed/unfinished/needs_input/interrupted/"
+            "cancelled results with actual partial changes and recovery conditions, retaining "
+            "the previous successful sources.",
+            "An attempt may finish partial while an independent workflow succeeds. Preserve result "
+            "refs and checked revisions; re-read fresh state on recovery, do not repeat completed "
+            "work blindly, and never reset history or edit frozen executions.",
+        ],
+    )
+
+
 MINIMAL_WORKFLOW_TEMPLATE_YAML = """schema_version: stackos.workflow-template.v1
 key: custom.example-review
 name: Example Review
@@ -137,6 +394,7 @@ class WorkflowAuthoringGuideOut(BaseModel):
     agent_materialization_policy: list[str]
     prerequisite_persistence_policy: list[str]
     setup_completion_contract: list[str]
+    project_setup_method: ProjectSetupMethod
     reasoning_gates: list[str]
     mechanical_gates: list[str]
     independent_signoff: list[str]
@@ -423,9 +681,11 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                     "use workspace.resolve for read-only diagnosis. Once setup is authorized, "
                     "call workspace.startSession; use workspace.connect/bootstrap only when "
                     "StackOS requires explicit project identity.",
-                    "Require an explicit workflow key or deterministically select one by comparing "
-                    "workflowTemplate.list results against when_to_use and when_not_to_use. Report "
-                    "the selected key and reason before project-specific writes.",
+                    "Inspect repository intent and current setup first. Infer relevant workflows "
+                    "from ordinary goals by comparing workflowTemplate.list outcomes, when_to_use "
+                    "and when_not_to_use; ask only for missing intent, never require workflow "
+                    "names. "
+                    "Report the selected key and reason before project-specific writes.",
                     "Call workflowTemplate.describe for the effective workflow and inspect any "
                     "existing workflow extension before deciding that an extension write is "
                     "needed.",
@@ -452,6 +712,11 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                     "agent_materialization_policy, preserving unrelated operator-authored "
                     "content and recording applicable workflow keys, source preset versions, "
                     "and file mappings.",
+                    "For updates compare previous applied source evidence, current local "
+                    "adaptations and new effective sources. Preserve compatible local choices; "
+                    "adopt verified legacy setup without invented prior versions or forced "
+                    "rewrites. "
+                    "Isolate real conflicts to their workflows while independent setup completes.",
                     "Call readiness.check for the final effective workflow. Treat "
                     "structurally_ready as the infrastructure gate; never interpret "
                     "missing_count=0 "
@@ -641,6 +906,11 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "model, "
             "verification, release/signoff expectations, and current extension context. Do not use "
             "the generic preset verbatim.",
+            "Preserve the full applicable workflow, main-agent and specialist operating contract, "
+            "including declared resilience/review/evidence/authority/browser/followup rules. Map "
+            "source obligations to exact adapted targets and proof. Compatible adaptations need "
+            "reasons; omissions need the source's permission and rationale. Unresolved material "
+            "loss fails completion. Do not impose domain-specific rules on other workflows.",
             "Repository-local .stackos/agent-presets or .stackos/skill-presets are StackOS preset "
             "overrides, not normal host-agent materialization. Create them only when the operator "
             "explicitly requests a checked-in project override; a workflow setup request alone "
@@ -651,6 +921,11 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "Keep secrets, credentials, project ids, run tokens, run state, and domain "
             "prerequisites out "
             "of host-local execution contracts.",
+            "Verify required-role/reference coverage and actual host loading/reload separately "
+            "from source syntax. Use bounded behavior exercises of ordinary goals and applicable "
+            "recovery/authority rules; phrase-only tests do not establish preservation. Keep "
+            "selected sources, saved adaptations, loaded sessions and installed activation "
+            "distinct.",
         ],
         prerequisite_persistence_policy=[
             "Classify each setup value as infrastructure, durable_prerequisite, or run_input "
@@ -673,7 +948,18 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "chat.",
         ],
         setup_completion_contract=[
+            "Keep the meaningful disposition/outcome, identities, decisive proof, limits and "
+            "next action inline; retain all completion content below once in the existing "
+            "setup report/receipt with exact owner refs for necessary detail. Complete adapted "
+            "guidance and substantive deliverables remain required.",
             "Selected intent mode and why it applies.",
+            "Operator-requested completion boundary: ordinary ready_to_use or explicit "
+            "infrastructure_only, selected workflow method, intended execution mode and authorized "
+            "existing owner. Record covered/missing claims, evidence reused with current "
+            "project/source/default/native/environment basis, newly executed bounded checks and "
+            "unresolved required activation obligations. No separate full verification task or "
+            "workflow is required merely for setup proof. An infrastructure "
+            "receipt alone cannot complete a requested operational outcome.",
             "Workspace/project binding and deterministic future binding path.",
             "Workflow key, source, version, and effective extension state; say absent/not_required "
             "instead of creating an empty extension.",
@@ -682,6 +968,12 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "preset-to-file/session mapping.",
             "Host-local files changed with absolute paths, validation status, and any "
             "restart/reload need.",
+            "Per-workflow previous/local/new comparison, exact source-obligation-to-target "
+            "coverage and justified adaptations/permitted omissions. Record unknown legacy "
+            "provenance honestly. Material unresolved loss prevents that workflow's success.",
+            "Actual host behavior/loading evidence, inspected source and candidate identities, "
+            "and separate source/installed/loaded status; successful independent workflows and "
+            "partial changes remain visible when another workflow needs input.",
             "Readiness tuple: structurally_ready, context_status, required_providers_ready, and "
             "execution_ready without collapsing them into one ready flag.",
             "Structural runPlan.validate outcome and strict validation outcome with exact deferred "
@@ -692,6 +984,7 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "Explicit confirmation that infrastructure setup created no run plan, workflow tracker "
             "task/ticket, business output, or external side effect.",
         ],
+        project_setup_method=project_setup_method(),
         reasoning_gates=[
             "Is the workflow one complete operator-facing job with a clear closeout, "
             "rather than one stage in a private workflow chain?",

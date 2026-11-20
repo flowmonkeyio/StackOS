@@ -10,6 +10,7 @@ from sqlmodel import Session
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
+from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.communication_delivery import (
     operation_specs as communication_delivery_operation_specs,
@@ -75,6 +76,8 @@ async def local_agent_chat_create_message(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[LocalAgentChatMessageOut]:
+    if str(ctx.extras.get("auth_scope", "")).startswith("ui-"):
+        inp = validate_console_chat(inp)
     _require_project(ctx.session, inp.project_id)
     _validate_local_key(inp.thread_key, "thread_key")
     _validate_local_key(inp.message_key, "message_key")
@@ -158,6 +161,30 @@ async def local_agent_chat_create_message(
     return WriteEnvelope(data=out, run_id=ctx.run_id, project_id=inp.project_id)
 
 
+def validate_console_chat(
+    inp: LocalAgentChatCreateMessageInput,
+) -> LocalAgentChatCreateMessageInput:
+    """The browser contributes a human intent and bounded references only."""
+    if (
+        inp.direction != "inbound"
+        or not inp.create_request
+        or inp.content_blocks
+        or inp.sender_ref != "local-user:operator"
+        or inp.run_token is not None
+    ):
+        raise ToolNotGrantedError("Browser local chat only accepts inbound human requests")
+    if not inp.text or len(inp.text) > 240:
+        raise ValidationError("Browser local chat requires a bounded question")
+    # This console currently submits Finance analysis. Its existing owner owns
+    # the domain envelope; communications owns only human ingress and storage.
+    from stackos.operations.finance import validate_console_metadata
+
+    validate_console_metadata(inp.metadata_json)
+    return inp.model_copy(
+        update={"sender_ref": "local-user:operator", "sender_display_name": "Operator"}
+    )
+
+
 def _require_project(session: Session, project_id: int) -> None:
     ProjectRepository(session).get(project_id)
 
@@ -181,7 +208,11 @@ def _local_body_preview(text: str | None, content_blocks: list[dict[str, Any]]) 
 def _surfaces(name: str, command: str) -> OperationSurfaces:
     return OperationSurfaces(
         mcp=OperationSurface(enabled=True),
-        rest=OperationSurface(enabled=True, path=f"/api/v1/operations/{name}/call"),
+        rest=OperationSurface(
+            enabled=True,
+            path=f"/api/v1/operations/{name}/call",
+            browser_safe=name == "localAgentChat.createMessage",
+        ),
         cli=OperationSurface(enabled=True, command=command),
     )
 

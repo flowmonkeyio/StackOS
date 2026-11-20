@@ -1,0 +1,79 @@
+{
+  "status": "pass_for_bounded_operational_retry",
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "step": "package",
+  "assignment_attempt": 1,
+  "contract_revision": 5,
+  "reviewer": "/root/day1_deploy_review",
+  "independent": true,
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "archive": {
+    "path": "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+    "bytes": 515848394,
+    "sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+    "binding_source": "Root stable archive observation and app-notary-retry1.json; no archive mutation or repeat source check by reviewer."
+  },
+  "observed_failure": "New Xcode notarytool 1.1.0 ARM execution terminated SIGBUS during upload. Crash frames include NSString formatting/String.init(format); this is an uploader failure, not an Apple rejection of submitted code.",
+  "proposal": {
+    "tool": "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+    "execution_prefix": [
+      "/usr/bin/arch",
+      "-x86_64"
+    ],
+    "transport": "--no-s3-acceleration",
+    "auth": "Existing keychain profile only",
+    "scope": "One bounded retry of the exact existing archive"
+  },
+  "assessment": "No concrete blocker. Existing universal binary and successful Intel --version check establish executable availability. Changing uploader execution architecture and S3 endpoint preserves submitted app bytes and every trust gate. Effectiveness is unproven; no Apple-confirmed architecture workaround was found.",
+  "required_evidence": [
+    "Exact command, tool version/architecture, archive hash and distinct log/receipt",
+    "Successful upload completion and exit before treating pending submission as uploaded",
+    "Apple Accepted status and log for exact submission, followed by app staple and validation",
+    "Preserve prior failed submissions and receipts"
+  ],
+  "packaging_recovery": {
+    "installed_owner": "electron-builder/app-builder-lib 26.15.3 macPackager.js packMacTargets lines 268–282",
+    "verified_behavior": "--prepackaged skips doPack for normal mac targets and calls packageInDistributableFormat on the supplied app.",
+    "consequence": "The app must already be signed, Accepted and stapled; prepackaged is not proof of these gates.",
+    "sequence": [
+      "Verify accepted and stapled app; retain code-sign and staple evidence",
+      "Create DMG and ZIP from that exact app with existing generated release config and arm64 targets; no re-signing/source rebuild",
+      "Run existing packaged CLI and browser CLI checks from the interrupted canonical release sequence",
+      "Notarize the signed DMG, staple and validate it",
+      "Run existing refresh-notarized-update-metadata.cjs after DMG stapling",
+      "Create the stable alias from final DMG, then capture local artifact/feed/ZIP identity and root trust receipts"
+    ],
+    "prohibited_shortcuts": [
+      "No unsigned release flag",
+      "No blanket notarization skip",
+      "No source rebuild required by these transport failures",
+      "No website installer download or local app activation"
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://developer.apple.com/forums/thread/847649",
+      "supports": "Apple DTS identifies the same SIGBUS/formatting crash across users and calls it environmentally triggered; no guaranteed fix offered."
+    },
+    {
+      "url": "https://support.apple.com/en-us/102527",
+      "supports": "Rosetta can execute Intel software on supported Apple silicon macOS; this does not establish a notarytool bug fix."
+    },
+    {
+      "local": "desktop/node_modules/.pnpm/app-builder-lib@26.15.3_dmg-builder@26.15.3_electron-builder-squirrel-windows@26.15.3/node_modules/app-builder-lib/out/macPackager.js",
+      "supports": "Actual installed prepackaged execution path."
+    },
+    {
+      "local": "desktop/scripts/build-mac.mjs",
+      "supports": "Canonical postpackaging CLI, DMG notarization, staple, refresh and alias obligations."
+    },
+    {
+      "local": "desktop/scripts/refresh-notarized-update-metadata.cjs",
+      "supports": "Regenerate DMG blockmap/feed digest after stapling."
+    }
+  ],
+  "unresolved_blockers": [],
+  "remaining_release_gates": "Successful upload, Apple acceptance, staples and final local artifact/publication proof remain pending; root owns execution.",
+  "reviewer_mutations": "Only this evidence file; no app/source/tool/signing/provider mutations."
+}

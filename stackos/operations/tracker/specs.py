@@ -10,8 +10,15 @@ from stackos.operations.spec import (
     OperationExample,
     OperationResponsePolicy,
     OperationSpec,
+    OperationSurface,
+    OperationSurfaces,
 )
+from stackos.operations.tracker.capacity import operation_specs as capacity_specs
 from stackos.operations.tracker.read_handlers import (
+    tracker_active_tasks,
+    tracker_active_tasks_all,
+    tracker_agent_stats,
+    tracker_agent_stats_all,
     tracker_blockers,
     tracker_brief,
     tracker_changed,
@@ -21,13 +28,20 @@ from stackos.operations.tracker.read_handlers import (
     tracker_next,
     tracker_search,
     tracker_status,
+    tracker_task_activity,
+    tracker_task_results,
     tracker_ticket_counts,
     tracker_ticket_counts_all,
     tracker_verify,
     tracker_why,
 )
 from stackos.operations.tracker.schemas import (
+    TrackerActiveTasksAllInput,
+    TrackerActiveTasksInput,
+    TrackerAgentStatsAllInput,
+    TrackerAgentStatsInput,
     TrackerChangedInput,
+    TrackerConfigureDeliveryInput,
     TrackerCreateTaskInput,
     TrackerCreateTicketInput,
     TrackerGetInput,
@@ -36,31 +50,45 @@ from stackos.operations.tracker.schemas import (
     TrackerNextInput,
     TrackerPatchInput,
     TrackerPickInput,
+    TrackerPlaceTaskInput,
     TrackerProjectInput,
     TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerReopenInput,
+    TrackerReorderTaskInput,
     TrackerSearchInput,
+    TrackerStartDeliveryInput,
+    TrackerTaskActivityInput,
+    TrackerTaskResultsInput,
     TrackerTicketCountsAllInput,
     TrackerTicketCountsInput,
     TrackerTicketInput,
+    TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
+    TrackerUpdateTaskPriorityInput,
     TrackerUpdateTicketInput,
 )
 from stackos.operations.tracker.spec_helpers import (
     _read_spec,
+    _surfaces,
     _write_spec,
 )
 from stackos.operations.tracker.write_handlers import (
+    tracker_configure_delivery,
     tracker_create_task,
     tracker_create_ticket,
     tracker_link_run_plan,
     tracker_patch,
     tracker_pick,
+    tracker_place_task,
     tracker_reject_task,
     tracker_release,
     tracker_reopen,
+    tracker_reorder_task,
+    tracker_start_delivery,
     tracker_update_task,
+    tracker_update_task_content,
+    tracker_update_task_priority,
     tracker_update_ticket,
 )
 from stackos.repositories.base import Page
@@ -69,12 +97,30 @@ from stackos.repositories.tracker import (
     TrackerChangedOut,
     TrackerHistoryOut,
     TrackerNextOut,
+    TrackerNotificationChangesOut,
     TrackerReopenOut,
     TrackerSearchOut,
     TrackerSnapshotOut,
     TrackerStatusOut,
+    TrackerTaskContentOut,
     TrackerTicketCountsOut,
     TrackerVerifyOut,
+)
+from stackos.repositories.tracker.inspection_schema import TaskActivityOut, TaskResultsOut
+from stackos.repositories.tracker.schema import (
+    ActiveTasksOut,
+    TrackerAgentStatsOut,
+    TrackerTaskBoardOut,
+)
+
+_AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
+    default_mode="compact",
+    allowed_modes=("compact", "raw"),
+    ack_safe=False,
+    compact_notes=(
+        "Keep scope, dates, timezone, group_by, as_of, read_token, totals, every row/day/series, "
+        "undated facts, delivery_trends totals/daily and all per-field/classification coverage.",
+    ),
 )
 
 _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
@@ -87,6 +133,410 @@ _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        *capacity_specs(),
+        *[
+            operation_spec(
+                name=name,
+                summary="Read in-progress task-index facts for Home without ticket graphs.",
+                input_model=model,
+                output_model=ActiveTasksOut,
+                handler=handler,
+                mutating=False,
+                grant_policy=grant,
+                response_policy=OperationResponsePolicy(
+                    default_mode="compact",
+                    allowed_modes=("compact", "raw"),
+                    ack_safe=False,
+                    compact_notes=(
+                        "Keep scope, project/task identities, all facts, as_of, read_token "
+                        "and next_cursor.",
+                    ),
+                ),
+                purpose=(
+                    "Home membership uses lifecycle in-progress, including queued/stopped work. "
+                    "Stable task-ID order; page with after_id. Reuses task-index rollup and "
+                    "whole-task usage with current/Last execution. No prompts or raw receipts. "
+                    "Global scope is local-admin only over active projects without pending cleanup."
+                ),
+                examples=(OperationExample(title="Read active tasks", arguments=args),),
+            )
+            for name, model, handler, grant, args in (
+                (
+                    "tracker.activeTasks",
+                    TrackerActiveTasksInput,
+                    tracker_active_tasks,
+                    "direct-read",
+                    {"project_id": 1},
+                ),
+                (
+                    "tracker.activeTasksAll",
+                    TrackerActiveTasksAllInput,
+                    tracker_active_tasks_all,
+                    "local-admin-read",
+                    {},
+                ),
+            )
+        ],
+        *[
+            OperationSpec(
+                name=name,
+                summary=summary,
+                input_model=model,
+                output_model=WriteEnvelope[TrackerTaskBoardOut],
+                handler=handler,
+                surfaces=OperationSurfaces(
+                    mcp=OperationSurface(enabled=True),
+                    rest=OperationSurface(
+                        enabled=True, browser_safe=True, path=f"/api/v1/operations/{name}/call"
+                    ),
+                    cli=OperationSurface(enabled=True, command=f"ops call {name}"),
+                ),
+                mutating=True,
+                grant_policy="direct-tracker-write",
+                idempotency_policy="handler",
+                response_policy=OperationResponsePolicy(
+                    default_mode="raw",
+                    allowed_modes=("raw",),
+                    ack_safe=False,
+                    raw_only_reason=(
+                        "Preserve task snapshot, affected keys and intent-bound retry receipt."
+                    ),
+                ),
+                purpose=summary
+                + " Does not change lifecycle, ticket priority or execution policy.",
+                prerequisites=(
+                    "Read tracker.get; supply the task's current status and updated_at.",
+                    "Use one stable idempotency_key per intent; "
+                    "refresh and use a new key after conflict.",
+                ),
+                returns=(
+                    "Saved task, changed flag, affected keys, tracker revision and replay receipt.",
+                ),
+                examples=(
+                    OperationExample(
+                        title=summary,
+                        arguments={
+                            "project_id": 1,
+                            "task_key": "manual-work",
+                            "expected_status": "not-started",
+                            "expected_updated_at": "2026-11-10T00:00:00",
+                            "idempotency_key": "board-edit-1",
+                            **example,
+                        },
+                    ),
+                ),
+            )
+            for name, summary, model, handler, example in (
+                (
+                    "tracker.updateTaskPriority",
+                    "Save one task priority.",
+                    TrackerUpdateTaskPriorityInput,
+                    tracker_update_task_priority,
+                    {"priority_key": "p1"},
+                ),
+                (
+                    "tracker.reorderTask",
+                    "Move one task before or after a task in the same projected Board column.",
+                    TrackerReorderTaskInput,
+                    tracker_reorder_task,
+                    {"anchor_task_key": "neighbor", "placement": "before"},
+                ),
+                (
+                    "tracker.placeTask",
+                    "Place eligible nonstarted work in Backlog or Todo without execution changes.",
+                    TrackerPlaceTaskInput,
+                    tracker_place_task,
+                    {"board_column": "backlog"},
+                ),
+            )
+        ],
+        OperationSpec(
+            name="tracker.configureDelivery",
+            summary="Save project task delivery defaults through local-admin setup.",
+            input_model=TrackerConfigureDeliveryInput,
+            output_model=WriteEnvelope[dict[str, Any]],
+            handler=tracker_configure_delivery,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=False),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/tracker.configureDelivery/call",
+                ),
+                cli=OperationSurface(enabled=False),
+            ),
+            mutating=True,
+            grant_policy="local-admin-console-write",
+            response_policy=OperationResponsePolicy(
+                default_mode="raw",
+                allowed_modes=("raw",),
+                ack_safe=False,
+                raw_only_reason="Preserve saved defaults and tracker revision for setup readback.",
+            ),
+            purpose=(
+                "Replace TaskTracker.config_json.delivery only, preserving other tracker keys. "
+                "Or supply main_agent alone to replace only typed main-agent launch choices, "
+                "preserving specialist contracts and other defaults. This changes future "
+                "admissions, never task snapshots or stored ticket evidence."
+            ),
+            prerequisites=(
+                "Requires authenticated local-admin REST setup; no MCP or workflow grants.",
+                "For full delivery replacement, read tracker.get raw and include all desired "
+                "defaults. The main_agent-only form preserves the other fields. "
+                "Do not store secrets in instructions or selections.",
+            ),
+            returns=("Saved tracker configuration and revision; inspect with tracker.get raw.",),
+            examples=(
+                OperationExample(
+                    title="Save project agents",
+                    arguments={
+                        "project_id": 1,
+                        "delivery": {
+                            "host_key": "codex",
+                            "delivery_agent": {
+                                "source_ref": {
+                                    "host_key": "codex",
+                                    "native_name": "builder",
+                                    "source_path": ".codex/agents/builder.toml",
+                                },
+                            },
+                            "review_agent": {
+                                "source_ref": {
+                                    "host_key": "codex",
+                                    "native_name": "reviewer",
+                                    "source_path": ".codex/agents/reviewer.toml",
+                                },
+                            },
+                        },
+                    },
+                ),
+                OperationExample(
+                    title="Save main-agent launch choices",
+                    arguments={
+                        "project_id": 1,
+                        "main_agent": {"host_key": "codex", "model": "gpt-6.2-sol"},
+                    },
+                ),
+            ),
+        ),
+        OperationSpec(
+            name="tracker.startDelivery",
+            summary="Start task delivery or explicitly replace one stopped independent reviewer.",
+            input_model=TrackerStartDeliveryInput,
+            output_model=WriteEnvelope[dict[str, Any]],
+            handler=tracker_start_delivery,
+            surfaces=_surfaces("tracker.startDelivery"),
+            mutating=True,
+            grant_policy="direct-tracker-write",
+            response_policy=OperationResponsePolicy(
+                default_mode="compact",
+                allowed_modes=("compact", "raw"),
+                compact_notes=(
+                    "Keep task, workflow scope, job, ticket, status, review_replacement refs "
+                    "and inspection guidance.",
+                ),
+            ),
+            purpose=(
+                "Select taskwide dependency-driven execution for prepared Todo work. "
+                "Placement alone grants no execution authority; Backlog stays unscheduled. "
+                "Valid running workflow handoffs and explicit retained-handoff recovery "
+                "preserve their execution history. "
+                "Resolve generic tracker delivery defaults with task overrides by role once. "
+                "Ordinary work retains independent review and up to three "
+                "same-session scoped repairs. "
+                "Workflow mirrors execute their frozen contracts through the run-plan owner. "
+                "Explicit unsuccessful results or native failures stop the same task."
+                " Only explicit operator-authorized replace_review validates a quiescent stopped "
+                "ordinary review and clean exact delivered candidate, then launches review only. "
+                "It preserves delivery, retired review/session/attempts "
+                "and consumed repair allowance. "
+                "Ordinary rehandoff never implicitly replaces a reviewer."
+            ),
+            prerequisites=(
+                "Prepare self-contained tickets and dependencies in an existing working directory. "
+                "The canonical directory is retained through rehandoff; queued/running task "
+                "writers cannot share it. Distinct directories may execute concurrently within "
+                "each project's independent saved task limit, including worktrees sharing "
+                "Git metadata. "
+                "Lowering a limit only delays new admission; admitted work continues unchanged. "
+                "Git is optional; supplied candidate evidence requires clean matching HEAD. "
+                "Source-change and repair commit obligations come from project guidance.",
+                "Optional task-only mcp_config_ref supplies an absolute outside-Git TOML path "
+                "and SHA256. Selected Codex validates the same bytes and applies only existing "
+                "stdio server args/cwd/non-secret env leaves through native -c overrides; "
+                "Executables and auth stay unchanged. Other hosts reject before queueing. "
+                "Only the canonical reference/digest is saved; omission on rehandoff retains it "
+                "and changed identity rejects. Missing/changed fragments stop before launch. "
+                "Prepare and verify actual per-tree tool bindings; --cd alone is insufficient.",
+                "For a workflow task, supply run_plan_id and step_id for its running step; "
+                "this is entry context, not a traversal limit. The daemon retains the bound "
+                "controller run internally and claims/records mirrors through RunPlanRepository.",
+                "agents maps safe declared role keys to exact source_ref selections. Fresh Codex "
+                "admission requires sources in the bound workspace; unsupported native settings "
+                "reject. Non-Codex hosts keep inline contracts. agent_assignments maps canonical "
+                "ticket keys to selected roles, overriding frozen step metadata; otherwise use "
+                "the unique applicable declared role. Ambiguity requires selection. Ordinary "
+                "tickets require a separate reviewer. No workflow/step-name routing.",
+                "Supply the project directory. Role fields may be omitted when saved in "
+                "TaskTracker.config_json.delivery through local-admin tracker.configureDelivery. "
+                "Task choices merge by role into one execution snapshot. An explicit handoff "
+                "after complete/stopped execution resolves a new snapshot; queued/running work "
+                "keeps its snapshot. Prior ticket receipts, sessions and repair allowance survive. "
+                "No "
+                "required .codex folder. Resolved names and instructions must be complete. "
+                "Optional per-role host_key, "
+                "model, provider and Hermes profile use the host_mcp capability catalog. "
+                "Without defaults, omitted host/model keeps the Codex/inherited-model path. "
+                "Codex, Claude Code and Grok retain native review controls; Gemini CLI and Hermes "
+                "review with normal native permissions and review-only behavioral instructions. "
+                "Claude Desktop cannot run headlessly. Unsupported choices fail without fallback.",
+            ),
+            returns=(
+                "Returns task/job/status refs. Inspect tracker.get response_mode=raw for progress.",
+                "The existing daemon scheduler owns execution; jobs do not survive daemon restart.",
+                "Agents return status success/repair/blocked/failed, summary, outputs as a "
+                "JSON-encoded object and nonactionable followups. Frozen outputs are validated by "
+                "the run-plan owner. Mirror repair stops. No automatic replacement tasks.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Use saved project defaults with a task reviewer override",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "feature",
+                        "project_dir": "/work/project",
+                        "review_agent": {
+                            "host_key": "gemini-cli",
+                            "model": "gemini-3.1-pro-preview",
+                        },
+                    },
+                ),
+                OperationExample(
+                    title="Execute a workflow task from its running entry step",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "workflow-12",
+                        "run_plan_id": 12,
+                        "step_id": "verify-delivery",
+                        "project_dir": "/work/project",
+                        "delivery_agent": {
+                            "source_ref": {
+                                "host_key": "codex",
+                                "native_name": "builder",
+                                "source_path": ".codex/agents/builder.toml",
+                            },
+                        },
+                        "review_agent": {
+                            "source_ref": {
+                                "host_key": "codex",
+                                "native_name": "reviewer",
+                                "source_path": ".codex/agents/reviewer.toml",
+                            },
+                        },
+                    },
+                ),
+                OperationExample(
+                    title="Start a prepared task with project agents",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "feature",
+                        "project_dir": "/work/project",
+                        "delivery_agent": {
+                            "name": "builder",
+                            "instructions": "Implement and verify the ticket acceptance criteria.",
+                            "host_key": "claude-code",
+                            "model": "claude-sonnet-5-5",
+                        },
+                        "review_agent": {
+                            "source_ref": {
+                                "host_key": "codex",
+                                "native_name": "reviewer",
+                                "source_path": ".codex/agents/reviewer.toml",
+                            },
+                            "host_key": "codex",
+                            "model": "gpt-6.2-sol",
+                        },
+                    },
+                ),
+            ),
+        ),
+        operation_spec(
+            name="tracker.agentStats",
+            summary=(
+                "Read recorded agent launch attempts, reported usage and reviewer rejects "
+                "for one project."
+            ),
+            input_model=TrackerAgentStatsInput,
+            output_model=TrackerAgentStatsOut,
+            handler=tracker_agent_stats,
+            mutating=False,
+            grant_policy="direct-read",
+            response_policy=_AGENT_STATS_RESPONSE_POLICY,
+            purpose=(
+                "Read reset-aware deduplicated invocation facts. Group by agent, model "
+                "or agent_model. Prefer exact unambiguous native model observation; use recorded "
+                "launch selection only when observation is absent. Ambiguous, malformed or "
+                "mismatched observations stay unknown. model_basis reports observed, selected "
+                "or mixed provenance; requested selection remains separate. "
+                "Optional inclusive dates (at most 366 days) and IANA timezone "
+                "scope totals/rows/daily identically; undated receipts are disclosed separately. "
+                "Cache read is included in Input; reasoning in Output. "
+                "Missing fields stay explicit. delivery_trends shares the scope/date range: "
+                "first completions, first-review acceptance, changes requested, stops and "
+                "summed task work time, with independent source-time buckets and coverage."
+            ),
+            examples=(
+                OperationExample(title="Read project agent activity", arguments={"project_id": 1}),
+                OperationExample(
+                    title="Read dated agent activity",
+                    arguments={
+                        "project_id": 1,
+                        "group_by": "agent",
+                        "start_date": "2026-11-01",
+                        "end_date": "2026-11-07",
+                        "timezone": "America/Los_Angeles",
+                    },
+                ),
+            ),
+        ),
+        operation_spec(
+            name="tracker.agentStatsAll",
+            summary="Read recorded agent activity across active, archived or all projects.",
+            input_model=TrackerAgentStatsAllInput,
+            output_model=TrackerAgentStatsOut,
+            handler=tracker_agent_stats_all,
+            mutating=False,
+            grant_policy="local-admin-read",
+            response_policy=_AGENT_STATS_RESPONSE_POLICY,
+            purpose=(
+                "Local-console read over the same reset-aware dated projection. Agent identity "
+                "stays project-scoped; explicit Model grouping combines visible projects. "
+                "Prefer exact unambiguous native model observation; use recorded launch "
+                "selection only when observation is absent. Ambiguous, malformed or mismatched "
+                "observations stay unknown. model_basis reports observed, selected or mixed "
+                "provenance; requested selection remains separate. "
+                "No role/host splitting. Includes the same six shared delivery_trends."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read active project activity", arguments={"is_active": True}
+                ),
+                OperationExample(
+                    title="Read archived project activity", arguments={"is_active": False}
+                ),
+                OperationExample(title="Read all project activity", arguments={"is_active": None}),
+                OperationExample(
+                    title="Compare recorded model attribution across visible projects",
+                    arguments={
+                        "is_active": True,
+                        "group_by": "model",
+                        "start_date": "2026-11-01",
+                        "end_date": "2026-11-07",
+                        "timezone": "America/Los_Angeles",
+                    },
+                ),
+            ),
+        ),
         operation_spec(
             name="tracker.ticketCounts",
             summary="Read exact current ticket-status counts in the project's default tracker.",
@@ -141,9 +591,39 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this for UI rendering, list review by task/ticket ids, or when "
                 "the agent needs a bounded project work map. Use task_index_only for a "
-                "complete operator task selector before loading one focused graph."
+                "complete operator task selector before loading one focused graph. "
+                "Task agent_stats always cover all own ticket receipts; ticket agent_stats "
+                "cover only that ticket. "
+                "Nullable active_execution comes from actual host-call lifetime for "
+                "task-index, ticket and detail reads, never persisted status. "
+                "Work agent_stats.samples retain up to 120 cumulative measured points; "
+                "agent_stats.last_execution is the latest recorded actual identity, "
+                "independent of current activity. "
+                "work_duration is the union of recorded invocation intervals across all own "
+                "tickets for tasks, or one ticket's receipts. It preserves nullable total_seconds, "
+                "observed_at, endpoint_at, exact owned live identities and complete/partial/"
+                "unavailable coverage; lifecycle timestamps and token silence are never "
+                "substitutes. "
+                "Compact responses preserve metrics and their usage/classification coverage."
+                " Explicit projection=ui returns complete lightweight task/filter/count facts "
+                "without primary context/evidence. Supply metric_demand with up to 200 exact "
+                "task/ticket keys including any caller overscan; empty demand computes no metrics. "
+                "Unrequested metrics are null, not zero or Live. Use task_index_only with "
+                "include_graph=false for discovery; selected graph reads require task_key. "
+                "Full/default and raw agent inspection retain complete primary contracts."
             ),
             examples=(
+                OperationExample(
+                    title="Discover all tasks and measure only demanded cards",
+                    arguments={
+                        "project_id": 1,
+                        "projection": "ui",
+                        "task_index_only": True,
+                        "include_graph": False,
+                        "metric_demand": {"task_keys": ["core-tracker"]},
+                        "response_mode": "raw",
+                    },
+                ),
                 OperationExample(
                     title="Load the complete operator task index",
                     arguments={
@@ -286,12 +766,56 @@ def operation_specs() -> list[OperationSpec]:
             ),
         ),
         _read_spec(
+            name="tracker.taskActivity",
+            summary="Read persisted task-scoped history with stable cursor paging.",
+            input_model=TrackerTaskActivityInput,
+            output_model=TaskActivityOut,
+            handler=tracker_task_activity,
+            purpose=(
+                "Inspect linked events and structured delivery lifecycle revisions. "
+                "Coverage is not a complete internal audit; reads never write history."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read older task history",
+                    arguments={"project_id": 1, "task_key": "manual-work", "limit": 50},
+                ),
+            ),
+        ),
+        _read_spec(
+            name="tracker.taskResults",
+            summary="Read canonical results associated through explicit task provenance.",
+            input_model=TrackerTaskResultsInput,
+            output_model=TaskResultsOut,
+            handler=tracker_task_results,
+            purpose=(
+                "Open shared Library details using canonical source identities and every explicit "
+                "association reason. Historical execution contexts are included; "
+                "association does not imply approval."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read task files",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "manual-work",
+                        "source_kind": "artifact",
+                    },
+                ),
+            ),
+        ),
+        _read_spec(
             name="tracker.changed",
             summary="Read tracker changes after a known revision.",
             input_model=TrackerChangedInput,
-            output_model=TrackerChangedOut | dict[str, Any],
+            output_model=TrackerChangedOut | TrackerNotificationChangesOut | dict[str, Any],
             handler=tracker_changed,
-            purpose="Use this for efficient context refresh without reloading the whole tracker.",
+            purpose=(
+                "Use this for efficient context refresh without reloading the whole tracker. "
+                "projection=notifications returns a bounded scalar transition page; omit "
+                "since_rev for a quiet baseline, then page with next_cursor and retain "
+                "current_rev. It excludes prompts, reasons and raw outputs."
+            ),
             examples=(
                 OperationExample(
                     title="Refresh from a known revision",
@@ -404,6 +928,54 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
         ),
+        OperationSpec(
+            name="tracker.updateTaskContent",
+            summary="Save a task description or append operator input without changing execution.",
+            input_model=TrackerUpdateTaskContentInput,
+            output_model=WriteEnvelope[TrackerTaskContentOut],
+            handler=tracker_update_task_content,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=False),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/tracker.updateTaskContent/call",
+                ),
+                cli=OperationSurface(enabled=True, command="ops call tracker.updateTaskContent"),
+            ),
+            mutating=True,
+            grant_policy="local-admin-console-write",
+            idempotency_policy="handler",
+            response_policy=OperationResponsePolicy(
+                default_mode="raw",
+                allowed_modes=("raw",),
+                ack_safe=False,
+                raw_only_reason="Preserve saved content, input receipt and concurrency timestamp.",
+            ),
+            purpose=(
+                "Human task-description correction and append-only additional input. "
+                "This never changes lifecycle, workflow fields, tickets, dependencies or execution."
+            ),
+            prerequisites=(
+                "Read the task with tracker.get response_mode=raw and use its updated_at.",
+                "Use one stable idempotency_key per submission; refresh after a conflict.",
+            ),
+            returns=(
+                "Saved task, tracker revision, appended input and intent-bound retry receipt.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Add operator context to an existing task",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "workflow-42",
+                        "expected_updated_at": "2026-10-28T12:00:00",
+                        "idempotency_key": "work-input-42-1",
+                        "additional_input": "Also verify the narrow layout.",
+                    },
+                ),
+            ),
+        ),
         _write_spec(
             name="tracker.rejectTask",
             summary="Reject a tracker task or run-plan mirror and cascade child tickets.",
@@ -448,7 +1020,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this when more work is discovered after a task or workflow was "
                 "closed. StackOS resolves whether the target is a plain tracker task "
                 "or a mirrored workflow run plan, then reopens the canonical lifecycle "
-                "state in one operation."
+                "state in one operation. Returns safe run/reset-step references, "
+                "without a controller token; controller callers use runPlan.start/reopen."
             ),
             examples=(
                 OperationExample(
@@ -480,10 +1053,61 @@ def operation_specs() -> list[OperationSpec]:
                 "dependencies. Pass updates_json when several tickets need independent "
                 "patch-only updates by ticket_key or ticket_id. For dependency changes, "
                 "prefer add_dependency_keys/remove_dependency_keys unless replacing the "
-                "whole dependency list. Add dry_run=true to preview dependency diffs "
-                "without writing before a larger cleanup."
+                "whole dependency list. Add dry_run=true to validate the exact patch "
+                "and preview dependency diffs without writing. Preview and apply share "
+                "transition and workflow-mirror guards; list previews account for prior "
+                "successful items and retain per-item apply outcomes. Update-list errors "
+                "include structured repair context in results[].error_data. Scoped proof "
+                "recovery may explicitly set context_json.correction.work_intent=evidence_only "
+                "with candidate_commit_sha and target_attempt; preserve existing context, "
+                "sessions, history and repair_count. Source repair remains conservative. "
+                "Main-owned metadata_json.delivery_scope can exclude skipped/aborted work "
+                "from its exact same-task parent's containment with disposition=excluded, "
+                "parent_ticket_key, reason and source_ref; deferred also requires "
+                "resume_owner_ref and resume_condition. This never satisfies blocks edges "
+                "or grants authority. Clear the marker to reinstate the obligation; "
+                "reactivation/reparenting clears a retained marker."
             ),
             examples=(
+                OperationExample(
+                    title="Record an explicit deferred child scope decision",
+                    arguments={
+                        "project_id": 1,
+                        "ticket_key": "optional-followup",
+                        "patch_json": {
+                            "status": "deferred",
+                            "metadata_json": {
+                                "delivery_scope": {
+                                    "disposition": "excluded",
+                                    "parent_ticket_key": "workflow-1-verify-delivery",
+                                    "reason": "Operator moved this optional work to a later scope",
+                                    "source_ref": "operator-decision:scope-2",
+                                    "resume_owner_ref": "team:main",
+                                    "resume_condition": "Operator admits the later scope",
+                                }
+                            },
+                        },
+                        "dry_run": True,
+                    },
+                ),
+                OperationExample(
+                    title="Admit evidence-only work for one exact candidate and attempt",
+                    arguments={
+                        "project_id": 1,
+                        "ticket_key": "core-tracker-ui",
+                        "patch_json": {
+                            "context_json": {
+                                "correction": {
+                                    "work_intent": "evidence_only",
+                                    "candidate_commit_sha": "a" * 40,
+                                    "target_attempt": 4,
+                                    "source_ticket": "integration-check",
+                                    "required_outcome": "Collect missing interaction proof",
+                                }
+                            }
+                        },
+                    },
+                ),
                 OperationExample(
                     title="Patch a ticket list with safe dependency edits",
                     arguments={

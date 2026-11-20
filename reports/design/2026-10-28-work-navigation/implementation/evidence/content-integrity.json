@@ -1,0 +1,52 @@
+{
+  "status": "pass",
+  "scope": "Saved isolated QA snapshots around the content conflict and retry scenario.",
+  "baseline_source": "/tmp/stackos-work-723/fixture-snapshot.json",
+  "after_source": "/tmp/stackos-work-723/content-after-conflict.json",
+  "baseline_note": {
+    "requested_source": "/tmp/stackos-work-723/content-before-conflict.json",
+    "valid_json": false,
+    "error": "Illegal trailing comma before end of object: line 10 column 28 (char 398)",
+    "reason": "Requested file contains TPF-summarized output. Using intact raw revision-29 snapshot produced before the conflict scenario."
+  },
+  "source_sha256": {
+    "/tmp/stackos-work-723/content-before-conflict.json": "cbe80785400695ec0b6f9b3b596a52242db3f7a879f6a8d2a4abe2e675688916",
+    "/tmp/stackos-work-723/fixture-snapshot.json": "a7507c7e17180f617875b468c718e49df8cca4cdc2411cdb3b8d76cb55ea3fed",
+    "/tmp/stackos-work-723/content-after-conflict.json": "d1e4ab61bb464f7905d6a8e4df22eda40928bc81ccf2dc2e86655a62bbdfe736"
+  },
+  "checks": {
+    "task.id": true,
+    "task.key": true,
+    "task.title": true,
+    "task.goal": true,
+    "task.status": true,
+    "task.lane_key": true,
+    "task.source_json": true,
+    "task.input_count": true,
+    "task.input_ids": true,
+    "project_id": true,
+    "ticket_keys": true,
+    "ticket.board": true,
+    "ticket.dialog": true,
+    "ticket.navigation": true,
+    "ticket.requirements": true,
+    "ticket.verify-board": true,
+    "ticket.verify-details": true,
+    "dependencies": true,
+    "other_status_fixture": true
+  },
+  "failed_checks": [],
+  "expected_content_changes": {
+    "description_before": "Make task progress easier to scan, and keep navigation clear between all tasks and one task\u2019s dependencies. Content saved from the Work popup.",
+    "description_after": "Draft retained through concurrent changes",
+    "updated_at_before": "2026-10-28T22:52:05.484959",
+    "updated_at_after": "2026-10-28T23:00:49.119507",
+    "tracker_rev_before": 29,
+    "tracker_rev_after": 31
+  },
+  "unchanged_counts": {
+    "tickets": 6,
+    "dependencies": 5,
+    "input_count": 1
+  }
+}

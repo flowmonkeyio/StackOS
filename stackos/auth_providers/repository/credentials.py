@@ -12,16 +12,18 @@ from typing import Any
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
+from stackos_connectors.auth import OAuthTokenError, get_auth_contract
 from stackos_connectors.errors import ValidationError as NativeValidationError
-
-from stackos.artifacts import redact_secrets
-from stackos.auth_providers.google_service_account import (
+from stackos_connectors.shared.google.service_account import (
     GOOGLE_SERVICE_ACCOUNT_PROVIDERS,
     delegated_subject,
     validate_service_account,
 )
+
+from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     Credential,
+    CredentialAccount,
     CredentialScope,
     ExecutionContext,
     IntegrationCredential,
@@ -139,7 +141,7 @@ class CredentialStorageMixin:
         secret_payload = self._serialize_secret_payload(method=method, values=secret_values)
         if not method.interactive and self._method_requires_local_scope_gate(method):
             safe_config["scope_status"] = "unknown"
-        resolved_status = "pending" if provider.key == "telegram" else "connected"
+        resolved_status = "pending" if provider.key in {"telegram", "cfobooth"} else "connected"
         if method.interactive:
             application_values = json.loads(secret_payload.decode("utf-8"))
             if not isinstance(application_values, dict):
@@ -356,6 +358,19 @@ class CredentialStorageMixin:
         existing_config.update(safe_config)
         safe_config = existing_config
         safe_config["auth_method_key"] = method.key
+        previous_contract = self._optional_oauth_contract(credential)
+        scope_config_changed = False
+        if previous_contract is not None:
+            try:
+                next_contract = get_auth_contract(
+                    credential.provider_key, method=method.key, config=safe_config
+                )
+            except OAuthTokenError as exc:
+                raise ValidationError(
+                    str(exc),
+                    data={"provider_key": provider.key, "fields": list(exc.invalid_fields)},
+                ) from None
+            scope_config_changed = set(previous_contract.scopes) != set(next_contract.scopes)
         if display_name is not None:
             name, name_key = self._account_name(display_name)
             duplicate = self._s.exec(
@@ -384,8 +399,12 @@ class CredentialStorageMixin:
             and fields[field.key] != existing_secret_values.get(field.key)
         }
         scope_state_reset = bool(
-            (changed_secret_fields or subject_changed)
+            (changed_secret_fields or subject_changed or scope_config_changed)
             and self._method_requires_local_scope_gate(method)
+        )
+        cfobooth_identity_changed = provider.key == "cfobooth" and bool(
+            changed_secret_fields
+            or safe_config.get("api_base_url") != (credential.config_json or {}).get("api_base_url")
         )
         resolved_status = credential.status
         secret_payload = declared_secret_payload
@@ -414,14 +433,32 @@ class CredentialStorageMixin:
             )
             if telegram_auth_identity_changed:
                 resolved_status = "pending"
-        elif method.key == "service-account" and (changed_secret_fields or subject_changed):
-            # Both the signing key and delegated identity bind the acquired token.
+        elif method.key == "service-account" and (
+            changed_secret_fields or subject_changed or scope_config_changed
+        ):
+            # The signing identity and selected scopes bind the acquired token.
             secret_payload = declared_secret_payload
             credential.expires_at = None
             safe_config["scope_status"] = "unknown"
             safe_config.pop("scope_evidence_source", None)
             safe_config.pop("scope_evidence_basis", None)
+            safe_config.pop("scope_request_scopes", None)
             resolved_status = "connected"
+        elif scope_config_changed:
+            # A changed scope selection requires new grant evidence, even when
+            # the operator leaves the application credentials unchanged.
+            credential.expires_at = None
+            safe_config["scope_status"] = "unknown"
+            safe_config.pop("scope_evidence_source", None)
+            safe_config.pop("scope_evidence_basis", None)
+            safe_config.pop("scope_request_scopes", None)
+            if method.interactive:
+                secret_payload = declared_secret_payload
+                resolved_status = "pending"
+                safe_config["oauth_connection_status"] = "pending"
+                safe_config["oauth_pending"] = True
+            elif not changed_secret_fields:
+                secret_payload = existing_secret_payload
         elif method.payload_format == "json" and not changed_secret_fields:
             # Safe-field and display-name edits must not discard acquired OAuth
             # tokens, pending application state, refresh material, or other
@@ -462,6 +499,10 @@ class CredentialStorageMixin:
         )
         credential.config_json = self._safe_config(safe_config)
         credential.status = resolved_status
+        if cfobooth_identity_changed:
+            self._invalidate_cfobooth_identity(credential)
+            credential.status = "pending"
+            credential.last_tested_at = None
         credential.revoked_at = None
         credential.updated_at = utcnow()
         self._s.add(credential)
@@ -502,8 +543,11 @@ class CredentialStorageMixin:
     ) -> None:
         if provider_key not in GOOGLE_SERVICE_ACCOUNT_PROVIDERS:
             raise ValidationError("Provider does not support Google service accounts")
-        validate_service_account(secret_values.get("service_account_json"))
-        subject = delegated_subject(provider_key, safe_config.get("delegated_subject"))
+        try:
+            validate_service_account(secret_values.get("service_account_json"))
+            subject = delegated_subject(provider_key, safe_config.get("delegated_subject"))
+        except OAuthTokenError as exc:
+            raise ValidationError(str(exc)) from None
         if subject is not None:
             safe_config["delegated_subject"] = subject
 
@@ -613,6 +657,16 @@ class CredentialStorageMixin:
                 },
             )
         self._s.delete(attachment)
+        if credential.provider_key == "cfobooth":
+            from stackos.actions.generated_inventory import retire_generated_credential_inventory
+
+            retire_generated_credential_inventory(
+                self._s,
+                provider_key=credential.provider_key,
+                credential_ref=credential_ref,
+                project_id=project_id,
+                now=utcnow(),
+            )
         self._s.commit()
         return Envelope(data=self._account_out(credential), project_id=project_id)
 
@@ -644,6 +698,8 @@ class CredentialStorageMixin:
             metadata_json={"credential_ref": account_ref},
         )
         credential.status = "revoked"
+        if provider_key == "cfobooth":
+            self._invalidate_cfobooth_identity(credential)
         credential.revoked_at = now
         credential.expires_at = None
         credential.integration_credential_id = None
@@ -704,6 +760,20 @@ class CredentialStorageMixin:
                 provider_key=provider_key,
                 revoked_at=now,
             ),
+        )
+
+    def _invalidate_cfobooth_identity(self, credential: Credential) -> None:
+        """Discard identity and generated inventory when this key scope is lost."""
+        from stackos.actions.generated_inventory import retire_generated_credential_inventory
+
+        self._s.exec(
+            delete(CredentialAccount).where(col(CredentialAccount.credential_id) == credential.id)
+        )
+        retire_generated_credential_inventory(
+            self._s,
+            provider_key=credential.provider_key,
+            credential_ref=credential.credential_ref,
+            now=utcnow(),
         )
 
     def _global_credential(

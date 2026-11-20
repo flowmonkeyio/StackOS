@@ -18,7 +18,18 @@ RUN_PLAN_CONTROLLER_TOOL_NAMES: frozenset[str] = frozenset(
     }
 )
 
-RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = frozenset(
+RUN_PLAN_OWNER_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "run.ownerAcquire",
+        "run.ownerCheckpoint",
+        "run.ownerConsume",
+        "run.ownerRecordAttempt",
+        "run.ownerReassign",
+        "run.ownerStop",
+    }
+)
+
+RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = RUN_PLAN_OWNER_TOOL_NAMES | frozenset(
     {
         "action.execute",
         "agentRequest.create",
@@ -143,6 +154,24 @@ def _require_communication_send_targets(
         raise ValueError(f"{label} grants for {tool_name!r} must include targets")
 
 
+def _require_owner_targets(*, tool_name: str, targets: tuple[str, ...], label: str) -> None:
+    if tool_name not in RUN_PLAN_OWNER_TOOL_NAMES:
+        return
+    if not targets:
+        raise ValueError(f"{label} ownership grants require canonical item targets")
+    for target in targets:
+        kind, separator, value = target.partition(":")
+        if (
+            kind not in {"task", "ticket"}
+            or not separator
+            or not value.isascii()
+            or not value.isdecimal()
+            or value.startswith("0")
+            or int(value) > 2**63 - 1
+        ):
+            raise ValueError(f"{label} requires canonical task:<id>/ticket:<id> targets")
+
+
 def _require_communication_reply_sources(
     *,
     tool_name: str,
@@ -254,6 +283,9 @@ def parse_run_plan_mcp_tool_grants(
                     targets=targets,
                     label=f"mcp_tool_grants[{index}]",
                 )
+                _require_owner_targets(
+                    tool_name=tool_name, targets=targets, label=f"mcp_tool_grants[{index}]"
+                )
                 _require_communication_reply_sources(
                     tool_name=tool_name,
                     sources=sources,
@@ -288,6 +320,9 @@ def parse_run_plan_mcp_tool_grants(
             tools = _as_string_list(tools_raw, label=f"step_tools[{step_id!r}]")
             for tool_name in dict.fromkeys(tools):
                 _validate_grant_tool(tool_name)
+                _require_owner_targets(
+                    tool_name=tool_name, targets=(), label=f"step_tools[{step_id!r}]"
+                )
                 _require_context_query_filters(
                     tool_name=tool_name,
                     sources=(),
@@ -340,6 +375,7 @@ __all__ = [
     "RUN_PLAN_ADMIN_ONLY_TOOL_NAMES",
     "RUN_PLAN_CONTROLLER_TOOL_NAMES",
     "RUN_PLAN_GRANTABLE_TOOL_NAMES",
+    "RUN_PLAN_OWNER_TOOL_NAMES",
     "RunPlanMcpToolGrant",
     "allowed_tools_for_run_plan_step",
     "parse_run_plan_mcp_tool_grants",

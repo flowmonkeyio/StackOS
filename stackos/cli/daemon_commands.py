@@ -7,14 +7,22 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
 from stackos.config import Settings, get_settings
 from stackos.host_mcp.bridge import WORKSPACE_ROOT_ENV
 from stackos.mcp.bridge import AgentBridgeProxy, bridge_error
+from stackos.mcp.bridge.diagnostics import (
+    BridgeLifecycle,
+    bridge_attempt_id,
+    bridge_failure_response,
+    emit_bridge_diagnostic,
+    emit_bridge_startup_completed,
+)
 from stackos.workspace_identity import (
     is_usable_workspace_root,
     normalize_path,
@@ -149,10 +157,9 @@ def _mcp_bridge_workspace_hints(
     cwd: Path,
     *,
     workspace_root: Path | None = None,
-) -> dict[str, str]:
-    # Claude Code supplies the real project root for stdio MCP servers. Claude
-    # Desktop does not, so process cwd is only a fallback hint. The selected
-    # directory is the workspace identity; Git remote is optional metadata.
+) -> dict[str, Any]:
+    # Host hints can name generated scratch directories. Only an explicit
+    # StackOS root establishes deliberate workspace intent.
     env_workspace_root = os.environ.get(WORKSPACE_ROOT_ENV)
     candidate = (
         workspace_root
@@ -169,6 +176,7 @@ def _mcp_bridge_workspace_hints(
     hints = {
         "cwd": str(resolved_root),
         "repo_fingerprint": fingerprint,
+        "deliberate_workspace_root": bool(workspace_root or env_workspace_root),
     }
     if remote:
         hints["git_remote_url"] = remote
@@ -432,6 +440,18 @@ def restart(
         )
         raise typer.Exit(code=1)
 
+    from stackos.operations.maintenance import runtime_identity
+
+    from .upgrade_commands import finish_pending_upgrade, prepare_for_upgrade
+
+    requested_settings = settings.model_copy(update={"host": daemon_host, "port": daemon_port})
+    maintenance = prepare_for_upgrade(requested_settings, runtime_identity(), only_if_changed=True)
+    if maintenance:
+        typer.echo(
+            f"restart: managed upgrade {maintenance.get('upgrade_id', maintenance['status'])}; "
+            "failed restart leaves checkpoints fenced for repair/retry."
+        )
+
     if launchd_plist is not None and launchd_loaded:
         ok, message = launchd._launchd_bootout(launchd_plist, wait_timeout=timeout)
         if not ok:
@@ -493,6 +513,8 @@ def restart(
             )
             raise typer.Exit(code=1)
         typer.echo(f"restart: {message}; url=http://{daemon_host}:{daemon_port}")
+        if maintenance and maintenance.get("fenced"):
+            finish_pending_upgrade(requested_settings, upgrade_id=maintenance["upgrade_id"])
         return
 
     ok, message = daemon_processes._spawn_detached_daemon(
@@ -508,6 +530,8 @@ def restart(
         typer.echo(f"restart: {message}", err=True)
         raise typer.Exit(code=1)
     typer.echo(f"restart: {message}")
+    if maintenance and maintenance.get("fenced"):
+        finish_pending_upgrade(requested_settings, upgrade_id=maintenance["upgrade_id"])
 
 
 @autostart_app.command(name="install")
@@ -542,6 +566,17 @@ def autostart_install(
             err=True,
         )
         raise typer.Exit(code=1)
+    from stackos.operations.maintenance import runtime_identity
+
+    from .upgrade_commands import prepare_for_upgrade
+
+    if issue := launchd._launchd_install_context_error(
+        settings, home=home, host=daemon_host, port=daemon_port
+    ):
+        typer.echo(f"autostart: {issue}", err=True)
+        raise typer.Exit(code=1)
+    requested_settings = settings.model_copy(update={"host": daemon_host, "port": daemon_port})
+    maintenance = prepare_for_upgrade(requested_settings, runtime_identity())
     ok, message = launchd._install_launchd_autostart(
         settings,
         home=home,
@@ -554,6 +589,10 @@ def autostart_install(
         typer.echo(f"autostart: {message}", err=True)
         raise typer.Exit(code=1)
     typer.echo(f"autostart: {message}")
+    if maintenance and maintenance.get("fenced"):
+        typer.echo(
+            "autostart: managed upgrade prepared; run `stackos restart` for target postflight."
+        )
 
 
 @autostart_app.command(name="uninstall")
@@ -625,94 +664,209 @@ def mcp_bridge(
     credentials stay in the daemon. The bridge reads the daemon token from
     the user's StackOS state dir rather than from project files.
     """
+    bridge_started_at = started_at = time.monotonic()
+    attempt_id = bridge_attempt_id(os.environ.get("STACKOS_BRIDGE_ATTEMPT_ID"))
     import httpx
 
     if data_dir is not None:
         os.environ["STACKOS_DATA_DIR"] = str(data_dir)
     if state_dir is not None:
         os.environ["STACKOS_STATE_DIR"] = str(state_dir)
-    settings = get_settings()
-    settings.ensure_dirs()
-    bridge_host = host or settings.host
-    bridge_port = port or settings.port
-    url = f"http://{bridge_host}:{bridge_port}/mcp"
-
+    lifecycle = BridgeLifecycle(attempt_id, bridge_started_at)
+    phase = "configuration"
+    diagnostic_log_path: Path | None = None
     try:
+        settings = get_settings()
+        diagnostic_log_path = settings.bridge_log_path
+        lifecycle.log_path = diagnostic_log_path
+        lifecycle.stage(phase)
+        phase = "state_setup"
+        lifecycle.stage(phase)
+        started_at = time.monotonic()
+        settings.ensure_dirs()
+        bridge_host = host or settings.host
+        bridge_port = port or settings.port
+        url = f"http://{bridge_host}:{bridge_port}/mcp"
+        phase = "token_read"
+        lifecycle.stage(phase)
+        started_at = time.monotonic()
         token = settings.token_path.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        typer.echo(
-            f"mcp-bridge: auth token missing at {settings.token_path}; run `stackos init`.",
-            err=True,
+        phase = "workspace_hints"
+        lifecycle.stage(phase)
+        started_at = time.monotonic()
+        workspace_hints = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
+        proxy = AgentBridgeProxy(
+            url=url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            },
+            runtime=runtime or "codex",
+            client_session_id=f"stackos-bridge:{attempt_id}",
+            startup_timeout_seconds=settings.bridge_startup_timeout_seconds,
+            diagnostic_log_path=diagnostic_log_path,
+            attempt_id=attempt_id,
+            **workspace_hints,
         )
-        raise typer.Exit(code=7) from None
+    except Exception as exc:
+        emit_bridge_diagnostic(
+            phase=phase,
+            started_at=started_at,
+            original=exc,
+            log_path=diagnostic_log_path,
+            attempt_id=attempt_id,
+            bridge_started_at=bridge_started_at,
+        )
+        code = 7 if phase == "token_read" and isinstance(exc, FileNotFoundError) else 1
+        raise typer.Exit(code=code) from None
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json, text/event-stream",
-        "Content-Type": "application/json",
-    }
-    workspace_hints = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
-    proxy = AgentBridgeProxy(
-        url=url,
-        headers=headers,
-        runtime=runtime or "codex",
-        client_session_id=f"stackos-bridge:{os.getpid()}",
-        **workspace_hints,
-    )
     autostart_attempted = False
-
-    with httpx.Client(timeout=None) as client:
-        for raw in sys.stdin:
-            line = raw.strip()
-            if not line:
-                continue
-
-            request_id: object = None
-            try:
-                payload = json.loads(line)
-                if isinstance(payload, dict):
-                    request_id = payload.get("id")
-            except json.JSONDecodeError as exc:
-                sys.stdout.write(bridge_error(None, -32700, f"Parse error: {exc.msg}") + "\n")
-                sys.stdout.flush()
-                continue
-
-            try:
-                out = proxy.handle(client, payload=payload, line=line, request_id=request_id)
-            except Exception as original_exc:
-                failure_message = str(original_exc)
-                if not autostart_attempted and not daemon_processes._tcp_can_connect(
-                    bridge_host,
-                    bridge_port,
-                    timeout=0.25,
-                ):
-                    autostart_attempted = True
-                    ok, msg = _autostart_bridge_daemon(settings, bridge_host, bridge_port)
-                    typer.echo(f"mcp-bridge: {msg}", err=True)
-                    if ok:
-                        try:
-                            out = proxy.handle(
-                                client,
-                                payload=payload,
-                                line=line,
-                                request_id=request_id,
-                            )
-                        except Exception as retry_exc:
-                            failure_message = str(retry_exc)
-                        else:
-                            if out:
-                                sys.stdout.write(out)
-                                if not out.endswith("\n"):
-                                    sys.stdout.write("\n")
-                                sys.stdout.flush()
-                            continue
-                if request_id is None:
-                    typer.echo(f"mcp-bridge: daemon request failed: {failure_message}", err=True)
+    startup_completed = False
+    phase = "client"
+    lifecycle.stage(phase)
+    started_at = time.monotonic()
+    try:
+        # Tool responses can be long-running; connection and startup/control
+        # requests still get a finite network inactivity timeout.
+        with httpx.Client(
+            timeout=httpx.Timeout(
+                None,
+                connect=settings.bridge_startup_timeout_seconds,
+                pool=settings.bridge_startup_timeout_seconds,
+            )
+        ) as client:
+            input_lines = iter(sys.stdin)
+            while True:
+                phase = "request_read"
+                lifecycle.stage(phase)
+                started_at = time.monotonic()
+                raw = next(input_lines, None)
+                if raw is None:
+                    lifecycle.stage("stdin_eof")
+                    break
+                line = raw.strip()
+                if not line:
                     continue
-                out = bridge_error(request_id, -32000, f"Daemon request failed: {failure_message}")
 
-            if out:
-                sys.stdout.write(out)
-                if not out.endswith("\n"):
-                    sys.stdout.write("\n")
-                sys.stdout.flush()
+                request_id: object = None
+                has_request_id = False
+                try:
+                    payload = json.loads(line)
+                    if isinstance(payload, dict):
+                        request_id = payload.get("id")
+                        has_request_id = "id" in payload
+                except json.JSONDecodeError as exc:
+                    emit_bridge_diagnostic(
+                        phase="request",
+                        started_at=time.monotonic(),
+                        original=exc,
+                        log_path=diagnostic_log_path,
+                        attempt_id=attempt_id,
+                        bridge_started_at=bridge_started_at,
+                    )
+                    phase = "response_write"
+                    started_at = time.monotonic()
+                    sys.stdout.write(bridge_error(None, -32700, f"Parse error: {exc.msg}") + "\n")
+                    sys.stdout.flush()
+                    continue
+
+                initialize_started_at = started_at = time.monotonic()
+                method = payload.get("method") if isinstance(payload, dict) else None
+                phase = "initialize" if method == "initialize" else "request"
+                lifecycle.stage(phase)
+                try:
+                    out = proxy.handle(client, payload=payload, line=line, request_id=request_id)
+                except Exception as original_exc:
+                    retry_failure = None
+                    recovery_failure = None
+                    autostart = "skipped"
+                    recovered = False
+                    # Port liveness after an error does not prove the request
+                    # was never applied. Only these single-request, nonmutating
+                    # methods can replay after a connection-establishment error.
+                    if (
+                        isinstance(method, str)
+                        and method in {"initialize", "ping"}
+                        and has_request_id
+                        and isinstance(original_exc, (httpx.ConnectError, httpx.ConnectTimeout))
+                        and not autostart_attempted
+                        and daemon_processes._is_loopback_host(bridge_host)
+                    ):
+                        try:
+                            if not daemon_processes._tcp_can_connect(
+                                bridge_host, bridge_port, timeout=0.25
+                            ):
+                                autostart_attempted = True
+                                ok, _message = _autostart_bridge_daemon(
+                                    settings, bridge_host, bridge_port
+                                )
+                                autostart = "succeeded" if ok else "failed"
+                                if ok:
+                                    try:
+                                        out = proxy.handle(
+                                            client,
+                                            payload=payload,
+                                            line=line,
+                                            request_id=request_id,
+                                        )
+                                    except Exception as retry_exc:
+                                        retry_failure = retry_exc
+                                    else:
+                                        recovered = True
+                        except Exception as recovery_exc:
+                            recovery_failure = recovery_exc
+                            autostart = "error"
+                    diagnostic = emit_bridge_diagnostic(
+                        phase=phase,
+                        started_at=started_at,
+                        original=original_exc,
+                        retry=retry_failure,
+                        recovery=recovery_failure,
+                        autostart=autostart,
+                        outcome="recovered" if recovered else "failed",
+                        log_path=diagnostic_log_path,
+                        attempt_id=attempt_id,
+                        bridge_started_at=bridge_started_at,
+                    )
+                    if not recovered:
+                        if not has_request_id:
+                            continue
+                        out = bridge_failure_response(request_id, diagnostic)
+
+                if out:
+                    phase = "response_write"
+                    lifecycle.stage(phase)
+                    started_at = time.monotonic()
+                    sys.stdout.write(out)
+                    if not out.endswith("\n"):
+                        sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    if (
+                        method == "initialize"
+                        and has_request_id
+                        and not startup_completed
+                        and "result" in json.loads(out)
+                    ):
+                        emit_bridge_startup_completed(
+                            bridge_started_at=bridge_started_at,
+                            initialize_started_at=initialize_started_at,
+                            response_write_started_at=started_at,
+                            log_path=diagnostic_log_path,
+                            attempt_id=attempt_id,
+                        )
+                        startup_completed = True
+            phase = "client"
+            started_at = time.monotonic()
+    except Exception as exc:
+        emit_bridge_diagnostic(
+            phase=phase,
+            started_at=started_at,
+            original=exc,
+            log_path=diagnostic_log_path,
+            attempt_id=attempt_id,
+            bridge_started_at=bridge_started_at,
+        )
+        raise typer.Exit(code=1) from None
+    finally:
+        lifecycle.stage("cleanup_reached")

@@ -1,4 +1,5 @@
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
+import { parseStackOsDate } from '@/lib/stackos/time'
 import type {
   TrackerSnapshot,
   TrackerStatus,
@@ -7,12 +8,15 @@ import type {
 } from '@/lib/task-tracker/types'
 
 import type { GraphBlockFilter, StatusFilter, TaskProgressRow } from './viewTypes'
+import type { BoardFilterClause, BoardFilterState } from './boardFilters'
 
 export interface TrackerControlFilters {
   search: string
   status: StatusFilter
   workflow: string
   assignee: string
+  ticketStatus?: StatusFilter
+  blocked?: boolean
 }
 
 export interface TrackerGraphFilters {
@@ -57,6 +61,7 @@ export function buildAssigneeOptions(
   tickets: TrackerTicket[],
 ): Array<{ value: string; label: string }> {
   const values = new Set([
+    ...tasks.flatMap((task) => task.owner ? [task.owner] : []),
     ...tickets.flatMap((ticket) => (ticket.assignee ? [ticket.assignee] : [])),
     ...tasks.flatMap((task) => task.ticket_summary?.assignees ?? []),
   ])
@@ -73,6 +78,7 @@ export function buildTaskProgressRows(
   ticketsByTask: Map<string, TrackerTicket[]>,
   filters: TrackerControlFilters,
 ): TaskProgressRow[] {
+  const ticketTitles = new Map([...ticketsByTask.values()].flat().map(ticket => [ticket.key, ticket.title]))
   return tasks
     .map((task) => {
       const taskTickets = ticketsByTask.get(task.key) ?? []
@@ -88,6 +94,11 @@ export function buildTaskProgressRows(
       const inProgressCount = summaryCount(summary, taskTickets, 'in-progress')
       const blockedCount = summary?.blocked_count ?? taskTickets.filter(isGraphBlockedTicket).length
       const totalCount = summary?.total_count ?? taskTickets.length
+      const openTickets = taskTickets.filter(isOpenTicket)
+      const blockedByTitles = summary?.blocked_by_titles ?? (
+        !isTerminalTrackerStatus(task.status) && openTickets.length && openTickets.every(ticket => ticket.blocked_by.length)
+          ? [...new Set(openTickets.flatMap(ticket => ticket.blocked_by_titles ?? ticket.blocked_by.map(key => ticketTitles.get(key) ?? key)))] : []
+      )
       return {
         id: task.id,
         key: task.key,
@@ -102,6 +113,7 @@ export function buildTaskProgressRows(
         totalCount,
         inProgressCount,
         blockedCount,
+        blockedByTitles,
         percent: totalCount > 0 ? Math.round((terminalCount / totalCount) * 100) : 0,
         workflowLabel: taskWorkflowLabel(task),
         currentDetail: taskCurrentDetail(task, totalCount, {
@@ -116,26 +128,7 @@ export function buildTaskProgressRows(
       }
     })
     .filter((row) => taskRowMatchesControls(row, filters))
-    .sort((a, b) => {
-      const createdDiff = Date.parse(b.task.created_at) - Date.parse(a.task.created_at)
-      return createdDiff || b.id - a.id
-    })
-}
-
-export function ticketMatchesControls(
-  ticket: TrackerTicket,
-  task: TrackerTask,
-  filters: TrackerControlFilters,
-): boolean {
-  const query = normalizedSearch(filters.search)
-  if (filters.status !== 'all' && ticket.status !== filters.status) return false
-  if (filters.assignee && ticket.assignee !== filters.assignee) return false
-  if (!taskMatchesWorkflow(task, filters.workflow)) return false
-  if (!query) return true
-  return includesSearch(
-    [ticket.key, ticket.title, ticket.goal, ticket.outcome ?? '', ticket.assignee ?? ''],
-    query,
-  )
+    .sort(newestTaskFirst)
 }
 
 export function taskRowMatchesControls(
@@ -145,16 +138,18 @@ export function taskRowMatchesControls(
   const { task, tickets } = row
   const summary = tickets.length > 0 ? null : task.ticket_summary
   const query = normalizedSearch(filters.search)
+  if (filters.status !== 'all' && task.status !== filters.status) return false
+  if (filters.blocked && row.blockedCount === 0) return false
   if (
-    filters.status !== 'all' &&
-    task.status !== filters.status &&
-    !tickets.some((ticket) => ticket.status === filters.status) &&
-    !summary?.status_counts[filters.status]
+    filters.ticketStatus && filters.ticketStatus !== 'all' &&
+    !tickets.some((ticket) => ticket.status === filters.ticketStatus) &&
+    !summary?.status_counts[filters.ticketStatus]
   ) {
     return false
   }
   if (
     filters.assignee &&
+    task.owner !== filters.assignee &&
     !tickets.some((ticket) => ticket.assignee === filters.assignee) &&
     !summary?.assignees.includes(filters.assignee)
   ) {
@@ -181,6 +176,41 @@ export function taskRowMatchesControls(
     ],
     query,
   )
+}
+
+/** Board-only projection: Graph keeps the unfiltered newest-first source rows. */
+export function projectBoardRows(
+  rows: TaskProgressRow[],
+  state: BoardFilterState,
+  now: Date = new Date(),
+): TaskProgressRow[] {
+  const days = { 'past-day': 1, 'past-week': 7, 'past-month': 30 }
+  return rows.filter(row => {
+    if (!state.clauses.every(clause => matchesBoardClause(row, clause))) return false
+    if (row.task.status !== 'complete' || state.completed === 'all') return true
+    if (state.completed === 'none' || !row.task.completed_at) return false
+    const elapsed = now.getTime() - parseStackOsDate(row.task.completed_at).getTime()
+    return elapsed >= 0 && elapsed <= days[state.completed] * 86_400_000
+  }).sort((a, b) => a.task.order_index - b.task.order_index || newestTaskFirst(a, b))
+}
+
+function matchesBoardClause(row: TaskProgressRow, clause: BoardFilterClause): boolean {
+  const base: TrackerControlFilters = { search: '', status: 'all', workflow: '', assignee: '' }
+  let matches: boolean
+  switch (clause.field) {
+    case 'text': return taskRowMatchesControls(row, { ...base, search: clause.value })
+    case 'blocked': return taskRowMatchesControls(row, { ...base, blocked: true })
+    case 'ticket-status': return taskRowMatchesControls(row, { ...base, ticketStatus: clause.value })
+    case 'status': matches = clause.values.some(value => value === row.task.board_column); break
+    case 'priority': matches = clause.values.some(value => value === row.task.priority_key); break
+    case 'workflow': matches = taskMatchesWorkflow(row.task, clause.value); break
+    case 'assignee': matches = taskRowMatchesControls(row, { ...base, assignee: clause.value }); break
+  }
+  return clause.operator === 'is-not' ? !matches : matches
+}
+
+function newestTaskFirst(a: TaskProgressRow, b: TaskProgressRow): number {
+  return parseStackOsDate(b.task.created_at).getTime() - parseStackOsDate(a.task.created_at).getTime() || b.id - a.id
 }
 
 export function selectGraphVisibleTickets(

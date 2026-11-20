@@ -1,0 +1,201 @@
+{
+  "status": "pass",
+  "disposition": "Source candidate accepted for main-agent adjudication and build admission; this receipt is not release, notarization, deployment, or live-provider acceptance.",
+  "reviewed_at": "2026-10-06T22:25:20.453Z",
+  "project_id": 1,
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "step": "integrate",
+  "step_id": 5910,
+  "assignment_attempt": 1,
+  "contract_revision": 5,
+  "technical_scope_revision": 3,
+  "reviewer": "/root/day1_deploy_review",
+  "independence": {
+    "implementation_edits": false,
+    "acceptance_test_edits": false,
+    "lifecycle_or_external_mutations": false,
+    "activity": "Independent source/diff review, focused synthetic read-only checks, artifact/receipt hash comparison, and this review receipt."
+  },
+  "candidate": {
+    "worktree": "/private/tmp/stackos-release-2135-20261006/host",
+    "commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+    "base_commit": "7d8dd4049065845661fcb3a544c9bbf5482d6475",
+    "clean": true,
+    "changed_paths": 26,
+    "source_manifest": "candidate-source-manifest.json",
+    "source_manifest_sha256": "ee85dba9188f412dcd5f78b9f80f526139f097d40115973105889b0b1de5f228",
+    "manifest_entries_verified": 1818,
+    "source_mismatches": [],
+    "candidate_receipt": "candidate-receipt.json",
+    "candidate_receipt_sha256": "7da409162331fcf868b09ae8ded60586190ddff77a6b42697efa005ea23dd459",
+    "candidate_patch_sha256": "b0805f62d8ff0ff7ffe2593716e41882050d17b160fa69d1234cca58b17ea117"
+  },
+  "consumed_sources": [
+    "AGENTS.md",
+    "docs/product-direction.md",
+    "docs/README.md",
+    ".codex/agents/sdlc-delivery-reviewer.toml",
+    "docs/agent-operating-model.md#canonical-project-guidance-consumption",
+    "docs/auth-providers.md",
+    "docs/action-executor.md",
+    "docs/security.md",
+    "docs/release-signoff.md",
+    "../quickbooks-rev3-scope.json",
+    "../release-authority-rev4.json",
+    "../release-authority-rev5.json",
+    "../host-independent-review.json",
+    "../../connector024-evidence/independent-review.json",
+    "../../connector024-evidence/public-publication.json",
+    "Native workspace.resolve project 1 and runPlan.get run 574/execution 568; revision 4 state confirmed, later revision 5 authority supplied by main and durable authority file"
+  ],
+  "baseline_reuse": {
+    "accepted_revision_2_commit": "7d8dd4049065845661fcb3a544c9bbf5482d6475",
+    "review_sha256": "11a4a0edc0afe764fc5e018c4b9623002e4b4fc01ccc9bb53f283d2b85b5012b",
+    "original_123_input_coverage": "Carried forward from the independently accepted revision 2 source review; no unrelated baseline source changed.",
+    "guidance_and_website": "Previously accepted unchanged guidance, voice setup, and website evidence remain valid; this technical delta adds no material branded copy."
+  },
+  "dependency": {
+    "name": "stackos-connectors",
+    "version": "0.2.4",
+    "commit": "c09ccf8e26f4d6f48b7db6bdd13779e62b31b8b4",
+    "published_wheel_sha256": "f1eebe5cee8de6af40fe447e60fb365ef6e8d4e0bc76d2a500740fc54dc755c7",
+    "public_publication_receipt_sha256": "5c4d7df55995a776c9b0cbfdfc29beada0801df8b816f07d92111da1f5bff013",
+    "parity_receipt_sha256": "267d6c92773e3e83db16fdf3a087730f26a8829646951a604bc343e77dcfd48b",
+    "independent_check": "All 437 installed package files equal the exact public wheel; version 0.2.4; Python 3.13 host environment; no local direct-url provenance.",
+    "lock_delta": "Only StackOS connector requirement and stackos-connectors package record differ from revision 2.",
+    "preserved_owners": "Existing Google Search Console and Google Indexing auth fixes remain package-owned and preserved. No provider transport or auth protocol was duplicated in host."
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC1",
+      "disposition": "pass",
+      "scope": "Canonical setup and registrations",
+      "evidence": "Finance provider uses auth_catalog_ref; setup labels, required environment/realm, and CompanyInfo probe come from accepted package 0.2.4. Existing PackageActionConnector and QuickBooksIntegration are registered. Generic UI is reused."
+    },
+    {
+      "id": "AC2",
+      "disposition": "pass",
+      "scope": "Exactly two read actions",
+      "evidence": "CompanyInfo and bounded invoice page schemas agree with package; read risk, project attachment, daemon-held auth, direct/granted action boundary, response files, and audit are covered. No invented required_scopes or financial-budget policy."
+    },
+    {
+      "id": "AC3",
+      "disposition": "pass",
+      "scope": "Company-bound OAuth",
+      "evidence": "Encrypted pending transaction freezes intended realm/environment; successful callback requires one bounded ASCII numeric matching realm and unchanged config before exchange. Existing state consumption, expiry, credential/CAS binding, and failed reconnect preservation remain authoritative."
+    },
+    {
+      "id": "AC4",
+      "disposition": "pass",
+      "scope": "Honest permission evidence",
+      "evidence": "Fresh authorization-code response with scopes=None records unknown and clears old grants; returned tuples record actual grants. Existing renewal/JWT/client-credential ownership is unchanged. Focused OAuth regressions and new callback cases pass."
+    },
+    {
+      "id": "AC5",
+      "disposition": "pass",
+      "scope": "Relay and API contract",
+      "evidence": "Bounded realmId forwarding retains fixed destination, duplicate/length validation, history cleanup and matching CSP. Generated ui/src/api.ts adds only optional realmId string-array query. All 25 relay checks pass."
+    },
+    {
+      "id": "AC6",
+      "disposition": "pass",
+      "scope": "Redaction and invoice fidelity",
+      "evidence": "Complete-key text match preserves only exact SyncToken revision spelling; compound and camelCase secret keys remain masked. Structured redaction and known-value masking are unchanged. Exact decimal/whitespace/source fields pass through MCP files/audit. Documentation qualifies masking of other secret-like text."
+    },
+    {
+      "id": "AC7",
+      "disposition": "pass",
+      "scope": "Published dependency and regression isolation",
+      "evidence": "Public 0.2.4 archive and installed package match accepted connector. Unrelated source baseline preserved; lock changes bounded; offline lock and relevant lint pass."
+    },
+    {
+      "id": "AC8",
+      "disposition": "operator_deferred_nonblocking",
+      "scope": "Public relay deployment and installer retrieval",
+      "evidence": "Revision 4 defers callback-page deployment; revision 5 reserves website installer download/install for operator. Browser sign-in through the public relay awaits its update. Source review does not claim live readiness or public installer byte equality."
+    }
+  ],
+  "proof": {
+    "reused_worker_checks": [
+      {
+        "name": "oauth-regressions",
+        "passed": 85
+      },
+      {
+        "name": "qbo-final",
+        "passed": 59,
+        "note": "Callback and host integration evidence reused where source is unchanged. Its older redactor binding is superseded by the following repair proof."
+      },
+      {
+        "name": "redaction-review-repair",
+        "passed": 34,
+        "note": "Current redactor, secret negatives, exact-value masking, and all 12 QBO MCP cases."
+      },
+      {
+        "name": "finance-manifest-canonical",
+        "passed": 3
+      },
+      {
+        "name": "relay-check",
+        "passed": 25
+      },
+      {
+        "name": "generated-api",
+        "result": "pass; one expected query type addition"
+      },
+      {
+        "name": "final-lint",
+        "result": "pass"
+      },
+      {
+        "name": "manifest-lint",
+        "result": "pass"
+      },
+      {
+        "name": "lock-offline",
+        "result": "pass"
+      }
+    ],
+    "overlap": "Counts are overlapping slices, not additive. Worker reports 151 distinct pytest cases plus 25 relay cases.",
+    "independent_executed_checks": [
+      "Compared final clean HEAD, all 1,818 source-manifest entries, patch hash, every referenced proof receipt/log hash, and current affected source hashes. Zero mismatches.",
+      "Compared installed package's 437 files against accepted public 0.2.4 wheel. Zero mismatches.",
+      "Compared parsed lock package records to accepted revision 2. Only expected host dependency and connector records differ.",
+      "Synthetic old/new redactor reproduction found privateKey and serviceAccountJson disclosure regression; current repaired source passes 24 focused secret assignments with identical prior protected output, plus exact SyncToken/decimal source fidelity."
+    ],
+    "full_suites_repeated": false,
+    "live_provider_calls": false
+  },
+  "findings": [
+    {
+      "severity": "P1",
+      "status": "fixed",
+      "title": "Host text redaction modified SyncToken revision text",
+      "root_cause": "Unanchored secret-key regex matched the Token suffix within SyncToken.",
+      "resolution": "Complete-key capture and exact case-sensitive public revision exception; no raw_json bypass; current MCP source fidelity proof passes."
+    },
+    {
+      "severity": "P1",
+      "status": "fixed",
+      "title": "Initial repair exposed camelCase secret assignments",
+      "root_cause": "Structured sensitive-key classifier did not recognize privateKey/serviceAccountJson despite the existing text regex recognizing those spellings.",
+      "resolution": "Preserved existing text-regex secret matches; added camelCase and prefixed regression cases. Independent repaired comparison passes."
+    },
+    {
+      "severity": "information",
+      "status": "resolved",
+      "title": "Generated API and stale manifest assertions",
+      "resolution": "Generated realmId query type is included. Finance provider count/Stripe selection and canonical absent Indexing verified_at assertions were reconciled without fabricating provider metadata."
+    }
+  ],
+  "unresolved_source_blockers": [],
+  "limitations": [
+    "No live Intuit consent, company authorization, financial-record completeness, or accounting judgment is established by synthetic checks.",
+    "Public callback deployment is explicitly deferred; public-relay browser sign-in requires that later update. Access-token method does not depend on the relay.",
+    "Host credential masking may alter secret-like text inside raw_json; final docs state that such output is not a byte-exact original.",
+    "Signing, Apple acceptance, staples, final packaged content, upload receipts, remote inventory and public headers/feed metadata remain root-owned release gates.",
+    "Operator owns website installer download/install; no full public installer retrieval or byte-equality claim is authorized."
+  ],
+  "next_disposition": "Main agent may accept this frozen source and proceed to canonical signed/notarized build. Reviewer remains available for separately assigned bounded local artifact review."
+}

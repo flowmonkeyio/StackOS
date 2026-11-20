@@ -1,0 +1,392 @@
+{
+  "status": "released: signed and notarized StackOS 2.1.35 published and feed promoted",
+  "accepted_host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "host_remote_main_pushed": true,
+  "host_independent_review": {
+    "disposition": "pass",
+    "reviewer": "day1_deploy_review",
+    "receipt": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/independent-review.json",
+    "sha256": "5c37f506b3575b614b9df5b0e376759c827c72f794ea66bdcab7244eab1f1754",
+    "contract_revision": 5
+  },
+  "build": {
+    "session_id": 20265,
+    "log": "/private/tmp/stackos-release-2135-20261006/release/release-build.log",
+    "preflight_exit_code": 0,
+    "local_activation": false,
+    "notary_transport": "Reviewed Xcode notarytool1.1.0 with S3 acceleration disabled",
+    "exit_code": 1,
+    "failure": "Apple upload aborted with Network.NWError54 connection reset by peer after13 completed parts; no upload completion or acceptance",
+    "failed_submission_id": "9d959ebc-b89a-42e6-a8b6-faff52c5e63a",
+    "receipt": "release-build.json"
+  },
+  "version": "2.1.35",
+  "connector_version": "0.2.4",
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "authority": "Operator requested another build/submission with the newly published connector, then clarified All changes. Existing public release authority includes signing, notarization and website publication; installation remains operator-owned.",
+  "source_checkout": "/Users/sergeyrura/Bin/content-stack",
+  "source_checkout_head": "c76238b",
+  "accepted_canonical_base": "de7c87c92d085ec221a2de4f32dbf481f7269bcd",
+  "release_worktree": "/private/tmp/stackos-release-2135-20261006/host",
+  "connector_commit": "c09ccf8e26f4d6f48b7db6bdd13779e62b31b8b4",
+  "connector_wheel_sha256": "f1eebe5cee8de6af40fe447e60fb365ef6e8d4e0bc76d2a500740fc54dc755c7",
+  "connector023_acceptance": {
+    "status": "accepted",
+    "accepted_by": "codex-main",
+    "reviewer": "/root/day1_deploy_review",
+    "review_receipt": "/private/tmp/stackos-release-2135-20261006/connector-evidence/independent-review.json",
+    "review_sha256": "5b64cdc3e997429b116d8a8198d78898c6516e6d7c9eefcf0d3ae5ca82706f0f",
+    "findings": [],
+    "publication_workflow": "https://github.com/flowmonkeyio/StackOSConnectors/actions/runs/37537031413",
+    "remote_main_pushed": true,
+    "pypi_status": "published and verified",
+    "public_receipt": "connector-publication.json",
+    "public_wheel_equals_candidate": true
+  },
+  "connector_review": {
+    "reviewer": "day1_deploy_review",
+    "published_package_files_matching_source": 435,
+    "gsc_auth_files_unchanged_from_0_2_1": true,
+    "new_capability": "QuickBooks company information and invoice reads",
+    "shared_api_or_dependency_changes": false,
+    "quickbooks_host_wiring": "Operator explicitly approved inclusion in 2.1.35; implementation and focused delta review required before packaging.",
+    "reviewed_input_version": "0.2.2"
+  },
+  "integration_scope": {
+    "tracked_modified_paths": 92,
+    "untracked_product_source_paths": 31,
+    "groups": [
+      "branding guidance",
+      "SEO and engineering workflows",
+      "Google actions and contract tests",
+      "website implementation and content",
+      "tracked generated website catalogs"
+    ],
+    "excluded_from_product_source": [
+      "reports and QA evidence",
+      "build output",
+      "environments and caches",
+      "credentials"
+    ],
+    "merge_requirement": "Keep canonical package auth and stronger selected-scope enforcement. Preserve Google Indexing and sitemap/batch feature intent without restoring removed legacy auth owners.",
+    "worker": "day1_integrate",
+    "inventory_reviewer": "release_2135_inventory"
+  },
+  "proof_policy": "Reuse valid source-bound evidence; run focused integration checks and independent review against the assembled candidate. No full unrelated suite or local installation.",
+  "previous_release": {
+    "version": "2.1.34",
+    "run_plan_id": 572,
+    "submission_id": "21b7266a-37da-42d0-9c2b-3b901321dc0a",
+    "status": "In Progress at last check",
+    "cancelled": false,
+    "resubmitted": false,
+    "published": false
+  },
+  "local_installation": false,
+  "desktop_publication": "Pending accepted candidate, signed/notarized artifacts and public byte verification.",
+  "prior_upload_diagnosis": {
+    "evidence": "notary-crash-summary.json",
+    "notarytool_crash": "SIGBUS in AWSSigner.signChunk at 2026-10-06T18:44:11Z",
+    "meaning": "The earlier client crashed in the upload path. Apple In Progress alone does not establish upload completion.",
+    "next_proof": "Confirm full upload and save submission response for new build."
+  },
+  "contract_revision": 5,
+  "download_boundary": {
+    "operator_source": "Proceed. Don't start website download. I'll do it myself.",
+    "installer_download": "operator-owned",
+    "public_verification": "HTTP headers and update metadata only; no full installer archive retrieval",
+    "local_installation": false
+  },
+  "connector_acceptance": {
+    "version": "0.2.4",
+    "accepted_by": "codex-main",
+    "reviewer": "/root/day1_deploy_review",
+    "review_receipt": "/private/tmp/stackos-release-2135-20261006/connector024-evidence/independent-review.json",
+    "review_sha256": "13a73c014fb1a551ab97e7dd1fbbe35b7f7558795fbf157f5b3ae765867e39de",
+    "findings": [],
+    "remote_main_pushed": true,
+    "publication_workflow": "https://github.com/flowmonkeyio/StackOSConnectors/actions/runs/37539037936",
+    "pypi_status": "published and verified",
+    "public_receipt": "connector024-publication.json",
+    "public_wheel_equals_candidate": true
+  },
+  "relay_deployment": {
+    "hostname": "auth.stackos.flowmonkey.io",
+    "cname": "stackos.pages.dev",
+    "project": "stackos",
+    "cli_profile": "default",
+    "owner_email": null,
+    "authentication": "Saved Wrangler login expired; cannot refresh. User login command was aborted.",
+    "status": "Deferred by explicit operator instruction; does not block desktop release",
+    "operator_source": "Just release. We'll figure out the wrangler later.",
+    "limitation": "QuickBooks browser sign-in awaits the callback-page update; externally managed access-token method is independent.",
+    "stackos_connector_limits": "Seven DNS actions; no Pages deployment. Existing global Cloudflare DNS Accounts are attached to other projects, not project1.",
+    "credential_values_accessed": false
+  },
+  "quickbooks_amendment": {
+    "source": "Operator answer: Include QuickBooks wiring",
+    "scope": "Expose the package-supported connection and read actions through canonical host registration and execution paths.",
+    "limits": "No new provider feature, live financial action, or local installation.",
+    "state": "Implementing canonical connector setup/probe repair, mapping host company binding and action wiring",
+    "earlier_integration": "Revision2 retained as intermediate baseline; final release review follows QuickBooks delta."
+  },
+  "required_repairs": [
+    {
+      "owner": "stackos-connectors",
+      "issue": "Google Indexing lacks canonical JWT bearer declaration/provider registration after host auth extraction",
+      "repair": "Use existing generic Google JWT bearer contract; focused tests; publish immutable0.2.3 then pin host",
+      "worker": "indexing_connector_023"
+    }
+  ],
+  "notary_retry": {
+    "attempt": 1,
+    "session_id": 30956,
+    "path": "/private/tmp/stackos-release-2135-20261006/release/retry_app_upload.py",
+    "strategy": "Same signed app, Xcode notarytool1.1 with supported S3 acceleration endpoint",
+    "status": "failed; followed by Intel direct and accelerated retries, also failed"
+  },
+  "packaged_content_review": {
+    "status": "passed",
+    "receipt": "final-artifact-review.json",
+    "sha256": "20220f17f6eb929a100288d442ca9cb2d078a7423354fb71bf6897d2dffc087a",
+    "runtime_files": 524,
+    "connector_files": 437,
+    "notarization": "pending"
+  },
+  "notary_retry_history": [
+    {
+      "command": [
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+        "submit",
+        "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+        "--keychain-profile",
+        "stackos-notary",
+        "--s3-acceleration",
+        "--no-wait",
+        "--output-format",
+        "json"
+      ],
+      "started_at": "2026-10-06T22:39:28.405112+00:00",
+      "finished_at": "2026-10-06T22:40:38.380792+00:00",
+      "archive": "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+      "archive_bytes": 515848394,
+      "archive_sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+      "exit_code": -10,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/app-notary-retry1.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prior_attempt": "release-build.json",
+      "retry_reason": "Prior upload aborted: connection reset by peer; alternate supported S3 endpoint.",
+      "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+      "local_app_activation": false
+    },
+    {
+      "command": [
+        "/usr/bin/arch",
+        "-x86_64",
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+        "submit",
+        "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+        "--keychain-profile",
+        "stackos-notary",
+        "--no-s3-acceleration",
+        "--no-wait",
+        "--output-format",
+        "json"
+      ],
+      "started_at": "2026-10-06T22:42:23.691636+00:00",
+      "finished_at": "2026-10-06T22:42:38.291068+00:00",
+      "archive": "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+      "archive_bytes": 515848394,
+      "archive_sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+      "exit_code": 1,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/app-notary-retry2.log",
+      "log_sha256": "eddf5930867b34d2e8b10a7303fd1b0ad8da245132b442ec5d04ce5fcc487fa2",
+      "prior_attempt": "app-notary-retry1.json",
+      "retry_reason": "Confirmed ARM notarytool SIGBUS. Use installed universal tool Intel variant and direct S3 endpoint.",
+      "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+      "local_app_activation": false
+    },
+    {
+      "command": [
+        "/usr/bin/arch",
+        "-x86_64",
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+        "submit",
+        "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+        "--keychain-profile",
+        "stackos-notary",
+        "--s3-acceleration",
+        "--no-wait",
+        "--output-format",
+        "json"
+      ],
+      "started_at": "2026-10-06T22:43:40.396323+00:00",
+      "finished_at": "2026-10-06T22:44:20.999863+00:00",
+      "archive": "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+      "archive_bytes": 515848394,
+      "archive_sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+      "exit_code": -10,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/app-notary-retry3.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prior_attempt": "app-notary-retry2.json",
+      "retry_reason": "Intel uploader avoided ARM crash, but direct S3 endpoint reset connection. Try Intel with accelerated endpoint.",
+      "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+      "local_app_activation": false
+    },
+    {
+      "command": [
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+        "submit",
+        "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+        "--keychain-profile",
+        "stackos-notary",
+        "--no-s3-acceleration",
+        "--no-wait",
+        "--output-format",
+        "json"
+      ],
+      "started_at": "2026-10-07T01:49:11.380371+00:00",
+      "finished_at": "2026-10-07T01:50:53.610135+00:00",
+      "archive": "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+      "archive_bytes": 515848394,
+      "archive_sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/app-notary-retry4.log",
+      "log_sha256": "60c160afd7ebbf2ba9dbf63a7f395d382cfa9d9953d95fb8f6b020d47ec0f3b9",
+      "prior_attempt": "app-notary-retry3.json",
+      "retry_reason": "Operator resumed with Go now after a pause to allow later network change; native ARM uploader with direct S3 endpoint. Actual network change not asserted.",
+      "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+      "local_app_activation": false,
+      "response": {
+        "id": "f0003c77-5049-4808-a868-857ff7d66dc4",
+        "message": "Successfully uploaded file",
+        "path": "/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip"
+      },
+      "upload_completed": true,
+      "notarization_accepted": false
+    }
+  ],
+  "release_blocker": {
+    "stage": "Apple notarization review",
+    "direct_endpoint": "NWError54 connection reset by peer on ARM and Intel uploader",
+    "accelerated_endpoint": "SIGBUS in Apple notarytool on ARM and Intel uploader",
+    "upload_completed": true,
+    "apple_accepted": true,
+    "published": false,
+    "resume_condition": "Require Apple Accepted before app staple and packaging",
+    "no_active_release_process": true,
+    "updated_at": "2026-10-06T22:45:06.300942+00:00",
+    "resolved": true,
+    "resolution": "Completed retry4 upload and Apple Accepted for exact archive"
+  },
+  "architecture": {
+    "release": "arm64 only",
+    "intel_use": "Apple upload utility under Rosetta only; signed app and archive unchanged"
+  },
+  "operator_stop": {
+    "source": "Keep the current network. If it does not work, I will do a different network later today. Stop and wait.",
+    "at": "2026-10-06T22:49:28.702836+00:00",
+    "uploads_this_resume": 0,
+    "network_settings_changed": false,
+    "published": false,
+    "resume_condition": "Operator resumes after network change or provides another notarization route"
+  },
+  "prepared_recovery": {
+    "path": "/private/tmp/stackos-release-2135-20261006/release/recover_notarized_release.py",
+    "executed": true,
+    "review": {
+      "reviewer": "/root/day1_deploy_review",
+      "disposition": "pass",
+      "helper_sha256": "cade1469454d06b9469830b3f198d7384b8281a4229ea5c3d3cf3ff49d3e31e0",
+      "coverage": "Exact archive to app content/paths/symlinks; upload and acceptance gates; post-staple DMG hash checkpoint; syntax"
+    },
+    "session_id": 89417,
+    "receipt": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1.json",
+    "status": "continue passed; awaiting DMG acceptance before finish"
+  },
+  "operator_resumes": [
+    {
+      "source": "Go now",
+      "at": "2026-10-07T01:47:59.537211+00:00",
+      "network_change_confirmed": false,
+      "scope": "Retry preserved signed Apple Silicon release and finish already authorized publication"
+    }
+  ],
+  "current_app_submission": {
+    "id": "f0003c77-5049-4808-a868-857ff7d66dc4",
+    "upload_completed": true,
+    "archive_sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+    "receipt": "app-notary-retry4.json",
+    "status": "Accepted",
+    "wait_session": 36946,
+    "acceptance_log": "app-notary-accepted-log.json"
+  },
+  "notary_warnings": {
+    "count": 6,
+    "scope": "__MACOSX resource-fork companion paths only",
+    "disposition": "Accepted by Apple; final app and DMG Gatekeeper/staple checks remain required"
+  },
+  "current_dmg_submission": {
+    "apple_status": "Accepted",
+    "artifact": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg",
+    "artifact_bytes": 489991107,
+    "artifact_sha256": "fdaf2093e3fbc682d55805a9c88ad753246efbb06100e7b148085b7624c0d848",
+    "continuation_receipt": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1.json",
+    "exit_code": 0,
+    "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+    "response_log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-09-dmg-submit.log",
+    "response_log_sha256": "eef7570bc40043b4023706540657f3ea8ad543b845c7fb58750f6868c24ac518",
+    "stapled_artifact_sha256": "2b53fb4c796e7310cfcccab3d39264e8604d5be33794cc2431ced6f5ac49905a",
+    "stapled_at": "2026-10-07T02:06:29.986696+00:00",
+    "started_at": "2026-10-07T01:58:34.702613+00:00",
+    "status": "submitted",
+    "submission_id": "a572d250-e57c-42fd-9a70-8c6bfdb30c20",
+    "upload_completed": true
+  },
+  "app_final_trust": "passed",
+  "final_trust": {
+    "app": "passed",
+    "dmg": "passed"
+  },
+  "artifact_manifest": {
+    "path": "desktop-release-manifest.json",
+    "sha256": "ac4e0dc16e6b853676109fc263e0149c9c5f362e90fa71f046c5580bb869fd01",
+    "status": "passed"
+  },
+  "final_zip_review": {
+    "status": "passed",
+    "reviewer": "day1_deploy_review",
+    "path": "final-zip-review.json",
+    "sha256": "68a40d783c531a6289875c1f763663a8b4330c2a0d1d77af704035d34d7142e0"
+  },
+  "publication": {
+    "upload_action_call_id": 11686,
+    "baseline_inventory_action_call_id": 11685,
+    "expected_files": 6,
+    "expected_bytes": 1475285090,
+    "stage": "complete",
+    "stable_alias_promoted": true,
+    "feed_promoted": true,
+    "public_verification": "HEAD for installers/blockmaps; GET only small update feed",
+    "installer_downloaded": false,
+    "completed_at": "2026-10-07T02:14:55.446847+00:00",
+    "upload_completed_files": 6,
+    "upload_failed_files": 0,
+    "upload_bytes": 1475285090,
+    "staged_inventory_action_call_id": 11687,
+    "stable_alias_action_call_id": 11688,
+    "feed_action_call_id": 11689,
+    "final_inventory_action_call_id": 11690,
+    "previous_versioned_files_preserved": true,
+    "pending_paths_remaining": 0,
+    "http_headers_passed": true,
+    "feed_exact_bytes_passed": true,
+    "download_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.dmg",
+    "local_activation": false
+  },
+  "residuals": [
+    "QuickBooks browser OAuth awaits separately deferred Cloudflare callback deployment; manual access-token method is available.",
+    "Public archive bodies were not downloaded; publication proof is local hashes and trust, upload receipts, remote sizes, HTTP HEAD and exact small feed comparison."
+  ]
+}

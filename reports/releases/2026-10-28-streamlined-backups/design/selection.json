@@ -1,0 +1,35 @@
+{
+  "workflow_plan": 718,
+  "run": 712,
+  "ticket": 14669,
+  "attempt": "ui-2",
+  "contract_revision": 4,
+  "visual_design_revision": 3,
+  "technical_design_revision": 2,
+  "operator_selection": "3",
+  "selection_basis": "Third displayed generated-image result in the latest ideation set, not planned order.",
+  "source_image": "selected-concept.png",
+  "original_image": "/Users/sergeyrura/.codex-personal/generated_images/01a180da-5c4e-7d20-938c-f60001a2f5f8/exec-a7608827-fec7-4a96-8a38-0a1ad4c4a85d.png",
+  "composition": [
+    "Page header with quiet Restore backup action",
+    "Compact status band with stable primary action and refresh",
+    "Two rows pairing archive and recovery key with their export actions",
+    "Explicit reminder to keep both files accessible after device loss",
+    "Quiet destination footer and Manage menu for settings/history/folder actions"
+  ],
+  "constraints": [
+    "Use current StackOS tokens, compact typography, icon assets and shared components",
+    "Preserve the actual app sidebar; the generated image does not authorize navigation changes",
+    "No fake readiness, no claim that external recovery copies have been verified",
+    "No backup configuration mutation on mount or settings-panel opening",
+    "Preserve existing backup setup and native/daemon ownership",
+    "Stable controls through loading, refresh, setup, success, cancellation and failure"
+  ],
+  "readiness_review": {
+    "reviewer": "reviewer",
+    "disposition": "ready",
+    "clarification": "Open backup folder remains explicit in the footer or Manage menu; dialogs retain focus/Escape/return behavior."
+  },
+  "proof_scope": "Actual app shell and backup components with synthetic operation/native boundaries; real Electron/CLI proof retained separately.",
+  "superseded_visual_candidate": "730fd95119537455d1efc4b33753f4d17ec56fc4d47f41a3ef473a34cdcae301"
+}

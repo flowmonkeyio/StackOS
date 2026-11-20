@@ -4,6 +4,7 @@
   "utils.alibaba-wan": { "src": "/images/integrations/alibaba-wan.png", "kind": "icon" },
   "gtm.apollo": { "src": "/images/integrations/apollo.png", "kind": "icon" },
   "branding.channel-metrics": { "src": "/images/integrations/channel-metrics.svg", "kind": "icon" },
+  "cfobooth.cfobooth": { "src": "/images/integrations/cfobooth.png", "kind": "icon" },
   "gtm.clay": { "src": "/images/integrations/clay.png", "kind": "wordmark-dark" },
   "gtm.clearbit-by-hubspot": { "src": "/images/integrations/clearbit.png", "kind": "icon" },
   "utils.cloudflare": { "src": "/images/integrations/cloudflare-wordmark.png", "kind": "wordmark" },

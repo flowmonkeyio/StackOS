@@ -1,0 +1,187 @@
+{
+  "ticket": {
+    "id": 14749,
+    "key": "work-persistent-detail-modal",
+    "attempt": "D3",
+    "contract_revision": 2,
+    "project_id": 1,
+    "run_plan_id": 724,
+    "run_id": 718,
+    "step_id": 7594,
+    "status": "candidate-ready"
+  },
+  "candidate": {
+    "candidate_sha256": "facaba3f908ed954f3b8c3d8eef96887346d19947563e1f5eebb99ba7661d804",
+    "files": [
+      {
+        "path": "docs/task-tracker.md",
+        "sha256": "136e3e01eb206dccd0a401c01abaef18a76c83cddf4a40b2b83ed8cb9336be46"
+      },
+      {
+        "path": "docs/ui-component-inventory.md",
+        "sha256": "ce2ce86444a9df8a0f72e0c50f92d7be7e74f29d90fa1aab78cad882e4de3e4f"
+      },
+      {
+        "path": "docs/ui-design-system.md",
+        "sha256": "81e40f96facf3c969bebb26f538fe39070b7cb8e5eb23afe9eb4f925dc457491"
+      },
+      {
+        "path": "docs/ui-page-layout-map.md",
+        "sha256": "480b8b83157324436eca0c524f8ddc3926a20b1c1213ee43101445e9461367bf"
+      },
+      {
+        "path": "ui/src/components/ui/UiButton.spec.ts",
+        "sha256": "1d81058f3460a0158798a96e32c77bc5111462723724b852ebfe963487c6f9aa"
+      },
+      {
+        "path": "ui/src/components/ui/UiButton.vue",
+        "sha256": "9c68e5f061e312994c328a3181b312c2157bf553eb380962f2a3699e2f865077"
+      },
+      {
+        "path": "ui/src/components/ui/UiDialog.spec.ts",
+        "sha256": "23745417d53620ef6196de8d60d54a86492d5164f615ac1a2838b1e8e664b5fc"
+      },
+      {
+        "path": "ui/src/components/ui/UiDialog.vue",
+        "sha256": "9f0e1c47e88504d83f3123bb840e448f700815a189b3af48afde06593044b324"
+      },
+      {
+        "path": "ui/src/components/ui/UiSidePanel.spec.ts",
+        "sha256": "52088f799a40022a90f8e2356d44acbc81d3b52b68ec3363b5b386765a57266f"
+      },
+      {
+        "path": "ui/src/components/ui/UiSidePanel.vue",
+        "sha256": "a86c0dda0f3ce78d7fa4a4566b29221a390b3e7a53354928595f4322c94cd4f8"
+      },
+      {
+        "path": "ui/src/components/ui/overlayStack.ts",
+        "sha256": "a327d48e3777a96c0fd70f0777fa952dae822e4953157914ad519f2071897831"
+      },
+      {
+        "path": "ui/src/screen-composition.spec.ts",
+        "sha256": "56ada9a54014342115e4b32f3e89030e7b610de2bdba0d0547302cdd294d2318"
+      },
+      {
+        "path": "ui/src/views/ActionCallsView.spec.ts",
+        "sha256": "f721e9633f5273e7e454c9a30b66198ab3ea4296fc87e9c594987d407b16c352"
+      },
+      {
+        "path": "ui/src/views/ActionCallsView.vue",
+        "sha256": "61377c343513a09cb73bb2c3eaedc4f750f0d8a740cd9423b9c63c028f9f1268"
+      },
+      {
+        "path": "ui/src/views/TaskTrackerView.spec.ts",
+        "sha256": "4cc3d202da99ffd4f8e07fae36eca3ed0dbd617e896f3134889e57fef0fb5205"
+      },
+      {
+        "path": "ui/src/views/TaskTrackerView.vue",
+        "sha256": "6623efb15721df86481177d7cd32e9c102c6d262a1929bfbb67d2a85d356fd53"
+      },
+      {
+        "path": "ui/src/views/task-tracker/TrackerTaskDetailDialog.spec.ts",
+        "sha256": "f1ecef83354d32c36daf1e1be098bff3e7df8c4437f7669f30b79dcf991a1647"
+      },
+      {
+        "path": "ui/src/views/task-tracker/TrackerTaskDetailDialog.vue",
+        "sha256": "91ad352b4d72c54dba43ae59363b3779e4231383a46403fe14ddc57a5bf84368"
+      },
+      {
+        "path": "ui/src/views/task-tracker/TrackerTicketDetailContent.vue",
+        "sha256": "5bcc0bcd7188050bba5e20df7e2618a04a3ad199861837bd4fc0fc43b09308df"
+      },
+      {
+        "path": "ui/src/views/task-tracker/TrackerTicketDetailPanel.vue",
+        "sha256": "9621bef549b7138200f004d33d90ece40d72ca9d2e270007d00d5cb42344c53f"
+      },
+      {
+        "path": "ui/src/views/task-tracker/useTrackerTaskContent.spec.ts",
+        "sha256": "e366a89182a27cd5409ed709e9e02731f72be7026d70421f08b4886b235e1baf"
+      },
+      {
+        "path": "ui/src/views/task-tracker/useTrackerTaskContent.ts",
+        "sha256": "4c29bd030383d7d194547b59468f1303eb87f63e53a1deabc7f11edd2ee14112"
+      }
+    ],
+    "delta_paths": [
+      "ui/src/components/ui/UiDialog.spec.ts",
+      "ui/src/components/ui/UiDialog.vue"
+    ],
+    "algorithm": "SHA256 of sorted relative path + NUL + file SHA256 + newline; receipt excluded",
+    "head": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b",
+    "frozen": true
+  },
+  "predecessor": {
+    "attempt": "D2",
+    "candidate_sha256": "fb22c59208f84a14619e6d2a3c14d1e46ceeb5db307ce6d5ae2b98542e722db4",
+    "receipt": "reports/design/2026-10-28-work-navigation/stability/evidence/modal-D2-candidate.json",
+    "disposition": "D2 independently approved; root integrated signoff candidate reported prefix8ce942 failed one existing consumer test."
+  },
+  "sources": [
+    "D2/current contract2 retained",
+    "Root D3 admission: UiDialog.vue/spec only; replace reactive stack-entry render coupling with existing UiSidePanel explicit mounted-lifecycle pattern",
+    "Existing UiSidePanel.vue owner pattern and shared overlayStack.ts",
+    "Full gate failure /Users/sergeyrura/.local/share/tpf/tee/20261028_184939_make.log"
+  ],
+  "finding": {
+    "trigger": "ConnectionsView.accounts.spec.ts detach-account confirmation with shared mountConnections Teleport stub",
+    "gate_result": "1failed/798passed across117UItestfiles,102 repeated recursion errors; Python5470passed",
+    "root_cause": "UiDialog used a shallowRef overlayEntry in render-derived z-index bindings while vnode before-mount/unmount hooks mutate that ref. Stubbed Teleport regeneration exposed repeated render/register/remove cycles. Native UiSidePanel already keeps entry nonreactive and applies stack layers through mounted DOM refs.",
+    "fix": "UiDialog now holds the same plain OverlayEntry lifetime as UiSidePanel; overlay/dialog refs receive shared layer styles synchronously in the mounted hook, before nextTick focus. No reactive render depends on stack registration. Shared stack, focus trapping, open order, body lock and defaults unchanged."
+  },
+  "checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/views/ConnectionsView.accounts.spec.ts -t 'requires confirmation to detach'",
+      "result": "failed before repair; original existing consumer regression preserved unchanged",
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_185113_pnpm.log"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/views/ConnectionsView.accounts.spec.ts src/components/ui/UiDialog.spec.ts src/components/ui/UiSidePanel.spec.ts src/views/TaskTrackerView.spec.ts src/views/ActionCallsView.spec.ts src/no-watch-ui.spec.ts --reporter=json --outputFile=/tmp/stackos-work-724/modal-D3-tests.json",
+      "result": "passed53tests/6files,0errors",
+      "evidence": "/tmp/stackos-work-724/modal-D3-tests.json"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui run type-check",
+      "result": "passed"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec eslint src/components/ui/UiDialog.vue src/components/ui/UiDialog.spec.ts",
+      "result": "passed0errors;4inline-host test-fixture one-component-per-file warnings"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf git diff --check",
+      "result": "passed"
+    }
+  ],
+  "proof_scope": [
+    "Existing actual Connections10tests run unchanged, including failed detach confirmation and auto-attach account case.",
+    "New primitive Teleport-stub open/close/reopen compatibility check verifies stack cleanup, Escape, focus restoration and body-lock restoration. This small primitive case itself passed before repair; the red is the actual unchanged Connections test.",
+    "Existing real-portal mixed dialog/drawer tests preserve ordering, top-only Escape/Tab, lower-overlay-unmount focus and body lock.",
+    "Work25route tests preserve same-frame task/ticket identity, retained scroll/disclosures/drafts/focus, dirty/inflight navigation and exact URLs.",
+    "ActionCalls real UiConfirmDialog lifecycle still passes; no-watch remains green."
+  ],
+  "failure_history": [
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_184939_make.log",
+      "result": "Root mandatory gate failed one unchanged consumer. No attempt to weaken/migrate that consumer or its Teleport stub."
+    },
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_185113_pnpm.log",
+      "result": "Focused existing consumer reproduced recursive UiDialog updates before repair."
+    },
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_185401_pnpm.log",
+      "result": "First repair resolved Connections but delayed z-index assignment until after nextTick; existing stacking assertions exposed unset styles. Moved layer assignment synchronously before focus wait; kept assertions unchanged."
+    }
+  ],
+  "environment": {
+    "workspace": "/Users/sergeyrura/Bin/content-stack",
+    "baseline": "Shared D2 candidate plus unrelated preserved project edits; only2ownedfiles changed forD3",
+    "runtime": "Vue3/Vitest jsdom; both real and stubbed Teleport proofs",
+    "integration": "Root owns isolated signoff workspace /tmp/stackos-work-724/signoff, all browser/build/daemon/fullgate actions"
+  },
+  "residuals": [
+    "Mandatory full make signoff must be rerun by root on integrated D3; candidate self-check is not acceptance.",
+    "No backend/API/controller/UIflow changes; no commits/build/daemon/browser/tracker writes."
+  ],
+  "next_disposition": "Frozen D3 candidate ready for independent review/root integration; rerun full signoff."
+}

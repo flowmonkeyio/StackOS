@@ -1,0 +1,24 @@
+{
+  "verdict": "approve",
+  "reviewer": "content_design_review",
+  "scope": "Ticket and integrated delivery; reusable for review-delivery on this unchanged candidate",
+  "ticket": "website-content-evidence-layout-555",
+  "attempt_id": "content-layout-a1",
+  "constraint_revision": 1,
+  "candidate_sha256": "97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b",
+  "independence": "No implementation, test, build, browser or lifecycle mutations",
+  "acceptance": {"AC1":"pass","AC2":"pass","AC3":"pass","AC4":"pass","AC5":"pass","AC6":"pass"},
+  "findings": [],
+  "required_repairs": [],
+  "resolved_findings": ["QA-1","QA-2"],
+  "independent_checks": [
+    "Recomputed candidate identity and changed-file hashes",
+    "Verified42 exact table cells, original labels and all non-table article bytes",
+    "Verified119 build input hashes and current SSR4/5/5 semantic evidence rows",
+    "Checked188-route/188-sitemap-URL generated proof",
+    "Inspected final full/focused comparisons, repaired colors and mobile captures",
+    "Reviewed native ownership, cleanup, reader/catalog flows, docs and local-only release boundary"
+  ],
+  "residual_risks": ["Disclosed tooling/font-preload warnings; no observed runtime error","Local preview verified; production unchanged"],
+  "evidence_refs": ["delivery-receipt-97dc66f0.json","source-preservation-97dc66f0.json","generated-seo-qa-repairs.log","browser-verification.json","browser-console-final.log","visual/content-555-repair-comparison.png","visual/content-555-comparison-full-final.png","visual/content-555-comparison-focus-final.png","../../../../design-qa.md"]
+}

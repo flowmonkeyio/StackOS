@@ -1,0 +1,233 @@
+{
+  "ticket": {
+    "id": 14749,
+    "key": "work-persistent-detail-modal",
+    "attempt": "D1",
+    "contract_revision": 2,
+    "project_id": 1,
+    "run_plan_id": 724,
+    "run_id": 718,
+    "step_id": 7594,
+    "status": "candidate-ready"
+  },
+  "candidate": {
+    "candidate_sha256": "7fe060d86d7761e1c313a3c8f8283893522204337ddedf61f5693c6c9b550f96",
+    "files": [
+      {
+        "path": "docs/task-tracker.md",
+        "sha256": "da97624f796176827a8a0b9b53e7fe468f0132889eb4abbb4f01310c49e85610"
+      },
+      {
+        "path": "docs/ui-component-inventory.md",
+        "sha256": "ce2ce86444a9df8a0f72e0c50f92d7be7e74f29d90fa1aab78cad882e4de3e4f"
+      },
+      {
+        "path": "docs/ui-design-system.md",
+        "sha256": "81e40f96facf3c969bebb26f538fe39070b7cb8e5eb23afe9eb4f925dc457491"
+      },
+      {
+        "path": "docs/ui-page-layout-map.md",
+        "sha256": "480b8b83157324436eca0c524f8ddc3926a20b1c1213ee43101445e9461367bf"
+      },
+      {
+        "path": "ui/src/components/ui/UiButton.spec.ts",
+        "sha256": "1d81058f3460a0158798a96e32c77bc5111462723724b852ebfe963487c6f9aa"
+      },
+      {
+        "path": "ui/src/components/ui/UiButton.vue",
+        "sha256": "9c68e5f061e312994c328a3181b312c2157bf553eb380962f2a3699e2f865077"
+      },
+      {
+        "path": "ui/src/components/ui/UiDialog.spec.ts",
+        "sha256": "5655a8f652e631c5300251f4c850be4b7442461aa088da9ee05725f2dba62703"
+      },
+      {
+        "path": "ui/src/components/ui/UiDialog.vue",
+        "sha256": "312ca158ef47f1ca32c69b02a0590a1d035316d38cfe7b6214ec309c31bb84d7"
+      },
+      {
+        "path": "ui/src/components/ui/UiSidePanel.spec.ts",
+        "sha256": "52088f799a40022a90f8e2356d44acbc81d3b52b68ec3363b5b386765a57266f"
+      },
+      {
+        "path": "ui/src/components/ui/UiSidePanel.vue",
+        "sha256": "a86c0dda0f3ce78d7fa4a4566b29221a390b3e7a53354928595f4322c94cd4f8"
+      },
+      {
+        "path": "ui/src/components/ui/overlayStack.ts",
+        "sha256": "a327d48e3777a96c0fd70f0777fa952dae822e4953157914ad519f2071897831"
+      },
+      {
+        "path": "ui/src/screen-composition.spec.ts",
+        "sha256": "56ada9a54014342115e4b32f3e89030e7b610de2bdba0d0547302cdd294d2318"
+      },
+      {
+        "path": "ui/src/views/ActionCallsView.spec.ts",
+        "sha256": "f721e9633f5273e7e454c9a30b66198ab3ea4296fc87e9c594987d407b16c352"
+      },
+      {
+        "path": "ui/src/views/ActionCallsView.vue",
+        "sha256": "61377c343513a09cb73bb2c3eaedc4f750f0d8a740cd9423b9c63c028f9f1268"
+      },
+      {
+        "path": "ui/src/views/TaskTrackerView.spec.ts",
+        "sha256": "adb61124d0bf0056e50278e845453da29a3453ff140228445f60a6e137dbc581"
+      },
+      {
+        "path": "ui/src/views/TaskTrackerView.vue",
+        "sha256": "6623efb15721df86481177d7cd32e9c102c6d262a1929bfbb67d2a85d356fd53"
+      },
+      {
+        "path": "ui/src/views/task-tracker/TrackerTaskDetailDialog.spec.ts",
+        "sha256": "f0c642f0b3ce5b7c7350cde04fb4ed1f4cce6a786ad77343b951e110b347b07d"
+      },
+      {
+        "path": "ui/src/views/task-tracker/TrackerTaskDetailDialog.vue",
+        "sha256": "a5297a0c3a8c8a8c27e231bb13e354c44eff507722f6ad69f102c0762ff4fc07"
+      },
+      {
+        "path": "ui/src/views/task-tracker/TrackerTicketDetailContent.vue",
+        "sha256": "5bcc0bcd7188050bba5e20df7e2618a04a3ad199861837bd4fc0fc43b09308df"
+      },
+      {
+        "path": "ui/src/views/task-tracker/TrackerTicketDetailPanel.vue",
+        "sha256": "9621bef549b7138200f004d33d90ece40d72ca9d2e270007d00d5cb42344c53f"
+      }
+    ],
+    "algorithm": "SHA256 of sorted relative path + NUL + file SHA256 + newline; receipt excluded",
+    "head": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b",
+    "frozen": true
+  },
+  "prerequisites": [
+    {
+      "ticket": 14748,
+      "attempt": "M1",
+      "candidate_sha256": "72c0697fb31fe242b6ec43470d229c90b225c15bcb9f0f04264d59ffb36115b1",
+      "status": "accepted by root after independent review and browser proof"
+    }
+  ],
+  "sources": [
+    "tracker.brief(work-persistent-detail-modal), raw contract2",
+    "AGENTS.md",
+    ".codex/agents/sdlc-delivery.toml",
+    "docs/product-direction.md",
+    "docs/README.md",
+    "docs/ui-design-system.md",
+    "docs/ui-component-inventory.md",
+    "Product Design image-to-code skill and selected02-task-popup.png",
+    "Operator amendments: fixed persistent detail frame, six visible ticket rows, shared design-system close control, full-viewport backdrop",
+    "Root admitted shared overlayStack + UiSidePanel and ActionCalls compatibility scope after mixed-overlay red proof"
+  ],
+  "behavior": [
+    {
+      "ac": "D1 frame",
+      "implementation": "UiDialog optional layout=detail; min(880px,100dvh-48px), lg672 width; fixed header/footer and one flexible scrolling body; default content-sized layout preserved.",
+      "proof": "UiDialog.spec opt-in/default compatibility; task detail loading/error/loaded state; root preliminary1280x800 confirms672x752 at y24."
+    },
+    {
+      "ac": "D2 ticket cap",
+      "implementation": "At most six40px rows in a240px inner scrolling region. All records rendered and last record opens normally; no wheel handlers/traps.",
+      "proof": "TrackerTaskDetailDialog.spec parameterized0/1/6/7/30 records; rows/list class contract; root final geometry QA owns actual scroll measurements."
+    },
+    {
+      "ac": "D3 persistent task inspection",
+      "implementation": "One UiDialog stays mounted; task DOM retained hidden+inert while the shared ticket-content subtree renders. Task draft, editor, More details/Trace, list/body scroll remain; Back restores originating row focus. New task resets reading state. Same-task ticket navigation does not invoke exit/discard guard; actual close/task/map/project leave preserves guards.",
+      "proof": "TaskTrackerView.spec persistent DOM/state/focus test; new-task reset; dirty route/history/dependency exit; in-flight save; unavailable ticket URL tests.25 route tests total."
+    },
+    {
+      "ac": "D4 content/focus",
+      "implementation": "Description editor focuses on entry; Cancel returns Edit focus; textareas do not resize beyond their assigned area. Long content wraps inside bounded body; footer remains outside scroll. Ticket entry starts at top/heading.",
+      "proof": "Task detail loading/error/editor focus test; persistent route test; content controller6tests including errors/conflicts/idempotency unchanged."
+    },
+    {
+      "ac": "D5 reusable system and close",
+      "implementation": "Shared UiDialog preset, centered icon-only UiButton slot, canonical md32px close with16px SVG, no Work-specific primitive navigation. One extracted TrackerTicketDetailContent is reused in modal and map side inspector.",
+      "proof": "UiButton/UiDialog specs; source-composition single shared subtree; docs system/inventory/page map/tracker updated; root preliminary browser exact center measured."
+    },
+    {
+      "ac": "D6 backdrop and compatible overlays",
+      "implementation": "UiDialog teleports to body, removing page-spacing margin gap. Shared overlayStack replaces duplicate dialog/drawer stacks, owns opening-order layers, top-only keyboard, body lock and opener restoration including lower-overlay unmount. ActionCalls removes obsolete outer stacking wrapper.",
+      "proof": "Real portal parent regression; mixed drawer/dialog and reversed-order unmount tests; ActionCalls real confirmation lifecycle tests. Root1280x800 overlay(0,0)height800 parentBODY margin0."
+    }
+  ],
+  "architecture_decision": {
+    "existing_owners": [
+      "UiDialog",
+      "UiSidePanel"
+    ],
+    "demonstrated_gap": "Separate stacks used incompatible1000/1100 bases; mixed overlay test showed confirmation behind drawer, Escape closing drawer, incorrect focus restoration and premature body unlock.",
+    "replacement": "overlayStack.ts is the sole shared registration/scroll/focus stack for these two primitives. Removed both superseded stacks; no other overlay types refactored."
+  },
+  "checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/components/ui/UiDialog.spec.ts src/components/ui/UiSidePanel.spec.ts src/components/ui/UiButton.spec.ts src/views/TaskTrackerView.spec.ts src/views/task-tracker/TrackerTaskDetailDialog.spec.ts src/views/task-tracker/useTrackerTaskContent.spec.ts src/screen-composition.spec.ts src/no-watch-ui.spec.ts src/read-only-ui.spec.ts src/views/ActionCallsView.spec.ts --reporter=json --outputFile=/tmp/stackos-work-724/modal-D1-tests.json",
+      "result": "passed",
+      "tests": 77,
+      "files": 10,
+      "evidence": "/tmp/stackos-work-724/modal-D1-tests.json"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui run type-check",
+      "result": "passed"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec eslint src/components/ui/UiDialog.vue src/components/ui/UiDialog.spec.ts src/components/ui/UiButton.vue src/components/ui/UiButton.spec.ts src/components/ui/UiSidePanel.vue src/components/ui/UiSidePanel.spec.ts src/components/ui/overlayStack.ts src/views/task-tracker/TrackerTaskDetailDialog.vue src/views/task-tracker/TrackerTaskDetailDialog.spec.ts src/views/task-tracker/TrackerTicketDetailPanel.vue src/views/task-tracker/TrackerTicketDetailContent.vue src/views/TaskTrackerView.vue src/views/TaskTrackerView.spec.ts src/views/ActionCallsView.vue src/views/ActionCallsView.spec.ts src/screen-composition.spec.ts",
+      "result": "passed with0errors and5 test-fixture one-component-per-file warnings",
+      "warnings": "UiDialog.spec3, UiSidePanel.spec2; inline host components exercise nested/mixed overlay behavior."
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf git diff --check",
+      "result": "passed"
+    },
+    {
+      "check": "Product Design/browser",
+      "result": "root-owned; preliminary geometry passed, final visual acceptance pending"
+    },
+    {
+      "check": "Build/full release signoff",
+      "result": "not run by instruction; root integration owns"
+    }
+  ],
+  "failure_history": [
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_181847_pnpm.log",
+      "result": "Intentional red:4 failures for missing detail preset, icon centering, replaced frame, same-task draft discard guard. All now green."
+    },
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_182515_pnpm.log",
+      "result": "Intentional mixed-overlay red:1test/4 assertions failed for z-order, wrong Escape owner, focus and scroll lock. Admitted shared owner repair now green."
+    },
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_182116_pnpm.log",
+      "result": "Intermediate stale source/route assertions for removed separate modal; updated to persistent shell/shared content."
+    },
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_182333_pnpm.log",
+      "result": "Teleport test stub caused recursive vnode lifecycle updates in changing Work fixture. Removed Teleport stub; tests now exercise real body portals."
+    },
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_182533_pnpm.log",
+      "result": "ActionCalls test assumed local confirmation DOM; updated to actual .ui-dialog portal queries without changing operations."
+    },
+    {
+      "evidence": "/Users/sergeyrura/.local/share/tpf/tee/20261028_182835_pnpm.log",
+      "result": "Intermediate reversed-stack test checked styles before async mounted lifecycle; fixed test awaiting flushPromises. One unused test binding fixed; final typecheck/lint pass."
+    }
+  ],
+  "environment": {
+    "workspace": "/Users/sergeyrura/Bin/content-stack",
+    "baseline": "Shared dirty workspace containing accepted prior delivery; preserved unrelated .mcp/.serena/reports/backend/build changes.",
+    "ui": "Vue3/Vite/Vitest; native pnpm; actual Teleport tested under jsdom",
+    "browser": "Root-owned isolated daemon5185/Vite5175 fixtureproject4; no child browser actions"
+  },
+  "deviations": [
+    "Root-admitted shared overlay stack and ActionCalls compatibility cleanup required by real mixed-overlay regression.",
+    "No API/controller/backend changes, no commits, build, daemon, browser or tracker writes."
+  ],
+  "residuals": [
+    "JSDOM proves retained nodes/state/focus and declared cap, not rendered pixel geometry; root owns browser proof for shortviewport/both themes/scroll chaining and final Product Design QA.",
+    "User-requested internet best-practice second pass is root-owned after this candidate freeze.",
+    "Independent review and integrated make signoff pending; candidate-ready is not ticket acceptance."
+  ],
+  "next_disposition": "Frozen for independent navigation_review/root adjudication. Await bounded repair assignment if needed."
+}

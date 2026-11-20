@@ -1,0 +1,28 @@
+{
+  "capturedAt": "2026-10-28T17:10:13.916Z",
+  "mode": "status",
+  "endpoint": "http://127.0.0.1:9238",
+  "targetId": "9B46D96CE11389FBDFC8C238256777B3",
+  "targetUrl": "http://127.0.0.1:5180/",
+  "result": {
+    "health": {
+      "ok": true,
+      "statusCode": 200
+    },
+    "command": {
+      "mode": "packaged",
+      "command": "/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos"
+    },
+    "payload": {
+      "name": "stackos",
+      "version": "2.1.39",
+      "buildId": "20261026T180127Z",
+      "builtAt": "2026-10-26T18:01:27Z"
+    },
+    "notifications": {
+      "enabled": true,
+      "status": "idle",
+      "lastError": null
+    }
+  }
+}

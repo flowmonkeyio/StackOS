@@ -30,9 +30,10 @@ class CredentialStatusMixin:
         *,
         project_id: int | None,
         provider_key: str | None = None,
+        summary_only: bool = False,
     ) -> AuthStatusOut:
         """List all Accounts or only Accounts attached to one project."""
-        providers = self.list_providers(provider_key=provider_key)
+        providers = [] if summary_only else self.list_providers(provider_key=provider_key)
         if project_id is not None:
             rows = self.attached_credentials(
                 project_id=project_id,
@@ -54,6 +55,7 @@ class CredentialStatusMixin:
             provider_key=provider_key,
             providers=providers,
             accounts=[self._account_out(row) for row in rows],
+            summary_only=summary_only,
         )
 
     def attached_credentials(
@@ -133,6 +135,8 @@ class CredentialStatusMixin:
 
     def _last_test_for_credential(self, credential: Credential) -> AuthTestOut | None:
         """Project the existing test audit, never use it as an execution grant."""
+        if credential.provider_key == "cfobooth" and credential.last_tested_at is None:
+            return None
         event = self._s.exec(
             select(CredentialUsageEvent)
             .where(

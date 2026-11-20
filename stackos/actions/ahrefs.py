@@ -81,15 +81,14 @@ class AhrefsActionConnector:
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         if request.operation not in _AHREFS_OPERATIONS:
             raise ValidationError(f"unsupported Ahrefs operation {request.operation!r}")
-        from stackos_connectors import CallOptions, ConnectorClient
-        from stackos_connectors.catalog import load_registry
+        from stackos_connectors import CallOptions, get_default_client
         from stackos_connectors.connectors.ahrefs.integration import AhrefsIntegration
 
         from stackos.actions.package_bridge import PackageActionConnector
         from stackos.integrations._rate_limit import get_bucket
 
         if self._client is None:
-            self._client = ConnectorClient(registry=load_registry("connectors/ahrefs/catalog.json"))
+            self._client = get_default_client()
         options = self._options or CallOptions()
         limiter = (
             options.rate_limiter

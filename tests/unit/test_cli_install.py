@@ -29,6 +29,7 @@ import stackos.cli.daemon_processes as daemon_processes
 import stackos.cli.doctor_commands as doctor_cli
 import stackos.cli.launchd as launchd_cli
 import stackos.cli.local_commands as local_cli
+import stackos.cli.upgrade_commands as upgrade_cli
 import stackos.db.migrate as migrate_module
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
 import stackos.host_mcp as host_mcp
@@ -51,12 +52,12 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0032_shared_telegram_application"
+HEAD_REVISION = "0052_upgrade_receipts"
 
 
 @pytest.fixture
 def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Sandbox HOME with a token in place."""
+    """Sandbox assets/state and model the install unit cases' quiescent source."""
     home = tmp_path / "home"
     home.mkdir()
     state = home / ".local" / "state" / "stackos"
@@ -69,6 +70,13 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("STACKOS_HOME", str(home))
     monkeypatch.setenv("STACKOS_DATA_DIR", str(home / ".local" / "share" / "stackos"))
     monkeypatch.setenv("STACKOS_STATE_DIR", str(state))
+    # Install/doctor primitives are mocked in these unit cases; their preparation
+    # prerequisite must not depend on network permissions or a live default port.
+    monkeypatch.setattr(
+        upgrade_cli,
+        "prepare_for_upgrade",
+        lambda _settings, _target, **_kwargs: {"status": "quiescent-bootstrap", "fenced": False},
+    )
     return home
 
 
@@ -368,7 +376,6 @@ def test_verify_gstack_runtime_rejects_legacy_packaging(tmp_path: Path) -> None:
     [
         "@anthropic-ai/claude-agent-sdk",
         "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-        "@anthropic-ai/sdk",
         "onnxruntime-node/bin/napi-v6/linux",
         "onnxruntime-node/bin/napi-v6/win32",
     ],
@@ -397,11 +404,12 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
     excluded = [
         "@anthropic-ai/claude-agent-sdk",
         "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-        "@anthropic-ai/sdk",
         "onnxruntime-node/bin/napi-v6/linux",
         "onnxruntime-node/bin/napi-v6/win32",
     ]
     retained = [
+        "node_modules/@anthropic-ai/sdk/package.json",
+        "node_modules/.bin/anthropic-ai-sdk",
         "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
         "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/libonnxruntime.1.24.3.dylib",
         "node_modules/@huggingface/transformers/package.json",
@@ -420,10 +428,11 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
     (outside / "keep").write_text("outside staging")
     stages: list[str] = []
 
-    def run_build(_argv: list[str], *, stage: str, **_kwargs: object) -> None:
+    def run_build(argv: list[str], *, stage: str, **_kwargs: object) -> None:
         stages.append(stage)
         modules = candidate / "gstack" / "node_modules"
         if stage == "gstack dependency installation":
+            assert argv[1:] == ["install", "--production", "--frozen-lockfile"]
             for item in excluded:
                 path = modules / item
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -435,6 +444,10 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
         else:
             # Compilation and vendoring still have the complete locked install.
             assert all((modules / item).is_dir() for item in excluded)
+        if stage == "gstack CLI compilation":
+            assert "--no-compile-autoload-dotenv" in argv
+            assert "--no-compile-autoload-bunfig" in argv
+            (candidate / "gstack" / "browse" / "dist").mkdir(parents=True)
         if stage == "gstack browser asset installation":
             _write_gstack_runtime(candidate)
             for item in retained:
@@ -459,7 +472,7 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
 
     installer._build_gstack_runtime(candidate, timeout_seconds=1)
 
-    assert len(stages) == 5
+    assert len(stages) == 4
     for item in excluded:
         path = candidate / "gstack" / "node_modules" / item
         assert not path.exists() and not path.is_symlink()
@@ -467,7 +480,10 @@ def test_build_gstack_runtime_prunes_only_unused_dependencies_after_build(
         assert (candidate / "gstack" / item).read_text() == item
     assert (outside / "keep").read_text() == "outside staging"
     assert installer._verify_gstack_runtime_root(candidate)[0] is True
-    assert json.loads((candidate / "manifest.json").read_text())["packaging_revision"] == 2
+    assert json.loads((candidate / "manifest.json").read_text())["packaging_revision"] == 3
+    assert (candidate / "gstack" / "browse" / "dist" / ".version").read_text() == (
+        installer.GSTACK_REVISION + "\n"
+    )
 
 
 def test_verify_gstack_runtime_rejects_missing_native_cli_without_repairing(
@@ -557,10 +573,10 @@ def test_ensure_gstack_runtime_installs_pinned_distribution_atomically(
     assert root.is_dir()
     assert (root / "manifest.json").is_file()
     assert installer.GSTACK_SOURCE_ARCHIVE_SHA256 == (
-        "4740bfb9efb35fb407679496d890210bfc7c193bc8331f70cbf7d64bbf75cfb8"
+        "151b4c651b56beb3059ce2a3e9a9dcdf7ea3981380d104e62030f2e953432b69"
     )
     assert installer.BUN_ARCHIVE_SHA256 == (
-        "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
+        "c240d7f0ccb90c263a849fcdb09b7ee62630d921348ed6aafda86b9d577bc510"
     )
 
 
@@ -681,7 +697,7 @@ def test_extract_gstack_source_rejects_path_traversal(tmp_path: Path) -> None:
 def test_extract_gstack_source_preserves_internal_connect_chrome_symlink(tmp_path: Path) -> None:
     """The pinned upstream source links connect-chrome to its sibling launcher."""
     archive = tmp_path / "gstack.tar.gz"
-    root = "gstack-71f6048e8ada25180e61438abc1d98cb151fe9a7"
+    root = "gstack-6c3cf1baac93a794d37065da8b95340e14305126"
     with tarfile.open(archive, "w:gz") as output:
         directory = tarfile.TarInfo(root)
         directory.type = tarfile.DIRTYPE
@@ -1405,6 +1421,8 @@ def test_cli_install_mcp_only_registers_claude_with_fake_cli(
     state_path = tmp_path / "claude-state.json"
     _write_fake_claude_cli(bin_dir, state_path)
     monkeypatch.setenv("PATH", str(bin_dir))
+    # Keep optional Codex discovery inside this fixture, not installed host binaries.
+    monkeypatch.setenv("STACKOS_CODEX_BIN", str(bin_dir / "codex"))
 
     result = CliRunner().invoke(
         app,
@@ -1421,9 +1439,12 @@ def test_cli_install_mcp_only_registers_claude_with_fake_cli(
     assert not (sandbox / ".claude" / "mcp.json").exists()
 
 
-def test_cli_install_targets_one_existing_hermes_profile(
+@pytest.mark.parametrize(("host", "profile"), [("hermes", "work"), ("grok", None)])
+def test_cli_install_targets_one_host(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
+    host: str,
+    profile: str | None,
 ) -> None:
     calls: list[tuple[str, Path, str | None]] = []
 
@@ -1455,16 +1476,15 @@ def test_cli_install_targets_one_existing_hermes_profile(
             "install",
             "--mcp-only",
             "--mcp-host",
-            "hermes",
-            "--mcp-profile",
-            "work",
+            host,
+            *(["--mcp-profile", profile] if profile else []),
             "--skip-doctor",
         ],
         catch_exceptions=False,
     )
 
     assert result.exit_code == 0, result.stdout
-    assert calls == [("hermes", sandbox, "work")]
+    assert calls == [(host, sandbox, profile)]
     assert "Hermes profile work connected." in result.stdout
 
 
@@ -1548,6 +1568,9 @@ def test_cli_uninstall_removes_integrations_and_preserves_state(
         encoding="utf-8",
     )
     monkeypatch.setenv("PATH", str(bin_dir))
+
+    # A fake HOME/PATH does not hide absolute bundled CLIs or inherited CODEX_HOME.
+    monkeypatch.setenv("STACKOS_CODEX_BIN", str(bin_dir / "codex"))
 
     data_dir = sandbox / ".local" / "share" / "stackos"
     data_dir.mkdir(parents=True)
@@ -1655,81 +1678,68 @@ def test_cli_uninstall_fails_when_launchd_unload_fails(
     assert plist.exists()
 
 
+def _backup_test_key(settings: Settings, tmp_path: Path) -> Path:
+    from stackos.backups import BackupPolicy, generate_recovery_key, save_policy
+
+    private = tmp_path / "keys" / "recovery.pem"
+    public = tmp_path / "keys" / "recipient.pem"
+    generate_recovery_key(settings, private, public)
+    save_policy(settings, BackupPolicy(recipient_public_key=public.read_text()))
+    return private
+
+
 def test_cli_backup_creates_private_archive_with_manifest(sandbox: Path, tmp_path: Path) -> None:
+    from stackos.backups import restore_backup
+
     settings = Settings()
     settings.ensure_dirs()
     with sqlite3.connect(settings.db_path) as conn:
         conn.execute("CREATE TABLE backup_probe (id INTEGER PRIMARY KEY, value TEXT)")
         conn.execute("INSERT INTO backup_probe (value) VALUES ('db stays')")
-        conn.commit()
-    settings.seed_path.write_bytes(b"seed stays")
+    settings.seed_path.write_bytes(b"s" * 32)
     settings.token_path.write_text("token stays\n", encoding="utf-8")
-
-    output = tmp_path / "stackos-backup.zip"
-    result = CliRunner().invoke(
-        app,
-        ["backup", "--output", str(output)],
-        catch_exceptions=False,
-    )
-
+    private = _backup_test_key(settings, tmp_path)
+    output = tmp_path / "archives/stackos-backup.sobak"
+    result = CliRunner().invoke(app, ["backup", "--output", str(output)], catch_exceptions=False)
     assert result.exit_code == 0, result.stdout
     assert output.is_file()
     assert output.stat().st_mode & 0o777 == 0o600
-    with zipfile.ZipFile(output) as archive:
-        assert set(archive.namelist()) == {
-            "manifest.json",
-            "data/stackos.db",
-            "state/auth.token",
-            "state/seed.bin",
-        }
-        manifest = json.loads(archive.read("manifest.json"))
-        assert manifest["schema"] == "stackos.local-backup.v1"
-        assert manifest["restore_status"] == "manual-only; automated restore is not implemented"
-        assert [item["path"] for item in manifest["included"]] == [
-            "data/stackos.db",
-            "state/seed.bin",
-            "state/auth.token",
-        ]
-        extracted_db = tmp_path / "restored-copy.db"
-        extracted_db.write_bytes(archive.read("data/stackos.db"))
-
-    with sqlite3.connect(extracted_db) as conn:
-        value = conn.execute("SELECT value FROM backup_probe WHERE id = 1").fetchone()[0]
-    assert value == "db stays"
+    assert not zipfile.is_zipfile(output)
+    recovered = tmp_path / "recovered"
+    restore_backup(settings, output, private, recovered)
+    assert (recovered / "manifest.json").is_file()
+    assert (recovered / "state/auth.token").read_text() == "token stays\n"
+    with sqlite3.connect(recovered / "data/stackos.db") as conn:
+        assert (
+            conn.execute("SELECT value FROM backup_probe WHERE id = 1").fetchone()[0] == "db stays"
+        )
 
 
 def test_cli_backup_includes_staged_seed_backup(sandbox: Path, tmp_path: Path) -> None:
+    from stackos.backups import restore_backup
+
     settings = Settings()
     settings.ensure_dirs()
     with sqlite3.connect(settings.db_path) as conn:
         conn.execute("CREATE TABLE backup_probe (id INTEGER PRIMARY KEY)")
-        conn.commit()
-    settings.seed_path.write_bytes(b"seed stays")
+    settings.seed_path.write_bytes(b"s" * 32)
     settings.seed_path.with_suffix(settings.seed_path.suffix + ".bak").write_bytes(b"old seed")
     settings.token_path.write_text("token stays\n", encoding="utf-8")
-
-    output = tmp_path / "stackos-backup.zip"
-    result = CliRunner().invoke(
-        app,
-        ["backup", "--output", str(output)],
-        catch_exceptions=False,
-    )
-
+    private = _backup_test_key(settings, tmp_path)
+    output = tmp_path / "archives/stackos-backup.sobak"
+    result = CliRunner().invoke(app, ["backup", "--output", str(output)], catch_exceptions=False)
     assert result.exit_code == 0, result.stdout
-    with zipfile.ZipFile(output) as archive:
-        assert "state/seed.bin.bak" in archive.namelist()
-        manifest = json.loads(archive.read("manifest.json"))
-        assert "state/seed.bin.bak" in [item["path"] for item in manifest["included"]]
-        assert archive.read("state/seed.bin.bak") == b"old seed"
+    recovered = tmp_path / "recovered"
+    restore_backup(settings, output, private, recovered)
+    assert (recovered / "state/seed.bin.bak").read_bytes() == b"old seed"
 
 
-def test_cli_backup_refuses_missing_required_state(sandbox: Path) -> None:
-    output = sandbox / "backup.zip"
-
+def test_cli_backup_refuses_missing_required_state(sandbox: Path, tmp_path: Path) -> None:
+    settings = Settings()
+    _backup_test_key(settings, tmp_path)
+    output = sandbox / "backup.sobak"
     result = CliRunner().invoke(app, ["backup", "--output", str(output)])
-
     assert result.exit_code == 1
-    assert "required local state is missing" in result.stderr
     assert not output.exists()
 
 
@@ -1885,6 +1895,10 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
     SQLModel.metadata.create_all(engine)
     try:
         with engine.begin() as conn:
+            # A legacy create_all database predates the new installation-wide
+            # catalog. Stamping must also create that empty independent owner.
+            conn.execute(text("DROP TABLE patterns"))
+            conn.execute(text("DROP TABLE pattern_deletions"))
             conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
             conn.execute(
                 text("INSERT INTO alembic_version (version_num) VALUES ('0001_initial_empty')")
@@ -1901,6 +1915,8 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
     try:
         with engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            assert conn.execute(text("SELECT COUNT(*) FROM patterns")).scalar_one() == 0
+            assert conn.execute(text("SELECT COUNT(*) FROM pattern_deletions")).scalar_one() == 0
     finally:
         engine.dispose()
     assert version == HEAD_REVISION

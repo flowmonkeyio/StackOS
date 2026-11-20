@@ -1,0 +1,23 @@
+{
+  "recorded_at": "2026-10-29T03:19:08.739526+00:00",
+  "checks": [
+    {
+      "check": "preupgrade-backup",
+      "exit_code": 0,
+      "sha256": "61b64b66984547189c62ba2af98a9a7c5f348fb21393c5998924771daf963f20",
+      "verified": null,
+      "bytes": 1816668499
+    },
+    {
+      "check": "preupgrade-recovery",
+      "exit_code": 0,
+      "sha256": "61b64b66984547189c62ba2af98a9a7c5f348fb21393c5998924771daf963f20",
+      "verified": true,
+      "bytes": null
+    }
+  ],
+  "encrypted_archive_retained": "/private/tmp/stackos-release-2141-20261028/preupgrade-2.1.40.sbak",
+  "existing_key_reused": true,
+  "backup_configuration_changed": false,
+  "inert_plaintext_recovery_removed": true
+}

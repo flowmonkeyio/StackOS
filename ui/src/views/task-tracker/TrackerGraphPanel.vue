@@ -7,17 +7,18 @@ import { useVueFlow, VueFlow } from '@vue-flow/core'
 import type { EdgeMouseEvent, NodeMouseEvent, ViewportTransform } from '@vue-flow/core'
 
 import StatusBadge from '@/components/StatusBadge.vue'
-import { UiBadge, UiButton, UiLoadingState } from '@/components/ui'
+import { UiBadge, UiButton, UiEmptyState, UiLoadingState } from '@/components/ui'
 import { resolveStatus, type Tone } from '@/design/status'
 import {
   TRACKER_TICKET_NODE_HEIGHT,
   TRACKER_TICKET_NODE_WIDTH,
   type TrackerFlowModel,
 } from '@/lib/task-tracker/graphModel'
-import type { TrackerStatus, TrackerTicket } from '@/lib/task-tracker/types'
+import type { TrackerStatus } from '@/lib/task-tracker/types'
 
 import TicketGraphNode from './TicketGraphNode.vue'
-import type { GraphBlockFilter } from './viewTypes'
+import type { GraphBlockFilter, TrackerGraphTicketSelection } from './viewTypes'
+import { useVisibleMetricDemand } from './useVisibleMetricDemand'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -49,7 +50,7 @@ const props = defineProps<{
   filtersActive: boolean
   selectionVisible: boolean
   selectionLabel: string
-  selectedTicket: TrackerTicket | null
+  selectedTicket: TrackerGraphTicketSelection | null
   selectedEdgeLabel: string | null
   selectionStats: string[]
 }>()
@@ -67,7 +68,18 @@ const emit = defineEmits<{
   (e: 'clearGraphFocus'): void
   (e: 'viewportChangeEnd', value: ViewportTransform): void
   (e: 'viewportReady', value: string): void
+  (e: 'metricDemand', keys: string[]): void
 }>()
+const root = ref<HTMLElement | null>(null)
+const demand = useVisibleMetricDemand(root, '.vue-flow__node[data-id]', node => {
+  const id = node.dataset.id
+  return id?.startsWith('ticket:') ? id.slice(7) : undefined
+}, keys => emit('metricDemand', keys))
+const demanded = computed(() => new Set(demand.keys.value))
+function viewportChanged(value: ViewportTransform): void {
+  demand.schedule()
+  emit('viewportChangeEnd', value)
+}
 
 const DEFAULT_VIEWPORT: ViewportTransform = { x: 48, y: 72, zoom: 0.68 }
 const initialViewportValue = computed(() => props.initialViewport ?? DEFAULT_VIEWPORT)
@@ -78,6 +90,7 @@ const flowCssVariables = {
 const { fitView, setCenter, setViewport } = useVueFlow({ id: props.flowId })
 const appliedRefocusKey = ref<string | null>(null)
 const viewportReady = ref(false)
+const nodesReady = ref(false)
 const viewportSettled = computed(
   () => viewportReady.value && (!props.refocusKey || props.refocusKey === appliedRefocusKey.value),
 )
@@ -95,6 +108,7 @@ function statusTone(status: TrackerStatus): Tone {
 
 async function applyViewportIntent(): Promise<void> {
   await nextTick()
+  if (props.loading || (props.flow.nodes.length > 0 && !nodesReady.value)) return
   await applyInitialViewport()
   const pendingRefocusKey =
     props.refocusKey && props.refocusKey !== appliedRefocusKey.value ? props.refocusKey : ''
@@ -108,8 +122,13 @@ async function applyViewportIntent(): Promise<void> {
   const primaryFocusNodeId =
     props.primaryFocusNodeId && availableNodeIds.has(props.primaryFocusNodeId)
       ? props.primaryFocusNodeId
-      : (activeFlowNodeId ?? focusNodeIds[0] ?? null)
+      : (activeFlowNodeId ?? focusNodeIds[0] ?? props.flow.nodes[0]?.id ?? null)
   const shouldRefocus = Boolean(props.refocusKey) && props.refocusKey !== appliedRefocusKey.value
+  if (props.graphFitOnInit && (shouldRefocus || (!props.initialViewport && !viewportReady.value))) {
+    await fitView({ padding: props.flow.nodes.length <= 12 ? 0.08 : 0.16, minZoom: 0.16, maxZoom: 0.9, duration: 0 })
+    markViewportReady(pendingRefocusKey)
+    return
+  }
   if (shouldRefocus && primaryFocusNodeId) {
     const primaryNode = props.flow.nodes.find((node) => node.id === primaryFocusNodeId)
     const refocusKey = props.refocusKey
@@ -179,8 +198,23 @@ function numericStyleValue(value: unknown): number | null {
 }
 
 async function onNodesInitialized(): Promise<void> {
+  nodesReady.value = true
   viewportReady.value = false
   await applyViewportIntent()
+}
+
+function onCanvasMount(): void {
+  nodesReady.value = false
+}
+
+function onNodeKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  const target = event.target
+  if (!(target instanceof HTMLElement) || !target.matches('.vue-flow__node')) return
+  event.preventDefault()
+  event.stopPropagation()
+  // Vue Flow's keyboard selection does not emit nodeClick. Use its existing click path.
+  target.click()
 }
 
 onUpdated(() => {
@@ -201,36 +235,10 @@ onMounted(() => {
 
 <template>
   <section
+    ref="root"
     class="tracker-flow-shell rounded-lg border border-default bg-bg-surface shadow-xs"
     aria-label="Task dependency graph"
   >
-    <header
-      class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-subtle px-4 py-3"
-    >
-      <div class="min-w-0">
-        <p class="t-overline text-fg-subtle">Dependency map</p>
-        <h3 class="t-h3 truncate text-fg-strong">
-          {{ activeTaskTitle }}
-        </h3>
-      </div>
-      <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-        <p class="tracker-flow-shell__stats text-xs text-fg-muted">
-          <span>{{ ticketStatLabel }}</span>
-          <span>{{ edgeStatLabel }}</span>
-        </p>
-        <UiButton
-          variant="secondary"
-          size="sm"
-          icon-left="file-text"
-          :disabled="!activeTaskAvailable"
-          aria-label="Open task details"
-          @click="$emit('openTaskDetail')"
-        >
-          Task details
-        </UiButton>
-      </div>
-    </header>
-
     <div
       class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle bg-bg-surface px-4 py-2"
     >
@@ -269,14 +277,22 @@ onMounted(() => {
         </UiBadge>
       </div>
       <div class="ml-auto flex items-center">
-        <UiButton v-if="filtersActive" variant="ghost" size="sm" @click="$emit('clearFilters')">
+        <UiButton
+          v-if="filtersActive"
+          variant="ghost"
+          size="sm"
+          @click="$emit('clearFilters')"
+        >
           Clear graph filters
         </UiButton>
       </div>
     </div>
 
-    <div v-if="loading" class="tracker-flow-loading">
-      <UiLoadingState label="Loading selected dependency map…" />
+    <div
+      v-if="loading"
+      class="tracker-flow-loading"
+    >
+      <UiLoadingState label="Loading selected graph…" />
     </div>
 
     <div
@@ -284,6 +300,7 @@ onMounted(() => {
       class="tracker-flow-frame"
       :class="{ 'tracker-flow-frame--settled': viewportSettled }"
       @click.capture="$emit('graphCanvasClick', $event)"
+      @keydown.capture="onNodeKeydown"
     >
       <VueFlow
         :id="flowId"
@@ -297,19 +314,35 @@ onMounted(() => {
         :fit-view-on-init="false"
         :min-zoom="0.12"
         :max-zoom="1.5"
+        :nodes-draggable="false"
+        :nodes-connectable="false"
+        :edges-updatable="false"
         pan-on-scroll
+        @vue:before-mount="onCanvasMount"
         @nodes-initialized="onNodesInitialized"
-        @viewport-change-end="emit('viewportChangeEnd', $event)"
+        @viewport-change-end="viewportChanged"
         @node-click="$emit('nodeClick', $event)"
         @edge-click="$emit('edgeClick', $event)"
         @pane-click="$emit('paneClick', $event)"
       >
         <template #node-tracker-ticket="nodeProps">
-          <TicketGraphNode v-bind="nodeProps" />
+          <TicketGraphNode
+            v-bind="nodeProps"
+            :metrics-visible="demanded.has(nodeProps.data.itemKey)"
+          />
         </template>
         <Background pattern-color="var(--color-border-subtle)" />
-        <MiniMap pannable zoomable />
-        <Controls />
+        <MiniMap
+          pannable
+          zoomable
+        />
+        <Controls :show-interactive="false" />
+        <UiEmptyState
+          v-if="!flow.nodes.length"
+          class="pointer-events-none absolute inset-0 flex items-center justify-center"
+          :title="filtersActive ? 'No tickets match these filters' : 'No tickets yet'"
+          :description="filtersActive ? 'Clear the graph filters to see all tickets.' : 'Tickets and dependencies will appear as work is planned.'"
+        />
         <div
           v-if="selectionVisible"
           class="tracker-graph-selection"
@@ -321,15 +354,25 @@ onMounted(() => {
               <p class="t-overline text-fg-subtle">
                 {{ selectionLabel }}
               </p>
-              <StatusBadge v-if="selectedTicket" domain="tracker" :status="selectedTicket.status" />
+              <StatusBadge
+                v-if="selectedTicket"
+                domain="tracker"
+                :status="selectedTicket.status"
+              />
             </div>
             <p class="truncate text-sm font-medium text-fg-strong">
               {{ selectedTicket?.title ?? 'Dependency context' }}
             </p>
             <p class="tracker-graph-selection__meta text-2xs text-fg-muted">
-              <span v-if="selectedTicket" class="font-mono">{{ selectedTicket.key }}</span>
+              <span
+                v-if="selectedTicket"
+                class="font-mono"
+              >{{ selectedTicket.key }}</span>
               <span v-if="selectedEdgeLabel">{{ selectedEdgeLabel }}</span>
-              <span v-for="stat in selectionStats" :key="stat">{{ stat }}</span>
+              <span
+                v-for="stat in selectionStats"
+                :key="stat"
+              >{{ stat }}</span>
               <span v-if="selectedTicket?.assignee">Owner {{ selectedTicket.assignee }}</span>
               <span v-if="selectedTicket?.run_plan_id">Run {{ selectedTicket.run_plan_id }}</span>
             </p>
@@ -343,7 +386,11 @@ onMounted(() => {
             >
               Details
             </UiButton>
-            <UiButton variant="ghost" size="sm" @click.stop="$emit('clearGraphFocus')">
+            <UiButton
+              variant="ghost"
+              size="sm"
+              @click.stop="$emit('clearGraphFocus')"
+            >
               Clear
             </UiButton>
           </div>
@@ -572,6 +619,11 @@ onMounted(() => {
 
   .tracker-graph-selection__actions {
     justify-content: flex-end;
+  }
+}
+@media (max-width: 1399px) {
+  .tracker-flow :deep(.vue-flow__minimap) {
+    display: none;
   }
 }
 </style>

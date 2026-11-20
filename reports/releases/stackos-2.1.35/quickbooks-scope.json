@@ -1,0 +1,54 @@
+{
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "step": "integrate",
+  "attempt": 1,
+  "contract_revision": 3,
+  "operator_source": "Include QuickBooks wiring",
+  "base": "7d8dd4049065845661fcb3a544c9bbf5482d6475",
+  "explorer": "/root/release_2135_inventory",
+  "readiness_reviewer": "/root/day1_deploy_review",
+  "readiness_disposition": "pass",
+  "accepted_by": "codex-main",
+  "package_version": "0.2.4",
+  "package_owners": [
+    "QuickBooks catalog: method labels, required nonsecret environment and numeric realm_id fields",
+    "Canonical provider probe reusing existing CompanyInfo action; fixed safe diagnostics and no inferred grants"
+  ],
+  "host_owners": [
+    "plugins/finance/plugin.yaml: provider via auth_catalog_ref, read capability and exactly two native package actions",
+    "stackos/actions/__init__.py: PackageActionConnector registration",
+    "stackos/integrations/__init__.py: native QuickBooksIntegration registration",
+    "stackos/api/auth_providers.py: bounded realmId callback input",
+    "stackos/auth_providers/repository/oauth.py: company binding in existing pending transaction and generic fresh-grant scope evidence",
+    "workers/oauth-callback-relay/public/index.html: validated realmId forwarding and updated inline CSP hash",
+    "Existing integration docs and focused tests"
+  ],
+  "actions": ["quickbooks-online.company-info.get", "quickbooks-online.invoices.list"],
+  "scope_policy": "Package actions have empty config; do not invent required_scopes. Provider permissions apply. Fresh code grant TokenResult.scopes=None remains unknown and clears stale grant rows; returned tuple records only actual evidence. Preserve existing ordinary renewal/JWT/clientcredential semantics.",
+  "realm_flow": [
+    "Freeze intended numeric realm_id and environment in existing encrypted _oauth_pending at start",
+    "Intuit callback passes realmId through public relay to fixed local API callback",
+    "Require exactly one bounded valid numeric realmId for successful QBO callback",
+    "Verify existing state, expiry, credential and CAS bindings",
+    "Reject missing, malformed, mismatched realm or changed intended config before token exchange or credential replacement",
+    "Preserve existing usable Account on failed reauthorization"
+  ],
+  "relay_requirements": "Retain field-count/length checks and fixed loopback destination; update CSP hash; root must publish accepted relay for live interactive readiness.",
+  "probe_requirements": "CompanyInfo.Id is provider entity identity, not realm attestation. Configured realm_id is request context. Return no invented accounting grant. Fixed redacted failure diagnostics.",
+  "focused_proof": [
+    "Package setup/probe/QBO/auth/catalog and installed-wheel checks; no full suite",
+    "Host catalog expansion and finance registration",
+    "Matching, missing, malformed, duplicate, mismatched realm callback; state/config change and reconnect preservation",
+    "Fresh omitted and returned scopes; existing relevant OAuth regression slice",
+    "Relay validation and CSP tests",
+    "QBO project attachment, both auth methods, Account Test, direct and granted reads, response files, audit, safe provider failures and exact invoice raw_json"
+  ],
+  "non_goals": ["New finance workflows", "Custom provider UI", "New provider actions", "Live financial work", "Local app installation or restart", "Broad repeated suites"],
+  "external_authority": "Root publishes reviewed connector, host, relay and signed/notarized desktop website release. Workers do not publish or write native lifecycle state.",
+  "official_sources": [
+    "https://raw.githubusercontent.com/intuit/oauth-pythonclient/refs/heads/master/intuitlib/client.py",
+    "https://developer.intuit.com/.well-known/openid_configuration/",
+    "https://developer.intuit.com/.well-known/openid_sandbox_configuration/"
+  ]
+}

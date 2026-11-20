@@ -16,6 +16,8 @@ from stackos_connectors.errors import IntegrationDownError
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import Credential, CredentialUsageEvent
 
+pytestmark = pytest.mark.usefixtures("integration_clock")
+
 
 def test_account_inventory_keeps_latest_test_separate_from_connected_state(
     session: Session, project_id: int
@@ -318,10 +320,15 @@ def test_thrown_probe_failure_does_not_echo_unreviewed_provider_data(
         },
         attach_project_id=project_id,
     ).data
-    monkeypatch.setattr(
-        "stackos.auth_providers.repository.testing.integration_class_for",
-        lambda _: FailingIntegration,
+    from stackos_connectors.connectors.firecrawl.integration import FirecrawlIntegration
+    from stackos_connectors.connectors.google_search_console.integration import (
+        GoogleSearchConsoleIntegration,
     )
+
+    native_class = (
+        FirecrawlIntegration if provider_key == "firecrawl" else GoogleSearchConsoleIntegration
+    )
+    monkeypatch.setattr(native_class, "test_credentials", FailingIntegration.test_credentials)
     out = asyncio.run(repo.test(project_id=project_id, credential_ref=account.credential_ref)).data
     assert out.ok is False
     assert out.next_action

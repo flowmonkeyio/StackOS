@@ -1,52 +1,61 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell } from '@/components/ui'
+import { computed, onMounted, ref } from 'vue'
+import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell, UiSegmentedControl } from '@/components/ui'
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
-import { usePolling } from '@/composables/usePolling'
-import type { TrackerStatus } from '@/lib/task-tracker/types'
-import HomeProjectsSection from './home/HomeProjectsSection.vue'
-import HomePortfolioOverview from './home/HomePortfolioOverview.vue'
+import { useStackOsCatalogStore } from '@/stores/plugins'
+import { useProjectsStore } from '@/stores/projects'
+import ActiveTaskList from './home/ActiveTaskList.vue'
+import DeliveryCapacityControl from './home/DeliveryCapacityControl.vue'
+import HomeConnectionsSection from './home/HomeConnectionsSection.vue'
 import HomeSystemStatusCard from './home/HomeSystemStatusCard.vue'
 import { useHomeAgentHostStatuses } from './home/useHomeAgentHostStatuses'
-import { useHomePortfolioInsights } from './home/useHomePortfolioInsights'
 import { useHomeSystemStatus } from './home/useHomeSystemStatus'
-import { useTicketCounts } from './home/useTicketCounts'
+import { useHomeSubscriptions } from './home/useHomeSubscriptions'
+import AgentActivitySection from './home/AgentActivitySection.vue'
+import { useAgentStats } from './home/useAgentStats'
 
 const isShell = isDesktopShell()
 const repairOpen = ref(false)
-const portfolio = useHomePortfolioInsights()
-const { items, loading: projectsLoading, error: projectsError, nextCursor, total, filters } = portfolio
-const tickets = useTicketCounts()
-const { summary, visibility, loading: countsLoading, error: countsError } = tickets
+const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
+const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
+const catalog = useStackOsCatalogStore()
+const projects = useProjectsStore()
+const accounts = computed(() => catalog.homeAccounts)
+const agents = useAgentStats()
+const usageVisibility = ref<boolean | null>(true)
+function setUsageVisibility(value: string | number): void {
+  usageVisibility.value = value === 'all' ? null : value === 'active'
+  void agents.setVisibility(usageVisibility.value)
+}
+const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
 const { hostStatuses, hostStatusSummary, loadHostStatuses, applyHostStatuses } =
   useHomeAgentHostStatuses(isShell)
+const quotas = useHomeSubscriptions()
+async function refreshHostPanel(): Promise<void> {
+  await Promise.all([loadHostStatuses(), quotas.load(true)])
+}
 const { health, systemBusy, statusTone, statusLabel, systemFacts, loadHealth, runSystemAction } =
-  useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: loadHostStatuses })
+  useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: refreshHostPanel })
 
-usePolling(tickets.load, { intervalMs: 30_000 })
 onMounted(() => {
+  void agents.load()
   void loadHealth()
   void loadHostStatuses()
-  void portfolio.load()
+  void quotas.load()
+  void catalog.refreshHomeAccounts()
 })
 
+const refreshing = ref(false)
 async function refresh(): Promise<void> {
-  await Promise.all([portfolio.load(), tickets.load(), loadHealth(), loadHostStatuses()])
+  refreshing.value = true
+  try {
+    await Promise.all([projects.loadAll(), activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), agents.load(), loadHealth(), refreshHostPanel()])
+  } finally { refreshing.value = false }
 }
 function confirmRepair(): void {
   repairOpen.value = false
   void runSystemAction('repair')
-}
-async function setVisibility(value: string | number): Promise<void> {
-  const active = value === 'all' ? null : value === 'active'
-  await Promise.all([
-    tickets.setVisibility(active),
-    portfolio.setFilters({ ...filters.value, is_active: active }),
-  ])
-}
-function selectStatus(status: TrackerStatus | null): void {
-  void portfolio.setFilters({ ...filters.value, ticket_status: status })
 }
 </script>
 
@@ -57,11 +66,12 @@ function selectStatus(status: TrackerStatus | null): void {
       description="Your local runtime and projects"
     >
       <template #actions>
+        <DeliveryCapacityControl ref="capacityControl" />
         <UiButton
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="projectsLoading || countsLoading"
+          :loading="refreshing"
           @click="refresh"
         >
           Refresh
@@ -88,30 +98,38 @@ function selectStatus(status: TrackerStatus | null): void {
       :system-busy="systemBusy"
       :host-statuses="hostStatuses"
       :host-status-summary="hostStatusSummary"
+      :subscriptions="quotas.subscriptions"
       @restart="runSystemAction('restart')"
       @doctor="runSystemAction('doctor')"
       @repair="repairOpen = true"
-      @refresh-hosts="loadHostStatuses"
+      @refresh-hosts="refreshHostPanel"
     />
-    <HomePortfolioOverview
-      :summary="summary"
-      :visibility="visibility"
-      :selected-status="filters.ticket_status"
-      :loading="countsLoading"
-      :error="countsError"
-      @visibility="setVisibility"
-      @select="selectStatus"
-    />
-    <HomeProjectsSection
-      :items="items"
-      :loading="projectsLoading"
-      :error="projectsError"
-      :next-cursor="nextCursor"
-      :total="total"
-      :filters="filters"
-      @filters="portfolio.setFilters"
-      @more="portfolio.loadMore"
-      @clear-status="selectStatus(null)"
+    <ActiveTaskList ref="activeTasks" />
+    <AgentActivitySection
+      :summary="agentSummary"
+      :loading="agentsLoading"
+      :error="agentsError"
+      :filters="agentFilters"
+      global
+      @filters="agents.setFilters"
+    >
+      <template #scope>
+        <div class="flex flex-col justify-end gap-1">
+          <span class="text-xs text-fg-muted">Projects</span>
+          <UiSegmentedControl
+            :model-value="usageVisibility === null ? 'all' : usageVisibility ? 'active' : 'archived'"
+            :options="[{ key: 'active', label: 'Active' }, { key: 'archived', label: 'Archived' }, { key: 'all', label: 'All' }]"
+            label="Project visibility"
+            @update:model-value="setUsageVisibility"
+          />
+        </div>
+      </template>
+    </AgentActivitySection>
+    <HomeConnectionsSection
+      :accounts="accounts"
+      :loading="catalog.homeAccountsLoading"
+      :error="catalog.homeAccountsError"
+      :loaded="catalog.homeAccountsLoaded"
     />
     <UiConfirmDialog
       v-model="repairOpen"

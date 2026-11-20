@@ -12,15 +12,22 @@ from typing import Any
 
 import yaml
 
+from stackos.host_mcp.agent_execution import (
+    ManagedProcessControl,
+    execute_json_agent,
+    json_object,
+    structured_prompt,
+)
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
+    command_matches,
     daemon_preflight,
     is_stackos_bridge_command,
     resolve_bridge_command,
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
 
 HOST_KEY = "hermes"
 SURFACE = "profile-config"
@@ -33,6 +40,74 @@ COMMON_HERMES_CLI_CANDIDATES = (
     "/usr/local/bin/hermes",
 )
 UNSAFE_TRANSPORT_FIELDS = frozenset({"url", "headers", "auth", "env"})
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+    resume_thread_id: str | None = None,
+    process_control: ManagedProcessControl | None = None,
+) -> AgentRunResult:
+    if sandbox == "read-only":
+        return AgentRunResult(None, error="Hermes does not support strict read-only review.")
+    if not model or not provider:
+        return AgentRunResult(None, error="Hermes execution requires explicit provider and model.")
+    cli = resolve_hermes_bin()
+    if cli is None:
+        return AgentRunResult(None, error="No Hermes CLI was found by host discovery.")
+    command = [
+        cli,
+        "--profile",
+        profile or "default",
+        "--in",
+        str(project_dir),
+        "chat",
+        "--oneshot",
+        "--query-file",
+        "-",
+        "--format",
+        "stream-json",
+        "--provider",
+        provider,
+        "--model",
+        model,
+    ]
+    if resume_thread_id is not None:
+        command += ["--resume", resume_thread_id]
+    return execute_json_agent(
+        command,
+        project_dir,
+        structured_prompt(instructions + "\n\n" + prompt, output_schema),
+        output_schema,
+        "Hermes",
+        _agent_result,
+        **({"process_control": process_control} if process_control else {}),
+    )
+
+
+def _agent_result(stdout: str) -> AgentRunResult:
+    events = [json_object(line) for line in stdout.splitlines() if line.strip()]
+    if not events or events[-1].get("type") != "result":
+        raise ValueError("Hermes did not return a terminal result event")
+    value = events[-1]
+    if value.get("error") or value.get("exit_code") != 0:
+        return AgentRunResult(
+            0,
+            thread_id=value.get("session_id"),
+            error=str(value.get("error") or "Hermes turn did not complete."),
+        )
+    return AgentRunResult(
+        0,
+        thread_id=value.get("session_id"),
+        result=json_object(value["text"]),
+    )
 
 
 def inspect(
@@ -155,7 +230,7 @@ def register(
     if current.selected and not current.managed:
         return current
 
-    mcp_is_current = current.command == command
+    mcp_is_current = command_matches(command, current.command)
     if (
         current.status == "registered_stale"
         and not mcp_is_current
@@ -387,7 +462,7 @@ def _inspect_profile_with_bin(
             selected=True,
             managed=False,
         )
-    if actual_command == command:
+    if actual_command is not None and command_matches(command, actual_command):
         if not _profile_skill_ready(home, profile):
             return HostMcpResult(
                 host_key=HOST_KEY,

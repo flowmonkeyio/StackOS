@@ -1,0 +1,9 @@
+{
+  "tag": "v2.1.40",
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "remote_verified": true,
+  "remote_refs": [
+    "3029d2884183654ebd68b389935536232efc4df0\trefs/tags/v2.1.40",
+    "958f554223a438b404e72c67a568d573f4653ae5\trefs/tags/v2.1.40^{}"
+  ]
+}

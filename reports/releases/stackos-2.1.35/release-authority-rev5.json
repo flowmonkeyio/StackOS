@@ -1,0 +1,13 @@
+{
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "contract_revision": 5,
+  "operator_source": "Proceed. Don't start website download. I'll do it myself.",
+  "inherits": ["quickbooks-rev3-scope.json", "release-authority-rev4.json"],
+  "outcome": "Publish signed/notarized StackOS 2.1.35 to the existing website update directory.",
+  "operator_owned": ["Website installer download", "Local installation and restart", "Later Wrangler/callback-page update"],
+  "agent_checks": ["Local artifact identity and signatures", "Apple acceptance and staples", "Upload receipts and remote inventory", "Public HTTP headers and small update metadata"],
+  "waived_public_check": "Do not retrieve full public installer archives for checksum verification. Report header/feed verification without claiming public archive-byte comparison.",
+  "technical_scope": "Unchanged from current accepted scope and required redaction correctness repair.",
+  "controller": "codex-main"
+}

@@ -1,0 +1,169 @@
+
+> stackos-ui@0.0.1 test /private/tmp/stackos-workflow-718/signoff-candidate/ui
+> vitest run
+
+
+ RUN  v2.1.9 /private/tmp/stackos-workflow-718/signoff-candidate/ui
+
+stderr | src/views/ActionCallsView.spec.ts > ActionCallsView > honors exact day and action drilldowns while ordinary ledger requests retain all dry-run modes
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+stderr | src/views/ActionCallsView.spec.ts > ActionCallsView > renders project action-call audit rows with sanitized details and filters
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+stderr | src/views/ActionCallsView.spec.ts > ActionCallsView > renders and controls a durable action call through the registered lifecycle operations
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+ ✓ src/components/backups/BackupPanel.spec.ts (46 tests) 542ms
+ ✓ src/views/ActionCallsView.spec.ts (3 tests) 629ms
+   ✓ ActionCallsView > renders and controls a durable action call through the registered lifecycle operations 368ms
+ ✓ src/components/finance/FinanceRecordPanel.spec.ts (55 tests) 905ms
+ ✓ src/views/ConnectionsView.accounts.spec.ts (10 tests) 1298ms
+ ✓ src/views/ConnectionsView.slack.spec.ts (4 tests) 429ms
+ ✓ src/views/TaskTrackerView.spec.ts (6 tests) 490ms
+ ✓ src/views/ConnectionsView.topology.spec.ts (5 tests) 535ms
+ ✓ src/views/accounts/NativeAccountAuthorizationPanel.spec.ts (12 tests) 67ms
+ ✓ src/views/FinanceView.spec.ts (89 tests) 2182ms
+ ✓ src/components/finance/FinanceFilters.spec.ts (15 tests) 237ms
+ ✓ src/views/HomeView.spec.ts (4 tests) 132ms
+ ✓ src/views/WorkflowTemplatesView.spec.ts (1 test) 136ms
+ ✓ src/views/finance/FinanceOverviewCharts.spec.ts (5 tests) 130ms
+ ✓ src/views/accounts/TelegramProxySetupSection.spec.ts (5 tests) 57ms
+ ✓ src/components/renderers/RunPlanRenderer.spec.ts (3 tests) 41ms
+ ✓ src/views/AccountsView.spec.ts (16 tests) 2618ms
+   ✓ AccountsView > saves one Telegram user Account, follows TDLib challenges, and resumes saved sign-in without connecting 391ms
+ ✓ src/views/AgentPresetsView.spec.ts (2 tests) 254ms
+ ✓ src/components/ui/UiSelect.spec.ts (7 tests) 58ms
+ ✓ src/views/ConnectionsView.readiness.spec.ts (2 tests) 169ms
+ ✓ src/composables/useProjectNavigation.spec.ts (5 tests) 25ms
+ ✓ src/views/AgentRequestsView.spec.ts (3 tests) 232ms
+ ✓ src/components/DesktopUpdatePrompt.spec.ts (7 tests) 286ms
+ ✓ src/views/finance/FinanceOverviewInsights.spec.ts (9 tests) 52ms
+ ✓ src/lib/task-tracker/liveEvents.spec.ts (8 tests) 11ms
+ ✓ src/App.local-setup.spec.ts (3 tests) 140ms
+ ✓ src/views/PluginsView.spec.ts (3 tests) 202ms
+ ✓ src/views/home/TicketStatusChart.spec.ts (5 tests) 107ms
+ ✓ src/views/connections/ConnectionCredentialField.spec.ts (7 tests) 37ms
+ ✓ src/components/renderers/TemplateRenderer.spec.ts (1 test) 28ms
+ ✓ src/App.spec.ts (3 tests) 50ms
+ ✓ src/views/HomeConsoleView.spec.ts (2 tests) 68ms
+ ✓ src/views/ConnectionsView.linear.spec.ts (1 test) 100ms
+ ✓ src/components/DataTable.spec.ts (11 tests) 46ms
+ ✓ src/views/accounts/NativeAccountSessionPanel.spec.ts (5 tests) 29ms
+ ✓ src/views/ResourceExplorerView.spec.ts (1 test) 103ms
+ ✓ src/composables/useProjectScopedLoader.spec.ts (4 tests) 17ms
+ ✓ src/components/ui/UiSidePanel.spec.ts (6 tests) 52ms
+ ✓ src/components/ui/UiButton.spec.ts (8 tests) 31ms
+ ✓ src/views/OperationsView.spec.ts (1 test) 149ms
+ ✓ src/views/RunsView.spec.ts (2 tests) 89ms
+ ✓ src/views/task-tracker/TrackerTaskDetailDialog.spec.ts (2 tests) 46ms
+ ✓ src/components/TabBar.spec.ts (6 tests) 34ms
+ ✓ src/components/ProjectSwitcher.spec.ts (6 tests) 30ms
+ ✓ src/components/renderers/WorkflowTemplateJourney.spec.ts (3 tests) 137ms
+ ✓ src/views/connections/providerSetup.spec.ts (2 tests) 23ms
+ ✓ src/views/RunDetail.spec.ts (4 tests) 231ms
+ ✓ src/components/domain/ProviderMark.spec.ts (7 tests) 18ms
+ ✓ src/views/task-tracker/TrackerGraphPanel.spec.ts (1 test) 22ms
+ ✓ src/views/accounts/AccountSetupFlow.spec.ts (3 tests) 28ms
+ ✓ src/components/ui/UiDropdownMenu.spec.ts (3 tests) 29ms
+ ✓ src/lib/clipboard.spec.ts (3 tests) 10ms
+ ✓ src/components/SubNav.spec.ts (5 tests) 29ms
+ ✓ src/components/renderers/ActionSchemaRenderer.spec.ts (1 test) 22ms
+ ✓ src/lib/desktop.spec.ts (15 tests) 8ms
+ ✓ src/views/plugins/IntegrationAvailability.spec.ts (10 tests) 26ms
+ ✓ src/views/task-tracker/TicketGraphNode.spec.ts (1 test) 15ms
+ ✓ src/components/ui/UiDialog.spec.ts (2 tests) 39ms
+ ✓ src/views/project-detail/CostBudgetTab.spec.ts (1 test) 77ms
+ ✓ src/views/home/useHomeAgentHostStatuses.spec.ts (2 tests) 6ms
+ ✓ src/views/plugins/PluginDirectoryCard.spec.ts (2 tests) 24ms
+ ✓ src/views/finance/FinanceOverview.spec.ts (1 test) 31ms
+ ✓ src/components/MarkdownView.spec.ts (5 tests) 40ms
+ ✓ src/views/home/useTicketCounts.spec.ts (1 test) 9ms
+ ✓ src/components/StatusBadge.spec.ts (6 tests) 20ms
+ ✓ src/views/project-detail/SchedulesTab.spec.ts (1 test) 24ms
+ ✓ src/components/ui/UiFactGroups.spec.ts (1 test) 13ms
+ ✓ src/views/ProjectDataView.spec.ts (1 test) 31ms
+ ✓ src/views/task-tracker/TrackerWarningSummary.spec.ts (2 tests) 16ms
+ ✓ src/components/ui/UiCard.spec.ts (2 tests) 19ms
+ ✓ src/composables/usePolling.spec.ts (1 test) 10ms
+ ✓ src/components/ui/UiSegmentedControl.spec.ts (1 test) 15ms
+ ✓ src/components/renderers/ResourceViewRenderer.spec.ts (1 test) 26ms
+ ✓ src/views/task-tracker/viewModel.spec.ts (7 tests) 4ms
+ ✓ src/stores/plugins.spec.ts (8 tests) 10ms
+ ✓ src/components/ui/UiPanel.spec.ts (1 test) 16ms
+ ✓ src/components/ui/UiMetadataStrip.spec.ts (1 test) 13ms
+ ✓ src/views/connections/formatters.spec.ts (15 tests) 5ms
+ ✓ src/lib/stackos/nav.spec.ts (7 tests) 3ms
+ ✓ src/lib/task-tracker/graphModel.spec.ts (5 tests) 15ms
+ ✓ src/stores/attention.spec.ts (4 tests) 6ms
+ ✓ src/lib/finance.spec.ts (41 tests) 8ms
+ ✓ src/views/connections/providerReadiness.spec.ts (7 tests) 3ms
+ ✓ src/screen-composition.spec.ts (7 tests) 3ms
+ ✓ src/views/finance/overviewViewModel.spec.ts (6 tests) 9ms
+ ✓ src/views/plugins/viewModel.spec.ts (3 tests) 2ms
+ ✓ src/views/finance/insightsViewModel.spec.ts (9 tests) 9ms
+ ✓ src/stores/costs.spec.ts (7 tests) 9ms
+ ✓ src/views/connections/profilePayloads.spec.ts (2 tests) 2ms
+ ✓ src/read-only-ui.spec.ts (4 tests) 12ms
+ ✓ src/views/plugins/useIntegrationAvailability.spec.ts (6 tests) 4ms
+ ✓ src/lib/task-tracker/graphFocus.spec.ts (4 tests) 2ms
+ ✓ src/stores/runs.spec.ts (5 tests) 8ms
+ ✓ src/lib/stackos/projectNavigation.spec.ts (25 tests) 3ms
+ ✓ src/stores/projects.spec.ts (5 tests) 6ms
+ ✓ src/views/home/agentHostPresentation.spec.ts (4 tests) 1ms
+ ✓ src/stores/projectScope.spec.ts (3 tests) 4ms
+ ✓ src/lib/stackos/time.spec.ts (10 tests) 10ms
+ ✓ src/lib/stackos/events.spec.ts (7 tests) 3ms
+ ✓ src/page-layout-contract.spec.ts (4 tests) 3ms
+ ✓ src/views/home/useHomePortfolioInsights.spec.ts (3 tests) 3ms
+ ✓ src/stores/schedules.spec.ts (3 tests) 5ms
+ ✓ src/views/connections/ingressResults.spec.ts (4 tests) 1ms
+ ✓ src/lib/stackos/projectRequestGate.spec.ts (5 tests) 2ms
+ ✓ src/composables/useProjectRouteScope.spec.ts (3 tests) 2ms
+ ✓ src/lib/client.spec.ts (4 tests) 2ms
+ ✓ src/lib/stackos/json.spec.ts (9 tests) 11ms
+ ✓ src/stores/auth.spec.ts (3 tests) 4ms
+ ✓ src/no-watch-ui.spec.ts (1 test) 10ms
+ ✓ src/stores/toasts.spec.ts (4 tests) 4ms
+ ✓ src/lib/operations.spec.ts (2 tests) 3ms
+ ✓ src/composables/useConnectionForm.spec.ts (1 test) 1ms
+ ✓ src/lib/backups.spec.ts (3 tests) 2ms
+ ✓ src/lib/stackos/format.spec.ts (4 tests) 2ms
+ ✓ src/views/home/ticketOverview.spec.ts (1 test) 1ms
+ ✓ src/design/status.spec.ts (8 tests) 2ms
+
+ Test Files  115 passed (115)
+      Tests  752 passed (752)
+   Start at  08:04:46
+   Duration  9.25s (transform 3.16s, setup 318ms, collect 14.23s, tests 14.10s, environment 13.16s, prepare 3.10s)
+
+
+> stackos-ui@0.0.1 build /private/tmp/stackos-workflow-718/signoff-candidate/ui
+> vue-tsc && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 743 modules transformed.
+rendering chunks...
+computing gzip size...
+../stackos/ui_dist/index.html                                                       0.55 kB │ gzip:   0.34 kB
+../stackos/ui_dist/assets/jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2      7.50 kB
+../stackos/ui_dist/assets/jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2           9.00 kB
+../stackos/ui_dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2              10.25 kB
+../stackos/ui_dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2               11.23 kB
+../stackos/ui_dist/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2       12.11 kB
+../stackos/ui_dist/assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2      15.20 kB
+../stackos/ui_dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2                18.75 kB
+../stackos/ui_dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2                   19.00 kB
+../stackos/ui_dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2            25.96 kB
+../stackos/ui_dist/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2          40.40 kB
+../stackos/ui_dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2                   48.26 kB
+../stackos/ui_dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2               85.07 kB
+../stackos/ui_dist/assets/index-BWjdjQGx.css                                       89.85 kB │ gzip:  19.17 kB
+../stackos/ui_dist/assets/index-BgYqIhlh.js                                     1,308.02 kB │ gzip: 401.53 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.29s

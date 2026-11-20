@@ -1,0 +1,2 @@
+backup: key_required: Configure a recovery public key before creating a backup.
+Check backup configuration.

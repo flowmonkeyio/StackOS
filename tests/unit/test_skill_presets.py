@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import re
+import shutil
 import tomllib
 from pathlib import Path
 
+import pytest
+import yaml
+
+import stackos.agents.loader as agent_loader_module
 import stackos.skill_presets.loader as loader_module
+from stackos.agents import AgentPresetLoader
 from stackos.operations.skill_presets import resolve_skill_preset_requirements
+from stackos.repositories.tracker.schema import TrackerDeliveryScopeExclusion
 from stackos.skill_presets import SkillPresetLoader, parse_skill_preset_bundle_yaml
 from stackos.skill_presets.schema import validate_skill_preset_obj
 from stackos.workflows.template_schema import WorkflowSkillPresetRequirementSpec
+from tests.helpers.preset_adoption import assert_preset_adoption
 
 
 def test_skill_preset_loader_lists_bundled_presets() -> None:
@@ -45,7 +53,7 @@ def test_generic_workflow_orchestrator_keeps_the_normal_loop_small() -> None:
     ).lower()
 
     assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True
-    assert loaded.preset.version == "0.1.5"
+    assert loaded.preset.version == "0.1.7"
     assert len(loaded.preset.applies_to_workflows) == 23
     assert {"agency.setup", "agency.project-setup"} <= set(loaded.preset.applies_to_workflows)
     assert "seo.website-analysis" in loaded.preset.applies_to_workflows
@@ -66,7 +74,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.4.1"
+    assert loaded.preset.version == "0.8.32"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -74,6 +82,10 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "existing run/ticket" in action
     assert "rehydrate" in action
     assert "targeted raw resolution/description" in action
+    assert "summary-only prerequisite readers" in action
+    assert "complete substantive deliverables" in action
+    assert "runplan.getstep(raw)" in action and "tracker.brief(raw)" in action
+    assert "remaining repair allowance" in action
     assert "subagent role" in " ".join(contract.responsibilities)
     assert "schema-valid" in " ".join(contract.required_outputs).lower()
     assert "tracker.brief" in loaded.preset.recommended_tools
@@ -104,6 +116,7 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     required = " ".join(contract.must_do)
     boundaries = " ".join(contract.must_not_do)
 
+    assert policy["path"] == "terminal-managed"
     assert policy["max_active_tickets"] == 3
     assert set(policy["count_includes"]) == {
         "implementation",
@@ -114,23 +127,48 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     assert policy["agent_assignment_limit"] == 1
     assert policy["durable_owner"] == "main_agent"
     assert policy["reviewer_priority"] == "before_new_delivery"
-    assert "not daemon-enforced" in policy["state_owner"]
+    assert "terminal-managed rules guide main" in policy["state_owner"]
     assert "explicit unassigned ticket keys" in required
     assert "one active assignment per agent" in required
     assert "Idle or interrupted agents do not necessarily release slots" in required
     assert "Never retask a busy reviewer" in required
-    assert "only the main agent marks complete" in required
+    assert "only main marks complete" in required
     assert "Integrate the reviewed candidate before acceptance" in required
+    assert "independent exact-commit review" in required
+    assert "TaskTracker.config_json.delivery" in required
+    assert "tracker.configureDelivery" in required
+    assert "Gemini and Hermes" in required and "normal native permissions" in required
+    assert "executes remaining workflow gates through assigned agents" in required
     assert "waive required ticket independence because work is micro" in boundaries
     assert "did not implement" in policy["independence"]
     assert "response_mode=raw" in required
 
     # Per-ticket proof cannot require its blocked consumer, nor claim final proof.
-    assert "ticket-local acceptance or integration proof" in required
-    assert "reject proof/dependency cycles" in required
+    assert "ticket-local or integration owner" in required
+    assert "resolve gaps and proof/dependency cycles" in required.lower()
     assert "authoritative operator-request and amendment refs" in required
     assert "unaccepted sibling work" in required
     assert "explicit coverage of every final review obligation" in required
+
+
+def test_sdlc_supersession_guidance_uses_the_canonical_exclusion_contract() -> None:
+    main = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    planning = AgentPresetLoader().describe_preset(key="stackos.sdlc.planning").preset
+    main_rule = next(
+        rule for rule in main.operating_contract.must_do if "metadata_json.delivery_scope" in rule
+    )
+    planning_rule = next(
+        rule
+        for rule in planning.prompt_contract.responsibilities
+        if "metadata_json.delivery_scope" in rule
+    )
+    # Guidance names the existing validated metadata contract, not a second schema.
+    for rule in (main_rule, planning_rule):
+        assert set(TrackerDeliveryScopeExclusion.model_fields) <= set(re.findall(r"\w+", rule))
+    assert "tracker.updateTicket" in main_rule and "full-read/merge" in main_rule
+    assert "Return the proposal" in planning_rule
+    assert "child-creation authority alone does not" in planning_rule
+    assert "runner eligibility" in main_rule
 
 
 def test_sdlc_orchestrator_preserves_model_authority_and_recovery_identity() -> None:
@@ -165,7 +203,13 @@ def test_codex_sdlc_orchestrator_tracks_source_and_existing_project_references()
     root = Path(__file__).resolve().parents[2]
     text = (root / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
-    assert f"Source skill preset: `{preset.key}` v{preset.version}" in text
+    match = re.search(rf"Source skill preset: `{re.escape(preset.key)}` v(\d+\.\d+\.\d+)", text)
+    assert match
+    assert_preset_adoption(preset.key, match[1], preset.version)
+    workflow = yaml.safe_load(
+        (root / "plugins/engineering/workflows/tracked-delivery.yaml").read_text()
+    )
+    assert f"Workflow: `{workflow['key']}` v{workflow['version']}" in text
     assert "Requirement: required main-agent guidance" in text
     assert "not a subagent" in text
     config = tomllib.loads((root / ".codex/config.toml").read_text())
@@ -183,11 +227,14 @@ def test_codex_sdlc_orchestrator_preserves_local_execution_boundaries() -> None:
     )
     # These are critical local materialization invariants; semantic completeness
     # still requires independent review of the source and adapted contracts.
-    assert "design-tests -> plan-tickets -> review-design -> deliver-tickets" in text
+    assert "design-tests -> plan-tickets -> review-design -> verify-delivery" in text
     assert "at most three active ticket lifecycles" in text
     assert "queued review, review and repair" in text
     assert "two implementers and one reusable reviewer" in text
     assert "Only the main agent accepts" in text
+    assert "independent exact-commit review" in text
+    assert "no enforced read-only isolation" in text
+    assert "Automatic delivery mechanically records approved child results" in text
     assert "before new delivery" in text
     assert "Local SDLC roles omit `model` and `model_reasoning_effort`" in text
     assert "main thread's model and reasoning settings" in text
@@ -199,6 +246,178 @@ def test_codex_sdlc_orchestrator_preserves_local_execution_boundaries() -> None:
     assert "do not require proof from a future step" in text
     assert "before any delivery dispatch" in text
     assert "response_mode=raw" in text
+
+
+def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
+    preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    source = " ".join(
+        [*preset.operating_contract.responsibilities, *preset.operating_contract.must_do]
+    )
+    local = " ".join(
+        (Path(__file__).resolve().parents[2] / ".codex/orchestrator/sdlc-delivery-orchestrator.md")
+        .read_text()
+        .split()
+    )
+    for text in (source, local):
+        for requirement in (
+            "choose and verify the StackOS browser route before dispatch or resume",
+            "browser.session.list",
+            "browser.session.start",
+            "stackos.browser --session <full-ref>",
+            "current profile/session refs",
+            "Computer Use/native desktop control will not be enabled",
+            "remove stale native-control or Chrome-permission prerequisites",
+            "leaving all other verification agent-owned",
+            "genuinely unsupported required boundary",
+            "one live browser session per",
+            "ticket-owned tab",
+            "--tab-id",
+            "preserve other tabs",
+            "explicit quiescent handoff",
+            "Native agent thread/session retention does not require keeping a browser open",
+            "denied optional tool call alone does not stop the assignment",
+            "denied action through another tool",
+            "continue unaffected checks",
+            "Required proof still unavailable must return blocked",
+            "never report unexecuted or failed checks as passed",
+            "Failures of the assigned agent's own launch/access/model/resume "
+            "retain the task-stop contract",
+            "fallible evidence",
+            "original outcome",
+            "necessary omitted",
+            "routine main-agent relay",
+            "discovered gap",
+            "proportionality",
+            "affected consumers",
+            "actual ownership conflicts",
+            "unrelated naming",
+            "Main confirms admitted prerequisites during preparation or exceptional reconciliation",
+            "after automatic handoff, the assigned delivery or verification owner",
+            "before dependent work or lengthy proof",
+            "accepted source or independently reviewed integration evidence",
+            "StackOS sequences work",
+        ):
+            assert requirement.lower() in text.lower(), requirement
+        for requirement in (
+            "three automatic repair passes per ticket",
+            "initial delivery plus three repairs",
+            "repair_count",
+            "historical repair_pass_used=true counts as one pass",
+            "same native delivery session",
+            "same independent review session",
+            "separate",
+            "explicit requeue",
+            "rejection after the third repair",
+            "clean unchanged HEAD",
+            "nonblocking followups",
+            "tracker.configureDelivery",
+            "provider/profile",
+            "read back",
+            "subsequent",
+            "synchronizer",
+            "watcher",
+            "exact final mutation payload",
+            "temporary safeguard, owner and resume condition",
+            "dependency-mutating setup",
+            "required never-executed checks",
+            "Diagnose the prerequisite before repeating dependent suites",
+            "ordinary approval need, actual denial and explicit cancellation",
+            "ready external dependencies to their existing owners",
+            "clear only proven resolved blockers",
+            "Read back the pending ticket",
+            "in-progress alone is not runnable pending work",
+            "An unresolved blocker, denial or cancellation supplies no resume authority",
+            "not automatic reset/retry, cross-task merge or broader worker lifecycle authority",
+            "Do not repeat unchanged covered checks merely for another gate",
+            "contradictory results, new failures",
+            "retaining one mandatory final project signoff",
+            "no fourth ordinary repair",
+        ):
+            assert requirement.lower() in text.lower(), requirement
+    assert "models stay in StackOS settings" in source
+    assert "source edits affect future" in source.lower()
+    assert "expected digests" in source.lower()
+    assert ".codex/agents/sdlc-delivery.toml" in local
+    assert ".codex/agents/sdlc-delivery-reviewer.toml" in local
+    assert "adopt_sources" in source and "adopt_sources" in local
+    assert "preserve unrelated names, hosts, fallback models" in source.lower()
+    assert "without a main-agent message relay" in " ".join(
+        preset.operating_contract.responsibilities
+    )
+    # Manual exceptions are occurrence-scoped; no universal drag-and-drop waiver.
+    assert "drag-and-drop" not in source
+
+
+def test_sdlc_new_recovery_boundaries_resolve_at_the_shared_method_owner() -> None:
+    preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    rules = preset.operating_contract.must_do
+    local = " ".join(
+        (Path(__file__).resolve().parents[2] / ".codex/orchestrator/sdlc-delivery-orchestrator.md")
+        .read_text()
+        .split()
+    )
+    boundaries = {
+        "Bounded reporting-only continuation:": (
+            "one persisted allowance",
+            "complete key-name-only diagnostics",
+            "schema, dependency and outstanding-action gates",
+            "same native session",
+            "No tools, actions, tests, reviews, code changes or lifecycle writes",
+            "preserve status, summary, candidate, values, factual claims, "
+            "proof references, followups and limits",
+            "unknown/incomplete classification",
+            "actual denial",
+            "does not consume an ordinary source-repair pass",
+        ),
+        "Candidate admission:": (
+            "first engineering coding handoff",
+            "clean isolated or explicitly authorized checkpointed baseline",
+            "No automatic stash, reset, branch move or commit",
+            "current-target evidence_only",
+            "prior delivered candidate and base",
+            "before native invocation or repair charging",
+            "final candidate validation remains required",
+            "stale intent retains conservative source-repair validation",
+            "dirty noncoding, unborn/non-Git and exact owned-work resume",
+        ),
+    }
+    for heading, requirements in boundaries.items():
+        matches = [rule for rule in rules if rule.startswith(heading)]
+        assert len(matches) == 1, heading
+        for requirement in requirements:
+            assert requirement in matches[0], requirement
+            assert requirement in local, requirement
+
+
+def test_sdlc_closeout_links_reviewed_changes_without_claiming_later_outcomes() -> None:
+    preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    source = " ".join(preset.operating_contract.must_do)
+    local = " ".join(
+        (Path(__file__).resolve().parents[2] / ".codex/orchestrator/sdlc-delivery-orchestrator.md")
+        .read_text()
+        .split()
+    )
+    for text in (source, local):
+        for requirement in (
+            "original omissions",
+            "useful rejects",
+            "review escapes",
+            "operator amendments",
+            "execution failures",
+            "observed facts",
+            "cause confidence",
+            "owner/disposition",
+            "followup_resolutions",
+            "independently reviewed revision",
+            "applicability",
+            "later-use status",
+            "No comparable opportunity means unproven",
+            "uncertain, deferred and no-lesson are valid",
+            "Required current defects remain blockers",
+            "denominators",
+            "one fixture does not prove production prevention",
+        ):
+            assert requirement.lower() in text.lower(), requirement
 
 
 def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None:
@@ -290,7 +509,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
     ]
 
     assert loaded.summary.plugin_slug == "finance"
-    assert loaded.preset.version == "0.7.5"
+    assert loaded.preset.version == "0.8.3"
     assert loaded.preset.skill_type == "main-agent-orchestration"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
@@ -301,6 +520,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
         "finance.payment-request-followups",
         "finance.cashflow-management",
         "finance.tax-estimates",
+        "finance.management-review",
     }
     assert {
         "project instruction entrypoints and scoped guidance",
@@ -320,7 +540,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
         "communication.send",
         "communication.reply",
     }.isdisjoint(loaded.preset.recommended_tools)
-    assert "selected external backend" in contract_text
+    assert "selected project-local backend" in contract_text
     assert "prepared/unposted" in contract_text
     assert "selective dispatch" in contract_text
     assert "one high-reasoning owner" in contract_text
@@ -379,6 +599,158 @@ presets:
     assert [item.key for item in listing.presets] == ["stackos.sdlc.bundled-test"]
     assert listing.presets[0].plugin_slug == "engineering"
     assert listing.presets[0].source == "plugin"
+
+
+def test_branding_writing_reference_resolves_from_bundled_preset_origins(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    package_config = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    assert (
+        package_config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]["plugins"]
+        == "stackos/_assets/plugins"
+    )
+    bundled_root = tmp_path / "stackos" / "_assets" / "plugins"
+    shutil.copytree(repo_root / "plugins" / "branding", bundled_root / "branding")
+    for module in (loader_module, agent_loader_module):
+        monkeypatch.setattr(module, "_clone_plugins_root", lambda: None)
+        monkeypatch.setattr(module, "_bundled_plugins_root", lambda: bundled_root)
+
+    reference = "branding-plugin:references/natural-writing.md"
+    orchestrator = SkillPresetLoader().describe_preset(key="branding.brand-orchestrator")
+    assert reference not in {
+        item.ref for item in orchestrator.preset.project_adaptation.required_context_refs
+    }
+    assert reference in {
+        item.ref for item in orchestrator.preset.project_adaptation.conditional_context_refs
+    }
+    origins = [orchestrator.summary.origin_path]
+    for role in ("evidence-curator", "channel-strategist", "narrative-writer", "voice-reviewer"):
+        loaded = AgentPresetLoader().describe_preset(key=f"branding.{role}")
+        assert reference in loaded.preset.model_dump_json()
+        origins.append(loaded.summary.origin_path)
+    for origin_path in origins:
+        assert origin_path is not None
+        origin = Path(origin_path)
+        assert origin.is_relative_to(bundled_root)
+        resolved = (origin.parent / ".." / "references" / "natural-writing.md").resolve()
+        assert resolved == bundled_root / "branding" / "references" / "natural-writing.md"
+        assert resolved.read_text(encoding="utf-8").strip()
+
+
+@pytest.mark.parametrize(
+    ("kind", "plugin"),
+    [
+        ("agent", plugin)
+        for plugin in (
+            "core",
+            "branding",
+            "communications",
+            "finance",
+            "gtm",
+            "marketing",
+            "media-buying",
+            "seo",
+            "support",
+            "trackbooth",
+        )
+    ]
+    + [("skill", plugin) for plugin in ("core", "branding", "finance", "marketing")],
+)
+def test_domain_handoffs_resolve_complete_from_source_and_package(
+    kind: str,
+    plugin: str,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Exercise every authored role/alias without a customer clone or repo docs."""
+    root = Path(__file__).resolve().parents[2]
+    module = agent_loader_module if kind == "agent" else loader_module
+    loader_type = AgentPresetLoader if kind == "agent" else SkillPresetLoader
+    source_dir = root / "plugins" / plugin / f"{kind}-presets"
+    authored = [
+        preset
+        for path in source_dir.glob("*.yaml")
+        for preset in yaml.safe_load(path.read_text(encoding="utf-8"))["presets"]
+    ]
+    assert authored
+    monkeypatch.setattr(module, "_clone_plugins_root", lambda: root / "plugins")
+    monkeypatch.setattr(module, "_bundled_plugins_root", lambda: None)
+    source = {
+        preset["key"]: loader_type().describe_preset(key=preset["key"]) for preset in authored
+    }
+
+    bundled_root = tmp_path / "package" / "plugins"
+    shutil.copytree(source_dir, bundled_root / plugin / f"{kind}-presets")
+    monkeypatch.setattr(module, "_clone_plugins_root", lambda: None)
+    monkeypatch.setattr(module, "_bundled_plugins_root", lambda: bundled_root)
+    packaged_loader = loader_type()
+    assert {item.key for item in packaged_loader.list_presets().presets} == set(source)
+    for key, original in source.items():
+        loaded = packaged_loader.describe_preset(key=key)
+        assert loaded.preset == original.preset
+        assert loaded.summary.version == original.summary.version
+        assert loaded.summary.plugin_slug == plugin
+        assert Path(loaded.summary.origin_path).is_relative_to(bundled_root)
+        action = loaded.preset.project_adaptation.required_agent_action
+        contract = (
+            loaded.preset.prompt_contract if kind == "agent" else loaded.preset.operating_contract
+        )
+        # Finance retains its existing compact adaptation action; the full method
+        # lives in authored role rules, with the same obligations in both origins.
+        handoff = " ".join([action, *contract.must_do]) if plugin == "finance" else action
+        for requirement in (
+            "summary retains disposition",
+            "actual outcome/scope",
+            "material limits",
+            "once in existing outputs or evidence",
+            "complete substantive deliverables",
+            "nested domain followups",
+            "where the schema permits",
+            "owner, project, record/step",
+            "runPlan.getStep(raw)",
+            "tracker.brief(raw)",
+            "projectSetup.get(raw)",
+            "missing, stale or inaccessible refs",
+            "current amendments",
+            "remaining repair allowance",
+            "frozen native instructions",
+            "separate explicit adaptation/adoption",
+        ):
+            assert requirement in handoff, (key, requirement)
+        # The method travels in the effective contract, not a checkout-only link.
+        assert "docs/agent-operating-model.md" not in action
+        if plugin == "finance":
+            assert "never financial facts or report contents" in handoff
+        if key == "communications.workflow.customer-feedback-intake":
+            rules = " ".join(loaded.preset.prompt_contract.must_do)
+            assert "intake outcome" in rules
+            assert "Return compact handoff refs" not in rules
+        if key == "branding.brand-orchestrator":
+            rules = " ".join(loaded.preset.operating_contract.must_do)
+            assert "necessary missing, changed, contradictory or truncated" in rules
+            assert "only for reported truncation" not in rules
+
+
+@pytest.mark.parametrize(
+    ("key", "target"),
+    [
+        ("stackos.workflow-orchestrator", "workflow-orchestrator.md"),
+        ("branding.brand-orchestrator", "branding-content-orchestrator.md"),
+        ("stackos.finance.department-orchestrator", "finance-department-orchestrator.md"),
+    ],
+)
+def test_domain_orchestrator_source_updates_preserve_explicit_local_adoption(
+    key: str,
+    target: str,
+) -> None:
+    root = Path(__file__).resolve().parents[2]
+    text = (root / ".codex" / "orchestrator" / target).read_text(encoding="utf-8")
+    match = re.search(rf"Source skill preset: `{re.escape(key)}` v(\d+\.\d+\.\d+)", text)
+    assert match
+    source = SkillPresetLoader().describe_preset(key=key).preset
+    assert_preset_adoption(key, match[1], source.version)
 
 
 def test_skill_preset_resolution_reports_optional_and_unresolved_refs() -> None:

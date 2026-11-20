@@ -686,6 +686,65 @@ def test_action_execute_file_backs_context_output_as_plain_file(
     assert out.action_call.metadata_json["file_backed_output"]["path"] == pointer["path"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["inline", "transient"])
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_project_cleanup_blocks_foreground_action_until_late_outcome(
+    session, project_id, tmp_path, mode, cancel
+):
+    from stackos.config import Settings
+    from stackos.project_cleanup import ProjectCleanupService
+
+    _seed_action(session)
+    action = session.exec(select(Action).where(Action.key == "echo.run")).one()
+    action.risk_level = "read"
+    session.add(action)
+    session.commit()
+    credential_ref = _credential_ref(session, project_id)
+    entered, release, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class PausedConnector(_TransientReadConnector):
+        async def execute(self, request):
+            entered.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                await release.wait()  # A provider may still return after cancellation.
+            return ActionConnectorResult(output_json={"ok": True})
+
+    registry = ActionConnectorRegistry()
+    registry.register(PausedConnector())
+    settings = Settings(data_dir=tmp_path / "cleanup-data", state_dir=tmp_path / "cleanup-state")
+    settings.ensure_dirs()
+    repo = ActionRepository(session, connectors=registry, asset_dir=settings.generated_assets_dir)
+    running = asyncio.create_task(
+        repo.execute(
+            project_id=project_id,
+            action_ref="test-actions.echo.run",
+            input_json={"name": "Ada"},
+            credential_ref=credential_ref,
+            output_policy_json={"mode": mode},
+            allow_transient_response=True,
+        )
+    )
+    await asyncio.wait_for(entered.wait(), 5)
+    if cancel:
+        running.cancel()
+        await asyncio.wait_for(cancelled.wait(), 5)
+    target = ProjectRepository(session).get(project_id)
+    confirmation = {"permanent": True, "project_id": project_id, "project_slug": target.slug}
+    service = ProjectCleanupService(session, settings)
+    try:
+        blocked = await service.delete(project_id, confirmation=confirmation)
+        assert blocked.status == "blocked" and "foreground_action" in blocked.blockers
+    finally:
+        release.set()
+        outcomes = await asyncio.gather(running, return_exceptions=True)
+    assert not isinstance(outcomes[0], BaseException)
+    assert (await service.delete(project_id, confirmation=confirmation)).status == "deleted"
+
+
 def test_transient_read_returns_result_once_and_retains_only_audit_counts(
     session: Session,
     project_id: int,
@@ -880,32 +939,6 @@ def test_output_persistence_failure_preserves_provider_execution_diagnosis(
     assert "sk-leak" not in json.dumps(call.response_json)
 
 
-def test_action_execute_rejects_explicit_file_path_for_file_backed_output(
-    session: Session,
-    project_id: int,
-    tmp_path: Path,
-) -> None:
-    _seed_action(session)
-    credential_ref = _credential_ref(session, project_id)
-    fake = _FakeConnector()
-    registry = ActionConnectorRegistry()
-    registry.register(fake)
-    repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
-    requested_path = tmp_path / "requested" / "echo-response.json"
-
-    with pytest.raises(ValidationError, match="accepts only path"):
-        asyncio.run(
-            repo.execute(
-                project_id=project_id,
-                action_ref="test-actions.echo.run",
-                input_json={"name": "Ada"},
-                credential_ref=credential_ref,
-                output_policy_json={"mode": "always_file", "file_path": str(requested_path)},
-                default_external_file_output=True,
-            )
-        )
-
-
 def test_action_execute_file_backs_external_output_under_requested_directory_path(
     session: Session,
     project_id: int,
@@ -955,7 +988,7 @@ def test_action_execute_file_backs_external_output_under_requested_directory_pat
     assert call.response_json == out.output_json
 
 
-def test_action_execute_rejects_directory_path_aliases_for_file_backed_output(
+def test_action_execute_rejects_path_aliases_for_file_backed_output(
     session: Session,
     project_id: int,
     tmp_path: Path,
@@ -967,7 +1000,13 @@ def test_action_execute_rejects_directory_path_aliases_for_file_backed_output(
     registry.register(fake)
     repo = ActionRepository(session, connectors=registry, asset_dir=tmp_path)
 
-    for alias in ("directory_path", "output_dir"):
+    # All three retired aliases reject through the same pre-dispatch policy check.
+    for alias in ("file_path", "directory_path", "output_dir"):
+        requested_path = (
+            tmp_path / "requested" / "echo-response.json"
+            if alias == "file_path"
+            else tmp_path / alias
+        )
         with pytest.raises(ValidationError, match="accepts only path"):
             asyncio.run(
                 repo.execute(
@@ -975,7 +1014,7 @@ def test_action_execute_rejects_directory_path_aliases_for_file_backed_output(
                     action_ref="test-actions.echo.run",
                     input_json={"name": "Ada"},
                     credential_ref=credential_ref,
-                    output_policy_json={"mode": "always_file", alias: str(tmp_path / alias)},
+                    output_policy_json={"mode": "always_file", alias: str(requested_path)},
                     default_external_file_output=True,
                 )
             )
@@ -1196,7 +1235,10 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
             "unknown",
         ),
         "seo.search-console.sitemaps.list": ("google-search-console", True, "unknown"),
+        "seo.search-console.sitemaps.submit": ("google-search-console", True, "unknown"),
         "seo.search-console.url.inspect": ("google-search-console", True, "unknown"),
+        "seo.search-console.batch.read": ("google-search-console", True, "unknown"),
+        "seo.search-console.sitemaps.submit.batch": ("google-search-console", True, "unknown"),
         "seo.ga4.account_summaries.list": ("google-analytics", True, "unknown"),
         "seo.ga4.properties.metadata.get": ("google-analytics", True, "unknown"),
         "seo.ga4.properties.run_report": ("google-analytics", True, "unknown"),
@@ -2366,6 +2408,7 @@ def test_ideogram_image_actions_reject_invalid_contract_controls(
     assert any(issue.path == "$.input_image_ref" for issue in traversal_validation.issues)
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_ideogram_image_generate_action_executes_and_registers_artifact(
     session: Session,
     project_id: int,
@@ -2459,6 +2502,7 @@ def test_ideogram_image_generate_action_executes_and_registers_artifact(
     assert path_2.read_bytes() == b"ideogram-image-2"
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_ideogram_image_remix_action_executes_and_registers_artifact(
     session: Session,
     project_id: int,
@@ -4205,6 +4249,7 @@ def test_dataforseo_keyword_and_serp_limits_match_live_contracts(
     )
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_dataforseo_paa_action_uses_explicit_action_contract(
     session: Session,
     project_id: int,
@@ -4560,6 +4605,15 @@ def test_google_search_console_validation_rejects_malformed_google_requests(
         credential_ref=credential_ref,
     )
 
+    submit_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.search-console.sitemaps.submit",
+        input_json={"site_url": "https://example.com", "sitemap_url": "not-a-url"},
+        credential_ref=credential_ref,
+    )
+    assert not submit_validation.valid
+    assert {"$.site_url", "$.sitemap_url"} <= {issue.path for issue in submit_validation.issues}
+
     search_paths = {issue.path for issue in search_validation.issues}
     assert search_validation.valid is False
     assert "$.site_url" in search_paths
@@ -4575,6 +4629,36 @@ def test_google_search_console_validation_rejects_malformed_google_requests(
     assert sitemap_validation.valid is False
     assert "$.site_url" in sitemap_paths
     assert "$.sitemap_index" in sitemap_paths
+
+
+@pytest.mark.parametrize("write", [False, True])
+@pytest.mark.parametrize("count,valid", [(0, False), (1000, True), (1001, False)])
+def test_google_search_console_batch_validation_bounds(
+    session, project_id, httpx_mock, write, count, valid
+):
+    seed_test_account(
+        session,
+        project_id=project_id,
+        provider_key="google-search-console",
+        secret_payload=json.dumps({"access_token": "gsc-token"}).encode(),
+    )
+    ref = _provider_credential_ref(session, project_id, "google-search-console")
+    item = (
+        {"site_url": "sc-domain:example.com", "sitemap_url": "https://example.com/sitemap.xml"}
+        if write
+        else {"operation": "sites.list", "input": {}}
+    )
+    action = (
+        "seo.search-console.sitemaps.submit.batch" if write else "seo.search-console.batch.read"
+    )
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref=action,
+        credential_ref=ref,
+        input_json={"requests": [item] * count},
+    )
+    assert validation.valid is valid
+    assert not httpx_mock.get_requests()
 
 
 def test_google_search_console_validation_keeps_legacy_gsc_surfaces_out(

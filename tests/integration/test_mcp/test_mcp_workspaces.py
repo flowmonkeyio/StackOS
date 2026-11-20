@@ -2,7 +2,35 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import MCPClient
+
+
+@pytest.mark.parametrize("response_mode", ["compact", "raw"])
+@pytest.mark.parametrize("selected", [True, False])
+def test_global_startup_selected_or_discovery_contract(
+    mcp_client: MCPClient, seeded_project: dict, response_mode: str, selected: bool
+) -> None:
+    target = seeded_project["data"]["id"]
+    args = {"global_session": True, "cwd": "/tmp/chat-hi", "response_mode": response_mode}
+    if selected:
+        args["project_id"] = target
+    started = mcp_client.call_tool_structured("workspace.startSession", args)
+    assert started["project_id"] == (target if selected else None)
+    data = started["data"]
+    assert data["global_session"] is True
+    assert data["workspace_binding_id"] is None
+    assert data["auto_bootstrap"] is False
+    assert data["setup_state"]["workspace_bound"] is False
+    assert data["setup_state"]["project_scoped_tools_usable"] is selected
+    assert data["next_step"]
+    if not selected:
+        assert data["candidate_projects"][0]["id"] == target
+    bindings = mcp_client.call_tool_structured(
+        "workspace.listBindings", {"project_id": target, "response_mode": "raw"}
+    )
+    assert bindings["items"] == []
 
 
 def test_workspace_resolve_unknown_requests_connect(
@@ -25,8 +53,8 @@ def test_workspace_resolve_unknown_requests_connect(
     assert [project["id"] for project in resolved["candidate_projects"]] == [
         seeded_project["data"]["id"]
     ]
-    assert resolved["candidate_projects"][0]["ui_urls"]["setup"] == (
-        f"http://127.0.0.1:5180/projects/{seeded_project['data']['id']}/setup"
+    assert resolved["candidate_projects"][0]["ui_urls"]["home"] == (
+        f"http://127.0.0.1:5180/projects/{seeded_project['data']['id']}"
     )
 
 
@@ -154,8 +182,8 @@ def test_workspace_start_session_without_identity_lists_named_workspaces_without
         candidate["workspace_alias"] for candidate in started["data"]["candidate_workspaces"]
     ] == ["flowmonkey"]
     assert started["data"]["candidate_workspaces"][0]["project_id"] == bootstrapped["project_id"]
-    assert started["data"]["candidate_workspaces"][0]["ui_urls"]["setup"] == (
-        f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/setup"
+    assert started["data"]["candidate_workspaces"][0]["ui_urls"]["home"] == (
+        f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}"
     )
 
 
@@ -322,9 +350,7 @@ def test_workspace_connect_list_and_start_session(
     assert started["data"]["setup_state"]["state"] == "bound_profile_configured"
     assert started["data"]["setup_state"]["project_scoped_tools_usable"] is True
     assert started["data"]["setup_state"]["profile_missing"] == []
-    assert (
-        started["data"]["ui_urls"]["setup"] == f"http://127.0.0.1:5180/projects/{project_id}/setup"
-    )
+    assert started["data"]["ui_urls"]["home"] == f"http://127.0.0.1:5180/projects/{project_id}"
     assert started["data"]["ui_health"]["daemon_reached"] is True
     assert started["data"]["ui_health"]["check_source"] == "mcp_daemon_response"
 

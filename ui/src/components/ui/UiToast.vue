@@ -46,9 +46,9 @@ const toneStyle = computed(() => TOAST_TONE_STYLES[props.tone]);
 
 <template>
   <div
-    role="status"
+    :role="tone === 'danger' ? 'alert' : 'status'"
     :aria-live="tone === 'danger' ? 'assertive' : 'polite'"
-    class="ui-toast pointer-events-auto relative min-w-[320px] max-w-md overflow-hidden rounded-lg border border-default bg-bg-surface p-3 pl-4 text-sm shadow-lg"
+    class="ui-toast pointer-events-auto relative w-full min-w-0 overflow-hidden rounded-lg border border-default bg-bg-surface p-3 pl-4 text-sm shadow-lg"
   >
     <span
       :class="['absolute inset-y-0 left-0 w-1', toneStyle.barClass]"
@@ -61,30 +61,33 @@ const toneStyle = computed(() => TOAST_TONE_STYLES[props.tone]);
         aria-hidden="true"
       />
       <div class="flex-1 min-w-0">
-        <p class="font-medium text-fg-strong">
+        <p
+          class="break-words font-medium text-fg-strong"
+          :title="title"
+        >
           {{ title }}
         </p>
         <p
           v-if="description"
-          class="mt-0.5 text-xs text-fg-muted"
+          class="mt-0.5 whitespace-pre-line break-words text-xs text-fg-muted"
         >
           {{ description }}
         </p>
-      </div>
-      <div class="flex items-center gap-1 shrink-0">
         <button
           v-if="actionLabel"
           type="button"
-          class="focus-ring rounded-sm px-1.5 py-0.5 text-sm font-medium text-accent-fg hover:underline underline-offset-2"
+          class="focus-ring mt-2 rounded-sm text-sm font-medium text-accent-fg hover:underline underline-offset-2"
           @click="$emit('action')"
         >
           {{ actionLabel }}
         </button>
+      </div>
+      <div class="flex items-center gap-1 shrink-0">
         <button
           v-if="dismissible"
           type="button"
           class="focus-ring -m-1 rounded-sm p-1 text-fg-subtle transition-colors duration-fast hover:text-fg-default"
-          aria-label="Dismiss"
+          :aria-label="`Dismiss ${title}`"
           @click="$emit('dismiss')"
         >
           <UiIcon

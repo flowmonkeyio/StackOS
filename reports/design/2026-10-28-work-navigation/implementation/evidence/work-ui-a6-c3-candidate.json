@@ -1,0 +1,70 @@
+{
+  "disposition": "candidate-ready; frozen for immediate independent review",
+  "assignment": "Integrated UI scope disposal and responsive minimap repair A6/C3",
+  "tickets": [
+    {
+      "key": "work-board-ui",
+      "id": 14730,
+      "attempt": "a6"
+    },
+    {
+      "key": "work-content-editor",
+      "id": 14732,
+      "attempt": "c3"
+    }
+  ],
+  "contract_revision": 1,
+  "project_id": 1,
+  "run_plan_id": 723,
+  "run_id": 717,
+  "base_head": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b",
+  "previous_candidate": "A5/C2 7fad7dea1d9f8edf1128fe8f794eff9ecf4219269f2f03dcc13e9c77af3f6b29",
+  "sources": [
+    "Main A6/C3 adjudicated delayed map response/disposed SSE review",
+    "Main narrow1280px minimap-overlap repair admission",
+    "/tmp/stackos-work-723/map-dark-1280.png",
+    "Existing App.vue project-keyed RouterView/useProjectScopedLoader lifecycle"
+  ],
+  "repairs": [
+    {
+      "finding": "afterEach/load awaited map/detail then restarted stream after component disposal or project change",
+      "fix": "SSE is started synchronously only after an index read has passed current scope/request validation, or on a committed map selection. No pending map/detail continuation owns a stream restart. Fixed view path/project scope + alive/request checks protect index/error/detail state; map merge checks active task/view/query after await; afterEach checks current navigation after map await before any next detail load."
+    },
+    {
+      "finding": "Minimap overlay covers node footer/blocked badge at1280px",
+      "fix": "Only a responsive CSS rule hides minimap at viewport<=1399px; wide minimap and zoom/fit controls remain."
+    }
+  ],
+  "proof": [
+    "RED: project-switch delayed old map response opened extra SSE (3 instead of2) before repair; log /Users/sergeyrura/.local/share/tpf/tee/20261028_161010_pnpm.log.",
+    "GREEN: pending initial-map and committed-navigation map with pending detail then unmount cause no new streams or requests after resolution.",
+    "GREEN: project switch uses a keyed RouterView matching production shell; late previous-project graph cannot reopen a stream, issue reads, or replace new Board data.",
+    "Existing exact popup identity/draft/Back/Forward/map selection and no-watch tests remain green."
+  ],
+  "checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/views/TaskTrackerView.spec.ts src/no-watch-ui.spec.ts src/views/task-tracker/TrackerGraphPanel.spec.ts",
+      "result": "PASS20tests/3files"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui type-check",
+      "result": "PASS"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec eslint src/views/TaskTrackerView.vue src/views/TaskTrackerView.spec.ts src/views/task-tracker/TrackerGraphPanel.vue",
+      "result": "PASS"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "remaining": "Main owns responsive browser recapture, independent acceptance and complete UI signoff rerun. Prior receipts retained as history; these3file hashes supersede them.",
+  "preserved": "Only two assigned scope-race files plus separately admitted GraphPanel CSS changed. No backend edits, no broad test run, no commits/run/tracker mutation.",
+  "files": {
+    "ui/src/views/TaskTrackerView.vue": "1ae83df9f3267fba032e1f589fcd9d69b89d5c3ac082a89f4cc466d5f10ca7c3",
+    "ui/src/views/TaskTrackerView.spec.ts": "7c8b9419356b9843ec68a1765fd12bdf1fed0c10c78625af3d1f5d266d5b0beb",
+    "ui/src/views/task-tracker/TrackerGraphPanel.vue": "0dcb929793c7274401fb645f9702d36d653c992e90f95775b507bfd6bdc5f987"
+  },
+  "candidate_sha256": "237ca109990da10dd2f53b35d3bb014d3cc3ba15f2df89bfc7b9e3f6b285b5a9"
+}

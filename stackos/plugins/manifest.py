@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from stackos_connectors import get_default_client
 from stackos_connectors.connectors.aignc.contract import (
     AIGNC_AUDIO_FORMATS,
     AIGNC_AUDIO_MODELS,
@@ -21,6 +22,7 @@ from stackos_connectors.connectors.aignc.contract import (
     AIGNC_MODELS,
     AIGNC_TEXT_MODELS,
 )
+from stackos_connectors.contracts import thaw
 
 from stackos.integrations.aignc_contract import (
     DEFAULT_READ_TIMEOUT_SECONDS,
@@ -31,6 +33,7 @@ from stackos.integrations.aignc_contract import (
     MAX_TEXT_LENGTH,
     MIN_READ_TIMEOUT_SECONDS,
 )
+from stackos.plugins.builtin_utils_elevenlabs import elevenlabs_action_kwargs
 from stackos.plugins.builtin_utils_ftp import ftp_action_kwargs, ftp_provider_kwargs
 from stackos.plugins.builtin_utils_s3 import s3_action_kwargs, s3_provider_kwargs
 from stackos.provider_setup import find_provider_setup_secret_paths
@@ -148,8 +151,192 @@ class ProviderManifest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     auth_type: str = Field(default="none", max_length=80)
+    auth_catalog_ref: str | None = Field(default=None, exclude=True)
     auth_methods: list[AuthMethodManifest] = Field(default_factory=list)
     config: dict[str, Any] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _canonical_auth_catalog(cls, value: Any) -> Any:
+        """Expand package facts once; the host contributes only additive policy/context."""
+        if not isinstance(value, dict) or "auth_catalog_ref" not in value:
+            return value
+        result = dict(value)
+        ref = result["auth_catalog_ref"]
+        if not isinstance(ref, str) or ref != result.get("key"):
+            raise ValueError("auth_catalog_ref must match the provider key")
+        catalogs = get_default_client().registry.connector_metadata
+        if ref not in catalogs:
+            if ref == "cfobooth":
+                # The public 0.2.8 pin predates this optional companion provider.
+                # Only absent metadata qualifies; malformed existing metadata fails.
+                result["auth_type"] = "api_key"
+                result["auth_methods"] = []
+                result["config"] = {
+                    "enabled": False,
+                    "unavailable_reason": (
+                        "CFOBooth requires the companion native connector package"
+                    ),
+                    "setup": {
+                        "credential_label": "CFOBooth API key",
+                        "setup_note": "The installed connector package does not provide CFOBooth.",
+                        "verified_at": "2026-11-15",
+                    },
+                }
+                return result
+            raise ValueError("auth_catalog_ref does not name a packaged connector")
+        metadata = thaw(catalogs[ref])
+        if not isinstance(metadata, dict):
+            raise ValueError("auth_catalog_ref must name valid native metadata")
+        methods = metadata.get("auth_methods", [])
+        if not isinstance(methods, list) or not methods:
+            raise ValueError("auth_catalog_ref must declare native auth methods")
+        method_keys = {method["key"] for method in methods}
+        overlays: dict[str, dict[str, Any]] = {}
+        raw_overlays = result.get("auth_methods", [])
+        if not isinstance(raw_overlays, list):
+            raise ValueError("catalog auth overlays must be a list")
+        for overlay in raw_overlays:
+            if not isinstance(overlay, dict) or set(overlay) - {
+                "key",
+                "fields",
+                "permission_verification",
+                "field_order",
+            }:
+                raise ValueError("catalog auth overlays may only append fields and enforcement")
+            key = overlay.get("key")
+            if not isinstance(key, str) or key not in method_keys or key in overlays:
+                raise ValueError("catalog auth overlay method is unknown or duplicated")
+            overlays[key] = overlay
+        expanded = []
+        for method in methods:
+            setup = method["setup"]
+            output = {
+                name: setup[name]
+                for name in (
+                    "label",
+                    "auth_type",
+                    "description",
+                    "interactive",
+                    "fields",
+                    "config",
+                )
+                if name in setup
+            }
+            output.update(
+                key=method["key"],
+                payload_format=method.get("payload_format", "json"),
+                payload_field=method.get("payload_field"),
+            )
+            overlay = overlays.get(method["key"], {})
+            fields = list(output.get("fields", []))
+            field_keys = {field["key"] for field in fields}
+            for field in overlay.get("fields", []):
+                if not isinstance(field, dict) or field.get("key") in field_keys:
+                    raise ValueError("host auth fields cannot duplicate or replace catalog fields")
+                field_keys.add(field.get("key"))
+                fields.append(field)
+            output["fields"] = fields
+            if "field_order" in overlay:
+                order = overlay["field_order"]
+                if (
+                    not isinstance(order, list)
+                    or not all(isinstance(key, str) for key in order)
+                    or len(order) != len(field_keys)
+                    or set(order) != field_keys
+                ):
+                    raise ValueError(
+                        "field_order must contain each expanded field key exactly once"
+                    )
+                by_key = {field["key"]: field for field in fields}
+                output["fields"] = [by_key[key] for key in order]
+            enforcement = overlay.get("permission_verification")
+            if enforcement is not None:
+                if not isinstance(enforcement, dict) or set(enforcement) != {"enforcement"}:
+                    raise ValueError("host permission overlay may only declare enforcement")
+                if "evidence_source" not in method:
+                    raise ValueError("catalog method declares no permission evidence source")
+                output["permission_verification"] = {
+                    "evidence_source": method["evidence_source"],
+                    **enforcement,
+                }
+            expanded.append(output)
+        auth_types = {method.get("auth_type", "none") for method in expanded}
+        auth_type = metadata.get("auth_type")
+        if auth_type is None and len(auth_types) == 1:
+            auth_type = next(iter(auth_types))
+        elif auth_type is None:
+            # The provider's aggregate category groups methods in the host UI;
+            # each method's transport/auth type still comes from the catalog.
+            auth_type = result.get("auth_type")
+        if "auth_type" in result and result["auth_type"] != auth_type:
+            raise ValueError("host cannot replace catalog provider auth_type")
+        result["auth_type"] = auth_type
+        result["auth_methods"] = expanded
+        config = dict(metadata.get("config", {}))
+        if "setup" in metadata:
+            setup = dict(metadata["setup"])
+            for name in ("docs", "scopes"):
+                if name in setup:
+                    config.setdefault(name, setup.pop(name))
+            config.setdefault("setup", setup)
+        # The first declared method is the catalog's stable default presentation.
+        # Reuse that guidance when the provider has no separate setup note.
+        setup = config.setdefault("setup", {})
+        if not setup.get("setup_note") and expanded:
+            setup["setup_note"] = expanded[0].get("description", "")
+        host_config = result.get("config") or {}
+        if not isinstance(host_config, dict):
+            raise ValueError("host auth configuration overlay must be an object")
+        for name, overlay in host_config.items():
+            if name == "setup":
+                if not isinstance(overlay, dict) or set(overlay) - {
+                    "callback_url",
+                    "callback_note",
+                    "local_setup_label",
+                    "local_setup_note",
+                    "url_confidence",
+                    "repair_note",
+                }:
+                    raise ValueError(
+                        "host setup overlay may only declare local setup/callback facts"
+                    )
+                setup = dict(config.get("setup", {}))
+                for field, data in overlay.items():
+                    if field == "url_confidence":
+                        if not isinstance(data, dict) or set(data) - {"callback_url"}:
+                            raise ValueError("host cannot replace provider URL confidence")
+                        setup[field] = {**setup.get(field, {}), **data}
+                    elif field in setup:
+                        raise ValueError("host cannot replace provider setup facts")
+                    else:
+                        setup[field] = data
+                config[name] = setup
+            elif name == "scope_bundles":
+                if not isinstance(overlay, dict):
+                    raise ValueError("host scope bundle overlay must be keyed by declared bundle")
+                bundles = config.get("scope_bundles", {})
+                for key, data in overlay.items():
+                    if (
+                        key not in bundles
+                        or not isinstance(data, dict)
+                        or set(data) != {"readiness_group"}
+                    ):
+                        raise ValueError("host scope bundle overlay may only add readiness_group")
+                    bundles[key] = {**bundles[key], **data}
+                config[name] = bundles
+            elif name in config or name in {"scopes", "auth_protocol", "auth_implementation"}:
+                raise ValueError("host cannot replace catalog provider configuration")
+            elif name in {
+                "readiness_groups",
+                "connection_category",
+                "setup_note",
+            }:
+                config[name] = overlay
+            else:
+                raise ValueError("unknown host-only auth configuration overlay")
+        result["config"] = config
+        return result
 
     @field_validator("key")
     @classmethod
@@ -2064,6 +2251,15 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     },
                 },
             ),
+            ProviderManifest(
+                key="elevenlabs",
+                name="ElevenLabs",
+                description=(
+                    "Read subscription usage, models and voices, manage voices, and create "
+                    "pronunciation dictionaries."
+                ),
+                auth_catalog_ref="elevenlabs",
+            ),
             ProviderManifest(**ftp_provider_kwargs()),
             ProviderManifest(**s3_provider_kwargs()),
             ProviderManifest(
@@ -2144,68 +2340,13 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 key="reddit",
                 name="Reddit",
                 description="Reddit research provider using OAuth client credentials.",
+                auth_catalog_ref="reddit",
                 auth_type="oauth-client-credentials",
-                auth_methods=[
-                    AuthMethodManifest(
-                        key="client_credentials",
-                        label="Client credentials",
-                        auth_type="oauth-client-credentials",
-                        payload_format="json",
-                        fields=[
-                            AuthFieldManifest(
-                                key="client_id",
-                                label="Client ID",
-                                type="secret",
-                                secret=True,
-                                required=True,
-                            ),
-                            AuthFieldManifest(
-                                key="client_secret",
-                                label="Client Secret",
-                                type="secret",
-                                secret=True,
-                                required=True,
-                            ),
-                            AuthFieldManifest(
-                                key="user_agent",
-                                label="User Agent",
-                                type="secret",
-                                secret=True,
-                                required=True,
-                            ),
-                        ],
-                    )
-                ],
                 config={
-                    "credential_payload": {
-                        "format": "json",
-                        "required_keys": ["client_id", "client_secret", "user_agent"],
-                        "secret_keys": ["client_secret"],
-                    },
                     "setup_note": (
                         "Store the OAuth app JSON in the encrypted payload; do not "
                         "persist access tokens in agent-visible state."
                     ),
-                    "setup": {
-                        "credential_label": "Reddit app client id, client secret, and user agent",
-                        "setup_note": (
-                            "Create a Reddit app under developer preferences, then store "
-                            "client id, client secret, and user agent in StackOS."
-                        ),
-                        "homepage_url": "https://www.reddit.com/",
-                        "signup_url": "https://www.reddit.com/register/",
-                        "console_url": "https://www.reddit.com/prefs/apps",
-                        "credential_url": "https://www.reddit.com/prefs/apps",
-                        "docs_url": "https://www.reddit.com/dev/api/",
-                        "verified_at": "2026-06-11",
-                        "url_confidence": {
-                            "homepage_url": "verified",
-                            "signup_url": "verified",
-                            "console_url": "verified",
-                            "credential_url": "verified",
-                            "docs_url": "verified",
-                        },
-                    },
                 },
             ),
             ProviderManifest(
@@ -5243,6 +5384,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "allows_credential": False,
                 },
             ),
+            *[ActionManifest(**kwargs) for kwargs in elevenlabs_action_kwargs()],
             *[ActionManifest(**kwargs) for kwargs in ftp_action_kwargs()],
             *[ActionManifest(**kwargs) for kwargs in s3_action_kwargs()],
             ActionManifest(

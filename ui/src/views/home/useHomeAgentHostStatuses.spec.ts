@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { callOperation } from '@/lib/operations'
-import { desktop } from '@/lib/desktop'
+import { desktop, type DesktopMcpHostStatus } from '@/lib/desktop'
 import { useHomeAgentHostStatuses } from './useHomeAgentHostStatuses'
+import { defineComponent, h, onMounted, ref } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/desktop', () => ({ desktop: { hostStatuses: vi.fn() } }))
@@ -10,11 +12,48 @@ beforeEach(() => {
   vi.mocked(desktop.hostStatuses).mockReset()
 })
 
+const catalogHost: DesktopMcpHostStatus = {
+  host_key: 'codex',
+  status: 'registered_current',
+  connection_state: 'connected',
+  agent_execution: {
+    sandboxes: ['workspace-write', 'read-only'],
+    review_sandbox: 'workspace-write',
+    models: ['fixture-model'],
+    custom_models: false,
+    provider_selection: true,
+    profile_selection: false,
+    requires_provider_model: false,
+    notes: 'Fixture catalog; access is not checked.',
+    sources: ['https://example.com/catalog'],
+    checked_on: '2026-11-05',
+    credential_status: 'not_checked',
+    model_access: 'not_checked',
+  },
+}
+
 describe('home host status transport', () => {
+  it('never replaces retained current connections with a retired reader result', async () => {
+    const visible = ref(true)
+    let state!: ReturnType<typeof useHomeAgentHostStatuses>
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      .mockResolvedValue({ ok: true, items: [{ ...catalogHost, message: 'Current connection' }] })
+    const Reader = defineComponent({ setup() { state = useHomeAgentHostStatuses(false); onMounted(state.loadHostStatuses); return () => null } })
+    const wrapper = mount(defineComponent({ setup: () => () => visible.value ? h(Reader) : null }))
+    try {
+      visible.value = false; await flushPromises()
+      visible.value = true; await flushPromises()
+      finish({ ok: true, items: [{ ...catalogHost, message: 'Retired connection' }] }); await flushPromises()
+      visible.value = false; await flushPromises()
+      vi.mocked(callOperation).mockImplementation(() => new Promise(() => {}))
+      visible.value = true; await flushPromises()
+      expect(state.hostStatuses.value.items[0]?.message).toBe('Current connection')
+      expect(state.hostStatusSummary.value).not.toContain('Refreshing')
+    } finally { wrapper.unmount() }
+  })
   it('uses real browser operation data and retains last checked rows when refresh fails', async () => {
-    const hosts = [
-      { host_key: 'codex', status: 'registered_current', connection_state: 'connected' },
-    ]
+    const hosts = [catalogHost]
     vi.mocked(callOperation).mockResolvedValue({ ok: true, items: hosts })
     const state = useHomeAgentHostStatuses(false)
     await state.loadHostStatuses()
@@ -30,11 +69,15 @@ describe('home host status transport', () => {
     })
   })
 
-  it('preserves native IPC transport in Electron without duplicate browser reads', async () => {
-    vi.mocked(desktop.hostStatuses).mockResolvedValue({ ok: true, items: [] })
-    const state = useHomeAgentHostStatuses(true)
-    await state.loadHostStatuses()
-    expect(desktop.hostStatuses).toHaveBeenCalledTimes(1)
-    expect(callOperation).not.toHaveBeenCalled()
-  })
+  it.each([catalogHost, { host_key: 'codex' }])(
+    'preserves native IPC rows with or without a catalog, without duplicate browser reads',
+    async (host) => {
+      vi.mocked(desktop.hostStatuses).mockResolvedValue({ ok: true, items: [host] })
+      const state = useHomeAgentHostStatuses(true)
+      await state.loadHostStatuses()
+      expect(state.hostStatuses.value).toEqual({ kind: 'loaded', items: [host] })
+      expect(desktop.hostStatuses).toHaveBeenCalledTimes(1)
+      expect(callOperation).not.toHaveBeenCalled()
+    },
+  )
 })

@@ -12,8 +12,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
-from stackos.auth_providers import AuthRepository
-from stackos.db.models import Credential, CredentialAccount
+from stackos.db.models import Credential
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from tests.helpers.stripe import (
     stripe_charge,
@@ -24,6 +23,7 @@ from tests.helpers.stripe import (
     stripe_price,
     stripe_product,
 )
+from tests.integration.account_test_support import store_test_account_with_identity
 
 from .conftest import MCPClient
 
@@ -247,7 +247,7 @@ def test_payment_record_list_is_deferred_before_auth_or_http(
             "include_unavailable_integrations": True,
         },
     )
-    assert len(full["items"]) == 37
+    assert len(full["items"]) == 39
     deferred = next(item for item in full["items"] if item["action_ref"] == action_ref)
     assert deferred["availability_status"] == "deferred"
     assert deferred["executable"] is False
@@ -620,30 +620,15 @@ def _seed_stripe_credential(
         else "Stripe MCP other-account fixture"
     )
     with Session(engine) as session:
-        credential_ref = (
-            AuthRepository(session)
-            .store_credential(
-                provider_key="stripe",
-                auth_method_key="api_key",
-                display_name=display_name,
-                fields={"api_key": STRIPE_SECRET},
-                attach_project_id=project_id,
-            )
-            .data.credential_ref
+        return store_test_account_with_identity(
+            session,
+            project_id=project_id,
+            provider_key="stripe",
+            auth_method_key="api_key",
+            display_name=display_name,
+            fields={"api_key": STRIPE_SECRET},
+            provider_account_id=provider_account_id,
         )
-        credential = session.exec(
-            select(Credential).where(Credential.credential_ref == credential_ref)
-        ).one()
-        assert credential.id is not None
-        session.add(
-            CredentialAccount(
-                credential_id=credential.id,
-                provider_account_id=provider_account_id,
-                display_name=display_name,
-            )
-        )
-        session.commit()
-        return credential_ref
 
 
 def _seed_stripe_object_ref(
@@ -769,18 +754,25 @@ def test_stripe_update_direct_uses_secret_refs_and_independent_readback(
     seeded_project: dict,
     httpx_mock: HTTPXMock,
     object_type: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project_id = seeded_project["data"]["id"]
     credential_ref = _seed_stripe_credential(mcp_client, project_id)
     provider_id = "cus_mcp_fixture" if object_type == "customer" else "in_mcp_fixture"
     ref_field = "customer_ref" if object_type == "customer" else "invoice_ref"
-    object_ref = _seed_stripe_object_ref(
-        mcp_client,
-        project_id=project_id,
-        credential_ref=credential_ref,
-        object_type=f"stripe.{object_type}",
-        provider_object_id=provider_id,
-    )
+    # A generated reference can contain a short payload secret by coincidence.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "stackos.repositories.provider_refs.secrets.token_urlsafe",
+            lambda _size: "qU13JgxShMa9nfz1LflHW4o4G5US_XRh",
+        )
+        object_ref = _seed_stripe_object_ref(
+            mcp_client,
+            project_id=project_id,
+            credential_ref=credential_ref,
+            object_type=f"stripe.{object_type}",
+            provider_object_id=provider_id,
+        )
 
     def secret(value: str) -> dict[str, str]:
         saved = mcp_client.call_tool_structured(

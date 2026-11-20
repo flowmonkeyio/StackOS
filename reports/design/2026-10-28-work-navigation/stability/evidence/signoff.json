@@ -1,0 +1,56 @@
+{
+  "candidate": "09c506038cc3c8f755e9887659694fef3c4f5942a5042f61131f3ca12527f75d",
+  "modal_candidate": "facaba3f908ed954f3b8c3d8eef96887346d19947563e1f5eebb99ba7661d804",
+  "checked_at": "2026-10-29T02:04:02.987391+00:00",
+  "command": "PYTHONPATH=/tmp/stackos-work-724/signoff UV_NO_SYNC=1 TPF_LLM_TOOL=codex tpf make signoff",
+  "cwd": "/tmp/stackos-work-724/signoff",
+  "exit_code": 0,
+  "tool_execution_session": 47582,
+  "scope": [
+    "ruff lint",
+    "Python types",
+    "complete Python tests",
+    "complete UI tests",
+    "production UI build"
+  ],
+  "source_overlay_verified_files": 61,
+  "historical_failure": {
+    "candidate": "8ce94292778dad81890e8b7650ca75291bc670944559f58932fef8abe01986b3",
+    "log": "/Users/sergeyrura/.local/share/tpf/tee/20261028_184939_make.log",
+    "reason": "Connections detach confirmation recursive updates in UiDialog; fixed and independently reviewed in D3"
+  },
+  "warnings": [
+    "Existing Vue Router test-host warnings",
+    "Existing Python dependency/deprecation warnings",
+    "Vite chunk size warning"
+  ],
+  "built_smoke": {
+    "url": "http://127.0.0.1:5185/projects/1/tasks?detail=improve-work",
+    "asset": "/assets/index-Bz5kSfwx.js",
+    "task_ticket_frame": [
+      672,
+      752
+    ],
+    "overlay_origin": [
+      0,
+      0
+    ],
+    "console_errors": [],
+    "screenshot": "final-built-task.png"
+  },
+  "keyboard": {
+    "tab_wrap": "passed",
+    "back_disclosure": "retained",
+    "body_scroll_before_after": [
+      153,
+      153
+    ],
+    "close_focus": "original task board card",
+    "body_unlock": "passed"
+  },
+  "authority": "Local source and isolated preview only; no commit, install, upgrade, external deployment or message.",
+  "final_image_sha256": {
+    "final-D3-task-dark.png": "9192c9f5557e4addfd893c574d8488d15dd266ae496545dfe01a11c0ff0ca042",
+    "final-built-task.png": "2743c8fd0d10426d69736c749ccca56fd835b5564730477eb57ee3464cb21ee3"
+  }
+}

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+from stackos_connectors.shared.rate_limit import TokenBucket as ConnectorTokenBucket
+
 from stackos.integrations._rate_limit import (
     TokenBucket,
     get_bucket,
@@ -63,21 +66,19 @@ def test_async_acquire_does_not_block_when_capacity_available() -> None:
     asyncio.run(take_three())
 
 
-def test_async_acquire_paces_when_drained() -> None:
-    """When the bucket is drained, ``acquire`` waits for refill."""
+@pytest.mark.parametrize("bucket_type", [TokenBucket, ConnectorTokenBucket])
+@pytest.mark.parametrize("qps", [2, 20])
+def test_async_acquire_paces_when_drained(bucket_type, qps, integration_clock) -> None:
+    """Assert the actual requested wait and refill, without scheduler jitter."""
     reset_buckets()
-    bucket = TokenBucket.for_qps(20)  # 20 qps so 50ms between tokens
+    bucket = bucket_type.for_qps(qps)
 
     async def drain_and_wait() -> None:
-        # Drain instantly.
-        for _ in range(20):
-            await bucket.acquire(1)
-        # The 21st call must wait for ~50ms (1 token / 20 qps).
-        loop = asyncio.get_running_loop()
-        before = loop.time()
+        await bucket.acquire(qps)
+        assert integration_clock.sleeps == []
         await bucket.acquire(1)
-        after = loop.time()
-        # Allow some slack for scheduler jitter.
-        assert (after - before) >= 0.04
+        assert integration_clock.sleeps == [1 / qps]
+        assert bucket.tokens == pytest.approx(0)
+        assert bucket.last == pytest.approx(1 / qps)
 
     asyncio.run(drain_and_wait())

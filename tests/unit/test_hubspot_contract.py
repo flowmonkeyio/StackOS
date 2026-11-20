@@ -1,7 +1,9 @@
 import re
 from pathlib import Path
 
-import yaml
+from stackos_connectors import get_default_client
+
+from stackos.plugins.manifest import load_plugin_manifest_file
 
 CONTRACT_PATH = Path("docs/integration-contracts/hubspot.md")
 RUNBOOK_PATH = Path("docs/oauth-provider-setup.md")
@@ -98,8 +100,9 @@ def _contract_text() -> str:
 
 
 def _hubspot_provider() -> dict[str, object]:
-    manifest = yaml.safe_load(GTM_MANIFEST_PATH.read_text(encoding="utf-8"))
-    return next(provider for provider in manifest["providers"] if provider["key"] == "hubspot")
+    manifest = load_plugin_manifest_file(GTM_MANIFEST_PATH)
+    provider = next(provider for provider in manifest.providers if provider.key == "hubspot")
+    return provider.model_dump(mode="json", exclude_none=True)
 
 
 def test_hubspot_contract_freezes_action_inventory_and_rejects_universal_records() -> None:
@@ -137,12 +140,20 @@ def test_hubspot_manifest_keeps_oauth_and_private_app_scope_evidence_distinct() 
 
     oauth = methods["oauth2_authorization_code"]
     private_app = methods["private_app_token"]
-    assert "multi-account" in oauth["description"]
+    canonical = {
+        method["key"]: method
+        for method in get_default_client().registry.connector_metadata["hubspot"]["auth_methods"]
+    }
+    assert oauth["description"] == canonical["oauth2_authorization_code"]["setup"]["description"]
+    assert oauth["interactive"] is True
+    assert "`oauth2_authorization_code` is the multi-account OAuth route" in _contract_text()
     assert oauth["permission_verification"] == {
         "evidence_source": "oauth_response",
         "enforcement": "local_required",
     }
-    assert "single-account" in private_app["description"]
+    assert private_app["description"] == canonical["private_app_token"]["setup"]["description"]
+    assert private_app["interactive"] is False
+    assert "`private_app_token` is the single-account private-app route" in _contract_text()
     assert private_app["auth_type"] == "api-key"
     assert private_app["permission_verification"] == {
         "evidence_source": "provider_probe",

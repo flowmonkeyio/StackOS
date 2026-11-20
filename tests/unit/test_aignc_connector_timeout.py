@@ -7,6 +7,7 @@ import base64
 import io
 import json
 import wave
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -17,6 +18,7 @@ from stackos.actions.aignc import AigncActionConnector
 from stackos.actions.connectors import ActionConnectorRequest
 from stackos.auth_providers import ResolvedCredential
 from stackos.repositories.base import ValidationError
+from tests.helpers.integration_clock import IntegrationClock, isolated_integration_clock
 
 API = "https://cli-api.f2nd.com/v1"
 INPUTS = {
@@ -36,6 +38,13 @@ INPUTS = {
 }
 
 
+@pytest.fixture
+def integration_clock(monkeypatch: pytest.MonkeyPatch) -> Iterator[IntegrationClock]:
+    with isolated_integration_clock(monkeypatch) as clock:
+        yield clock
+
+
+@pytest.mark.usefixtures("integration_clock")
 @pytest.mark.parametrize("failure_phase", ["artifact", "progress"])
 def test_post_provider_projection_failure_retains_receipt(
     tmp_path, httpx_mock, monkeypatch, failure_phase
@@ -111,6 +120,7 @@ def _audio_path(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.mark.usefixtures("integration_clock")
 @pytest.mark.parametrize("operation", INPUTS)
 @pytest.mark.parametrize("read_timeout", [None, 60, 1800])
 def test_generation_httpx_timeouts_and_phase_progress(
@@ -195,6 +205,7 @@ def test_invalid_generation_timeout_rejects_before_provider_call(
     assert progress == []
 
 
+@pytest.mark.usefixtures("integration_clock")
 def test_models_list_retains_existing_timeout_without_generation_progress(
     tmp_path: Path, httpx_mock: HTTPXMock
 ) -> None:

@@ -3,21 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
+from datetime import datetime
 
 import pytest
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
+from stackos_connectors.connectors.trackbooth.schema import operation_input_schema
 
 from stackos.actions import (
     ActionRepository,
 )
+from stackos.actions.generated_inventory import GeneratedInventoryIdentity, upsert_generated_actions
+from stackos.actions.trackbooth_inventory import _runtime_inventory_scope_key
 from stackos.db.models import (
     Action,
     ActionCall,
+    ActionVersion,
+    Plugin,
+    PluginSource,
+    Provider,
 )
+from stackos.generated_inventory import generated_inventory_scope_key
 from stackos.repositories.base import (
     ConflictError,
     NotFoundError,
+    ValidationError,
 )
 from stackos.repositories.execution_contexts import ExecutionContextRepository
 from stackos.repositories.projects import (
@@ -31,6 +42,348 @@ from tests.integration.test_repositories.trackbooth_test_support import (
     _trackbooth_links_create_detail,
     _trackbooth_offers_findbyid_detail,
 )
+
+pytestmark = pytest.mark.fresh_catalog
+
+
+@pytest.fixture
+def second_provider_inventory(session: Session, project_id: int):
+    """A normalized protocol control; no CFO plugin, auth or remote service."""
+    plugin = Plugin(slug="inventory-fixture", name="Inventory fixture", source=PluginSource.PROJECT)
+    session.add(plugin)
+    session.flush()
+    provider = Provider(plugin_id=plugin.id, key="fixture-api", name="Fixture API")
+    session.add(provider)
+    session.commit()
+    identity = GeneratedInventoryIdentity(
+        plugin_slug=plugin.slug,
+        provider_key=provider.key,
+        inventory_source="fixture.catalog.export",
+        scope_fields=(
+            "project_id",
+            "credential_ref",
+            "api_base_url",
+            "subject",
+            "organization",
+            "key_id",
+        ),
+    )
+    scope = {
+        "project_id": project_id,
+        "credential_ref": "cred_fixture",
+        "api_base_url": "http://127.0.0.1:8123",
+        "subject": "user-fixture",
+        "organization": "org-fixture",
+        "key_id": "key-fixture",
+    }
+    return identity, scope
+
+
+def _second_provider_action(scope: dict, operation_id: str = "records_read"):
+    # Existing normalized operation shape, consumed through the preserved public
+    # projector import (the accepted c08 delegates it to the shared schema owner).
+    detail = {
+        "operation_id": operation_id,
+        "method": "POST",
+        "path": "/api/records/query",
+        "request_body": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["count"],
+            "properties": {"count": {"type": "integer", "minimum": 1, "maximum": 5}},
+        },
+    }
+    scope_key = generated_inventory_scope_key(scope)
+    return operation_id, {
+        "key": f"api.{scope_key}.{operation_id}",
+        "name": "Fixture records",
+        "description": "Local normalized catalog fixture",
+        "provider": "fixture-api",
+        "capability": "agent-api",
+        "risk_level": "read",
+        "input_schema": operation_input_schema(detail),
+        "output_schema": {"type": "object"},
+        "config": {
+            "public_action_key": f"api.{operation_id}",
+            "connector": "fixture-api",
+            "operation": "operation.execute",
+            "method": "POST",
+            "path": detail["path"],
+        },
+    }
+
+
+def _sync_second_provider(session: Session, identity, scope, actions, *, complete=True, day=1):
+    return upsert_generated_actions(
+        session=session,
+        identity=identity,
+        scope=scope,
+        actions=actions,
+        catalog_hash="unchanged-provider-hash",
+        prune_missing=complete,
+        now=datetime(2026, 11, day),
+    )
+
+
+def test_shared_inventory_updates_projection_and_preserves_versions_and_history(
+    session: Session, project_id: int, second_provider_inventory
+) -> None:
+    identity, scope = second_provider_inventory
+    action = _second_provider_action(scope)
+    first = _sync_second_provider(session, identity, scope, [action])
+    session.commit()
+    row = session.exec(select(Action).where(Action.key == action[1]["key"])).one()
+    row_id = row.id
+    live = session.exec(select(ActionVersion).where(ActionVersion.action_id == row_id)).one()
+    live_id = live.id
+    captured = ActionVersion(
+        action_id=row_id, version="captured-before-sync", manifest_json=deepcopy(live.manifest_json)
+    )
+    session.add(captured)
+    # Real audit history is also covered below through Trackbooth's caller.
+    session.commit()
+    historical = deepcopy(captured.manifest_json)
+    initial_hash = row.config_json["inventory_manifest_hash"]
+    initial_updated = row.updated_at
+
+    second = _sync_second_provider(session, identity, scope, [action], day=2)
+    assert (second["created"], second["updated"], second["skipped"]) == (0, 0, 1)
+    assert row.updated_at == initial_updated
+    assert live.manifest_json["config"]["inventory_synced_at"] == "2026-11-01T00:00:00"
+    changed = deepcopy(action)
+    changed[1]["input_schema"]["properties"]["body"]["properties"]["count"]["maximum"] = 3
+    third = _sync_second_provider(session, identity, scope, [changed], day=3)
+    session.commit()
+    session.refresh(row)
+    session.refresh(live)
+    session.refresh(captured)
+    assert first["action_refs"] == third["action_refs"] == ["inventory-fixture.api.records_read"]
+    assert (third["created"], third["updated"], third["skipped"]) == (0, 1, 0)
+    assert row.id == row_id and live.id == live_id
+    assert row.config_json["inventory_catalog_hash"] == "unchanged-provider-hash"
+    assert row.config_json["inventory_manifest_hash"] != initial_hash
+    assert (
+        live.manifest_json["input_schema"]["properties"]["body"]["properties"]["count"]["maximum"]
+        == 3
+    )
+    assert captured.manifest_json == historical
+    assert (
+        len(session.exec(select(ActionVersion).where(ActionVersion.action_id == row_id)).all()) == 2
+    )
+
+
+def test_shared_inventory_partial_complete_and_reactivation_keep_history(
+    session: Session, second_provider_inventory
+) -> None:
+    identity, scope = second_provider_inventory
+    first = _second_provider_action(scope)
+    unseen = _second_provider_action(scope, "records_other")
+    _sync_second_provider(session, identity, scope, [first, unseen])
+    session.commit()
+    other = session.exec(select(Action).where(Action.key == unseen[1]["key"])).one()
+    other_id = other.id
+    version = session.exec(select(ActionVersion).where(ActionVersion.action_id == other_id)).one()
+    historical_manifest = deepcopy(version.manifest_json)
+    partial = _sync_second_provider(session, identity, scope, [first], complete=False)
+    assert partial["pruned"] == 0 and other.config_json["inventory_state"] == "active"
+    complete = _sync_second_provider(session, identity, scope, [first])
+    assert complete["retired"] == 1
+    assert other.config_json["inventory_state"] == "retired"
+    assert "connector" not in other.config_json
+    assert version.manifest_json == historical_manifest
+    repeated = _sync_second_provider(session, identity, scope, [first])
+    assert repeated["retired"] == 0
+    recovered = _sync_second_provider(session, identity, scope, [first, unseen])
+    assert recovered["updated"] == 1 and recovered["created"] == 0
+    assert other.id == other_id and other.config_json["inventory_state"] == "active"
+    assert "inventory_retired_at" not in other.config_json
+    # The helper has not committed: caller rollback restores the prior committed
+    # rows, including the original live-catalog snapshot.
+    session.rollback()
+    session.refresh(other)
+    assert other.config_json["inventory_state"] == "active"
+    assert version.manifest_json == historical_manifest
+
+
+@pytest.mark.parametrize(
+    "dimension",
+    ["project_id", "credential_ref", "api_base_url", "subject", "organization", "key_id"],
+)
+def test_shared_inventory_binds_every_declared_scope_dimension(
+    session: Session, second_provider_inventory, dimension: str
+) -> None:
+    identity, scope = second_provider_inventory
+    original = _second_provider_action(scope)
+    initial = _sync_second_provider(session, identity, scope, [original])
+    session.commit()
+    changed_scope = {
+        **scope,
+        dimension: scope[dimension] + 1
+        if dimension == "project_id"
+        else scope[dimension] + "-other",
+    }
+    changed = _second_provider_action(changed_scope)
+    out = _sync_second_provider(session, identity, changed_scope, [changed])
+    assert out["inventory_scope_key"] != initial["inventory_scope_key"]
+    assert out["created"] == 1 and out["retired"] == 0
+    rows = session.exec(
+        select(Action).where(Action.key.in_([original[1]["key"], changed[1]["key"]]))
+    ).all()
+    assert len(rows) == 2
+    assert all(row.config_json["inventory_state"] == "active" for row in rows)
+
+
+@pytest.mark.parametrize("bad", ["duplicate", "provider", "scope", "missing_scope", "owner"])
+def test_shared_inventory_rejects_invalid_batch_before_publishing(
+    session: Session, second_provider_inventory, bad: str
+) -> None:
+    identity, scope = second_provider_inventory
+    first = _second_provider_action(scope)
+    second = _second_provider_action(scope, "records_other")
+    actions = [first, second]
+    if bad == "duplicate":
+        second[1]["config"]["public_action_key"] = first[1]["config"]["public_action_key"]
+    elif bad == "provider":
+        second[1]["provider"] = "foreign-provider"
+    elif bad == "scope":
+        second[1]["config"]["inventory_organization"] = "foreign-org"
+    elif bad == "missing_scope":
+        scope = {key: value for key, value in scope.items() if key != "key_id"}
+    else:
+        plugin = session.exec(select(Plugin).where(Plugin.slug == identity.plugin_slug)).one()
+        session.add(
+            Action(plugin_id=plugin.id, key=second[1]["key"], name="Unrelated static action")
+        )
+        session.commit()
+    before = len(session.exec(select(Action)).all())
+    with pytest.raises(ValidationError):
+        _sync_second_provider(session, identity, scope, actions)
+    assert len(session.exec(select(Action)).all()) == before
+    assert session.exec(select(ActionVersion)).all() == []
+
+
+def test_shared_inventory_rolls_back_new_rows_with_caller_transaction(
+    session: Session, second_provider_inventory
+) -> None:
+    identity, scope = second_provider_inventory
+    out = _sync_second_provider(session, identity, scope, [_second_provider_action(scope)])
+    assert out["created"] == 1
+    session.rollback()
+    assert session.exec(select(Action)).all() == []
+    assert session.exec(select(ActionVersion)).all() == []
+
+
+def test_trackbooth_scope_identity_preserves_legacy_hash() -> None:
+    scope = {
+        "project_id": 7,
+        "credential_ref": "cred_legacy",
+        "api_base_url": "https://trackbooth.local.test",
+    }
+    # Original three-field serialized preimage, pinned before extraction.
+    assert generated_inventory_scope_key(scope) == "inv_e2c834db749a"
+    assert (
+        _runtime_inventory_scope_key({**scope, "acting_as_account": "ignored"})
+        == "inv_e2c834db749a"
+    )
+
+
+def test_trackbooth_resync_and_retirement_preserve_action_and_audit_history(
+    session: Session, project_id: int, httpx_mock: HTTPXMock
+) -> None:
+    credential_ref = _trackbooth_credential_ref(session, project_id)
+    detail = _trackbooth_links_create_detail()
+    _add_trackbooth_sync_responses(httpx_mock, detail)
+    initial = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    action_ref = _trackbooth_generated_action_ref(initial, "LinksController.create")
+    row = session.exec(
+        select(Action).where(
+            Action.config_json["public_action_key"].as_string() == "api.links_create"
+        )
+    ).one()
+    original_id = row.id
+    live = session.exec(select(ActionVersion).where(ActionVersion.action_id == row.id)).one()
+    original_live_id = live.id
+    captured = ActionVersion(
+        action_id=row.id, version="captured-run", manifest_json=deepcopy(live.manifest_json)
+    )
+    session.add(captured)
+    session.commit()
+    historical_manifest = deepcopy(captured.manifest_json)
+    httpx_mock.add_response(
+        method="POST",
+        url="https://trackbooth.local.test/api/links",
+        json={"data": {"id": "link-history"}},
+    )
+    repo = ActionRepository(session)
+    asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref=action_ref,
+            credential_ref=credential_ref,
+            input_json={
+                "body": {
+                    "campaign_id": "campaign-1",
+                    "name": "History probe",
+                    "routing_mode": "direct",
+                }
+            },
+        )
+    )
+    call = session.exec(select(ActionCall).where(ActionCall.action_id == original_id)).one()
+    historical_call = deepcopy(call.model_dump())
+
+    detail["body_schema"]["json_schema"]["properties"]["name"]["maxLength"] = 80
+    _add_trackbooth_sync_responses(httpx_mock, detail)
+    refreshed = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    assert refreshed["updated"] == 1
+    assert _trackbooth_generated_action_ref(refreshed, "LinksController.create") == action_ref
+    assert (
+        repo.describe(project_id=project_id, action_ref=action_ref).manifest.input_schema_json[
+            "properties"
+        ]["body"]["properties"]["name"]["maxLength"]
+        == 80
+    )
+    _add_trackbooth_sync_responses(httpx_mock)
+    retired = _sync_trackbooth_catalog(session, project_id, credential_ref)
+    assert retired["retired"] == 1
+    with pytest.raises(NotFoundError):
+        repo.describe(project_id=project_id, action_ref=action_ref)
+    session.refresh(row)
+    session.refresh(live)
+    session.refresh(captured)
+    session.refresh(call)
+    assert row.id == original_id and live.id == original_live_id
+    assert row.config_json["inventory_state"] == "retired"
+    assert captured.manifest_json == historical_manifest
+    assert call.model_dump() == historical_call
+
+
+def test_shared_inventory_complete_sync_preserves_other_provider_rows(
+    session: Session, second_provider_inventory
+) -> None:
+    identity, scope = second_provider_inventory
+    action = _second_provider_action(scope)
+    _sync_second_provider(session, identity, scope, [action])
+    row = session.exec(select(Action).where(Action.key == action[1]["key"])).one()
+    provider = Provider(plugin_id=row.plugin_id, key="foreign-provider", name="Foreign provider")
+    session.add(provider)
+    session.flush()
+    foreign = Action(
+        plugin_id=row.plugin_id,
+        provider_id=provider.id,
+        key=f"api.{generated_inventory_scope_key(scope)}.foreign",
+        name="Foreign inventory",
+        config_json=deepcopy(row.config_json),
+    )
+    session.add(foreign)
+    session.commit()
+    session.refresh(foreign)
+    snapshot = deepcopy(foreign.model_dump())
+    out = _sync_second_provider(session, identity, scope, [])
+    assert out["retired"] == 1
+    session.flush()
+    session.refresh(foreign)
+    assert foreign.model_dump() == snapshot
 
 
 def test_trackbooth_full_catalog_sync_prunes_missing_runtime_actions(

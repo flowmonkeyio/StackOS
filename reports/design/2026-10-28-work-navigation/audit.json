@@ -1,0 +1,77 @@
+{
+  "date": "2026-10-28",
+  "scope": "Read-only live Work navigation audit and revised static concepts. No product implementation.",
+  "capture_method": "StackOS native browser session browser-session:project-1:work-design:work-tab-concepts-20261028",
+  "steps": [
+    {
+      "step": 1,
+      "name": "Open selected task's dependency map",
+      "health": "Scope coherent; fit-to-view makes long chains difficult to read.",
+      "image": "evidence/01-map.png",
+      "observation": "Task #875 selected; map shows its seven tickets. Selected task belongs here."
+    },
+    {
+      "step": 2,
+      "name": "Switch to Stories task overview",
+      "health": "Conflicting scopes",
+      "image": "evidence/02-overview.png",
+      "observation": "Single-task selector persists above a multi-task overview. Selected task currently still matches details."
+    },
+    {
+      "step": 3,
+      "name": "Filter overview to Recently finished",
+      "health": "Broken selection consistency",
+      "image": "evidence/03-filter-mismatch.png",
+      "observation": "Visible story changes to completed task #1078 Publish verified StackOS 2.1.40 updater artifacts. Top selector remains in-progress task #875 Publish Day 1 Q&A articles and resubmit sitemap."
+    },
+    {
+      "step": 4,
+      "name": "Open visible story's task details",
+      "health": "Wrong task opens",
+      "image": "evidence/04-wrong-detail.png",
+      "observation": "Details panel opens #875 despite visible story being #1078."
+    }
+  ],
+  "code_findings": [
+    {
+      "path": "ui/src/views/task-tracker/TaskTrackerCommandPanel.vue",
+      "line": 69,
+      "finding": "Selected-task selector rendered for all current views."
+    },
+    {
+      "path": "ui/src/views/task-tracker/TrackerStoriesPanel.vue",
+      "line": 67,
+      "finding": "Local story filters can fall back to a different story without updating parent task identity."
+    },
+    {
+      "path": "ui/src/views/task-tracker/TrackerStoriesPanel.vue",
+      "line": 338,
+      "finding": "Open-details event omits displayed task identity."
+    },
+    {
+      "path": "ui/src/views/TaskTrackerView.vue",
+      "line": 454,
+      "finding": "router.replace means current task/view changes do not form a useful browser-back history."
+    },
+    {
+      "path": "ui/src/views/home/ticketOverview.ts",
+      "line": 49,
+      "finding": "Home ticket-count links currently point at Tickets view and need an intentional new destination."
+    },
+    {
+      "path": "ui/src/views/task-tracker/viewModel.ts",
+      "line": 140,
+      "finding": "Existing status filtering mixes task status and contained-ticket status."
+    },
+    {
+      "path": "ui/src/views/task-tracker/useTrackerLiveUpdates.ts",
+      "line": 25,
+      "finding": "Current live stream scopes to selected task; a project task board needs project-wide freshness."
+    }
+  ],
+  "limits": [
+    "Board is proposed and not implemented in the live app.",
+    "Static concepts do not verify keyboard behavior, focus management, live updates, responsive overflow or save operations.",
+    "Image-generated styling is illustrative; implementation must use current StackOS components and tokens rather than tracing generated pixels."
+  ]
+}

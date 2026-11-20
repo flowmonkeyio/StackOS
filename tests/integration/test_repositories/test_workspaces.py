@@ -6,12 +6,165 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, SQLModel, select
 
-from stackos.db.models import WorkspaceBinding
+from stackos.db.connection import make_engine
+from stackos.db.models import AgentSession, Project, WorkspaceBinding
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
+from stackos.workspace_identity import path_fingerprint
+from tests.helpers.workspaces import same_remote_worktrees
+
+
+@pytest.mark.parametrize("selected", [True, False])
+@pytest.mark.parametrize("cwd", [None, "/", "/tmp/hi", "/tmp/Claude/scratch-workspaces/hi"])
+def test_global_startup_has_no_workspace_or_incidental_project(
+    session: Session, selected: bool, cwd: str | None
+) -> None:
+    target = _create_project(session)
+    out = WorkspaceRepository(session).start_session(
+        runtime="codex",
+        cwd=cwd,
+        global_session=True,
+        project_id=target if selected else None,
+        auto_bootstrap=True,
+    )
+    assert out.project_id == (target if selected else None)
+    assert out.data.global_session is True
+    assert out.data.workspace_binding_id is None
+    assert out.data.cwd is None and out.data.repo_fingerprint is None
+    assert out.data.git_remote_url is None
+    assert out.data.setup_state["workspace_bound"] is False
+    assert out.data.setup_state["project_scoped_tools_usable"] is selected
+    assert out.data.auto_bootstrap is False
+    assert len(session.exec(select(Project)).all()) == 1
+    assert session.exec(select(WorkspaceBinding)).all() == []
+
+
+@pytest.mark.parametrize("global_value", [None, False])
+def test_unbound_non_global_project_id_refuses_before_writes(
+    session: Session, global_value: bool | None
+) -> None:
+    target = _create_project(session)
+    kwargs = {} if global_value is None else {"global_session": global_value}
+    with pytest.raises(ValidationError, match="declare global_session"):
+        WorkspaceRepository(session).start_session(
+            runtime="codex", cwd="/tmp/hi", project_id=target, **kwargs
+        )
+    assert len(session.exec(select(Project)).all()) == 1
+    assert session.exec(select(WorkspaceBinding)).all() == []
+    assert session.exec(select(AgentSession)).all() == []
+
+
+@pytest.mark.parametrize("cwd", [None, "/", "/Applications/StackOS.app/Contents/Resources"])
+def test_folderless_startup_can_select_project_directly(session: Session, cwd: str | None) -> None:
+    target = _create_project(session)
+    result = WorkspaceRepository(session).start_session(runtime="agent", cwd=cwd, project_id=target)
+    assert result.project_id == target
+    assert result.data.global_session
+    assert result.data.workspace_binding_id is None
+
+
+def test_global_startup_invalid_or_conflicting_selector_has_no_writes(session: Session) -> None:
+    target = _create_project(session)
+    repo = WorkspaceRepository(session)
+    with pytest.raises(NotFoundError):
+        repo.start_session(
+            runtime="codex", cwd="/tmp/hi", global_session=True, project_id=target + 1
+        )
+    with pytest.raises(ValidationError):
+        repo.start_session(
+            runtime="codex", global_session=True, project_id=target, workspace_alias="a"
+        )
+    assert session.exec(select(AgentSession)).all() == []
+    assert session.exec(select(WorkspaceBinding)).all() == []
+
+
+def test_global_startup_keeps_archive_access_and_rejects_deleted_saved_id(session: Session) -> None:
+    projects = ProjectRepository(session)
+    target = _create_project(session)
+    projects.update(target, is_active=False)
+    repo = WorkspaceRepository(session)
+    assert (
+        repo.start_session(runtime="agent", global_session=True, project_id=target).project_id
+        == target
+    )
+    # Historical missing-project fixture, deliberately retaining its old data.
+    session.delete(session.get(Project, target))
+    session.commit()
+    replacement = _create_project(session)
+    assert replacement > target
+    before = len(session.exec(select(AgentSession)).all())
+    with pytest.raises(NotFoundError):
+        repo.start_session(runtime="agent", global_session=True, project_id=target)
+    assert len(session.exec(select(AgentSession)).all()) == before
+    assert session.exec(select(WorkspaceBinding)).all() == []
+
+
+def test_bound_startup_project_must_match_and_cannot_downgrade(session: Session) -> None:
+    repo = WorkspaceRepository(session)
+    bound = repo.bootstrap(cwd="/tmp/bound")
+    other = _create_project(session)
+    original = repo.list_bindings()[0].model_dump()
+    for arguments in ({"global_session": True}, {"project_id": other}):
+        with pytest.raises(ValidationError):
+            repo.start_session(runtime="codex", cwd="/tmp/bound", **arguments)
+    assert repo.list_bindings()[0].model_dump() == original
+    assert session.exec(select(AgentSession)).all() == []
+    result = repo.start_session(runtime="codex", cwd="/tmp/bound", project_id=bound.project_id)
+    assert result.project_id == bound.project_id
+    assert not result.data.global_session
+
+
+def test_global_startup_rechecks_binding_after_preflight_with_two_connections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = make_engine(tmp_path / "race.db")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as reader, Session(engine) as writer:
+        target = _create_project(writer)
+        repo = WorkspaceRepository(reader)
+        resolve = repo.resolve
+        checks = []
+
+        def raced_resolve(**kwargs):
+            result = resolve(**kwargs)
+            checks.append(result.project_id)
+            if len(checks) == 1:
+                WorkspaceRepository(writer).connect(
+                    project_id=target, repo_fingerprint="path:race", last_known_root="/tmp/race"
+                )
+            return result
+
+        monkeypatch.setattr(repo, "resolve", raced_resolve)
+        with pytest.raises(ValidationError, match="already bound"):
+            repo.start_session(runtime="codex", cwd="/tmp/race", global_session=True)
+        assert checks == [None, target]
+        assert reader.exec(select(AgentSession)).all() == []
+        assert len(reader.exec(select(WorkspaceBinding)).all()) == 1
+    engine.dispose()
+
+
+def test_global_startup_lookup_failure_does_not_accept_session(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = WorkspaceRepository(session)
+    resolve = repo.resolve
+    calls = 0
+
+    def failed_recheck(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("lookup unavailable")
+        return resolve(**kwargs)
+
+    monkeypatch.setattr(repo, "resolve", failed_recheck)
+    with pytest.raises(RuntimeError, match="lookup unavailable"):
+        repo.start_session(runtime="agent", cwd="/tmp/hi", global_session=True)
+    assert session.exec(select(AgentSession)).all() == []
+    assert session.exec(select(Project)).all() == []
 
 
 def _create_project(session: Session, slug: str = "workspace-site") -> int:
@@ -38,7 +191,7 @@ def test_resolve_unknown_workspace_requests_connect(session: Session) -> None:
     assert [project.id for project in resolution.candidate_projects] == [project_id]
 
 
-def test_connect_resolves_by_fingerprint_and_git_remote(session: Session) -> None:
+def test_connect_resolves_by_fingerprint_with_remote_only_a_candidate(session: Session) -> None:
     project_id = _create_project(session)
     repo = WorkspaceRepository(session)
 
@@ -60,7 +213,125 @@ def test_connect_resolves_by_fingerprint_and_git_remote(session: Session) -> Non
     assert by_fingerprint.project_id == project_id
     assert by_fingerprint.binding is not None
     assert by_fingerprint.binding.framework == "nuxt"
-    assert by_remote.project_id == project_id
+    assert by_remote.project_id is None
+    assert by_remote.binding is None
+    assert [candidate.id for candidate in by_remote.candidate_projects] == [project_id]
+
+
+def test_same_remote_worktrees_resolve_and_bind_their_actual_roots(
+    session: Session, tmp_path: Path
+) -> None:
+    first, second, remote = same_remote_worktrees(tmp_path)
+    project_id = _create_project(session)
+    repo = WorkspaceRepository(session)
+    original = repo.connect(
+        project_id=project_id,
+        repo_fingerprint=path_fingerprint(first),
+        git_remote_url=remote,
+        last_known_root=str(first),
+    ).data
+    project = session.get(Project, project_id)
+    assert project is not None
+    project.primary_workspace_binding_id = original.id
+    session.add(project)
+    session.commit()
+
+    for fingerprint in (path_fingerprint(second), original.repo_fingerprint):
+        unresolved = repo.resolve(
+            cwd=str(second), repo_fingerprint=fingerprint, git_remote_url=remote
+        )
+        assert unresolved.binding is None and unresolved.project_id is None
+        assert unresolved.needs_connect
+        assert [c.id for c in unresolved.candidate_projects] == [project_id]
+        assert unresolved.next_step["recommended_tool"] == "workspace.connect"
+
+    # Default startup must wait for an explicit project choice, not create a duplicate.
+    pending = repo.start_session(
+        runtime="codex",
+        cwd=str(second),
+        repo_fingerprint=path_fingerprint(second),
+        git_remote_url=remote,
+    )
+    assert pending.project_id is None and pending.data.needs_connect
+    assert len(repo.list_bindings()) == 1
+    connected = repo.connect(
+        project_id=project_id,
+        repo_fingerprint=path_fingerprint(second),
+        git_remote_url=remote,
+        last_known_root=str(second),
+    ).data
+    assert connected.id != original.id
+    for root, binding in ((first, original), (second, connected)):
+        nested = root / "nested"
+        nested.mkdir()
+        resolved = repo.resolve(cwd=str(nested), git_remote_url=remote)
+        assert resolved.binding.id == binding.id
+        assert resolved.binding.last_known_root == str(root)
+        started = repo.start_session(runtime="codex", cwd=str(root), auto_bootstrap=False)
+        assert started.data.workspace_binding_id == binding.id
+    assert {b.id: b.last_known_root for b in repo.list_bindings(project_id=project_id)} == {
+        original.id: str(first),
+        connected.id: str(second),
+    }
+    session.refresh(project)
+    assert project.primary_workspace_binding_id == original.id
+    assert len(session.exec(select(Project)).all()) == 1
+
+
+def test_directory_binding_wins_over_foreign_fingerprint_and_remote(
+    session: Session, tmp_path: Path
+) -> None:
+    repo = WorkspaceRepository(session)
+    owner = _create_project(session)
+    foreign = (
+        ProjectRepository(session)
+        .create(slug="foreign", name="Foreign", domain="foreign.example", locale="en-US")
+        .data.id
+    )
+    root = tmp_path / "no-git"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    outer = repo.connect(
+        project_id=owner, repo_fingerprint=path_fingerprint(root), last_known_root=str(root)
+    ).data
+    inner = repo.connect(
+        project_id=foreign,
+        repo_fingerprint=path_fingerprint(nested),
+        last_known_root=str(nested),
+        git_remote_url="https://example.test/shared.git",
+    ).data
+    resolution = repo.resolve(cwd=str(nested), repo_fingerprint=outer.repo_fingerprint)
+    assert resolution.binding.id == inner.id and resolution.project_id == foreign
+    with pytest.raises(ValidationError, match="must match the workspace binding"):
+        repo.start_session(runtime="codex", cwd=str(nested), project_id=owner)
+    # A directory without Git still resolves; a missing/unbound sibling does not borrow it.
+    assert repo.resolve(cwd=str(root)).binding.id == outer.id
+    assert repo.resolve(cwd=str(tmp_path / "missing")).binding is None
+    for cwd in (None, "/"):
+        assert repo.resolve(cwd=cwd, git_remote_url=inner.git_remote_url).binding is None
+        selected = repo.start_session(
+            runtime="codex",
+            cwd=cwd,
+            git_remote_url=inner.git_remote_url,
+            global_session=True,
+            project_id=owner,
+        )
+        assert selected.data.global_session and selected.data.workspace_binding_id is None
+    assert len(repo.list_bindings()) == 2
+
+
+def test_startup_waits_when_fingerprint_has_no_directory_binding(session: Session) -> None:
+    owner = _create_project(session)
+    repo = WorkspaceRepository(session)
+    binding = repo.connect(project_id=owner, repo_fingerprint="git:legacy-rootless").data
+    started = repo.start_session(
+        runtime="codex", cwd="/tmp/new-directory", repo_fingerprint=binding.repo_fingerprint
+    )
+    assert started.data.needs_connect and started.data.workspace_binding_id is None
+    assert started.data.next_step["recommended_tool"] == "workspace.connect"
+    assert [c.id for c in started.data.candidate_projects] == [owner]
+    assert len(session.exec(select(Project)).all()) == 1
+    assert repo.list_bindings()[0].last_known_root is None
 
 
 def test_bootstrap_creates_project_once_for_workspace_root(session: Session) -> None:
@@ -348,7 +619,9 @@ def test_connect_requires_explicit_rebind_for_existing_project_move(session: Ses
 def test_update_profile_and_start_session_attach_binding(session: Session) -> None:
     project_id = _create_project(session)
     repo = WorkspaceRepository(session)
-    binding = repo.connect(project_id=project_id, repo_fingerprint="git:abc123")
+    binding = repo.connect(
+        project_id=project_id, repo_fingerprint="git:abc123", last_known_root="/tmp/site"
+    )
 
     updated = repo.update_profile(
         binding.data.id,

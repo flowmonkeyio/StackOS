@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it } from 'vitest'
+import { DOMWrapper, enableAutoUnmount, mount } from '@vue/test-utils'
 
 import TabBar from './TabBar.vue'
+
+enableAutoUnmount(afterEach)
 
 const tabs = [
   { key: 'overview', label: 'Overview' },
@@ -86,8 +88,10 @@ describe('TabBar', () => {
     expect(w.get('[role="combobox"]').text()).toContain('Write')
     expect(w.findAll('button[role="tab"]').map((b) => b.text())).toEqual(['Draft', 'Edited'])
 
-    await w.get('[role="combobox"]').trigger('click')
-    await w.findAll('[role="option"]')[0].trigger('click')
+    const stage = w.get('[role="combobox"]')
+    await stage.trigger('click')
+    const listbox = new DOMWrapper(document.body).get(`[role="listbox"][id="${stage.attributes('aria-controls')}"]`)
+    await listbox.findAll('[role="option"]')[0].trigger('click')
 
     expect(w.emitted('change')?.[0][0]).toBe('brief')
     w.unmount()

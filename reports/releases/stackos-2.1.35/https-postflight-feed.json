@@ -1,0 +1,30 @@
+{
+  "checked_at": "2026-10-07T02:14:20.921852+00:00",
+  "files": [
+    {
+      "actual": {
+        "sha256": "21a84a6966bb0d7c593703f93a8f28e47291815607ad55a7fbe886b528840a04",
+        "sha512": "Dos2Vk4BM9/NgMvYczu2V3X8EiW8P+n+T2d5oJEpeBVDz8S8ctNbyvuo477K4t8nDkCDnlUgKfi9+GrMsz5Ecg==",
+        "size": 513
+      },
+      "etag": "\"201-6ac5aa73-7c16b79f7d613124;;;\"",
+      "expected": {
+        "sha256": "21a84a6966bb0d7c593703f93a8f28e47291815607ad55a7fbe886b528840a04",
+        "sha512": "Dos2Vk4BM9/NgMvYczu2V3X8EiW8P+n+T2d5oJEpeBVDz8S8ctNbyvuo477K4t8nDkCDnlUgKfi9+GrMsz5Ecg==",
+        "size": 513
+      },
+      "final_url": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml",
+      "installer_body_downloaded": false,
+      "last_modified": "Wed, 07 Oct 2026 02:12:03 GMT",
+      "method": "GET",
+      "name": "latest-mac.yml",
+      "passed": true,
+      "status": 200,
+      "url": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml"
+    }
+  ],
+  "limits": "Per operator revision5: artifact HEAD status/size only; small feed bytes compared. No public installer/archive-body download or public archive hash claim. No local activation.",
+  "manifest_sha256": "ac4e0dc16e6b853676109fc263e0149c9c5f362e90fa71f046c5580bb869fd01",
+  "mode": "feed",
+  "passed": true
+}

@@ -48,11 +48,21 @@ proof that StackOS' local schema projection is unchanged. This lets a normal
 sync repair stale generated schemas after a StackOS projection fix even when
 the provider catalog and endpoint checksums did not change.
 
-For live catalog schema descriptors, an object `json_schema` is authoritative.
+For live catalog schema descriptors, `json_schema` is authoritative.
 StackOS copies it without merging or reconstructing schema properties from
 `details.fields`; that legacy field list is not a schema source. A referenced
 OpenAPI component remains the narrow fallback when a descriptor has no
 `json_schema`.
+The in-process connector request carries the stored manifest input schema into
+native validation and execution. Route configuration holds only transport and
+presence metadata; it does not reconstruct or duplicate the schema. A normal
+sync refreshes older presence metadata.
+With the companion connector package, boolean schemas and non-object JSON bodies
+retain their meaning, including explicit `null` versus an omitted body. A package
+that cannot resolve boolean schemas rejects the sync before publishing a partial
+inventory. Request validation uses the native schema validator; transport still
+owns its object-shaped query/path containers and server authorization remains
+authoritative.
 
 Schema synchronization acceptance requires the full chain: compare the live
 Trackbooth `json_schema` with the synchronized generated action schema, then

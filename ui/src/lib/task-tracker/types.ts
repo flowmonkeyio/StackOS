@@ -1,3 +1,5 @@
+import type { SchemaActiveExecutionOut, SchemaAgentStatsMetricsOut, SchemaTrackerTaskOut, SchemaWorkDurationOut } from '@/api'
+
 export type TrackerStatus =
   | 'not-started'
   | 'in-progress'
@@ -7,7 +9,27 @@ export type TrackerStatus =
   | 'failed'
   | 'skipped'
 export type TrackerNodeKind = 'task' | 'ticket' | 'group'
+export type BoardColumn = `${SchemaTrackerTaskOut['board_column']}`
 export type TrackerEdgeKind = 'contains' | 'dependency' | 'link'
+
+export type ActiveExecution = SchemaActiveExecutionOut
+
+export interface DeliveryAgentDefaults {
+  name?: string | null
+  instructions?: string | null
+  host_key?: string | null
+  model?: string | null
+  provider?: string | null
+  profile?: string | null
+  [key: string]: unknown
+}
+
+export interface DeliveryDefaults {
+  host_key?: string | null
+  delivery_agent?: DeliveryAgentDefaults | null
+  review_agent?: DeliveryAgentDefaults | null
+  [key: string]: unknown
+}
 
 export interface TrackerSummary {
   id: number
@@ -16,6 +38,7 @@ export interface TrackerSummary {
   name: string
   description: string
   rev: number
+  config_json?: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -34,6 +57,9 @@ export interface TrackerPriority {
 }
 
 export interface TrackerTask {
+  board_column?: BoardColumn
+  work_duration?: SchemaWorkDurationOut | null
+  active_execution?: ActiveExecution | null
   id: number
   project_id: number
   tracker_id: number
@@ -61,6 +87,7 @@ export interface TrackerTask {
   started_at: string | null
   completed_at: string | null
   ticket_summary?: TrackerTaskTicketSummary | null
+  agent_stats?: SchemaAgentStatsMetricsOut | null
 }
 
 export interface TrackerTaskTicketSummary {
@@ -68,12 +95,15 @@ export interface TrackerTaskTicketSummary {
   terminal_count: number
   in_progress_count: number
   blocked_count: number
+  blocked_by_titles?: string[]
   status_counts: Record<string, number>
   assignees: string[]
   search_text: string
 }
 
 export interface TrackerTicket {
+  work_duration?: SchemaWorkDurationOut | null
+  active_execution?: ActiveExecution | null
   id: number
   project_id: number
   tracker_id: number
@@ -114,8 +144,10 @@ export interface TrackerTicket {
   completed_at: string | null
   dependency_keys: string[]
   blocked_by: string[]
+  blocked_by_titles?: string[]
   reference_count: number
   link_count: number
+  agent_stats?: SchemaAgentStatsMetricsOut | null
 }
 
 export interface TrackerDependency {
@@ -172,6 +204,8 @@ export interface TrackerGraph {
 }
 
 export interface TrackerSnapshot {
+  projection?: 'full' | 'ui'
+  metric_demand?: { task_keys: string[]; ticket_keys: string[] } | null
   tracker: TrackerSummary
   lanes: TrackerLane[]
   priorities: TrackerPriority[]

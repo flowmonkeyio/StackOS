@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, getCurrentInstance, onBeforeUnmount, ref, type App } from 'vue'
 
 import type { UiMetadataStripItem } from '@/components/ui/UiMetadataStrip.vue'
 import { apiFetch } from '@/lib/client'
@@ -15,6 +15,8 @@ export type HealthState =
 
 export type SystemAction = 'restart' | 'doctor' | 'repair'
 
+const retained = new WeakMap<App, HealthState>()
+
 interface UseHomeSystemStatusOptions {
   onDoctorResult?: (result: DesktopDoctorResult | null) => void
   onRepairComplete?: () => Promise<void> | void
@@ -22,7 +24,10 @@ interface UseHomeSystemStatusOptions {
 
 export function useHomeSystemStatus(options: UseHomeSystemStatusOptions = {}) {
   const toasts = useToastsStore()
-  const health = ref<HealthState>({ kind: 'loading' })
+  const app = getCurrentInstance()?.appContext.app
+  let disposed = false
+  if (app) onBeforeUnmount(() => { disposed = true })
+  const health = ref<HealthState>((app && retained.get(app)) || { kind: 'loading' })
   const systemBusy = ref<SystemAction | null>(null)
 
   const statusTone = computed<'success' | 'warning' | 'danger' | 'neutral'>(() => {
@@ -51,10 +56,14 @@ export function useHomeSystemStatus(options: UseHomeSystemStatusOptions = {}) {
   })
 
   async function loadHealth(): Promise<void> {
+    if (disposed) return
     try {
       const data = await apiFetch<SchemaHealthResponse>('/api/v1/health')
+      if (disposed) return
       health.value = { kind: 'ok', data }
+      if (app) retained.set(app, health.value)
     } catch {
+      if (disposed) return
       health.value = { kind: 'down' }
     }
   }

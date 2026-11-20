@@ -82,12 +82,13 @@ def test_website_seo_analysis_resource_requires_durable_reviewed_evidence(
         "evidence_index": [
             {
                 "evidence_ref": "evidence-public-home",
-                "kind": "browser-receipt",
+                "kind": "artifact",
                 "source": "public-browser",
                 "captured_at": "2026-07-16T21:30:00Z",
                 "lifecycle_state": "current",
                 "scope": {"urls": ["https://example.org/"]},
-                "receipt_ref": "browser-receipt-17",
+                "receipt_ref": "artifact:public-home-snapshot",
+                "artifact_ref": "artifact:public-home-snapshot",
                 "limitations": [],
             }
         ],
@@ -109,7 +110,10 @@ def test_website_seo_analysis_resource_requires_durable_reviewed_evidence(
         "finding_counts": {"total": 0, "measured": 0, "observed": 0, "inferred": 0},
         "prioritized_actions": [],
         "limitations": ["Sampled coverage"],
-        "artifact_refs": {"final_report": "artifact:seo-report-1"},
+        "artifact_refs": {
+            "final_report": "artifact:seo-report-1",
+            "evidence_artifacts": ["artifact:public-home-snapshot"],
+        },
     }
 
     created = repo.upsert_record(
@@ -121,9 +125,34 @@ def test_website_seo_analysis_resource_requires_durable_reviewed_evidence(
         data_json=valid,
     ).data
     assert created.data_json["status"] == "partial"
+    assert created.data_json["evidence_index"] == valid["evidence_index"]
+    assert created.data_json["review_summary"] == valid["review_summary"]
+
+    invalid_artifact_receipt = {
+        **valid,
+        "evidence_index": [
+            {
+                key: value
+                for key, value in valid["evidence_index"][0].items()
+                if key != "artifact_ref"
+            }
+        ],
+    }
+    with pytest.raises(ValidationError) as missing_artifact:
+        repo.upsert_record(
+            project_id=project_id,
+            plugin_slug="seo",
+            resource_key="website-seo-analysis",
+            external_id="invalid-artifact-receipt",
+            title="Missing durable artifact reference",
+            data_json=invalid_artifact_receipt,
+        )
+    assert {issue["path"] for issue in missing_artifact.value.data["issues"]} == {
+        "$.evidence_index[0].artifact_ref"
+    }
 
     invalid_path_ref = {**valid, "raw_provider_data_refs": ["/tmp/provider.json"]}
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as path_ref:
         repo.upsert_record(
             project_id=project_id,
             plugin_slug="seo",
@@ -132,6 +161,9 @@ def test_website_seo_analysis_resource_requires_durable_reviewed_evidence(
             title="Invalid path evidence",
             data_json=invalid_path_ref,
         )
+    assert {(issue["path"], issue["code"]) for issue in path_ref.value.data["issues"]} == {
+        ("$", "schema_additionalProperties")
+    }
 
     invalid_action_receipt = {
         **valid,
@@ -149,7 +181,7 @@ def test_website_seo_analysis_resource_requires_durable_reviewed_evidence(
             }
         ],
     }
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as missing_action_id:
         repo.upsert_record(
             project_id=project_id,
             plugin_slug="seo",
@@ -158,9 +190,12 @@ def test_website_seo_analysis_resource_requires_durable_reviewed_evidence(
             title="Missing action call id",
             data_json=invalid_action_receipt,
         )
+    assert {issue["path"] for issue in missing_action_id.value.data["issues"]} == {
+        "$.evidence_index[0].action_call_id"
+    }
 
     invalid_complete = {**valid, "status": "complete"}
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as incomplete:
         repo.upsert_record(
             project_id=project_id,
             plugin_slug="seo",
@@ -169,6 +204,10 @@ def test_website_seo_analysis_resource_requires_durable_reviewed_evidence(
             title="Incomplete complete package",
             data_json=invalid_complete,
         )
+    assert {issue["path"] for issue in incomplete.value.data["issues"]} == {
+        "$.artifact_refs.site_inventory",
+        "$.artifact_refs.finding_register",
+    }
 
 
 def test_resource_upsert_enforces_plugin_resource_schema(

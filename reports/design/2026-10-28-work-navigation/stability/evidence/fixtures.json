@@ -1,0 +1,499 @@
+{
+  "kind": "synthetic_qa_fixture_receipt",
+  "suite": "work-inspection-724",
+  "database": "/private/tmp/stackos-work-723/data/stackos.db",
+  "project_id": 4,
+  "project_slug": "work-inspection-qa",
+  "created_task_count": 6,
+  "created_ticket_count": 56,
+  "total_task_count": 6,
+  "total_ticket_count": 56,
+  "board_url": "http://127.0.0.1:5185/projects/4/tasks",
+  "default_map_url": "http://127.0.0.1:5185/projects/4/tasks?view=graph",
+  "first_task_without_remembered_selection": "qa-long-content",
+  "preserved_existing_fixtures": {
+    "unchanged": true,
+    "before": {
+      "TaskTracker": {
+        "row_count": 2,
+        "sha256": "a4f2b9b427dc33455cf7b44c7185c8a8ce18005fae7064f8b40fa7fc92413f88"
+      },
+      "TrackerTask": {
+        "row_count": 22,
+        "sha256": "b64e074bc1125346e629be079bafef35ca1832e491297610052caabd11ceeb47"
+      },
+      "TrackerTicket": {
+        "row_count": 9,
+        "sha256": "ddcce65e35ae16481448ca45f6f6ae3bd2b3142930d4ab1a6559a950ff312ec9"
+      },
+      "TrackerTicketDependency": {
+        "row_count": 5,
+        "sha256": "e6509fda8e783be4bc8e507a3f88768131511a3f7eb369f534a0eab72ed04caf"
+      }
+    },
+    "after": {
+      "TaskTracker": {
+        "row_count": 2,
+        "sha256": "a4f2b9b427dc33455cf7b44c7185c8a8ce18005fae7064f8b40fa7fc92413f88"
+      },
+      "TrackerTask": {
+        "row_count": 22,
+        "sha256": "b64e074bc1125346e629be079bafef35ca1832e491297610052caabd11ceeb47"
+      },
+      "TrackerTicket": {
+        "row_count": 9,
+        "sha256": "ddcce65e35ae16481448ca45f6f6ae3bd2b3142930d4ab1a6559a950ff312ec9"
+      },
+      "TrackerTicketDependency": {
+        "row_count": 5,
+        "sha256": "e6509fda8e783be4bc8e507a3f88768131511a3f7eb369f534a0eab72ed04caf"
+      }
+    }
+  },
+  "cases": [
+    {
+      "task_id": 23,
+      "task_key": "qa-zero-tickets",
+      "title": "QA: Task with no tickets",
+      "status": "not-started",
+      "ticket_count": 0,
+      "dependency_count": 0,
+      "description_length": 70,
+      "input_count": 0,
+      "tickets": [],
+      "last_ticket_key": null,
+      "last_ticket_title": null,
+      "task_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-zero-tickets",
+      "dev_task_popup_url": "http://127.0.0.1:5175/projects/4/tasks?detail=qa-zero-tickets",
+      "map_url": "http://127.0.0.1:5185/projects/4/tasks?view=graph&task=qa-zero-tickets",
+      "last_ticket_popup_url": null
+    },
+    {
+      "task_id": 24,
+      "task_key": "qa-one-ticket",
+      "title": "QA: Single-ticket inspection",
+      "status": "not-started",
+      "ticket_count": 1,
+      "dependency_count": 0,
+      "description_length": 70,
+      "input_count": 0,
+      "tickets": [
+        {
+          "id": 10,
+          "key": "qa-one-ticket-ticket-01",
+          "title": "01. Confirm inspection requirements",
+          "status": "not-started"
+        }
+      ],
+      "last_ticket_key": "qa-one-ticket-ticket-01",
+      "last_ticket_title": "01. Confirm inspection requirements",
+      "task_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-one-ticket",
+      "dev_task_popup_url": "http://127.0.0.1:5175/projects/4/tasks?detail=qa-one-ticket",
+      "map_url": "http://127.0.0.1:5185/projects/4/tasks?view=graph&task=qa-one-ticket",
+      "last_ticket_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-one-ticket&ticket=qa-one-ticket-ticket-01"
+    },
+    {
+      "task_id": 25,
+      "task_key": "qa-six-tickets",
+      "title": "QA: Six visible ticket rows",
+      "status": "in-progress",
+      "ticket_count": 6,
+      "dependency_count": 0,
+      "description_length": 70,
+      "input_count": 0,
+      "tickets": [
+        {
+          "id": 11,
+          "key": "qa-six-tickets-ticket-01",
+          "title": "01. Confirm inspection requirements",
+          "status": "not-started"
+        },
+        {
+          "id": 12,
+          "key": "qa-six-tickets-ticket-02",
+          "title": "02. Review task navigation",
+          "status": "in-progress"
+        },
+        {
+          "id": 13,
+          "key": "qa-six-tickets-ticket-03",
+          "title": "03. Prepare sample evidence",
+          "status": "complete"
+        },
+        {
+          "id": 14,
+          "key": "qa-six-tickets-ticket-04",
+          "title": "04. Check description editing",
+          "status": "deferred"
+        },
+        {
+          "id": 15,
+          "key": "qa-six-tickets-ticket-05",
+          "title": "05. Verify input history",
+          "status": "aborted"
+        },
+        {
+          "id": 16,
+          "key": "qa-six-tickets-ticket-06",
+          "title": "06. Inspect ticket ownership",
+          "status": "failed"
+        }
+      ],
+      "last_ticket_key": "qa-six-tickets-ticket-06",
+      "last_ticket_title": "06. Inspect ticket ownership",
+      "task_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-six-tickets",
+      "dev_task_popup_url": "http://127.0.0.1:5175/projects/4/tasks?detail=qa-six-tickets",
+      "map_url": "http://127.0.0.1:5185/projects/4/tasks?view=graph&task=qa-six-tickets",
+      "last_ticket_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-six-tickets&ticket=qa-six-tickets-ticket-06"
+    },
+    {
+      "task_id": 26,
+      "task_key": "qa-seven-tickets",
+      "title": "QA: Seventh-row scrolling and dependency chain",
+      "status": "in-progress",
+      "ticket_count": 7,
+      "dependency_count": 6,
+      "description_length": 70,
+      "input_count": 0,
+      "tickets": [
+        {
+          "id": 17,
+          "key": "qa-seven-tickets-ticket-01",
+          "title": "01. Confirm inspection requirements",
+          "status": "complete"
+        },
+        {
+          "id": 18,
+          "key": "qa-seven-tickets-ticket-02",
+          "title": "02. Review task navigation",
+          "status": "complete"
+        },
+        {
+          "id": 19,
+          "key": "qa-seven-tickets-ticket-03",
+          "title": "03. Prepare sample evidence",
+          "status": "in-progress"
+        },
+        {
+          "id": 20,
+          "key": "qa-seven-tickets-ticket-04",
+          "title": "04. Check description editing",
+          "status": "not-started"
+        },
+        {
+          "id": 21,
+          "key": "qa-seven-tickets-ticket-05",
+          "title": "05. Verify input history",
+          "status": "not-started"
+        },
+        {
+          "id": 22,
+          "key": "qa-seven-tickets-ticket-06",
+          "title": "06. Inspect ticket ownership",
+          "status": "not-started"
+        },
+        {
+          "id": 23,
+          "key": "qa-seven-tickets-ticket-07",
+          "title": "07. Review dependency context",
+          "status": "not-started"
+        }
+      ],
+      "last_ticket_key": "qa-seven-tickets-ticket-07",
+      "last_ticket_title": "07. Review dependency context",
+      "task_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-seven-tickets",
+      "dev_task_popup_url": "http://127.0.0.1:5175/projects/4/tasks?detail=qa-seven-tickets",
+      "map_url": "http://127.0.0.1:5185/projects/4/tasks?view=graph&task=qa-seven-tickets",
+      "last_ticket_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-seven-tickets&ticket=qa-seven-tickets-ticket-07"
+    },
+    {
+      "task_id": 27,
+      "task_key": "qa-thirty-tickets",
+      "title": "QA: Thirty-ticket scrolling",
+      "status": "in-progress",
+      "ticket_count": 30,
+      "dependency_count": 0,
+      "description_length": 71,
+      "input_count": 0,
+      "tickets": [
+        {
+          "id": 24,
+          "key": "qa-thirty-tickets-ticket-01",
+          "title": "01. Confirm inspection requirements",
+          "status": "not-started"
+        },
+        {
+          "id": 25,
+          "key": "qa-thirty-tickets-ticket-02",
+          "title": "02. Review task navigation",
+          "status": "in-progress"
+        },
+        {
+          "id": 26,
+          "key": "qa-thirty-tickets-ticket-03",
+          "title": "03. Prepare sample evidence",
+          "status": "complete"
+        },
+        {
+          "id": 27,
+          "key": "qa-thirty-tickets-ticket-04",
+          "title": "04. Check description editing",
+          "status": "deferred"
+        },
+        {
+          "id": 28,
+          "key": "qa-thirty-tickets-ticket-05",
+          "title": "05. Verify input history",
+          "status": "aborted"
+        },
+        {
+          "id": 29,
+          "key": "qa-thirty-tickets-ticket-06",
+          "title": "06. Inspect ticket ownership",
+          "status": "failed"
+        },
+        {
+          "id": 30,
+          "key": "qa-thirty-tickets-ticket-07",
+          "title": "07. Review dependency context",
+          "status": "skipped"
+        },
+        {
+          "id": 31,
+          "key": "qa-thirty-tickets-ticket-08",
+          "title": "08. Check empty-state guidance",
+          "status": "not-started"
+        },
+        {
+          "id": 32,
+          "key": "qa-thirty-tickets-ticket-09",
+          "title": "09. Validate scroll restoration",
+          "status": "in-progress"
+        },
+        {
+          "id": 33,
+          "key": "qa-thirty-tickets-ticket-10",
+          "title": "10. Inspect completion evidence",
+          "status": "complete"
+        },
+        {
+          "id": 34,
+          "key": "qa-thirty-tickets-ticket-11",
+          "title": "11. Review keyboard focus",
+          "status": "deferred"
+        },
+        {
+          "id": 35,
+          "key": "qa-thirty-tickets-ticket-12",
+          "title": "12. Verify dialog close behavior",
+          "status": "aborted"
+        },
+        {
+          "id": 36,
+          "key": "qa-thirty-tickets-ticket-13",
+          "title": "13. Check loading feedback",
+          "status": "failed"
+        },
+        {
+          "id": 37,
+          "key": "qa-thirty-tickets-ticket-14",
+          "title": "14. Review error recovery",
+          "status": "skipped"
+        },
+        {
+          "id": 38,
+          "key": "qa-thirty-tickets-ticket-15",
+          "title": "15. Validate task filters",
+          "status": "not-started"
+        },
+        {
+          "id": 39,
+          "key": "qa-thirty-tickets-ticket-16",
+          "title": "16. Inspect project switching",
+          "status": "in-progress"
+        },
+        {
+          "id": 40,
+          "key": "qa-thirty-tickets-ticket-17",
+          "title": "17. Review long titles",
+          "status": "complete"
+        },
+        {
+          "id": 41,
+          "key": "qa-thirty-tickets-ticket-18",
+          "title": "18. Check status labels",
+          "status": "deferred"
+        },
+        {
+          "id": 42,
+          "key": "qa-thirty-tickets-ticket-19",
+          "title": "19. Verify Back navigation",
+          "status": "aborted"
+        },
+        {
+          "id": 43,
+          "key": "qa-thirty-tickets-ticket-20",
+          "title": "20. Inspect retained drafts",
+          "status": "failed"
+        },
+        {
+          "id": 44,
+          "key": "qa-thirty-tickets-ticket-21",
+          "title": "21. Review saved content",
+          "status": "skipped"
+        },
+        {
+          "id": 45,
+          "key": "qa-thirty-tickets-ticket-22",
+          "title": "22. Check small-screen layout",
+          "status": "not-started"
+        },
+        {
+          "id": 46,
+          "key": "qa-thirty-tickets-ticket-23",
+          "title": "23. Inspect ticket metadata",
+          "status": "in-progress"
+        },
+        {
+          "id": 47,
+          "key": "qa-thirty-tickets-ticket-24",
+          "title": "24. Validate text wrapping",
+          "status": "complete"
+        },
+        {
+          "id": 48,
+          "key": "qa-thirty-tickets-ticket-25",
+          "title": "25. Review read-only fields",
+          "status": "deferred"
+        },
+        {
+          "id": 49,
+          "key": "qa-thirty-tickets-ticket-26",
+          "title": "26. Check footer visibility",
+          "status": "aborted"
+        },
+        {
+          "id": 50,
+          "key": "qa-thirty-tickets-ticket-27",
+          "title": "27. Inspect final list entries",
+          "status": "failed"
+        },
+        {
+          "id": 51,
+          "key": "qa-thirty-tickets-ticket-28",
+          "title": "28. Verify detail disclosures",
+          "status": "skipped"
+        },
+        {
+          "id": 52,
+          "key": "qa-thirty-tickets-ticket-29",
+          "title": "29. Review accessibility labels",
+          "status": "not-started"
+        },
+        {
+          "id": 53,
+          "key": "qa-thirty-tickets-ticket-30",
+          "title": "30. Confirm final-row reachability",
+          "status": "in-progress"
+        }
+      ],
+      "last_ticket_key": "qa-thirty-tickets-ticket-30",
+      "last_ticket_title": "30. Confirm final-row reachability",
+      "task_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-thirty-tickets",
+      "dev_task_popup_url": "http://127.0.0.1:5175/projects/4/tasks?detail=qa-thirty-tickets",
+      "map_url": "http://127.0.0.1:5185/projects/4/tasks?view=graph&task=qa-thirty-tickets",
+      "last_ticket_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-thirty-tickets&ticket=qa-thirty-tickets-ticket-30"
+    },
+    {
+      "task_id": 28,
+      "task_key": "qa-long-content",
+      "title": "QA: Long-content inspection across task details, ticket navigation, input history, expanded disclosures, and short desktop viewports without changing the surrounding Work dialog",
+      "status": "in-progress",
+      "ticket_count": 12,
+      "dependency_count": 0,
+      "description_length": 6350,
+      "input_count": 6,
+      "tickets": [
+        {
+          "id": 54,
+          "key": "qa-long-content-ticket-01",
+          "title": "01. Confirm inspection requirements",
+          "status": "not-started"
+        },
+        {
+          "id": 55,
+          "key": "qa-long-content-ticket-02",
+          "title": "02. Review task navigation",
+          "status": "in-progress"
+        },
+        {
+          "id": 56,
+          "key": "qa-long-content-ticket-03",
+          "title": "03. Prepare sample evidence",
+          "status": "complete"
+        },
+        {
+          "id": 57,
+          "key": "qa-long-content-ticket-04",
+          "title": "04. Check description editing",
+          "status": "deferred"
+        },
+        {
+          "id": 58,
+          "key": "qa-long-content-ticket-05",
+          "title": "05. Verify input history",
+          "status": "aborted"
+        },
+        {
+          "id": 59,
+          "key": "qa-long-content-ticket-06",
+          "title": "06. Inspect ticket ownership",
+          "status": "failed"
+        },
+        {
+          "id": 60,
+          "key": "qa-long-content-ticket-07",
+          "title": "07. Review dependency context",
+          "status": "skipped"
+        },
+        {
+          "id": 61,
+          "key": "qa-long-content-ticket-08",
+          "title": "08. Check empty-state guidance",
+          "status": "not-started"
+        },
+        {
+          "id": 62,
+          "key": "qa-long-content-ticket-09",
+          "title": "09. Validate scroll restoration",
+          "status": "in-progress"
+        },
+        {
+          "id": 63,
+          "key": "qa-long-content-ticket-10",
+          "title": "10. Inspect completion evidence",
+          "status": "complete"
+        },
+        {
+          "id": 64,
+          "key": "qa-long-content-ticket-11",
+          "title": "11. Review keyboard focus",
+          "status": "deferred"
+        },
+        {
+          "id": 65,
+          "key": "qa-long-content-ticket-12",
+          "title": "12. END OF LONG-CONTENT LIST: verify this final ticket is reachable and Back restores its position",
+          "status": "aborted"
+        }
+      ],
+      "last_ticket_key": "qa-long-content-ticket-12",
+      "last_ticket_title": "12. END OF LONG-CONTENT LIST: verify this final ticket is reachable and Back restores its position",
+      "task_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-long-content",
+      "dev_task_popup_url": "http://127.0.0.1:5175/projects/4/tasks?detail=qa-long-content",
+      "map_url": "http://127.0.0.1:5185/projects/4/tasks?view=graph&task=qa-long-content",
+      "last_ticket_popup_url": "http://127.0.0.1:5185/projects/4/tasks?detail=qa-long-content&ticket=qa-long-content-ticket-12"
+    }
+  ],
+  "scope": "QA preparation only; no UI source, browser, live daemon, or implementation acceptance changes."
+}

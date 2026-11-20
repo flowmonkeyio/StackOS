@@ -193,6 +193,8 @@ function createInstallProgressReporter(options) {
 function runStackos(args, options = {}) {
   const resolved = resolveStackosCommand();
   const timeoutMs = options.timeoutMs || 120000;
+  const outputLimit = Number.isFinite(options.outputLimit)
+    ? Math.max(12000, Math.min(Math.floor(options.outputLimit), 1048576)) : 12000;
   const cwd = options.cwd || repoRoot();
   if (resolved.error || !resolved.command) {
     return Promise.resolve({
@@ -207,6 +209,8 @@ function runStackos(args, options = {}) {
   }
   const env = {
     ...process.env,
+    STACKOS_HOST: DAEMON_HOST,
+    STACKOS_PORT: String(DAEMON_PORT),
     PYTHONDONTWRITEBYTECODE: "1",
     PYTHONNOUSERSITE: "1",
     PYTHONUNBUFFERED: "1"
@@ -265,8 +269,8 @@ function runStackos(args, options = {}) {
         args,
         exitCode: code,
         signal,
-        stdout: trimOutput(stdout),
-        stderr: trimOutput(stderr)
+        stdout: trimOutput(stdout, outputLimit),
+        stderr: trimOutput(stderr, outputLimit)
       });
     });
   });
@@ -387,7 +391,7 @@ function readAuthToken() {
   return fs.readFileSync(authTokenPath(), "utf8").trim();
 }
 
-function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
+function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000, json } = {}) {
   return new Promise((resolve, reject) => {
     let url;
     try {
@@ -401,8 +405,13 @@ function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
     if (auth) {
       headers.Authorization = `Bearer ${readAuthToken()}`;
     }
+    const payload = json === undefined ? null : JSON.stringify(json);
+    if (payload !== null) {
+      headers["Content-Type"] = "application/json";
+      headers["Content-Length"] = Buffer.byteLength(payload);
+    }
 
-    const req = http.get(url, { headers }, (res) => {
+    const req = http.request(url, { headers, method: payload === null ? "GET" : "POST" }, (res) => {
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (chunk) => {
@@ -432,11 +441,51 @@ function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
       req.destroy(new Error("StackOS request timed out"));
     });
     req.on("error", reject);
+    req.end(payload);
   });
 }
 
 function authenticatedJsonGet(pathname, options = {}) {
   return daemonJsonGet(pathname, { ...options, auth: true });
+}
+
+function authenticatedJsonPost(pathname, json, options = {}) {
+  return daemonJsonGet(pathname, { ...options, json, auth: true });
+}
+
+function openDesktopAvailability(onDisconnect) {
+  let closed = false;
+  const disconnected = () => {
+    if (closed) return;
+    closed = true;
+    req.destroy();
+    onDisconnect();
+  };
+  const req = http.request(new URL("/api/v1/desktop/availability", DAEMON_URL), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${readAuthToken()}` }
+  }, (res) => {
+    if (res.statusCode !== 200) {
+      res.resume();
+      disconnected();
+      return;
+    }
+    req.setTimeout(0); // A live idle connection is presence; no polling/lease.
+    res.on("error", disconnected);
+    res.on("end", disconnected);
+    res.on("close", disconnected);
+    res.resume();
+  });
+  req.on("error", disconnected);
+  req.on("close", disconnected);
+  req.setTimeout(5000, disconnected); // Header/connect timeout only.
+  req.end();
+  return {
+    close() {
+      closed = true;
+      req.destroy();
+    }
+  };
 }
 
 async function waitForHealth(timeoutMs = 20000) {
@@ -472,7 +521,7 @@ async function restartDaemon(options = 20) {
   const timeoutSeconds = lifecycle.timeoutSeconds;
   await reportProgress(lifecycle, "Restarting local service...", 62);
   const result = await runStackos(["restart", "--timeout", String(timeoutSeconds)], {
-    timeoutMs: (timeoutSeconds + 10) * 1000
+    timeoutMs: (timeoutSeconds + 120) * 1000
   });
   if (!result.ok) {
     return result;
@@ -482,6 +531,22 @@ async function restartDaemon(options = 20) {
   return {
     ...result,
     health
+  };
+}
+
+async function prepareUpdate(archivePath) {
+  if (typeof archivePath !== "string" || !archivePath.endsWith(".zip")) {
+    return { ok: false, reason: "The downloaded ZIP target is unavailable. Download the update again before installing." };
+  }
+  const result = await runStackos(["prepare-upgrade", "--target-archive", archivePath], {
+    timeoutMs: 120000
+  });
+  const maintenance = parseJsonResult(result);
+  return {
+    ...result,
+    ok: result.ok && (maintenance?.status === "quiesced" || maintenance?.status === "quiescent-bootstrap"),
+    reason: result.ok ? null : result.stderr?.trim().split(/\r?\n/)[0] || "Managed upgrade preparation failed; inspect maintenance.upgradeStatus before retrying.",
+    maintenance
   };
 }
 
@@ -840,6 +905,8 @@ module.exports = {
   DAEMON_URL,
   HEALTH_URL,
   authenticatedJsonGet,
+  authenticatedJsonPost,
+  openDesktopAvailability,
   authTokenPath,
   checkHealth,
   daemonLogPath,
@@ -851,6 +918,7 @@ module.exports = {
   installStatePath,
   inspectMcpHosts,
   prepareInstalledVersion,
+  prepareUpdate,
   parseDoctorPayload,
   parseMcpHostStatusPayload,
   readinessFromDoctor,

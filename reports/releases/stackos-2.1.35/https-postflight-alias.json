@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-10-07T02:13:34.971965+00:00",
+  "files": [
+    {
+      "actual": {
+        "size": 489994246
+      },
+      "etag": "\"1d34b806-6ac5aa72-5a3e6f2a96e7f9b4;;;\"",
+      "expected": {
+        "sha256": "2b53fb4c796e7310cfcccab3d39264e8604d5be33794cc2431ced6f5ac49905a",
+        "sha512": "fuO/scKDBoggNaNV2QHalvCQaEDWjz3VAKY7GCyS9KdnYPRH+hLqLnrA0cF/BvLkuR+QLzAhM92L/zNvTJmsFg==",
+        "size": 489994246
+      },
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg",
+      "installer_body_downloaded": false,
+      "last_modified": "Wed, 07 Oct 2026 02:12:02 GMT",
+      "method": "HEAD",
+      "name": "stackos-latest-mac-arm64.dmg",
+      "passed": true,
+      "status": 200,
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg"
+    }
+  ],
+  "limits": "Per operator revision5: artifact HEAD status/size only; small feed bytes compared. No public installer/archive-body download or public archive hash claim. No local activation.",
+  "manifest_sha256": "ac4e0dc16e6b853676109fc263e0149c9c5f362e90fa71f046c5580bb869fd01",
+  "mode": "alias",
+  "passed": true
+}

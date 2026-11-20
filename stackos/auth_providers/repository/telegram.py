@@ -23,13 +23,13 @@ from typing import Any, Literal, Protocol
 
 from sqlalchemy import delete
 from sqlmodel import col, select
+from stackos_connectors.connectors.telegram import auth as telegram_auth
 from stackos_connectors.connectors.telegram.tdlib.native import safe_request_error_details
 from stackos_connectors.connectors.telegram.tdlib.sessions import TelegramTdlibSessionConfig
 
 from stackos.config import Settings
 from stackos.db.models import Credential, CredentialAccount, IntegrationCredential
 from stackos.integrations.telegram_tdlib.account_config import account_proxy
-from stackos.integrations.telegram_tdlib.native import saved_authorization_rejected
 from stackos.repositories.base import ConflictError, Envelope, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
@@ -287,24 +287,21 @@ class TelegramAuthorizationMixin:
                     runtime=runtime,
                     generation=generation,
                 )
-                state_type = state.get("@type")
-                if state_type != "authorizationStateReady" and account_kind == "bot":
-                    bot_token = payload.get("bot_token")
-                    if not isinstance(bot_token, str) or not bot_token:
-                        raise ConflictError("Telegram bot Account is missing its token")
-                    state = await runtime.request_authorization(
-                        account_ref=credential_ref,
-                        generation=generation,
-                        request={"@type": "checkAuthenticationBotToken", "token": bot_token},
-                        correlation_id=f"telegram-auth:{credential_ref}:{generation}:bot-token",
-                    )
-                elif state_type != "authorizationStateReady" and authorization_mode == "qr":
-                    state = await runtime.request_authorization(
-                        account_ref=credential_ref,
-                        generation=generation,
-                        request={"@type": "requestQrCodeAuthentication", "other_user_ids": []},
-                        correlation_id=f"telegram-auth:{credential_ref}:{generation}:qr",
-                    )
+                if telegram_auth.parse_authorization_state(state).category != "ready":
+                    try:
+                        request = telegram_auth.initial_request(
+                            account_kind, authorization_mode, payload.get("bot_token")
+                        )
+                    except ValueError as exc:
+                        raise ConflictError(str(exc)) from None
+                    if request is not None:
+                        step = "bot-token" if account_kind == "bot" else "qr"
+                        state = await runtime.request_authorization(
+                            account_ref=credential_ref,
+                            generation=generation,
+                            request=request,
+                            correlation_id=f"telegram-auth:{credential_ref}:{generation}:{step}",
+                        )
             self._s.expire_all()
         except Exception as exc:
             self._record_telegram_session_failure(
@@ -1032,7 +1029,7 @@ class TelegramAuthorizationMixin:
                         generation=probe_generation,
                         config=config,
                     )
-                    if state.get("@type") != "authorizationStateReady":
+                    if telegram_auth.parse_authorization_state(state).category != "ready":
                         ready = False
                         self._record_telegram_repair(
                             credential=credential,
@@ -1111,7 +1108,7 @@ class TelegramAuthorizationMixin:
                     next_action="Reauthorize this Telegram Account in local Accounts.",
                 )
             except Exception as exc:
-                rejected = saved_authorization_rejected(exc)
+                rejected = telegram_auth.is_saved_authorization_rejected(exc)
                 if rejected:
                     self._record_telegram_repair(
                         credential=credential,
@@ -1369,7 +1366,7 @@ class TelegramAuthorizationMixin:
             return None
         expires_at = _parse_time(raw.get("challenge_expires_at"))
         challenge_kind = raw.get("challenge_kind") if state == "challenge" else None
-        if challenge_kind not in _CHALLENGE_FIELDS:
+        if challenge_kind not in telegram_auth.CHALLENGE_FIELDS:
             challenge_kind = None
         metadata = raw.get("challenge_metadata")
         return {
@@ -1378,7 +1375,7 @@ class TelegramAuthorizationMixin:
             "updated_at": updated_at,
             "expires_at": expires_at,
             "challenge_kind": challenge_kind,
-            "challenge_metadata": _safe_challenge_metadata(metadata),
+            "challenge_metadata": telegram_auth.sanitize_challenge_metadata(metadata),
             "repair_hint": _safe_repair_hint(raw.get("repair_hint")),
         }
 
@@ -1446,7 +1443,7 @@ class TelegramAuthorizationMixin:
             return
         if (
             isinstance(error, ConflictError)
-            or saved_authorization_rejected(error)
+            or telegram_auth.is_saved_authorization_rejected(error)
             or self._telegram_verified_identity(credential) is None
             or current["state"] == "repair-required"
         ):
@@ -1472,109 +1469,67 @@ class TelegramAuthorizationMixin:
     def _authorization_projection(
         self, state: Mapping[str, Any], *, include_qr_link: bool
     ) -> dict[str, Any]:
-        state_type = state.get("@type")
-        if not isinstance(state_type, str):
-            return {
-                "status": "repair-required",
-                "challenge": None,
-                "repair_hint": "Telegram returned an invalid authorization state.",
-                "state_type": "invalid",
-                "qr_link": None,
-            }
-        if state_type == "authorizationStateReady":
+        facts = telegram_auth.parse_authorization_state(state)
+        if facts.category == "ready":
             return {
                 "status": "verifying",
                 "challenge": None,
                 "repair_hint": None,
-                "state_type": state_type,
+                "state_type": facts.state_type,
                 "qr_link": None,
             }
-        if state_type in {"authorizationStateClosing", "authorizationStateClosed"}:
+        if facts.category != "challenge":
+            repair_hints = {
+                "invalid": "Telegram returned an invalid authorization state.",
+                "closed": "Telegram native session closed. Start authorization again.",
+                "unsupported": "Telegram requires an unsupported authorization step.",
+            }
             return {
                 "status": "repair-required",
                 "challenge": None,
-                "repair_hint": "Telegram native session closed. Start authorization again.",
-                "state_type": state_type,
+                "repair_hint": repair_hints[facts.category],
+                "state_type": facts.state_type,
                 "qr_link": None,
             }
-        kind = _STATE_CHALLENGES.get(state_type)
-        if kind is None:
-            return {
-                "status": "repair-required",
-                "challenge": None,
-                "repair_hint": "Telegram requires an unsupported authorization step.",
-                "state_type": state_type,
-                "qr_link": None,
-            }
-        metadata = _authorization_metadata(state)
+        metadata = dict(facts.metadata)
         timeout = metadata.get("timeout_seconds")
         lifetime = timeout if isinstance(timeout, int) and timeout > 0 else _CHALLENGE_TTL_SECONDS
         challenge = {
-            "kind": kind,
+            "kind": facts.challenge_kind,
             "expires_at": utcnow() + timedelta(seconds=min(lifetime, _CHALLENGE_TTL_SECONDS)),
             "metadata": metadata,
         }
-        qr_link = state.get("link") if kind == "qr" and include_qr_link else None
         return {
             "status": "challenge",
             "challenge": challenge,
             "repair_hint": None,
-            "state_type": state_type,
-            "qr_link": (
-                qr_link if isinstance(qr_link, str) and qr_link.startswith("tg://") else None
-            ),
+            "state_type": facts.state_type,
+            "qr_link": facts.qr_link if include_qr_link else None,
         }
 
     def _challenge_out(
         self, current: Mapping[str, Any], *, include_qr_link: bool
     ) -> AccountAuthChallengeOut | None:
         kind = current.get("challenge_kind")
-        if current.get("state") != "challenge" or kind not in _CHALLENGE_FIELDS:
+        if (
+            current.get("state") != "challenge"
+            or not isinstance(kind, str)
+            or kind not in telegram_auth.CHALLENGE_FIELDS
+        ):
             return None
         return AccountAuthChallengeOut(
             generation=current["generation"],
             kind=kind,
             expires_at=current.get("expires_at"),
-            fields=list(_CHALLENGE_FIELDS[kind]),
+            fields=list(telegram_auth.CHALLENGE_FIELDS[kind]),
             metadata=dict(current.get("challenge_metadata") or {}),
         )
 
     def _challenge_request(self, *, kind: str, answer: Mapping[str, Any]) -> dict[str, Any]:
-        if not isinstance(answer, Mapping):
-            raise ValidationError("Telegram authorization answer must be an object")
-        if kind == "phone_number":
-            return {
-                "@type": "setAuthenticationPhoneNumber",
-                "phone_number": _required_answer(answer, "phone_number"),
-                "settings": None,
-            }
-        if kind == "code":
-            return {"@type": "checkAuthenticationCode", "code": _required_answer(answer, "code")}
-        if kind == "password":
-            return {
-                "@type": "checkAuthenticationPassword",
-                "password": _required_answer(answer, "password"),
-            }
-        if kind == "email_address":
-            return {
-                "@type": "setAuthenticationEmailAddress",
-                "email_address": _required_answer(answer, "email_address"),
-            }
-        if kind == "email_code":
-            return {
-                "@type": "checkAuthenticationEmailCode",
-                "code": {
-                    "@type": "emailAddressAuthenticationCode",
-                    "code": _required_answer(answer, "code"),
-                },
-            }
-        if kind == "registration":
-            return {
-                "@type": "registerUser",
-                "first_name": _required_answer(answer, "first_name"),
-                "last_name": _optional_answer(answer, "last_name"),
-            }
-        raise ValidationError("Telegram authorization challenge cannot accept an answer")
+        try:
+            return telegram_auth.challenge_request(kind, answer)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from None
 
     async def _synchronize_telegram_identity(
         self,
@@ -1673,26 +1628,6 @@ class TelegramAuthorizationMixin:
             )
 
 
-_STATE_CHALLENGES = {
-    "authorizationStateWaitPhoneNumber": "phone_number",
-    "authorizationStateWaitCode": "code",
-    "authorizationStateWaitPassword": "password",
-    "authorizationStateWaitEmailAddress": "email_address",
-    "authorizationStateWaitEmailCode": "email_code",
-    "authorizationStateWaitOtherDeviceConfirmation": "qr",
-    "authorizationStateWaitRegistration": "registration",
-}
-_CHALLENGE_FIELDS: dict[str, tuple[str, ...]] = {
-    "phone_number": ("phone_number",),
-    "code": ("code",),
-    "password": ("password",),
-    "email_address": ("email_address",),
-    "email_code": ("code",),
-    "qr": (),
-    "registration": ("first_name", "last_name"),
-}
-
-
 def _telegram_bot_subject(payload: Mapping[str, str]) -> int:
     """Return the safe numeric bot identifier claimed by a validated token.
 
@@ -1719,61 +1654,8 @@ def _parse_time(value: Any) -> datetime | None:
         return None
 
 
-def _safe_challenge_metadata(value: Any) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        return {}
-    metadata: dict[str, Any] = {}
-    timeout = value.get("timeout_seconds")
-    if isinstance(timeout, int) and not isinstance(timeout, bool) and timeout >= 0:
-        metadata["timeout_seconds"] = timeout
-    delivery_type = value.get("delivery_type")
-    if isinstance(delivery_type, str) and delivery_type in {
-        "authenticationCodeTypeTelegramMessage",
-        "authenticationCodeTypeSms",
-        "authenticationCodeTypeCall",
-        "authenticationCodeTypeFlashCall",
-        "authenticationCodeTypeMissedCall",
-    }:
-        metadata["delivery_type"] = delivery_type
-    for key in ("allow_apple_id", "allow_google_id"):
-        if isinstance(value.get(key), bool):
-            metadata[key] = value[key]
-    return metadata
-
-
-def _authorization_metadata(state: Mapping[str, Any]) -> dict[str, Any]:
-    metadata: dict[str, Any] = {}
-    for value in (state.get("code_info"), state.get("email_address_authentication")):
-        if not isinstance(value, Mapping):
-            continue
-        timeout = value.get("timeout")
-        if isinstance(timeout, int) and not isinstance(timeout, bool) and timeout >= 0:
-            metadata["timeout_seconds"] = timeout
-        delivery = value.get("type")
-        if isinstance(delivery, Mapping) and isinstance(delivery.get("@type"), str):
-            metadata["delivery_type"] = delivery["@type"]
-    for key in ("allow_apple_id", "allow_google_id"):
-        if isinstance(state.get(key), bool):
-            metadata[key] = state[key]
-    return _safe_challenge_metadata(metadata)
-
-
 def _safe_repair_hint(value: Any) -> str | None:
     return value if isinstance(value, str) and len(value) <= 240 else None
-
-
-def _required_answer(answer: Mapping[str, Any], key: str) -> str:
-    value = answer.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValidationError(f"Telegram authorization answer requires {key}")
-    return value
-
-
-def _optional_answer(answer: Mapping[str, Any], key: str) -> str:
-    value = answer.get(key, "")
-    if not isinstance(value, str):
-        raise ValidationError(f"Telegram authorization answer {key} must be text")
-    return value
 
 
 def _telegram_username(user: Mapping[str, Any]) -> str | None:

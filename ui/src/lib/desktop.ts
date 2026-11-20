@@ -16,12 +16,43 @@ export interface DesktopHealth {
   [key: string]: unknown
 }
 
+export interface DesktopTaskNotice {
+  projectId: number
+  taskId: number
+  taskKey: string
+  revision: number
+  title: string
+  body: string
+  tone: 'success' | 'warning' | 'danger'
+  actionLabel: string
+  nativeStatus: 'system-controlled' | 'unsupported' | 'failed'
+}
+
 export interface DesktopStatus {
   health?: DesktopHealth | null
   command?: { mode?: string; [key: string]: unknown } | null
   payload?: { name?: string; version?: string; buildId?: string; builtAt?: string } | null
   notifications?: { status?: string; [key: string]: unknown } | null
   [key: string]: unknown
+}
+
+export interface DesktopAgentExecutionCapabilities {
+  sandboxes: Array<'read-only' | 'workspace-write' | 'normal'>
+  review_sandbox: 'read-only' | 'workspace-write' | 'normal' | null
+  models: string[]
+  recommended_model?: string | null
+  /** Verified effort choices per explicit model; absent models use native defaults. */
+  reasoning_efforts?: Record<string, string[]>
+  custom_models: boolean
+  provider_selection: boolean
+  profile_selection: boolean
+  /** False allows native defaults; true requires both provider and model. */
+  requires_provider_model: boolean
+  notes: string
+  sources: string[]
+  checked_on: string
+  credential_status: 'not_checked'
+  model_access: 'not_checked'
 }
 
 export interface DesktopMcpHostStatus {
@@ -53,6 +84,8 @@ export interface DesktopMcpHostStatus {
   setup_policy?: 'automatic' | 'explicit'
   target?: { kind: string; [key: string]: string } | null
   targets?: Array<{ kind: string; [key: string]: string }>
+  // Optional for older native shells/daemons that predate the shared catalog.
+  agent_execution?: DesktopAgentExecutionCapabilities
   [key: string]: unknown
 }
 
@@ -105,7 +138,24 @@ export interface DesktopUpdateResult extends DesktopCommandResult {
   reason?: string
 }
 
+export interface DesktopBackupResult {
+  ok: boolean
+  status: 'completed' | 'cancelled' | 'partial' | 'failed'
+  message: string
+  code?: string
+  outputPath?: string
+}
+
+export type DesktopBackupAction =
+  | 'setupBackups'
+  | 'openBackupFolder'
+  | 'exportLatestBackup'
+  | 'exportRecoveryKey'
+  | 'restoreBackup'
+
 interface DesktopBridge {
+  onTaskNotice?(listener: (notice: DesktopTaskNotice) => void): () => void
+  openNotificationTask?(target: Pick<DesktopTaskNotice, 'projectId' | 'taskId' | 'taskKey'>): Promise<DesktopCommandResult>
   status(): Promise<DesktopStatus>
   installOrRepair(): Promise<DesktopCommandResult>
   restartService(): Promise<DesktopCommandResult>
@@ -115,6 +165,11 @@ interface DesktopBridge {
   downloadUpdate(): Promise<DesktopUpdateResult>
   installUpdate(): Promise<DesktopUpdateResult>
   updateState(): Promise<DesktopUpdateState>
+  setupBackups?(): Promise<DesktopBackupResult>
+  openBackupFolder?(): Promise<DesktopBackupResult>
+  exportLatestBackup?(): Promise<DesktopBackupResult>
+  exportRecoveryKey?(): Promise<DesktopBackupResult>
+  restoreBackup?(): Promise<DesktopBackupResult>
 }
 
 function bridge(): DesktopBridge | null {
@@ -139,7 +194,18 @@ async function safe<T>(fn: (b: DesktopBridge) => Promise<T>): Promise<T | null> 
   }
 }
 
+function hasBackupAction(action: DesktopBackupAction): boolean {
+  return typeof bridge()?.[action] === 'function'
+}
+
+function runBackupAction(action: DesktopBackupAction): Promise<DesktopBackupResult | null> {
+  return safe((b) => b[action]?.() ?? Promise.resolve(null))
+}
+
 export const desktop = {
+  onTaskNotice: (listener: (notice: DesktopTaskNotice) => void): (() => void) => bridge()?.onTaskNotice?.(listener) ?? (() => {}),
+  openNotificationTask: (target: Pick<DesktopTaskNotice, 'projectId' | 'taskId' | 'taskKey'>) =>
+    safe((b) => b.openNotificationTask?.(target) ?? Promise.resolve({ ok: false })),
   isShell: isDesktopShell,
   status: () => safe((b) => b.status()),
   installOrRepair: () => safe((b) => b.installOrRepair()),
@@ -150,4 +216,10 @@ export const desktop = {
   downloadUpdate: () => safe((b) => b.downloadUpdate()),
   installUpdate: () => safe((b) => b.installUpdate()),
   updateState: () => safe((b) => b.updateState()),
+  hasBackupAction,
+  setupBackups: () => runBackupAction('setupBackups'),
+  openBackupFolder: () => runBackupAction('openBackupFolder'),
+  exportLatestBackup: () => runBackupAction('exportLatestBackup'),
+  exportRecoveryKey: () => runBackupAction('exportRecoveryKey'),
+  restoreBackup: () => runBackupAction('restoreBackup'),
 }

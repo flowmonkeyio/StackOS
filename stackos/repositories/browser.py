@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
 
 from stackos.browser.runtime import BROWSER_PROVIDER, NativeSessionState
-from stackos.db.models import BrowserProfile, BrowserSession, Project
+from stackos.db.models import BrowserProfile, BrowserSession
 from stackos.repositories.base import Envelope, NotFoundError, Page, ValidationError
 
 
@@ -89,9 +89,10 @@ class BrowserRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
-    def require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found", data={"project_id": project_id})
+    def require_project(self, project_id: int, *, reserve: bool = False) -> None:
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id, reserve=reserve)
 
     def profile_ref(self, *, project_id: int, profile_key: str) -> str:
         return f"browser-profile:project-{project_id}:{profile_key}"
@@ -115,7 +116,7 @@ class BrowserRepository:
         name: str,
         metadata_json: dict[str, Any] | None,
     ) -> Envelope[BrowserProfileOut]:
-        self.require_project(project_id)
+        self.require_project(project_id, reserve=True)
         ref = self.profile_ref(project_id=project_id, profile_key=profile_key)
         row = self._s.exec(
             select(BrowserProfile).where(
@@ -180,6 +181,7 @@ class BrowserRepository:
         session_ref: str,
         metadata_json: dict[str, Any] | None,
     ) -> Envelope[BrowserSessionOut]:
+        self.require_project(project_id, reserve=True)
         row = self._s.exec(
             select(BrowserSession).where(
                 col(BrowserSession.project_id) == project_id,
@@ -243,7 +245,7 @@ class BrowserRepository:
             if state is None:
                 continue
             next_status: str | None = None
-            ended_at: datetime | None | object = row.ended_at
+            ended_at: datetime | object | None = row.ended_at
             if state.owned:
                 next_status = state.status
                 ended_at = None

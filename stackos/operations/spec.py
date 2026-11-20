@@ -8,7 +8,9 @@ handler, access policy, and agent-facing guidance for one StackOS callable.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
@@ -119,6 +121,7 @@ class OperationSpec:
     secret_policy: str = "no-secret-output"
     category: str | None = None
     response_policy: OperationResponsePolicy | None = None
+    idempotency_policy: Literal["dispatcher", "handler"] = "dispatcher"
 
     @property
     def read_only(self) -> bool:
@@ -151,6 +154,7 @@ class OperationSpec:
             grant_policy=self.grant_policy,
             secret_policy=self.secret_policy,
             response_policy=_response_policy_out(self.effective_response_policy),
+            idempotency_policy=self.idempotency_policy,
         )
 
     def describe_out(self) -> OperationDescribeOut:
@@ -205,6 +209,7 @@ class OperationSummaryOut(BaseModel):
     grant_policy: str
     secret_policy: str
     response_policy: OperationResponsePolicyOut
+    idempotency_policy: Literal["dispatcher", "handler"] = "dispatcher"
 
 
 class OperationDescribeOut(OperationSummaryOut):
@@ -367,8 +372,16 @@ def _response_mode_schema_values(policy: OperationResponsePolicy) -> list[str]:
 
 def _schema_for(model: Any) -> dict[str, Any]:
     if isinstance(model, type) and issubclass(model, BaseModel):
-        return model.model_json_schema(mode="serialization")
+        # A model rebuild replaces its validator. Include that identity so a
+        # rebuilt contract cannot reuse an older schema. Descriptions are mutable
+        # (including response-policy overlays), so never expose the cached dict.
+        return deepcopy(_model_schema(model, model.__pydantic_validator__))
     return TypeAdapter(model).json_schema(mode="serialization")
+
+
+@lru_cache(maxsize=512)
+def _model_schema(model: type[BaseModel], validator: Any) -> dict[str, Any]:
+    return model.model_json_schema(mode="serialization")
 
 
 __all__ = [

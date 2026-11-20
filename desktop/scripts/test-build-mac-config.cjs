@@ -3,20 +3,23 @@
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const desktopDir = path.resolve(__dirname, "..");
-const generatedConfigPath = path.join(desktopDir, ".electron-builder.generated.json");
-const generatedUpdateConfigPath = path.join(desktopDir, ".update-config.generated.json");
+const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-build-config-test-"));
+let generatedConfigPath = "";
+let generatedUpdateConfigPath = "";
 
 function cleanup() {
-  fs.rmSync(generatedConfigPath, { force: true });
-  fs.rmSync(generatedUpdateConfigPath, { force: true });
+  for (const entry of fs.readdirSync(configRoot)) {
+    fs.rmSync(path.join(configRoot, entry), { recursive: true, force: true });
+  }
 }
 
 function runBuild(env, options = {}) {
   const writeConfig = options.writeConfig !== false;
-  return spawnSync(process.execPath, ["scripts/build-mac.mjs"], {
+  const result = spawnSync(process.execPath, ["scripts/build-mac.mjs"], {
     cwd: desktopDir,
     env: {
       ...process.env,
@@ -39,22 +42,42 @@ function runBuild(env, options = {}) {
       APPLE_TEAM_ID: "",
       APPLE_KEYCHAIN_PROFILE: "",
       APPLE_KEYCHAIN: "",
+      TDLIB_INPUT_VARIANT: "",
       ...env,
+      STACKOS_DESKTOP_CONFIG_ROOT: configRoot,
       STACKOS_DESKTOP_BUILD_DRY_RUN: "1",
       STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG: writeConfig ? "1" : ""
     },
     encoding: "utf8"
   });
+  generatedConfigPath = result.stdout.match(/^generatedConfig=(.*)$/m)?.[1] || "";
+  generatedUpdateConfigPath = result.stdout.match(/^generatedUpdateConfig=(.*)$/m)?.[1] || "";
+  for (const generatedPath of [generatedConfigPath, generatedUpdateConfigPath].filter(Boolean)) {
+    assert.equal(path.dirname(path.dirname(generatedPath)), configRoot);
+  }
+  return result;
 }
 
 cleanup();
 try {
+  const packagedLocal = { TDLIB_INPUT_VARIANT: "stackos-2.1.38-packaged-local", STACKOS_UNSIGNED_DEV: "1" };
+  assert.equal(runBuild(packagedLocal, { writeConfig: false }).status, 0);
+  for (const overrides of [
+    { STACKOS_UNSIGNED_DEV: "" },
+    { STACKOS_REQUIRE_SIGNING: "1", STACKOS_ALLOW_UNSIGNED_RELEASE: "1" },
+    { STACKOS_REQUIRE_UPDATE_URL: "1", STACKOS_ALLOW_UNSIGNED_RELEASE: "1" },
+    { STACKOS_UPDATE_URL: "https://updates.example.com/stackos", STACKOS_ALLOW_UNSIGNED_RELEASE: "1" },
+    { STACKOS_UPDATE_URL: "http://127.0.0.1:8765/stackos" }
+  ]) {
+    const result = runBuild({ ...packagedLocal, ...overrides }, { writeConfig: false });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Packaged TDLib reuse is limited/);
+  }
   const noUrl = runBuild({ STACKOS_UPDATE_URL: "" });
   assert.equal(noUrl.status, 0, noUrl.stderr);
   assert.match(noUrl.stdout, /desktop mac build config dry run ok/);
   assert.match(noUrl.stdout, /releaseIntent=false/);
-  assert.equal(fs.existsSync(generatedConfigPath), false);
-  assert.equal(fs.existsSync(generatedUpdateConfigPath), false);
+  assert.deepEqual(fs.readdirSync(configRoot), []);
 
   cleanup();
   const unsignedDev = runBuild({
@@ -88,8 +111,7 @@ try {
   const localNoWrite = runBuild({ STACKOS_UPDATE_URL: localUrl }, { writeConfig: false });
   assert.equal(localNoWrite.status, 0, localNoWrite.stderr);
   assert.match(localNoWrite.stdout, /generatedConfig=$/m);
-  assert.equal(fs.existsSync(generatedConfigPath), false);
-  assert.equal(fs.existsSync(generatedUpdateConfigPath), false);
+  assert.deepEqual(fs.readdirSync(configRoot), []);
 
   cleanup();
   const local = runBuild({ STACKOS_UPDATE_URL: localUrl });
@@ -103,7 +125,7 @@ try {
   assert.deepEqual(generatedUpdateConfig, { updateUrl: localUrl });
   assert.ok(
     generatedConfig.extraResources.some(
-      (entry) => entry.from === ".update-config.generated.json" && entry.to === "update-config.json"
+      (entry) => entry.from === generatedUpdateConfigPath && entry.to === "update-config.json"
     )
   );
 
@@ -201,5 +223,5 @@ try {
 
   console.log("desktop build mac config test ok");
 } finally {
-  cleanup();
+  fs.rmSync(configRoot, { recursive: true, force: true });
 }

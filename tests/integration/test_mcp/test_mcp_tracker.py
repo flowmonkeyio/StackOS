@@ -2,7 +2,258 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
+import pytest
+from sqlmodel import Session
+
+from tests.integration.test_repositories.test_agent_statistics import _receipt, _repaired
+from tests.integration.test_repositories.test_tracker import (
+    _seed_ticket_create_state,
+    _ticket_create_state,
+)
+
 from .conftest import MCPClient
+
+
+@pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
+@pytest.mark.parametrize("bad_index", [0, 1])
+def test_ticket_create_missing_ref_is_actionable_and_atomic(
+    mcp_client: MCPClient, seeded_project: dict, mode: str, bad_index: int
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    engine = mcp_client.test_client.app.state.engine
+    with Session(engine) as session:
+        _seed_ticket_create_state(session, project_id)
+    baseline = _ticket_create_state(engine, project_id)
+    tickets = [
+        {
+            "key": "new-a",
+            "title": "A",
+            "dependency_keys": ["existing"],
+            "references_json": [{"ref": "source-a"}],
+        },
+        {
+            "key": "new-b",
+            "title": "B",
+            "parent_ticket_key": "new-a",
+            "dependency_keys": ["new-a"],
+            "references_json": [{"ref": "source-b"}],
+        },
+    ]
+    tickets[bad_index]["references_json"].append({"path": "missing-ref"})
+    observed = []
+    for dry_run in (True, False):
+        response = mcp_client.call_tool_structured(
+            "tracker.createTicket",
+            {
+                "project_id": project_id,
+                "task_key": "atomic",
+                "tickets_json": tickets,
+                "dry_run": dry_run,
+                "response_mode": mode,
+                "idempotency_key": f"invalid-{mode}-{bad_index}-{dry_run}",
+            },
+        )
+        observed.append(response)
+        assert _ticket_create_state(engine, project_id) == baseline
+    for response in observed:
+        data = response["data"]
+        assert data["valid"] is False
+        assert data["errors"] == [
+            {
+                "index": bad_index,
+                "key": tickets[bad_index]["key"],
+                "field": "references_json[1].ref",
+                "message": "ticket reference ref is required",
+            }
+        ]
+        assert data["rev"] == baseline["TaskTracker"][0]["rev"]
+        assert not data.get("tickets")
+
+
+@pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
+@pytest.mark.parametrize("single", [False, True])
+def test_ticket_create_late_failure_cannot_leak_through_idempotency_cleanup(
+    mcp_client: MCPClient, seeded_project: dict, mode: str, single: bool
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    engine = mcp_client.test_client.app.state.engine
+    with Session(engine) as session:
+        _seed_ticket_create_state(session, project_id)
+    baseline = _ticket_create_state(engine, project_id)
+    args = (
+        {
+            "key": "new-single",
+            "title": "Single",
+            "dependency_keys": ["existing"],
+            "references_json": [{"ref": "first"}, {"path": "missing-ref"}],
+        }
+        if single
+        else {
+            "tickets_json": [
+                {
+                    "key": "cycle-a",
+                    "dependency_keys": ["cycle-b"],
+                    "references_json": [{"ref": "valid"}],
+                },
+                {"key": "cycle-b", "dependency_keys": ["cycle-a"]},
+            ],
+        }
+    )
+    error = mcp_client.call_tool_error(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "task_key": "atomic",
+            **args,
+            "response_mode": mode,
+            "idempotency_key": f"late-{mode}-{single}",
+        },
+    )
+    assert error["code"] == (-32602 if single else -32008)
+    assert ("ref is required" if single else "cycle") in error["data"]["detail"]
+    assert _ticket_create_state(engine, project_id) == baseline
+
+
+def test_ticket_create_valid_graph_ack_then_raw_replay_is_exactly_once(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    engine = mcp_client.test_client.app.state.engine
+    with Session(engine) as session:
+        _seed_ticket_create_state(session, project_id)
+    args = {
+        "project_id": project_id,
+        "task_key": "atomic",
+        "idempotency_key": "valid-graph",
+        "tickets_json": [
+            {
+                "key": "new-a",
+                "title": "Research",
+                "dependency_keys": ["existing"],
+                "references_json": [
+                    {
+                        "ref": 123,
+                        "type": "source",
+                        "title": "Evidence",
+                        "metadata_json": {"keep": True},
+                    }
+                ],
+            },
+            {
+                "key": "new-b",
+                "title": "Report",
+                "parent_ticket_key": "new-a",
+                "dependency_keys": ["new-a"],
+                "references_json": [{"ref": "source-b"}],
+            },
+        ],
+    }
+    invalid = deepcopy(args)
+    invalid["tickets_json"][1]["references_json"] = [{"path": "missing-ref"}]
+    preview = mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {**invalid, "dry_run": True, "idempotency_key": "invalid-preview", "response_mode": "raw"},
+    )
+    assert preview["data"]["valid"] is False
+    # A corrected payload uses a fresh intent, then raw replay recovers the saved ACK result.
+    ack = mcp_client.call_tool_structured("tracker.createTicket", {**args, "response_mode": "ack"})
+    assert ack["ok"] is True
+    assert "data" not in ack
+    before_replay = _ticket_create_state(engine, project_id)
+    raw = mcp_client.call_tool_structured("tracker.createTicket", {**args, "response_mode": "raw"})
+    assert raw["idempotency_replay"] is True
+    assert raw["data"]["valid"] is True
+    assert {t["key"] for t in raw["data"]["tickets"]} == {"new-a", "new-b"}
+    assert {(d["ticket_key"], d["depends_on_ticket_key"]) for d in raw["data"]["dependencies"]} == {
+        ("new-a", "existing"),
+        ("new-b", "new-a"),
+    }
+    assert _ticket_create_state(engine, project_id) == before_replay
+    assert len(before_replay["TrackerTicket"]) == 3
+    references = before_replay["TrackerTicketReference"]
+    assert len(references) == 3
+    assert references[1]["ref"] == "123"
+    assert references[1]["ref_type"] == "source"
+    assert references[1]["metadata_json"] == {"keep": True}
+    assert raw["data"]["tickets"][1]["parent_ticket_key"] == "new-a"
+
+
+@pytest.mark.parametrize("single", [False, True])
+def test_ticket_create_cannot_use_another_projects_dependency(
+    mcp_client: MCPClient, seeded_project: dict, single: bool
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    other = mcp_client.call_tool_structured(
+        "project.create", {"slug": "other", "name": "Other", "domain": "other.example"}
+    )
+    other_id = int(other["data"]["id"])
+    engine = mcp_client.test_client.app.state.engine
+    with Session(engine) as session:
+        _seed_ticket_create_state(session, project_id)
+        _seed_ticket_create_state(session, other_id)
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": other_id,
+            "task_key": "atomic",
+            "key": "foreign-only",
+            "title": "Foreign",
+        },
+    )
+    baseline = {pid: _ticket_create_state(engine, pid) for pid in (project_id, other_id)}
+    ticket = {"key": "new", "title": "New", "dependency_keys": ["foreign-only"]}
+    result = mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "task_key": "atomic",
+            "response_mode": "raw",
+            "idempotency_key": f"foreign-{single}",
+            **(ticket if single else {"tickets_json": [ticket]}),
+        },
+    )
+    if single:
+        assert result["code"] == -32004
+    else:
+        assert result["data"]["valid"] is False
+        assert result["data"]["errors"][0]["field"] == "dependency_keys"
+    assert {pid: _ticket_create_state(engine, pid) for pid in baseline} == baseline
+
+
+def test_task_inspection_mcp_is_scoped_and_preserves_canonical_read_pages(
+    mcp_client, seeded_project
+):
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "tracker.createTask", {"project_id": project_id, "key": "inspection", "title": "Inspection"}
+    )
+    mcp_client.call_tool_structured(
+        "tracker.updateTask",
+        {
+            "project_id": project_id,
+            "task_key": "inspection",
+            "patch_json": {"status": "in-progress"},
+        },
+    )
+    for operation in ("tracker.taskActivity", "tracker.taskResults"):
+        pages = []
+        for mode in ("compact", "raw"):
+            page = mcp_client.call_tool_structured(
+                operation,
+                {"project_id": project_id, "task_key": "inspection", "response_mode": mode},
+            )
+            page = page.get("data", page)
+            assert page["task_key"] == "inspection"
+            assert page["project_id"] == project_id
+            assert "coverage" in page and "warnings" in page and "next_cursor" in page
+            pages.append(page)
+        assert pages[0] == pages[1]
+        if operation == "tracker.taskActivity":
+            assert any(item["kind"] == "tracker.task.status_changed" for item in pages[0]["items"])
+        else:
+            assert pages[0]["items"] == []
 
 
 def _workflow_step_plan_json() -> dict:
@@ -12,6 +263,85 @@ def _workflow_step_plan_json() -> dict:
         "title": "Tracker workflow step",
         "steps": [{"id": "deliver", "title": "Deliver"}],
     }
+
+
+def test_tracker_mcp_metrics_match_task_ticket_and_project_scopes(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "tracker.createTask",
+        {
+            "project_id": project_id,
+            "key": "metrics",
+            "title": "Metrics",
+        },
+    )
+    for key, automatic in (
+        ("repaired", _repaired()),
+        ("zero", {"attempt": 1, "delivery": _receipt(total=0)}),
+        ("unknown", {"attempt": 1, "delivery": {"launch": {"model": "unknown"}}}),
+    ):
+        mcp_client.call_tool_structured(
+            "tracker.createTicket",
+            {
+                "project_id": project_id,
+                "task_key": "metrics",
+                "key": key,
+                "title": key,
+            },
+        )
+        mcp_client.call_tool_structured(
+            "tracker.updateTicket",
+            {
+                "project_id": project_id,
+                "ticket_key": key,
+                "patch_json": {"completion_evidence_json": {"automatic_delivery": automatic}},
+            },
+        )
+    expected = mcp_client.call_tool_structured(
+        "tracker.agentStats",
+        {
+            "project_id": project_id,
+        },
+    )["data"]["totals"]
+    for mode in ("raw", "compact"):
+        index = mcp_client.call_tool_structured(
+            "tracker.get",
+            {
+                "project_id": project_id,
+                "task_index_only": True,
+                "include_graph": False,
+                "response_mode": mode,
+            },
+        )
+        index = index.get("data", index)
+        focused = mcp_client.call_tool_structured(
+            "tracker.get",
+            {
+                "project_id": project_id,
+                "task_key": "metrics",
+                "ticket_keys": ["repaired"],
+                "include_graph": True,
+                "response_mode": mode,
+            },
+        )
+        focused = focused.get("data", focused)
+        assert index["tasks"][0]["agent_stats"] == expected
+        assert focused["tasks"][0]["agent_stats"] == expected
+        assert focused["tickets"][0]["agent_stats"]["reported_usage"]["total"] == 100
+        brief = mcp_client.call_tool_structured(
+            "tracker.brief",
+            {
+                "project_id": project_id,
+                "ticket_key": "unknown",
+                "response_mode": mode,
+            },
+        )
+        brief = brief.get("data", brief)
+        assert brief["task"]["agent_stats"] == expected
+        assert brief["ticket"]["agent_stats"]["reported_usage"]["total"] is None
+        assert brief["ticket"]["agent_stats"]["coverage"]["usage_status"] == "unavailable"
 
 
 def _workflow_two_step_plan_json() -> dict:
@@ -24,6 +354,50 @@ def _workflow_two_step_plan_json() -> dict:
             {"id": "verify", "title": "Verify", "depends_on": ["deliver"]},
         ],
     }
+
+
+def test_tracker_reopen_mcp_returns_safe_refs_without_controller_token(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _workflow_two_step_plan_json()},
+    )
+    plan_id = plan["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start", {"project_id": project_id, "run_plan_id": plan_id}
+    )
+    token = started["data"]["run_token"]
+    for mode in ("raw", "compact", "ack"):
+        reopened = mcp_client.call_tool_structured(
+            "tracker.reopen",
+            {
+                "project_id": project_id,
+                "run_plan_id": plan_id,
+                "step_id": "deliver",
+                "reason": "Scoped correction",
+                "response_mode": mode,
+            },
+        )
+        data = reopened.get("refs", reopened.get("data"))
+        assert data["run_plan_id"] == plan_id
+        assert data["run_id"] == started["data"]["run_id"]
+        assert data["reopened_step_id"] == "deliver"
+        assert data["reset_step_ids"] == ["deliver", "verify"]
+        assert data.get("run_token") is None
+        assert token not in str(reopened)
+    controller = mcp_client.call_tool_structured(
+        "runPlan.reopen",
+        {
+            "project_id": project_id,
+            "run_plan_id": plan_id,
+            "step_id": "deliver",
+            "reason": "Controller resume",
+            "response_mode": "raw",
+        },
+    )
+    assert controller["data"]["run_token"] == token
 
 
 def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
@@ -66,6 +440,59 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
     assert {"updates_json", "dry_run"} <= set(update_props)
     assert {"task_key", "run_plan_id", "reason"} <= set(reject_props)
     assert {"task_key", "run_plan_id", "run_id", "step_id", "reason"} <= set(reopen_props)
+
+
+def test_correction_intent_mcp_roundtrip_preserves_context_and_validation_errors(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "tracker.createTask", {"project_id": project_id, "key": "proof", "title": "Proof"}
+    )
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {"project_id": project_id, "task_key": "proof", "key": "proof", "title": "Proof"},
+    )
+    context = {
+        "keep": "input",
+        "correction": {
+            "work_intent": "evidence_only",
+            "candidate_commit_sha": "a" * 40,
+            "target_attempt": 5,
+        },
+    }
+    for mode in ("compact", "raw"):
+        mcp_client.call_tool_structured(
+            "tracker.updateTicket",
+            {
+                "project_id": project_id,
+                "ticket_key": "proof",
+                "response_mode": mode,
+                "patch_json": {"context_json": context},
+            },
+        )
+        invalid = mcp_client.call_tool(
+            "tracker.updateTicket",
+            {
+                "project_id": project_id,
+                "ticket_key": "proof",
+                "response_mode": mode,
+                "patch_json": {
+                    "title": "Invalid",
+                    "context_json": {
+                        "correction": {**context["correction"], "target_attempt": "5"},
+                    },
+                },
+            },
+        )
+        assert invalid["result"]["isError"] is True
+        assert "correction" in str(invalid)
+        brief = mcp_client.call_tool_structured(
+            "tracker.brief",
+            {"project_id": project_id, "ticket_key": "proof", "response_mode": "raw"},
+        )
+        assert brief["ticket"]["context_json"] == context
+        assert brief["ticket"]["title"] == "Proof"
 
 
 def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict) -> None:

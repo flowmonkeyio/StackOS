@@ -1,15 +1,17 @@
+// @vitest-environment node
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useProjectDataStore } from './projectData'
 import { useStackOsResourcesStore } from './stackosResources'
-import { useWorkflowTemplatesStore } from './workflowTemplates'
 
 const clientMocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
 }))
 
-vi.mock('@/lib/client', () => ({
+vi.mock('@/lib/client', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/client')>(),
   apiFetch: clientMocks.apiFetch,
   formatApiError: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
@@ -21,7 +23,7 @@ describe('project-scoped stores', () => {
     clientMocks.apiFetch.mockReset()
   })
 
-  it('keeps newer project data when an older aggregate request finishes last', async () => {
+  it('keeps newer project data when an older source request finishes last', async () => {
     const projectOne = deferred<void>()
     clientMocks.apiFetch.mockImplementation(async (url: string) => {
       const projectId = url.includes('/projects/1/') ? 1 : 2
@@ -30,13 +32,13 @@ describe('project-scoped stores', () => {
     })
     const store = useProjectDataStore()
 
-    const older = store.refresh(1)
-    await store.refresh(2)
+    const older = store.refreshSource(1, 'decisions')
+    await store.refreshSource(2, 'decisions')
     projectOne.resolve()
     await older
 
     expect(store.currentProjectId).toBe(2)
-    expect(store.timeline.map((row) => row.id)).toEqual([2])
+    expect(store.decisions.map((row) => row.id)).toEqual([2])
     expect(store.error).toBeNull()
   })
 
@@ -63,26 +65,6 @@ describe('project-scoped stores', () => {
     expect(store.artifacts.map((row) => row.id)).toEqual([2])
   })
 
-  it('does not let an old workflow-template failure replace the new scope', async () => {
-    const projectOne = deferred<void>()
-    clientMocks.apiFetch.mockImplementation(async (url: string) => {
-      if (url.includes('/projects/1/')) {
-        await projectOne.promise
-        throw new Error('project one unavailable')
-      }
-      return { templates: [] }
-    })
-    const store = useWorkflowTemplatesStore()
-
-    const older = store.refresh(1)
-    await store.refresh(2)
-    projectOne.resolve()
-    await older
-
-    expect(store.currentProjectId).toBe(2)
-    expect(store.items).toEqual([])
-    expect(store.error).toBeNull()
-  })
 })
 
 function deferred<T>() {

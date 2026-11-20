@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -13,20 +15,14 @@ const OWN_SHELL = [
   'HomeView',
   'AuthErrorView',
   'HomeConsoleView',
-  'InboxView',
-  'ActivityView',
   'PluginsView',
-  'CapabilitiesView',
   'ConnectionsView',
-  'OperationsView',
-  'ActionCallsView',
-  'AgentRequestsView',
-  'AgentPresetsView',
   'TaskTrackerView',
-  'WorkflowTemplatesView',
-  'ProjectDataView',
-  'ResourceExplorerView',
-  'RunsView',
+  'LibraryView',
+  'AgentsView',
+  'PluginDomainView',
+  'WorkflowDetailView',
+  'FinanceView',
 ] as const
 
 describe('desktop page layout contract', () => {
@@ -47,11 +43,11 @@ describe('desktop page layout contract', () => {
     }
   })
 
-  it('delegates setup-family child routes to the project-detail shell', () => {
+  it('delegates configuration child routes to the project-detail shell', () => {
     const router = source('router.ts')
     const wrapper = source('views/ProjectDetailView.vue')
 
-    for (const child of ['SetupStatusTab', 'SchedulesTab', 'CostBudgetTab']) {
+    for (const child of ['SchedulesTab', 'CostBudgetTab']) {
       expect(router).toContain(`component: ${child}`)
       expect(source(`views/project-detail/${child}.vue`)).not.toContain('<UiPageShell')
     }
@@ -59,14 +55,25 @@ describe('desktop page layout contract', () => {
     expect(wrapper).toContain('<RouterView />')
   })
 
-  it('keeps one shared Work command surface above all three modes', () => {
+  it('keeps one shared Work toolbar with Board filters and the approved contextual Graph header', () => {
     const work = source('views/TaskTrackerView.vue')
-    const stories = source('views/task-tracker/TrackerStoriesPanel.vue')
+    const commands = source('views/task-tracker/TaskTrackerCommandPanel.vue')
+    const board = source('views/task-tracker/TrackerBoardPanel.vue')
+    const graph = source('views/task-tracker/TrackerGraphPanel.vue')
 
-    expect(work).toContain('const viewMode = ref<ViewMode>(viewModeFromQuery(route.query.view))')
-    expect(work).toContain('<TaskTrackerCommandPanel')
-    expect(work).not.toContain('v-if="viewMode !== \'stories\'"\n      :active-task-key')
-    expect(stories).not.toContain('viewOptions')
-    expect(stories).not.toContain('update:view-mode')
+    expect(work.match(/<TaskTrackerCommandPanel\b/g)).toHaveLength(1)
+    expect(work.indexOf('<TaskTrackerCommandPanel')).toBeLessThan(work.indexOf('<TrackerBoardPanel'))
+    expect(work.indexOf('<TaskTrackerCommandPanel')).toBeLessThan(work.indexOf('<TrackerGraphPanel'))
+    expect(commands.match(/<UiToolbar\b/g)).toHaveLength(1)
+    expect(commands).toMatch(/<UiToolbar[\s\S]*<TrackerBoardFilterBar[\s\S]*<div\s+v-else\s+class="tracker-command-panel__context"\s*>[\s\S]*<\/UiToolbar>/)
+    expect(work).toMatch(/<template #actions>[\s\S]*<UiSegmentedControl[\s\S]*<\/ProjectPageHeader>/)
+    expect(commands).toMatch(/tracker-command-panel__identity[\s\S]*tracker-command-panel__progress[\s\S]*<AgentUsageSummary[\s\S]*Task details/)
+    expect(commands).toMatch(/\.tracker-command-panel\s*\{[^}]*flex-wrap:\s*nowrap/)
+    expect(work).toContain("{ key: 'board', label: 'Board' }")
+    expect(work).toContain("{ key: 'graph', label: 'Graph' }")
+    expect(board).not.toContain('UiSegmentedControl')
+    expect(graph).not.toContain('UiSegmentedControl')
+    expect(board).not.toContain('update:view-mode')
+    expect(graph).not.toContain('update:view-mode')
   })
 })

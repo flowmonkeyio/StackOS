@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: gtm.workflow.account-research
     name: GTM Account Research Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Produces account research briefs with source clarity, ICP fit, risks, and outreach-ready handoff.
     domain: gtm
     role: gtm-account-research
@@ -53,7 +53,26 @@ presets:
         - workflow_agent_requirements
         - current_tracker_or_run_plan_context
         - user_request
-      required_agent_action: Before execution, rewrite this GTM role for the project's ICP, CRM fields, permitted data sources, outreach tone, tracker task/ticket workflow, dependency sequencing, and review gates.
+      required_agent_action: >-
+        Before execution, rewrite this GTM role for the project's ICP, CRM fields, permitted data sources, outreach tone, tracker task/ticket workflow, dependency sequencing, and review gates.
+        Keep internal handoffs concise and sufficient: summary retains disposition,
+        actual outcome/scope, candidate or revision, decisive proof and material limits
+        for summary-only readers. Put detailed proof and actionable scoped findings
+        once in existing outputs or evidence. Preserve required fields and complete
+        substantive deliverables, including nested domain followups, at their declared
+        owners; references replace content only where the schema permits and the
+        receiver can retrieve it. References name owner, project, record/step and
+        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
+        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
+        and artifacts/resources through their declared owners. Read necessary missing,
+        changed or contradictory detail; missing, stale or inaccessible refs require
+        safe authorized inline facts where permitted or an explicit gap. Assignments
+        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
+        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
+        and remaining repair allowance without replaying unchanged history; preserve
+        frozen native instructions and prior receipts. Human updates explain outcomes,
+        decisions and limits without repeating detailed proof. Source changes require
+        separate explicit adaptation/adoption and do not prove installed activation.
     prompt_contract:
       mission: Create a concise, source-backed account research brief that supports GTM decisions without fabricating firmographic or buying-signal data.
       responsibilities:
@@ -84,7 +103,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: gtm.workflow.lead-enrichment-scoring
     name: GTM Lead Enrichment Scoring Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Enriches and scores leads according to project-specific fields, confidence, and review policy.
     domain: gtm
     role: gtm-lead-enrichment-scoring
@@ -128,7 +147,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: gtm.workflow.pipeline-risk-review
     name: GTM Pipeline Risk Review Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Reviews pipeline risk, stale opportunities, and next actions using CRM context and project-specific stage rules.
     domain: gtm
     role: gtm-pipeline-risk-review
@@ -172,7 +191,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: gtm.workflow.crm-hygiene-pass
     name: GTM CRM Hygiene Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Plans and reviews CRM cleanup with field-level atomic updates, duplicates, and audit visibility.
     domain: gtm
     role: gtm-crm-hygiene
@@ -217,7 +236,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: gtm.workflow.outbound-sequence-preparation
     name: GTM Outbound Sequence Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Prepares outbound sequence content and targeting with research, compliance, and approval context.
     domain: gtm
     role: gtm-outbound-sequence
@@ -262,7 +281,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: gtm.workflow.marketing-program-lifecycle
     name: GTM Marketing Program Lifecycle Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Reviews and applies bounded HubSpot audience, campaign, draft-email, and consent changes with separate risk gates.
     domain: gtm
     role: gtm-marketing-program-lifecycle
@@ -309,7 +328,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: gtm.workflow.crm-export-handoff
     name: GTM CRM Export Handoff Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Validates one bounded HubSpot export and reconciles its async job, managed artifact, and retention evidence.
     domain: gtm
     role: gtm-crm-export-handoff
@@ -356,7 +375,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: gtm.workflow.customer-follow-up
     name: GTM Customer Follow-Up Agent
-    version: 0.1.1
+    version: 0.1.2
     description: Sends one approved HubSpot transactional follow-up through the canonical communication target and optionally records CRM activity.
     domain: gtm
     role: gtm-customer-follow-up

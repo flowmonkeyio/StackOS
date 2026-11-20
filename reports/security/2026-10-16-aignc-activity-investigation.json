@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-16",
+  "scope": "Investigation of reported AIGNC model cooldowns and possible use while the operator's computer was off; local read-only inspection plus one explicitly authorized unauthenticated gateway request.",
+  "conclusion": "The notice matches CLI Proxy API Management Center's upstream auth-file cooldown display. It does not attribute requests to the operator's downstream API key. No corresponding recent StackOS execution was found. Unauthorized key use is neither established nor ruled out without supplier-side incoming-request records.",
+  "unauthenticated_gateway_test": {
+    "date_utc": "2026-10-16",
+    "method": "POST",
+    "url": "https://cli-api.f2nd.com/v1/chat/completions",
+    "authorization_header_sent": false,
+    "curl_config_disabled": true,
+    "request": {"model": "claude-opus-5-5-high", "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1, "stream": false},
+    "http_status": null,
+    "http_status_note": "Tool output retained the response body but did not expose HTTP headers; no second request was made to recover the status.",
+    "response": {"error": {"message": "auth_unavailable: no auth available (providers=antigravity, model=claude-opus-5-5-high; last upstream error: {\n  \"error\": {\n    \"code\": 404,\n    \"message\": \"Requested entity was not found.\",\n    \"status\": \"NOT_FOUND\"\n  }\n})", "type": "server_error", "code": "internal_server_error"}},
+    "interpretation": "A request without the operator's token received model/provider-specific information containing the last upstream 404. This error is not evidence that the operator's token was used. The response alone does not establish a fresh upstream request or new cooldown.",
+    "transport_note": "The first sandbox attempt failed DNS resolution. The authorized network-enabled attempt returned the response above."
+  },
+  "service_provenance": {
+    "local_provider_key": "aignc",
+    "configured_endpoint": "https://cli-api.f2nd.com/v1",
+    "source": "docs/integration-contracts/aignc.md:1-49",
+    "description": "Supplier-provided, bearer-authenticated, OpenAI-compatible AI gateway. Public corporate identity and public API documentation were not independently verified.",
+    "deployed_proxy_version_verified": false
+  },
+  "reported_notice": {
+    "timezone": "unknown; clarification requested",
+    "models": [
+      {"model": "claude-opus-5-5-high", "displayed_deadline": "2026-10-17 04:22:27"},
+      {"model": "claude-sonnet-5-5-high", "displayed_deadline": "2026-10-17 04:23:03"},
+      {"model": "gemini-4-argon-high", "displayed_deadline": "2026-10-17 04:26:47"}
+    ],
+    "classification": "Resource not found / Upstream HTTP 404",
+    "remaining_time": "approximately 10 hours"
+  },
+  "public_source_findings": [
+    {
+      "finding": "Exact labels belong to an auth-file cooldown panel. Active model records are attached to an upstream credential/auth file, not a downstream client API key.",
+      "sources": [
+        "https://github.com/router-for-me/Cli-Proxy-API-Management-Center/blob/fe2963330f32a933f562282165f62ae52cf57145/src/features/authFiles/components/AuthFileCard.tsx#L187-L195",
+        "https://github.com/router-for-me/CLIProxyAPI/blob/e7003d2a3e2cee2d45f9950c067bf8e02a2ac0f8/sdk/cliproxy/auth/types.go#L48-L103"
+      ]
+    },
+    {
+      "finding": "Timer deadline displays retry_at, formatted in the viewer browser's local timezone. Earliest end is minimum remaining time among active records; displayed hours round upward. This is not a request timestamp or proof of automatic retries.",
+      "sources": [
+        "https://github.com/router-for-me/Cli-Proxy-API-Management-Center/blob/fe2963330f32a933f562282165f62ae52cf57145/src/features/authFiles/cooldowns.ts#L21-L43",
+        "https://github.com/router-for-me/Cli-Proxy-API-Management-Center/blob/fe2963330f32a933f562282165f62ae52cf57145/src/features/authFiles/components/AuthFileCooldownSection.tsx#L55-L113"
+      ]
+    },
+    {
+      "finding": "Inspected upstream code defaults model-level HTTP 404 cooldowns to 12 hours. Positive RetryAfter can override this and disableCooling can suppress it. The supplier's deployment/configuration is unknown, so original request times cannot be established from these deadlines alone.",
+      "source": "https://github.com/router-for-me/CLIProxyAPI/blob/e7003d2a3e2cee2d45f9950c067bf8e02a2ac0f8/sdk/cliproxy/auth/conductor_cooldown.go#L930-L946"
+    }
+  ],
+  "local_evidence": {
+    "aignc_action_count": 31,
+    "success_count": 25,
+    "failed_count": 6,
+    "all_action_dates_utc": ["2026-09-13", "2026-09-14"],
+    "latest_action_call_id": 9206,
+    "latest_request_utc": "2026-09-14T07:30:54Z",
+    "latest_completion_utc": "2026-09-14T07:31:12Z",
+    "latest_requested_model": "gemini-3.8-flash",
+    "recorded_requested_chat_audio_models": ["gemini-3.8-flash", "gemini-3.8-flash-high", "gemini-3.1-pro"],
+    "credential_tests": {"total": 4, "success": 3, "failed": 1, "latest_utc": "2026-09-14T05:35:32Z"},
+    "aignc_records_after_september_14": 0,
+    "matching_reported_model_names_in_daemon_bridge_logs": 0,
+    "matching_reported_cooldown_or_upstream_404_text_in_daemon_bridge_logs": 0,
+    "historical_transport_log_entries": {"models_get_http200": 4, "chat_completions_post_http200": 24},
+    "current_scheduled_jobs": 0,
+    "current_apscheduler_jobs": 0,
+    "current_aignc_durable_action_jobs": 0,
+    "catalogue_limit": "Retained September 14 catalogue lacks all three reported IDs; September 13 catalogue response file is missing."
+  },
+  "connector_review": {
+    "versions": ["local stackos-connectors 0.1.1", "installed desktop stackos-connectors 0.2.8"],
+    "relevant_aignc_code_identical": true,
+    "reported_model_ids_allowed": false,
+    "unknown_model_behavior": "Reject before HTTP; provider-side remapping remains outside local visibility.",
+    "probe_behavior": "GET /models only; no model generation",
+    "generation_behavior": "One explicit POST /chat/completions; max_retries=0",
+    "automatic_model_fallback_or_sweep_found": false,
+    "background_execution": "Local in-memory daemon task; actionCall.get reads local status. No ordinary AIGNC remote job protocol or restart resubmission found.",
+    "timeout_limit": "600-second default, up to 1800-second read timeout; this is not a bound on provider-side retention or processing.",
+    "mocked_tests_passed": 10
+  },
+  "evidence_needed_for_attribution": [
+    "Actual incoming-request timestamp in UTC, separate from retry_at/cooldown deadline",
+    "Matched downstream client API-key identifier or fingerprint, never the secret value",
+    "Original client source IP and User-Agent, accounting for trusted reverse-proxy headers",
+    "Requested endpoint/model, request ID and corresponding upstream account/auth-file identifier",
+    "Whether that upstream account is shared across customers and whether provider-owned probes/retries can update its cooldown state"
+  ],
+  "limits": [
+    "No access to supplier-side authenticated logs or configuration.",
+    "No claim that the key is absent from every other app or machine.",
+    "Computer power-off timing was not independently established.",
+    "Cooldown display alone cannot prove key theft or identify a caller."
+  ],
+  "handling": {
+    "credential_values_decrypted_or_printed": false,
+    "authenticated_provider_tests_performed": false,
+    "provider_configuration_or_keys_changed": false,
+    "public_web_research_only": true
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "disposition": "candidate-ready; frozen for independent review",
+  "ticket": "work-map-entry-and-inspector",
+  "ticket_id": 14748,
+  "attempt": "M1",
+  "contract_revision": 1,
+  "project_id": 1,
+  "run_plan_id": 724,
+  "run_id": 718,
+  "step": "deliver-tickets",
+  "step_id": 7594,
+  "base_head": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b",
+  "accepted_prerequisite": "Main dispatch: approved design/readiness for run724, prior delivered dirty candidate4df1ab8; no modal-ticket work begun.",
+  "sources": [
+    "tracker.brief raw work-map-entry-and-inspector retrieved through native bound StackOS project1/run718",
+    ".codex/agents/sdlc-delivery.toml sourcepreset0.3.1 workflow0.4.0",
+    "AGENTS.md; docs/product-direction.md; docs/ui-design-system.md and ui-component-inventory current guidance",
+    "Main M1 assignment and exact screen-composition.spec.ts assertion scope admission",
+    "Original b3b358f6 useTrackerGraphSession.ts detailPanelOpen/onNodeClick/onEdgeClick/openSelectedDetail/clearFocus behavior; work_model preparation anchors",
+    "Existing InspectableDetailDrawer.vue delegates canonical UiSidePanel",
+    "Installed Vue Flow node-keyboard source: keyboard selection does not emit nodeClick"
+  ],
+  "per_acceptance": {
+    "M1_selection": "After accepted index: explicit URL is authoritative (including unavailable identity), then valid per-project memory, then first unfiltered picker row. Existing newest-created / id-desc sorting owner reused and tie ordering tested. Board stays unselected; default canonicalization uses router.replace.",
+    "M1_async": "Pending index URL change wins; stale remembered key is never promoted into explicit URL before index; empty and failed index do not auto-select; successful retry defaults; refresh preserves valid selection when newer work arrives. Existing unmount/project-switch stale-response/SSE regressions remain green.",
+    "M2_selection": "Map pointer activation updates selected node/highlight/card only; Enter/Space on focused Vue Flow node uses existing click path to produce the same selection. No detail/ticket popup URL mutation.",
+    "M2_inspector": "Explicit Details opens graph-session local detailPanelOpen through existing InspectableDetailDrawer/UiSidePanel. Node/edge/clear/canvas close inspector as baseline. Wrapper-only presentation switch shares one unchanged ticket-content subtree; no duplicate content markup.",
+    "M2_separation": "Board task/ticket popup URL remains independent of selected map task, including view=graph. Committed popup entry closes map inspector. Both graph session state and modal identity are covered."
+  },
+  "changes_outside_original_paths": "Main explicitly admitted exact screen-composition.spec.ts assertion update: both shared wrapper choices plus single content subtree.",
+  "checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/views/TaskTrackerView.spec.ts src/views/task-tracker/TrackerGraphPanel.spec.ts src/views/task-tracker/viewModel.spec.ts src/lib/stackos/projectNavigation.spec.ts src/screen-composition.spec.ts src/no-watch-ui.spec.ts",
+      "result": "PASS65tests/6files"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui type-check",
+      "result": "PASS"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec eslint src/views/TaskTrackerView.vue src/views/TaskTrackerView.spec.ts src/views/task-tracker/useTrackerGraphSession.ts src/views/task-tracker/TrackerGraphPanel.vue src/views/task-tracker/TrackerGraphPanel.spec.ts src/views/task-tracker/TrackerTicketDetailPanel.vue src/views/task-tracker/viewModel.spec.ts src/screen-composition.spec.ts",
+      "result": "PASS no errors;4preexisting test-stub multi-component warnings"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "failed_history": [
+    {
+      "phase": "RED before runtime edits",
+      "log": "/Users/sergeyrura/.local/share/tpf/tee/20261028_180253_pnpm.log",
+      "result": "5failures: missing cold/stale-memory/pending-URL/retry selection and node click mutates popup URL"
+    },
+    {
+      "phase": "RED keyboard before handler",
+      "log": "/Users/sergeyrura/.local/share/tpf/tee/20261028_180504_pnpm.log",
+      "result": "Enter does not emit nodeClick"
+    },
+    {
+      "phase": "Intermediate test correction",
+      "log": "/Users/sergeyrura/.local/share/tpf/tee/20261028_180413_pnpm.log",
+      "result": "SidePanel teleports content into document.body, so wrapper.text assertion was corrected to body. Failed test skipped cleanup and affected following dialog test; final full focused slice clean."
+    }
+  ],
+  "environment": "Shared repository with prior dirty implementation preserved. Existing pnpm/Vitest2.1.9. Root owns isolated5185/browser QA and later build/signoff.",
+  "residuals": [
+    "Root narrow browser acceptance and independent navigation_review remain pending; no browser or full integration claim made here.",
+    "Persistent popup/close-control design-system work is next ticket contract2 and was not started."
+  ],
+  "authority_preserved": "No commits, build, browser, daemon, backend or tracker/run mutations. Only authorized source/test/docs files and this evidence receipt written.",
+  "files": {
+    "ui/src/views/TaskTrackerView.vue": "a876fc0252911022e3bce04080d8ccfb9cb9c25aa8edbf9022bc9da010d01eaf",
+    "ui/src/views/TaskTrackerView.spec.ts": "6fbcdd3f749e19bcc125e1ac1070cd9f297db2c89f9770016f2e4f975e1a7fc2",
+    "ui/src/views/task-tracker/useTrackerGraphSession.ts": "681129c0bcf7e5c31532fd421a2ed87224dbe6741b3727c4239a3f42cd4ebe23",
+    "ui/src/views/task-tracker/TrackerGraphPanel.vue": "2c0bfe00fd0fe4d0fb11108fb05014260c08c82e861402e259edb42cf2d05957",
+    "ui/src/views/task-tracker/TrackerGraphPanel.spec.ts": "6cfb63b382facbabdae4dee72a358212baed3bcae6d38962b4c605892ed4225e",
+    "ui/src/views/task-tracker/TrackerTicketDetailPanel.vue": "03a520a4d77c72cd216527e9ed37512f4a0d8cabbe9dd5d86a1d08c87281f635",
+    "ui/src/views/task-tracker/viewModel.spec.ts": "a44b1c9a2439ecd244a234cc06f1e83a901d2a419a5bf58360d8c46e0a700f4b",
+    "ui/src/screen-composition.spec.ts": "629b7b3a0fe61a779ba6779bf5f27dc950e5712b9bd41387f1bc67e0dbd5e1e1",
+    "docs/task-tracker.md": "8e52dd7387a89c79d6065d9e0337a628e3b230af56184c7f9c0f2a47f94b9414"
+  },
+  "candidate_sha256": "72c0697fb31fe242b6ec43470d229c90b225c15bcb9f0f04264d59ffb36115b1"
+}

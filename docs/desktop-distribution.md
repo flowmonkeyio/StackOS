@@ -47,18 +47,33 @@ Build machines need:
 | `uv` | Build the StackOS wheel and install locked Python dependencies into the payload | all desktop builds |
 | `bash` + `rsync` | Build/copy the standalone Python runtime | all desktop builds |
 | `file`, `lipo`, `otool`, `codesign`, `security` | Inspect/thin/sign bundled Mach-O runtime files | all desktop builds |
-| Pinned TDLib proof artifact, or `git` + CMake + static OpenSSL | Stage the exact ARM64 `libtdjson` asset and prove its source/build identity | all desktop payload builds |
+| Pinned TDLib proof artifact (see acquisition below) | Stage the exact ARM64 `libtdjson` asset and prove its source/build identity | all desktop payload builds |
 | `xcrun notarytool` + `xcrun stapler` | Submit, staple, and validate notarization | public release |
 | Developer ID Application certificate | Sign the app and DMG | signed/release builds |
 | Apple notarization credentials | Apple malware/trust ticket for non-App-Store distribution | public release |
 
-The payload builder builds the StackOS wheel and exports locked dependencies,
-including the pinned `stackos-connectors` release from PyPI. It installs those
-dependencies, installs the host wheel without resolving dependencies again, and
-runs `pip check`. No connector checkout is needed. Provider schemas, documents
-and icons ship inside the connector wheel. The payload contains neither
+The payload builder builds the StackOS wheel and exports locked dependencies.
+For 2.1.45, `tool.uv.sources` and `uv.lock` pin `stackos-connectors` 0.2.9 to
+accepted Git commit `32416f21d53771e25ec52e357260b081db1e9887` from
+`https://github.com/flowmonkeyio/StackOSConnectors.git` while that version awaits
+separate PyPI publication. The frozen export retains that immutable source;
+uv fetches and builds it without a sibling checkout or local dependency path.
+The builder installs the exported dependencies, installs the host wheel without
+resolving dependencies again, and runs `pip check`. Provider schemas, documents
+and icons ship inside the connector wheel. Host wheel metadata still declares
+`stackos-connectors==0.2.9`; installing that wheel alone from a package index
+requires separate connector publication. This source pin does not publish either
+package. The payload contains neither
 editable installs nor build-machine paths; the existing packaged CLI
 verification runs outside the repository with hostile ambient Python settings.
+
+Retain the accepted source commit, uv and build-backend identities, exported
+requirements and artifact hashes in the release receipt. Compare rebuilt
+connector wheel contents with the accepted artifact, including metadata and
+bundled schemas/icons; equal source contents do not imply byte-identical wheel
+archives. The integration owner freezes the final accepted host source after
+ticket review, retaining excluded work and rollback references as described in
+[release signoff](release-signoff.md#accepted-sources-and-release-identity).
 
 Run the preflight before public release packaging:
 
@@ -82,6 +97,14 @@ pnpm --dir desktop run release:preflight
 
 ## Build Commands
 
+The main integration/release owner first reconciles the intended accepted source
+set and explicit exclusions using [accepted sources and release
+identity](./release-signoff.md#accepted-sources-and-release-identity). Run the
+verified UI build, payload and package stages in order with exclusive ownership
+of shared outputs. Keep the source-to-produced-artifact receipt separate from
+installed identity and install/repair/restart proof. A successful package build
+does not establish an installed-complete result or grant installation authority.
+
 Install desktop dependencies:
 
 ```bash
@@ -94,19 +117,164 @@ Run the Electron shell from the repo:
 make desktop-dev
 ```
 
-Build the Python payload for the app resources:
+### Obtain the pinned TDLib build input
+
+Normal builds now fetch a versioned, checksum-pinned npm distribution automatically:
+[`@prebuilt-tdlib/darwin-arm64@0.1008067.0`](https://www.npmjs.com/package/@prebuilt-tdlib/darwin-arm64/v/0.1008067.0),
+published by the [tdl project](https://github.com/eilvelia/tdl), not Telegram itself.
+Its package metadata identifies TDLib **1.8.67** and upstream commit
+`d1085f9cebc5a62379991ae1652673954f229c1f`. This is a separately reviewed
+distribution, **not** the previously retained local proof artifact below.
+During input review, `npm audit signatures` cryptographically verified its npm
+registry signature and provenance attestation. The attested tdl workflow revision
+is `34f1b868f64eb5c4952b357db8094da218ab8ba9`. Future builds verify the exact
+reviewed bytes against committed pins rather than resolving a mutable latest
+version or claiming that npm provenance independently proves Telegram source
+reproducibility.
 
 ```bash
-TDLIB_LIBRARY_PATH=/absolute/path/to/libtdjson.1.8.67.dylib make desktop-payload
+# Optional prefetch; ordinary payload/build commands do this automatically.
+python3 desktop/scripts/fetch-tdlib-input.py
+pnpm --dir desktop run dist:mac:dev
 ```
 
-`desktop/scripts/build-tdlib-runtime-mac.sh` stages only the pinned proof
+The fixed input URL is
+`https://registry.npmjs.org/@prebuilt-tdlib/darwin-arm64/-/darwin-arm64-0.1008067.0.tgz`.
+The downloader pins both the registry SHA-512 integrity and archive SHA-256
+`84aac79ec7b8892798744963aad4590750f3f4c21c5976503d5b47202882f89a`,
+then verifies the extracted library SHA-256
+`67ea9d6f0494ca88c57b97f4d779977b764465773ef137d10099c8c75f555303`.
+It reads only the exact expected regular-file archive entries, checks package
+identity/platform/source metadata, and never executes npm install scripts.
+The builder additionally verifies ARM64, system-only dependencies and native
+JSON ABI/version before activation. App signing subsequently changes the staged
+library digest; the manifest retains the original input digest separately.
+
+Verified input is cached in
+`${XDG_CACHE_HOME:-$HOME/.cache}/stackos/build-inputs/tdlib-npm-0.1008067.0/`,
+outside payload directories deleted by rebuilds. Every reuse revalidates the
+archive. Corrupt archives are downloaded again and only replaced atomically
+after verification; missing/corrupt extracted libraries are repaired from the
+verified archive. A verified cache supports offline builds. If the registry is
+unavailable and the cache is invalid, the build fails rather than substituting
+an arbitrary library. To preseed another machine, copy the verified `package.tgz`
+to the same cache directory and run the prefetch command, which rechecks it.
+
+The npm manifest uses `input_variant=npm-prebuilt-0.1008067.0` and
+`source_verification=registry-integrity-pinned`, retaining package URL, version,
+integrity and input digest. It does not claim a locally reconstructed source
+archive. For this distribution there is no need to install OpenSSL or compile
+TDLib. Explicit `TDLIB_LIBRARY_PATH` without a variant retains the legacy
+`original` contract; to supply this exact registry library explicitly, also set
+`TDLIB_INPUT_VARIANT=npm-prebuilt-0.1008067.0`. No checksum override is supported.
+
+#### Legacy retained proof inputs (not the default build path)
+
+The upstream source is [TDLib at commit
+`d1085f9cebc5a62379991ae1652673954f229c1f`](https://github.com/tdlib/td/tree/d1085f9cebc5a62379991ae1652673954f229c1f),
+version **1.8.67**. That source link is not a download of the exact binary
+required by the legacy `original` input variant. For that variant, the builder
+pins this SHA-256 for the ARM64 library before StackOS app signing:
+
+```text
+c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af
+```
+
+**There is currently no recorded, verified download URL for that exact build
+input.** The legacy `original` variant relies on a retained local proof artifact.
+The retained library contains local StackOS build paths, consistent with a
+local source build. A machine explicitly using this variant needs this artifact
+from a release/build owner, verified against the hash above. Publishing a
+versioned build-input archive with provenance and checksums remains an open
+requirement for this legacy variant, not a blocker for the automatic npm path.
+
+Do not substitute a package merely because it reports TDLib 1.8.67. The
+`@prebuilt-tdlib/darwin-arm64@0.1008067.0` npm package and the
+`tdjson-1.8.67-cp312-cp312-macosx_11_0_arm64.whl` PyPI wheel were checked on
+2026-10-23; neither contains the pinned library bytes.
+
+On a build machine that still has a matching staged payload, preserve it before
+rebuilding. From the repository root:
+
+```bash
+TDLIB_INPUT_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/stackos/build-inputs/tdlib-1.8.67-arm64"
+mkdir -p "$TDLIB_INPUT_DIR"
+cp desktop/payload/stackos/telegram-tdlib-runtime/lib/libtdjson.dylib \
+  "$TDLIB_INPUT_DIR/libtdjson.1.8.67.dylib"
+export TDLIB_LIBRARY_PATH="$TDLIB_INPUT_DIR/libtdjson.1.8.67.dylib"
+printf '%s  %s\n' \
+  c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af \
+  "$TDLIB_LIBRARY_PATH" | shasum -a 256 -c -
+```
+
+Continue only when the checksum check reports `OK`. For a supplied artifact,
+copy that file into the same input directory instead and run the same check.
+Keep the input outside both `desktop/payload/stackos` and
+`desktop/payload-build`: the payload builder deletes both before staging TDLib.
+An installed or packaged app's library may have a different hash after signing
+and does not replace the pinned input for the legacy `original` variant.
+
+#### Explicit local reuse of the existing 2.1.38 runtime
+
+For an operator-authorized local development build, the retained StackOS
+2.1.38 payload built at `20261015T194308Z` is also an accepted, separately
+pinned input. Its packaged library SHA-256 is
+`25959b20294cd194a77a3f392718b518fc1c0ff12ed8eaf8c555845146da3739`.
+Copy that library outside the payload/build directories, then use:
+
+```bash
+TDLIB_LIBRARY_PATH=/absolute/path/to/retained/libtdjson.dylib \
+TDLIB_INPUT_VARIANT=stackos-2.1.38-packaged-local \
+  pnpm --dir desktop run dist:mac:dev
+```
+
+This variant requires `STACKOS_UNSIGNED_DEV=1` (set by `dist:mac:dev`) and
+rejects signing/update release requirements and any update URL, even when
+unsigned-release bypass flags are present. Normal builds default to the pinned
+npm input described above. An explicit `TDLIB_LIBRARY_PATH` without a variant
+selects `original` and requires the `c397db26…` input. No caller-supplied checksum
+override is supported.
+
+The builder checks the exact packaged input digest before inspecting or loading
+it, preserves the supplied file, and ad hoc signs and verifies only its staged
+copy. This replaces the retained artifact's unusable signature; it does not
+establish publisher identity. Architecture, system-only dependencies, TDLib
+version and native JSON ABI checks still run. The manifest retains the original
+input digest separately from the newly signed library digest and identifies
+source provenance as inherited from the packaged artifact, not independently
+rebuilt or verified from source. This local reuse path does not satisfy public
+release provenance or fix the source-build reproducibility gap.
+
+### Build the payload
+
+Build the Python payload using the automatic registry input (or an explicitly
+selected, verified legacy input):
+
+```bash
+make desktop-payload
+```
+
+`desktop/scripts/build-tdlib-runtime-mac.sh` stages only the selected pinned
 artifact with its expected SHA-256, ARM64-only slice, system-library-only
-dependencies, TDLib JSON ABI smoke, and source archive digest. It writes the
-payload-local `telegram-tdlib-runtime/manifest.json` beside the verified
-library. A source build is available only when the build machine provides an
-explicit CMake executable and static OpenSSL root; it must produce the same
-pinned library digest. The native asset remains outside the pure-Python wheel.
+dependencies, and TDLib JSON ABI smoke. It writes the pinned source identity
+into the payload-local `telegram-tdlib-runtime/manifest.json` beside the verified
+library. The registry variant records package integrity and input digest; only
+legacy proof variants record the inherited source archive digest. Prebuilt
+staging does not download or independently rebuild that source. The native asset
+remains outside the pure-Python wheel.
+
+The legacy `TDLIB_INPUT_VARIANT=original` source-build branch requires `git`, CMake, and an
+explicit static OpenSSL root. It checks a `git archive` digest before compiling
+and still requires the exact library hash above afterward. A clean fetch of
+the pinned commit checked on 2026-10-23 with Git 2.49.0 produced archive SHA-256
+`95da0cdae15b90abe54117499187c66380e5bed6ef760f11e01ce94ee44b4508`,
+which differs from the script's pinned
+`5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9`.
+This digest mismatch makes the fallback stop before compilation. It is not a
+verified way for a fresh machine to reproduce the pinned artifact; compiler, SDK, OpenSSL,
+and build-path inputs are not fully pinned either. Do not bypass either hash
+check to unblock a build. Repairing and proving source reproducibility is
+separate from obtaining the existing build input.
 
 The after-pack hook owns the final TDLib library signature and refreshes its
 manifest digest afterward. Electron-builder excludes only that exact library
@@ -318,6 +486,22 @@ STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 node desktop/scripts/build-mac.mjs
 ```
 
+Each build writes generated Electron and update configuration into its own
+temporary directory and keeps it until the build's children finish. Normal
+success and failure remove only that invocation's directory. Config tests use
+their own temporary roots, so running desktop doctor cannot remove a build's
+configuration. Payload, icon and distribution outputs still require exclusive
+ownership as described above.
+
+Dry runs do not write files by default. Set
+`STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG=1` to inspect generated configuration;
+successful dry runs print `generatedConfig` and `generatedUpdateConfig` paths
+and leave those files for the caller to remove. Optionally set
+`STACKOS_DESKTOP_CONFIG_ROOT` to an existing caller-owned directory to contain
+the unique invocation directories (the default is the OS temporary directory).
+The update resource uses an absolute source path, while its packaged name stays
+`update-config.json`. Signing inputs and release commands are unchanged.
+
 For an unsigned local smoke where release metadata should still be generated,
 make the bypass explicit:
 
@@ -356,14 +540,16 @@ installs those exact dependencies followed by the wheel without re-resolving
 them, writes `build-info.json`, and writes a small `bin/stackos` wrapper that
 the packaged Electron app can run. A stale lock or dependency conflict fails
 the payload build. The payload vendors a standalone CPython runtime under
-`.venv`, including the standard library, `lib-dynload`, `site-packages`,
+`.venv` (CPython `3.12.16` by default, overridable with
+`STACKOS_DESKTOP_PYTHON`), including the standard library, `lib-dynload`, `site-packages`,
 `bin/python`, and `libpython*.dylib`. Desktop payload builds use the same
 gstack installer helper as normal installs and include `browser-runtime` with
 the pinned upstream source, compiled CLI, Bun, locked dependencies, browser
 assets, licenses, and notices. After compilation and asset preparation, that
-shared installer removes the pinned Anthropic development SDK packages and
-ONNX Linux/Windows binaries from the ARM64 macOS payload. Darwin ONNX and
-Transformers remain for the native security classifier. The manifest's
+shared installer removes Claude Agent SDK development packages and ONNX
+Linux/Windows binaries from the ARM64 macOS payload. The upstream frozen
+production dependencies include the Anthropic SDK; it remains alongside Darwin
+ONNX and Transformers for browser features and the native security classifier. The manifest's
 packaging revision invalidates older managed layouts during install/repair.
 Native browser launch and persistent-profile
 continuity are release verification evidence rather than installer-time actions.
@@ -482,12 +668,43 @@ release system.
 
 ## Verification
 
-Scaffold checks that do not require Electron dependencies:
+Managed updates prepare through the packaged CLI before calling Electron's
+installer. The controller retains MacUpdater's `update-downloaded.downloadedFile`
+ZIP ref even when `downloadUpdate()` resolves an empty array, and disables
+installation on ordinary app quit. The CLI reads the exact staged build-info
+bytes; subsequent install/restart uses the shared maintenance transaction and
+requires target identity, health and doctor. Keep actual signed app
+install/relaunch proof separate from these source/fixture checks. See
+[upgrade continuity and bootstrap](upgrade.md#what-happens-during-upgrade).
+
+Dependency-light scaffold inspection needs Node.js and the source checkout,
+without installed desktop packages or a running Electron app:
 
 ```bash
-make desktop-doctor
-pnpm --dir desktop check
+node desktop/scripts/doctor.mjs
+node --check desktop/src/main.js
 ```
+
+The complete desktop check requires the packages in `desktop/package.json`,
+including the `electron-builder` dev dependency. Prepare them with the frozen
+lockfile before running either equivalent check command:
+
+```bash
+pnpm --dir desktop install --frozen-lockfile
+pnpm --dir desktop check
+# Equivalent to the preceding check, not an additional gate:
+make desktop-doctor
+```
+
+The `check` script runs syntax inspection, the scaffold doctor and regression
+scripts. In particular, `test-release-metadata-refresh.cjs` invokes
+`refresh-notarized-update-metadata.cjs`, which loads electron-builder's blockmap
+implementation; `test-build-mac-isolation.cjs` also loads its configuration and
+file-matching implementation. These checks use synthetic artifacts and do not
+launch the desktop app or perform signed release packaging. A missing builder
+module is a dependency setup failure, not a successful scaffold-only check.
+Do not install dependencies concurrently with checks or packaging that use the
+same dependency directory.
 
 Release checks, once dependencies and signing are configured:
 

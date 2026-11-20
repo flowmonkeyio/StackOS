@@ -9,6 +9,8 @@ sandboxing surgical.
 from __future__ import annotations
 
 import os
+import socket
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -18,7 +20,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 
 @pytest.fixture
-def sandbox_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def sandbox_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """Return a sandboxed `${HOME}` with a fake auth token in place.
 
     The fixture pre-creates `~/.local/state/stackos/auth.token`
@@ -34,9 +36,18 @@ def sandbox_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     token_path.write_text("test-token-deadbeef\n", encoding="utf-8")
     os.chmod(token_path, 0o600)
 
-    monkeypatch.setenv("STACKOS_HOME", str(home))
-    monkeypatch.setenv("HOME", str(home))
-    return home
+    # Reserve a non-listening port for the entire test. The real preparation
+    # probe sees no source daemon; another worker/service cannot take this port.
+    # Subprocesses still execute the actual CLI guard and use coherent settings.
+    with socket.socket() as reserved_port:
+        reserved_port.bind(("127.0.0.1", 0))
+        monkeypatch.setenv("STACKOS_HOME", str(home))
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("STACKOS_HOST", "127.0.0.1")
+        monkeypatch.setenv("STACKOS_PORT", str(reserved_port.getsockname()[1]))
+        monkeypatch.setenv("STACKOS_DATA_DIR", str(home / ".local" / "share" / "stackos"))
+        monkeypatch.setenv("STACKOS_STATE_DIR", str(state_dir))
+        yield home
 
 
 @pytest.fixture

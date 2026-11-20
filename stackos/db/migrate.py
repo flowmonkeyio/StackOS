@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
 
-from stackos.config import Settings
+from stackos.config import Settings, get_settings
 from stackos.db.connection import make_engine
 
 
@@ -33,7 +33,26 @@ def alembic_config(settings: Settings) -> Config:
     cfg.set_main_option("script_location", str(migrations_path))
     cfg.set_main_option("prepend_sys_path", str(repo_root))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")
+    cfg.attributes["stackos_settings"] = settings
     return cfg
+
+
+def migration_settings() -> Settings:
+    """Use the same installation for migration data and crypto as for its DB.
+
+    Programmatic startup/CLI callers pin Settings on the Alembic config.
+    Standalone Alembic retains its normal environment-based configuration.
+    Never reread ambient paths when the caller selected an installation.
+    """
+    from alembic import context
+
+    config = getattr(context, "config", None)
+    if config is not None and "stackos_settings" in config.attributes:
+        settings = config.attributes["stackos_settings"]
+        if not isinstance(settings, Settings):
+            raise TypeError("Migration settings must be a Settings instance.")
+        return settings
+    return get_settings()
 
 
 def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
@@ -42,8 +61,8 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
     Early/dev installs can have a fully materialised schema from
     ``SQLModel.metadata.create_all`` but no ``alembic_version`` table. Running
     ``upgrade head`` from base would then fail on the first ``CREATE TABLE``.
-    When the current head-shaped tables are already present, stamp the DB at
-    head.
+    Retain the known pre-catalog baseline, then let the normal catalog
+    migrations complete both missing and older tables before claiming head.
     """
     if not settings.db_path.exists():
         return False
@@ -70,10 +89,27 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
                     return False
             if not required_tables <= set(inspector.get_table_names()):
                 return False
+        # Stamping skips data migrations as well as DDL. Apply this one-time
+        # data repair through its canonical owner before recording head. Its
+        # audit marker makes a lost stamp/retry safe; failure leaves the old
+        # version eligible for retry rather than silently claiming completion.
+        from sqlmodel import Session
+
+        from stackos.repositories.tracker.ordering import normalize_default_columns
+        from stackos.repositories.tracker.receipt_projection import initialize_receipt_projection
+
+        with engine.begin() as connection:
+            initialize_receipt_projection(connection)
+            with Session(bind=connection) as session:
+                normalize_default_columns(session)
+                session.flush()
     finally:
         engine.dispose()
 
-    command.stamp(cfg, "head")
+    # create_all/checkfirst cannot add columns to an existing catalog. Replay
+    # its canonical additive migrations rather than bypassing them with a head
+    # stamp. Both tolerate already-created tables and lost revision stamps.
+    command.stamp(cfg, "0043_automations_homes_merge")
     return True
 
 

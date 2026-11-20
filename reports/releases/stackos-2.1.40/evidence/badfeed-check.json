@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-10-28T17:15:00.696Z",
+  "mode": "check",
+  "endpoint": "http://127.0.0.1:9238",
+  "targetId": "46E83129855739293018FE67B60BC882",
+  "targetUrl": "data:",
+  "result": {
+    "ok": false,
+    "reason": "Cannot find channel \"latest-mac.yml\" update info: HttpError: 404 File not found\n\"method: GET url: http://127.0.0.1:8765/missing/latest-mac.yml?noCache=1k61o436r\\n\\nPlease double check that your authentication token is correct. Due to security reasons, actual status maybe not reported, but 404.\\n\"\nHeaders: {\n  \"connection\": \"close\",\n  \"content-length\": \"460\",\n  \"content-type\": \"text/html;charset=utf-8\",\n  \"date\": \"Wed, 28 Oct 2026 17:15:00 GMT\",\n  \"server\": \"SimpleHTTP/0.6 Python/3.14.8\"\n}\n    at createHttpError (/Applications/StackOS.app/Contents/Resources/app.asar/node_modules/builder-util-runtime/out/httpExecutor.js:53:12)\n    at ElectronHttpExecutor.handleResponse (/Applications/StackOS.app/Contents/Resources/app.asar/node_modules/builder-util-runtime/out/httpExecutor.js:157:20)\n    at ClientRequest.<anonymous> (/Applications/StackOS.app/Contents/Resources/app.asar/node_modules/builder-util-runtime/out/httpExecutor.js:122:26)\n    at ClientRequest.emit (node:events:519:28)\n    at SimpleURLLoaderWrapper.<anonymous> (node:electron/js2c/browser_init:2:130549)\n    at SimpleURLLoaderWrapper.emit (node:events:519:28)",
+    "state": {
+      "enabled": true,
+      "status": "error",
+      "updateUrl": "http://127.0.0.1:8765/missing/",
+      "lastError": "Cannot find channel \"latest-mac.yml\" update info: HttpError: 404 File not found\n\"method: GET url: http://127.0.0.1:8765/missing/latest-mac.yml?noCache=1k61o436r\\n\\nPlease double check that your authentication token is correct. Due to security reasons, actual status maybe not reported, but 404.\\n\"\nHeaders: {\n  \"connection\": \"close\",\n  \"content-length\": \"460\",\n  \"content-type\": \"text/html;charset=utf-8\",\n  \"date\": \"Wed, 28 Oct 2026 17:15:00 GMT\",\n  \"server\": \"SimpleHTTP/0.6 Python/3.14.8\"\n}\n    at createHttpError (/Applications/StackOS.app/Contents/Resources/app.asar/node_modules/builder-util-runtime/out/httpExecutor.js:53:12)\n    at ElectronHttpExecutor.handleResponse (/Applications/StackOS.app/Contents/Resources/app.asar/node_modules/builder-util-runtime/out/httpExecutor.js:157:20)\n    at ClientRequest.<anonymous> (/Applications/StackOS.app/Contents/Resources/app.asar/node_modules/builder-util-runtime/out/httpExecutor.js:122:26)\n    at ClientRequest.emit (node:events:519:28)\n    at SimpleURLLoaderWrapper.<anonymous> (node:electron/js2c/browser_init:2:130549)\n    at SimpleURLLoaderWrapper.emit (node:events:519:28)",
+      "reason": null,
+      "updateInfo": {},
+      "progress": {}
+    }
+  }
+}

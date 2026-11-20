@@ -13,11 +13,13 @@ export function useProjectRouteScope(route: ProjectScopeRoute = useRoute()) {
   const isProjectRoute = computed(() => isProjectPath(route.path))
   const routeProjectId = computed(() => projectIdFromRoute(route))
   const projectId = computed(() => routeProjectId.value ?? Number.NaN)
-  const isValid = computed(
-    () => isProjectRoute.value && Number.isSafeInteger(projectId.value),
-  )
+  const isValid = computed(() => isProjectRoute.value && Number.isSafeInteger(projectId.value))
   const scopeKey = computed(() =>
-    isProjectRoute.value ? `project:${routeProjectId.value ?? 'invalid'}` : route.path,
+    isProjectRoute.value
+      ? `project:${routeProjectId.value ?? 'invalid'}`
+      : route.path === '/patterns' || route.path.startsWith('/patterns/')
+        ? '/patterns'
+        : route.path,
   )
 
   function changesProjectScope(to: ProjectScopeRoute): boolean {

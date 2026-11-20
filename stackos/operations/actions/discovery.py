@@ -9,7 +9,7 @@ from stackos.action_availability import ActionAvailabilityOut
 from stackos.actions import ActionDescribeOut, ActionRepository, ActionValidationOut
 from stackos.mcp.context import MCPContext
 from stackos.mcp.streaming import ProgressEmitter
-from stackos.repositories.plugins import ActionOut, PluginRepository
+from stackos.repositories.plugins import ActionOut, ActionSummaryOut, PluginRepository
 
 from .schemas import (
     ActionDescribeInput,
@@ -26,11 +26,15 @@ async def action_list(
     _emitter: ProgressEmitter,
 ) -> ActionListOut:
     project_id = inp.project_id if inp.project_id is not None else ctx.project_id
-    rows = PluginRepository(ctx.session).list_actions(
+    repo = PluginRepository(ctx.session)
+    # Schema search deliberately retains the detailed path. Unfiltered inventory
+    # needs metadata and current availability only, never schema-rich ActionOut.
+    read_actions = repo.list_actions if (inp.query or "").strip() else repo.list_action_summaries
+    rows = read_actions(
         plugin_slug=inp.plugin_slug,
         project_id=project_id,
     )
-    scored: list[tuple[ActionOut, float]] = []
+    scored: list[tuple[ActionSummaryOut, float]] = []
     for row in rows:
         score = _action_query_score(row, inp.query)
         if score <= 0:
@@ -71,7 +75,7 @@ async def action_list(
 
 
 def _matches_action_filters(
-    row: ActionOut,
+    row: ActionSummaryOut,
     *,
     provider_key: str | None,
     capability_key: str | None,
@@ -87,7 +91,7 @@ def _matches_action_filters(
 _SEARCH_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
-def _action_query_score(row: ActionOut, query: str | None) -> float:
+def _action_query_score(row: ActionSummaryOut, query: str | None) -> float:
     normalized_query = _normalize_search_text(query or "")
     if not normalized_query:
         return 1.0
@@ -110,7 +114,7 @@ def _action_query_score(row: ActionOut, query: str | None) -> float:
     return ratio * 10 + len(matched) / 100
 
 
-def _action_search_haystack(row: ActionOut) -> str:
+def _action_search_haystack(row: ActionSummaryOut) -> str:
     values: list[str] = [
         row.action_ref,
         row.key,
@@ -121,9 +125,10 @@ def _action_search_haystack(row: ActionOut) -> str:
         row.capability_key or "",
         row.risk_level,
     ]
-    values.extend(_json_search_values(row.config_json))
-    values.extend(_json_search_values(row.input_schema_json))
-    values.extend(_json_search_values(row.output_schema_json))
+    if isinstance(row, ActionOut):
+        values.extend(_json_search_values(row.config_json))
+        values.extend(_json_search_values(row.input_schema_json))
+        values.extend(_json_search_values(row.output_schema_json))
     return _normalize_search_text(" ".join(value for value in values if value))
 
 
@@ -191,7 +196,9 @@ def _search_token_variants(token: str) -> list[str]:
     return variants
 
 
-def _action_list_item(row: ActionOut, availability: ActionAvailabilityOut) -> ActionListItemOut:
+def _action_list_item(
+    row: ActionSummaryOut, availability: ActionAvailabilityOut
+) -> ActionListItemOut:
     return ActionListItemOut(
         action_ref=row.action_ref,
         plugin_slug=row.plugin_slug,
@@ -235,7 +242,9 @@ async def action_validate(
     _emitter: ProgressEmitter,
 ) -> ActionValidationOut:
     project_id = inp.project_id if inp.project_id is not None else ctx.project_id
-    return ActionRepository(ctx.session).validate(
+    settings = ctx.extras.get("settings")
+    asset_dir = getattr(settings, "generated_assets_dir", None)
+    return ActionRepository(ctx.session, asset_dir=asset_dir).validate(
         project_id=project_id,
         action_ref=inp.action_ref,
         plugin_slug=inp.plugin_slug,

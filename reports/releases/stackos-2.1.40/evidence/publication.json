@@ -1,0 +1,177 @@
+{
+  "captured_at": "2026-10-28T17:35:43.229093+00:00",
+  "released": true,
+  "version": "2.1.40",
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "tag": "v2.1.40",
+  "parent_run_plan_id": 718,
+  "publication_run_plan_id": 721,
+  "publication_run_id": 715,
+  "actions": [
+    {
+      "action_call_id": 12960,
+      "action_ref": "utils.ftp.file.upload",
+      "status": "success",
+      "completed_at": "2026-10-28T17:25:31.245846",
+      "output": {
+        "bytes_transferred": 490264828,
+        "completed": [
+          {
+            "bytes": 490264828,
+            "source_path": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.zip",
+            "target_path": "/StackOS/stackos-2.1.40-mac-arm64.zip",
+            "type": "file"
+          }
+        ],
+        "completed_count": 1,
+        "completed_paths": [
+          "/StackOS/stackos-2.1.40-mac-arm64.zip"
+        ],
+        "created_directories": [],
+        "created_directory_count": 0,
+        "failed": [],
+        "failed_count": 0,
+        "failed_paths": [],
+        "operation": "file.upload",
+        "provider": "ftp",
+        "skipped": [],
+        "skipped_count": 0,
+        "skipped_paths": [],
+        "status": "success"
+      },
+      "raw_receipt_path": "/tmp/stackos-release-20261028/provider-results/ftp-ftp.file.upload-20261028T172531Z-12960.json",
+      "raw_receipt_sha256": "8f53cd967bb834783581010fed6cead26705df755f006af1cfc98910264df74b"
+    },
+    {
+      "action_call_id": 12961,
+      "action_ref": "utils.ftp.file.upload",
+      "status": "success",
+      "completed_at": "2026-10-28T17:27:16.095766",
+      "output": {
+        "bytes_transferred": 485528254,
+        "completed": [
+          {
+            "bytes": 485528254,
+            "source_path": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg",
+            "target_path": "/StackOS/stackos-2.1.40-mac-arm64.dmg",
+            "type": "file"
+          }
+        ],
+        "completed_count": 1,
+        "completed_paths": [
+          "/StackOS/stackos-2.1.40-mac-arm64.dmg"
+        ],
+        "created_directories": [],
+        "created_directory_count": 0,
+        "failed": [],
+        "failed_count": 0,
+        "failed_paths": [],
+        "operation": "file.upload",
+        "provider": "ftp",
+        "skipped": [],
+        "skipped_count": 0,
+        "skipped_paths": [],
+        "status": "success"
+      },
+      "raw_receipt_path": "/tmp/stackos-release-20261028/provider-results/ftp-ftp.file.upload-20261028T172716Z-12961.json",
+      "raw_receipt_sha256": "0ffb8dfcbc04e3c24c2c098532ebaecb3ced9f7c139b10ae97612ea36c8f4bc9"
+    },
+    {
+      "action_call_id": 12962,
+      "action_ref": "utils.ftp.file.upload",
+      "status": "success",
+      "completed_at": "2026-10-28T17:28:38.610422",
+      "output": {
+        "bytes_transferred": 486538634,
+        "completed": [
+          {
+            "bytes": 505375,
+            "source_path": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.zip.blockmap",
+            "target_path": "/StackOS/stackos-2.1.40-mac-arm64.zip.blockmap",
+            "type": "file"
+          },
+          {
+            "bytes": 504492,
+            "source_path": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg.blockmap",
+            "target_path": "/StackOS/stackos-2.1.40-mac-arm64.dmg.blockmap",
+            "type": "file"
+          },
+          {
+            "bytes": 485528254,
+            "source_path": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-latest-mac-arm64.dmg",
+            "target_path": "/StackOS/stackos-latest-mac-arm64-2.1.40-staged.dmg",
+            "type": "file"
+          },
+          {
+            "bytes": 513,
+            "source_path": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/latest-mac.yml",
+            "target_path": "/StackOS/latest-mac-2.1.40-staged.yml",
+            "type": "file"
+          }
+        ],
+        "completed_count": 4,
+        "completed_paths": [
+          "/StackOS/stackos-2.1.40-mac-arm64.zip.blockmap",
+          "/StackOS/stackos-2.1.40-mac-arm64.dmg.blockmap",
+          "/StackOS/stackos-latest-mac-arm64-2.1.40-staged.dmg",
+          "/StackOS/latest-mac-2.1.40-staged.yml"
+        ],
+        "created_directories": [],
+        "created_directory_count": 0,
+        "failed": [],
+        "failed_count": 0,
+        "failed_paths": [],
+        "operation": "file.upload",
+        "provider": "ftp",
+        "skipped": [],
+        "skipped_count": 0,
+        "skipped_paths": [],
+        "status": "success"
+      },
+      "raw_receipt_path": "/tmp/stackos-release-20261028/provider-results/ftp-ftp.file.upload-20261028T172838Z-12962.json",
+      "raw_receipt_sha256": "b4ced5b53a21dfae1d74f002feb2899ac60f788b16f2eb9b0ebf13de2835f8b9"
+    },
+    {
+      "action_call_id": 12963,
+      "action_ref": "utils.ftp.path.rename",
+      "status": "success",
+      "completed_at": "2026-10-28T17:33:08.810426",
+      "output": {
+        "destination_path": "/StackOS/stackos-latest-mac-arm64.dmg",
+        "operation": "path.rename",
+        "provider": "ftp",
+        "source_path": "/StackOS/stackos-latest-mac-arm64-2.1.40-staged.dmg",
+        "status": "success"
+      },
+      "raw_receipt_path": "/tmp/stackos-release-20261028/provider-results/ftp-ftp.path.rename-20261028T173308Z-12963.json",
+      "raw_receipt_sha256": "25582cd8e0dc87a69e948e60e12153a0228bb0f7783b8e971168cf070cb1ff79"
+    },
+    {
+      "action_call_id": 12964,
+      "action_ref": "utils.ftp.path.rename",
+      "status": "success",
+      "completed_at": "2026-10-28T17:33:28.259139",
+      "output": {
+        "destination_path": "/StackOS/latest-mac.yml",
+        "operation": "path.rename",
+        "provider": "ftp",
+        "source_path": "/StackOS/latest-mac-2.1.40-staged.yml",
+        "status": "success"
+      },
+      "raw_receipt_path": "/tmp/stackos-release-20261028/provider-results/ftp-ftp.path.rename-20261028T173328Z-12964.json",
+      "raw_receipt_sha256": "ead05c16020bce5496b909bdf8ed4d9bf359409843e03c60070f3439dddc758a"
+    }
+  ],
+  "uncertain_outcomes": [],
+  "failed_actions": [],
+  "public_feed": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml",
+  "public_download": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg",
+  "verification_refs": [
+    "public-staged.json",
+    "public-channel.json",
+    "artifacts.json",
+    "tag.json",
+    "channel-precondition.json"
+  ],
+  "previous_versioned_artifacts_preserved": true
+}

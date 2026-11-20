@@ -93,6 +93,14 @@ test("denial forwards state and error while ignoring provider metadata", () => {
   assert.equal(destination.searchParams.has("error_uri"), false);
 });
 
+test("QuickBooks returns one numeric realm to the fixed loopback callback", () => {
+  const result = runRelay(
+    `${publicOrigin}${callbackPath}?state=s&code=c&realmId=001234&scope=ignored`,
+  );
+  assert.equal(result.navigations.length, 1);
+  assert.equal(result.navigations[0], `${localOrigin}${callbackPath}?state=s&code=c&realmId=001234`);
+});
+
 const invalidCallbacks = [
   ["requires HTTPS", `http://auth.stackos.flowmonkey.io${callbackPath}?state=s&code=c`],
   ["requires the configured host", `https://other.example${callbackPath}?state=s&code=c`],
@@ -107,6 +115,11 @@ const invalidCallbacks = [
   ["bounds state", `${publicOrigin}${callbackPath}?state=${"s".repeat(513)}&code=c`],
   ["bounds code", `${publicOrigin}${callbackPath}?state=s&code=${"c".repeat(4097)}`],
   ["bounds error", `${publicOrigin}${callbackPath}?state=s&error=${"e".repeat(201)}`],
+  ["rejects duplicate realm", `${publicOrigin}${callbackPath}?state=s&code=c&realmId=1&realmId=1`],
+  ["rejects empty realm", `${publicOrigin}${callbackPath}?state=s&code=c&realmId=`],
+  ["rejects nonnumeric realm", `${publicOrigin}${callbackPath}?state=s&code=c&realmId=abc`],
+  ["rejects non-ASCII realm", `${publicOrigin}${callbackPath}?state=s&code=c&realmId=１２３`],
+  ["bounds realm", `${publicOrigin}${callbackPath}?state=s&code=c&realmId=${"1".repeat(33)}`],
 ];
 
 for (const [name, href] of invalidCallbacks) {

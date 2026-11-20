@@ -306,6 +306,20 @@ def _launchd_plist_content(
     return plistlib.dumps(payload, sort_keys=False)
 
 
+def _launchd_install_context_error(
+    settings: Settings, *, home: Path, host: str, port: int
+) -> str | None:
+    ownership = _launchd_context_ownership(home, settings=settings, host=host, port=port)
+    if ownership.persisted is not None and not ownership.matches:
+        return (
+            "installed launchd job belongs to a different data/state/host/port context; "
+            "use its matching settings. A different port does not isolate this shared job."
+        )
+    # An explicitly forced malformed/stale plist remains repairable through
+    # the existing installer, after source maintenance has proved quiescence.
+    return None
+
+
 def _install_launchd_autostart(
     settings: Settings,
     *,
@@ -317,6 +331,8 @@ def _install_launchd_autostart(
 ) -> tuple[bool, str]:
     if shutil.which("launchctl") is None:
         return False, "launchctl is not on PATH; launchd autostart requires macOS."
+    if issue := _launchd_install_context_error(settings, home=home, host=host, port=port):
+        return False, issue
     try:
         _launchd_domain()
     except RuntimeError as exc:

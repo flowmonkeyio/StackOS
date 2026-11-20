@@ -1,0 +1,85 @@
+{
+  "checked_at": "2026-10-07T02:12:30.543018+00:00",
+  "files": [
+    {
+      "actual": {
+        "size": 489994246
+      },
+      "etag": "\"1d34b806-6ac5aa13-8a3891b2e3bb7bb0;;;\"",
+      "expected": {
+        "sha256": "2b53fb4c796e7310cfcccab3d39264e8604d5be33794cc2431ced6f5ac49905a",
+        "sha512": "fuO/scKDBoggNaNV2QHalvCQaEDWjz3VAKY7GCyS9KdnYPRH+hLqLnrA0cF/BvLkuR+QLzAhM92L/zNvTJmsFg==",
+        "size": 489994246
+      },
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.dmg",
+      "installer_body_downloaded": false,
+      "last_modified": "Wed, 07 Oct 2026 02:10:27 GMT",
+      "method": "HEAD",
+      "name": "stackos-2.1.35-mac-arm64.dmg",
+      "passed": true,
+      "status": 200,
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.dmg"
+    },
+    {
+      "actual": {
+        "size": 494276145
+      },
+      "etag": "\"1d760e31-6ac5aa49-4b29964852234303;;;\"",
+      "expected": {
+        "sha256": "37b580aac1d28dce29f7c86dd584122cd54ca9f0ddeeab76a1b5dffe841c74da",
+        "sha512": "hrKplUBxsblkAo1K7k9+KOjMxZpd/+7BZESp2UfJ3LfIu1D72KT+RBQVSRgRprGv6sBCXZVEsVafQnNy3Rsiaw==",
+        "size": 494276145
+      },
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.zip",
+      "installer_body_downloaded": false,
+      "last_modified": "Wed, 07 Oct 2026 02:11:21 GMT",
+      "method": "HEAD",
+      "name": "stackos-2.1.35-mac-arm64.zip",
+      "passed": true,
+      "status": 200,
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.zip"
+    },
+    {
+      "actual": {
+        "size": 507976
+      },
+      "etag": "\"7c048-6ac5aa49-87de5d4080c77567;;;\"",
+      "expected": {
+        "sha256": "3a72df6005d433aa8db6db5e7a86b262f9af11e48a786fbfbe6ae1283a4c0b98",
+        "sha512": "g7483zJVIdaDh3ZO8O8uiktI7lkfV/g7O99OFJuCJPgcRxbHnrTNrVUYGzhvtOvIVRVFMqd9qJMn8eCQ9l0LzQ==",
+        "size": 507976
+      },
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.dmg.blockmap",
+      "installer_body_downloaded": false,
+      "last_modified": "Wed, 07 Oct 2026 02:11:21 GMT",
+      "method": "HEAD",
+      "name": "stackos-2.1.35-mac-arm64.dmg.blockmap",
+      "passed": true,
+      "status": 200,
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.dmg.blockmap"
+    },
+    {
+      "actual": {
+        "size": 511964
+      },
+      "etag": "\"7cfdc-6ac5aa4a-3bd0dfa9b6920c67;;;\"",
+      "expected": {
+        "sha256": "76c6ad8d9fa02699a9a18930d6e61c25d0294e5a47738a05e660d96da7c3dfa5",
+        "sha512": "diRxoOPOQ+8hRw29lqGquS3zzzP77hy50mLsD3nXzkKXzmHYcSNMWBlQMY7kfC3bXrPKcotsZLkwTtPKK0u6VQ==",
+        "size": 511964
+      },
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.zip.blockmap",
+      "installer_body_downloaded": false,
+      "last_modified": "Wed, 07 Oct 2026 02:11:22 GMT",
+      "method": "HEAD",
+      "name": "stackos-2.1.35-mac-arm64.zip.blockmap",
+      "passed": true,
+      "status": 200,
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.35-mac-arm64.zip.blockmap"
+    }
+  ],
+  "limits": "Per operator revision5: artifact HEAD status/size only; small feed bytes compared. No public installer/archive-body download or public archive hash claim. No local activation.",
+  "manifest_sha256": "ac4e0dc16e6b853676109fc263e0149c9c5f362e90fa71f046c5580bb869fd01",
+  "mode": "versioned",
+  "passed": true
+}

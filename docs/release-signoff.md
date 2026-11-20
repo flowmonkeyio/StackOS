@@ -13,16 +13,215 @@ make signoff
 
 - `make lint`
 - `make typecheck`
-- `make test-transfer-connectors` for Amazon S3 and FTP manifest, auth,
-  integration, action, MCP/grant/audit, response-file, regression, and wheel
-  packaging proof
-- targeted pytest coverage for unit contracts, REST operations, CLI mock
-  provider execution, REST/CLI/MCP operation parity, auth setup, Telegram TDLib
-  Account setup-to-action flow, Slack signed-ingress/action flow, SMTP/IMAP mocked
-  connectors, MCP action, tracker, and communication setup execution, workflow
-  template loading, and action/auth/tracker repositories
+- `make test-python`: the complete `tests/` suite, including unit contracts,
+  repositories, REST/CLI/MCP parity, integrations, migrations, app lifespan,
+  install scripts, and wheel packaging; the 20 slowest tests are reported
 - UI unit tests
 - the UI production build into `stackos/ui_dist/`
+
+Python tests choose worker processes automatically, capped at six, with each test file
+kept on one worker. Vitest also caps workers at six, with a minimum of one so
+machines with more CPU cores do not produce conflicting pool limits.
+The signoff UI build waits for all checks to finish because
+it rewrites the committed bundle that wheel packaging tests read. UI dependency
+preparation uses the frozen lockfile and runs once per Make invocation, shared
+by the UI test and build targets. Standalone UI targets also prepare their deps.
+Preparation streams pnpm's diagnostics and reports its exit status on failure;
+it does not retry with an unlocked install or another package manager. A failed
+`ui-deps` prerequisite stops its consuming UI checks. Finish dependency setup
+before running checks against that environment; do not run a separate install
+concurrently with signoff. For desktop checks, the standalone Node scaffold
+doctor and the complete `make desktop-doctor` have different prerequisites; see
+[desktop verification](./desktop-distribution.md#verification).
+
+Use one complete gate for an unchanged candidate. `make test` runs the same
+Python suite and UI unit tests; running it and then `make signoff` in separate
+invocations repeats that work. Use focused checks during editing and one final
+`make signoff`. Repeat affected checks when code or relevant inputs change.
+
+The previous signoff ran the transfer-connector slice separately before a
+curated suite. This repeated six files: connector contract docs, plugin
+manifests, operation responses, S3 transport, FTP transport, and auth providers.
+Those tests now run once as part of the complete Python suite. Keep
+`make test-transfer-connectors` as a focused iteration command. Repository,
+transport, and MCP tests remain separate where they detect distinct failures,
+including grants, credential handling, response files, and audit persistence.
+Do not remove those assertions or skip slow tests to meet the runtime budget.
+
+Closeout uses the existing [incident resolution method](./feedback-resolution-spec.md#learn-during-current-delivery)
+to link selected failures and useful review findings to reviewed changes, adoption
+and later observation. Required current defects remain blockers. Retain decisive
+facts and refs in receipts; keep temporary logs, captures and QA scratch outside
+Git while maintaining intentional product assets and regressions. Source review,
+saved-instruction readback, isolated native consumption and primary installed
+activation need their own evidence. Pending later use stays pending; one fixture
+cannot establish production prevention. Final integrated signoff remains required
+even when ticket-local guidance checks pass.
+
+Classify each failure against the assigned criteria, affected consumers and owning
+gate. Pre-existing alone does not establish that a defect is unrelated. An ordinary
+ticket whose criteria pass can return candidate-ready and receive independent
+approval when an extra full-suite check exposes an unrelated defect. Preserve the
+failed command, exact candidate and evidence in the existing receipt and nonblocking
+followups; do not turn it into that ticket's failure, rejection, blocker, dependency
+or required repair. A followup grants no authority to fix or create work; separate
+repair authorization remains explicit. Necessary corrections without an owner or
+authority remain unresolved at the affected gate and route to main.
+
+Relevant failed or unavailable required checks still prevent acceptance at their
+owning gate. If complete signoff is required by the current gate, a failed check
+prevents final approval. Never describe a failed signoff command as passed or
+retroactively fail unrelated accepted children. Preserve the observation and route
+its required correction through existing ownership, without a new scheduler or
+weakened final-signoff requirement.
+
+Choose ticket-local checks from the requested flow, actual directly affected
+consumers and relevant failure/recovery transitions. Stop expanding after those
+obligations are answered unless new evidence, a material change or a mandatory
+gate warrants more. This does not replace the final integrated signoff above.
+For migration, shared UI and lifecycle-fixture changes, apply
+[retained consumer and fixture safeguards](./integration-testing.md#retained-consumers-and-lifecycle-fixtures)
+at the affected gate, using the actual emitted contract. Reuse the shipped
+regressions; this adds no broad per-child suite or installed-upgrade M2 gate.
+Judge a command by its actual exit status, completion and unhandled errors as
+well as assertions: green assertions with a nonzero exit or unhandled error are
+failed proof. Repair affected code, fixtures or setup without weakening their
+guarantees, and retain the failed observation when later proof supersedes it.
+
+At each gate, identify evidence executed on the current candidate, unchanged
+proof reused with covered-scope/prerequisite/environment justification, stale
+changed-consumer proof needing rerun and required never-executed checks. Reuse
+does not waive mandatory final signoff. Keep dependency-mutating setup exclusive
+against checks consuming that environment; run readiness checks after the relevant
+transition. Select concrete commands here and in affected local docs, not core
+runtime policy. A bounded guidance exercise records explicit source consumption
+and observed actions; phrase checks or hashes alone do not establish behavior.
+
+For affected authorization boundaries, prove the legitimate owner call and the
+denied foreign call through the real caller, including the response envelope and
+absence of unauthorized mutation. A reproduced invariant failure requires a
+bounded check of other active producers, retained consumers and implicated recovery
+transitions. Keep distinct rules separate: formatter or transport checks cannot
+establish the Vue watcher prohibition, and passing UI tests cannot establish Python
+lint. An absent required check stays not reviewed until executed. Record why a
+reject or rerun was needed; useful rejects, changed evidence and newly covered
+obligations are not token waste merely because attempts or totals increased.
+
+## Test Runtime And Maintenance
+
+The complete automated signoff should stay below ten minutes on a prepared
+development machine. Dependency downloads and live-provider/manual release
+proofs are separate setup and release activities.
+
+The default pytest configuration chooses workers automatically, capped at six,
+and keeps each test file on one worker:
+
+```toml
+addopts = ["-ra", "--strict-markers", "-n", "auto", "--maxprocesses=6", "--dist=loadfile"]
+```
+
+Concurrency is a throughput setting, not a substitute for fixing repeated work.
+Run source tests through pytest so `tests/conftest.py` clears inherited
+`STACKOS_DATA_DIR`, `STACKOS_HOST`, `STACKOS_LOG_LEVEL`, `STACKOS_PACKAGED_CLI`,
+`STACKOS_PORT`, and `STACKOS_STATE_DIR` before each test's fixtures run:
+
+```bash
+env -u PYTHONHOME -u PYTHONPATH .venv/bin/python -m pytest tests/ -q
+```
+
+Tests that need non-default settings set them explicitly through fixtures,
+`monkeypatch`, or `Settings` arguments and use disposable data/state directories
+or a sandbox HOME. The reset applies only to source tests; production host
+subprocesses still inherit their service settings and CLI PATH context.
+
+For a bounded subprocess timeout, preserve the failing command, candidate,
+stdout/stderr and suite context before diagnosis. The Finance evidence FIFO
+regression in `tests/integration/test_routes/test_finance_project_storage.py`
+has a two-second alarm around the evidence read and a separate 15-second
+subprocess deadline that includes imports and fixture setup. A subprocess
+timeout alone does not identify a blocked evidence read. Check the exact
+variants in isolation and, when needed, once in the original suite context
+with stable dependencies and the normal worker cap. An isolated pass does not
+turn a failed signoff into a pass. Retain both safeguards; change the harness
+only for a demonstrated cause, and route a recurring unexplained timeout to
+the existing test owner with stage/timing evidence rather than raising the
+deadline blindly. Finance functionality outside that reproduced cause remains
+separately scoped work.
+
+The 2026-10-26 audit removed these costs while retaining distinct failure checks:
+
+| Bottleneck or redundancy | Change and retained proof |
+| --- | --- |
+| Duplicate signoff slices, dependency setup and catalog/startup scenarios | One complete Python gate; combined repeated assertions; separate protocols, historical migrations and recovery paths remain. |
+| Rebuilding schemas and builtin catalogs for consumer tests | Clone immutable results of real initialization into independent databases; dedicated bootstrap tests still start empty. Isolation, constraints, PRAGMAs and source changes are checked. |
+| Repeated successful account probes in Stripe business tests | Real encrypted credentials with an acquired account identity; named success/failure probe tests retain identity and audit proof. |
+| Real retry delays, shared rate buckets and no-op-sleep busy loops | Explicit virtual provider clocks retain real limiter/retry loops and scheduling; lifecycle/concurrency clocks remain unchanged. |
+| Repeated schema/YAML parsing, deep copies and nested validation | Bounded source caches and one ownership copy; changed sources, malformed references, secrets, adaptation rules and caller mutation remain checked. |
+| Full provider metadata scans for a known provider | Refresh the requested provider; full listing/sync still refreshes all providers. Credentials, permissions and auth results are not cached. |
+| Browser environments for pure UI tests | 40 audited source/data/state specs use Node; browser/component specs retain jsdom. All test bodies and assertions remain. |
+| Stale inventories and always-skipped retired skill checks | Current authoritative catalogs, precise rejection checks and mandatory packaged-skill validation replace obsolete expectations. |
+| Repeated MCP registration and discarded schemas | One operation registry per app; response-policy metadata uses the existing summary API. Tool contracts and app isolation remain checked. |
+| Repeated decoding of joined catalog parents | Load each plugin/provider once per action listing; preserve live state, visibility, ordering and availability, including concurrent parent deletion. |
+| Daemon imports during standalone bridge startup | Lazy package exports retain canonical objects and static types; real subprocess, cancellation and persistence tests remain. |
+| Revalidating native connector catalogs per action call | Reuse the package's canonical client; credentials, transports, execution context and native implementations remain separate per call. Dynamic Trackbooth catalogs stay separate. |
+| Repeated migration and GraphQL test preparation | Reuse pristine pre-upgrade schema bytes and one schema for fixed-document validation; tested upgrades, failure paths, ciphertext and schema-drift variants remain independent. |
+| Process state leaking between isolated tests | Reset host rate buckets between integration cases and restore crypto configuration after temporary migration setup; repository cases bind their own seed before use. |
+
+### Historical Evidence And Serial Verification
+
+Before integrating `origin/main` at `7884de2`, serial signoff for the task
+branch based on `c76238b` passed in **536.476s (8m 56s)** against a saved
+1,350.936s (22m 31s) baseline. The verified code candidate, rewritten as
+`c1d0ccc`, passed 4,017 Python tests with no skips and 427 UI tests in 101 files,
+plus lint, formatting, mypy and the production build. Make ran sequentially,
+pytest used `-n0`, and Vitest used one worker. The baseline's Python run was
+serial; its UI runner used the prior default settings. A separate default-worker
+gate (automatic, capped at six) at `2d09580` passed in 120.395s. These timings
+and case counts do not establish results for the merged candidate.
+
+After integrating current main `7884de2`, complete serial signoff at `9e7503d`
+passed in **578.586s (9m 39s)**, down from the saved **631.888s (10m 32s)**
+checkpoint. It passed **5,427 Python tests with no skips** and **675 UI tests in
+113 files**, plus lint, formatting, mypy and the production build. This is the
+accepted serial audit result; the default uses the worker caps above.
+
+Final default parallel signoff passed in **130.481s (2m 10s)** with **5,433
+Python tests and 675 UI tests**, plus all static checks and the production
+build. The run recorded exactly six Python workers; Vitest used its configured
+six-worker cap. The six additional Python cases verify crypto-state restoration
+after temporary migration setup succeeds or fails. This fixture repair and the
+UI pool bounds were verified by the final parallel gate; the serial measurement
+above remains pinned to its original candidate.
+
+| Serial suite | Cases | Seconds |
+| --- | ---: | ---: |
+| MCP | 680 | 161.934 |
+| Repositories | 1,985 | 148.630 |
+| REST | 306 | 66.571 |
+| Unit | 1,940 | 65.996 |
+| Migrations/schema | 28 | 22.068 |
+| Connectors | 426 | 20.064 |
+| Install/packaging | 45 | 17.398 |
+| Lifecycle, jobs and backup recovery | 17 | 2.025 |
+| Complete Python runner | 5,427 | 506.863 |
+| UI runner | 675 | 45.720 |
+
+Suite rows sum individual case durations; runner and complete-gate times also
+include their own overhead. The complete gate includes dependency preparation,
+static checks and the production build. Reproduce serial verification with:
+
+```bash
+PYTEST_ADDOPTS='-n0 --junitxml=/tmp/stackos-serial.xml' make -j1 signoff UI_TEST_ARGS='--maxWorkers=1 --minWorkers=1 --no-file-parallelism'
+```
+
+Detailed measurements, case/file timings, profiles, logs and the history-rewrite
+map are saved outside Git at
+`/Users/sergeyrura/.local/share/tpf/stackos-test-audit-20261026/`.
+Use saved results to analyze the historical candidate; changed code or gate
+scope requires new verification. Keep generated timing dumps out of repository
+history.
+
+## Included Contract Coverage
 
 AIGNC generation also exercises shared background acceptance, polling,
 idempotent submission replay, timeout failure, and terminal file/artifact
@@ -46,6 +245,15 @@ Google resource access still requires an operator-configured Account. The
 while the local-admin REST setup can test a global Account.
 `test_mcp_auth_provider_wrappers.py` covers provider checks and safe failure
 diagnostics through that same project-scoped MCP path.
+
+Google Indexing coverage includes `test_google_indexing_actions.py` and
+`test_mcp_google_indexing.py`, plus the single and batch transport suites in
+`test_integrations`. Synthetic keys and mocked HTTP cover token-only setup,
+publish/metadata actions, batch limits and correlation, direct/granted execution,
+successful replay, complete response files and partial-error audit. Shared Google
+MIME regressions preserve Search Console behavior, including sitemap submission
+and safe Retry-After advice. These checks do not establish live Google site
+permissions, quota approval, indexing or removal.
 
 Telegram restoration coverage includes the native authorization, Account session
 operation, and app lifespan suites. These exercise failed startup restoration,
@@ -81,13 +289,14 @@ touches committed UI assets.
 | Account, OAuth, and Connection lifecycle | Global named Accounts, explicit multi-project attachments, fixed callback/state/PKCE, migration, renewal, scope gates, and sanitized failures stay aligned. | `uv run pytest tests/integration/test_repositories/test_oauth_lifecycle.py tests/integration/test_routes/test_auth_provider_routes.py tests/integration/test_repositories/test_auth_providers.py tests/integration/test_repositories/test_global_accounts.py tests/integration/test_schema.py::test_global_account_migration_preserves_and_reencrypts_legacy_credentials -q`<br>`pnpm --dir ui exec vitest run src/views/AccountsView.spec.ts src/views/ConnectionsView.accounts.spec.ts` |
 | Direct action execution | `action.describe/validate/run` and direct dry-runs use the same connector/auth/audit path. | `uv run pytest tests/integration/test_mcp/test_mcp_actions.py tests/integration/test_routes/test_cli_mock_provider.py -q` |
 | AIGNC model and media actions | Explicit model selection, opt-in grounding, managed audio/artifacts, daemon-held auth, response files and retry diagnostics use the shared execution path; pricing stays excluded. | `uv run pytest tests/unit/test_aignc_manifest.py tests/integration/test_integrations/test_aignc.py tests/integration/test_repositories/test_aignc_actions.py tests/integration/test_repositories/test_aignc_auth.py tests/integration/test_mcp/test_mcp_aignc_actions.py -q` |
-| Finance external-backend workflows | Six finance templates, five focused specialists plus an independent reviewer, main-agent skill/orchestrator guidance, safe reference outputs, technical approval gates, and external prepared bookkeeping/13-week cashflow/annual tax packets load and resolve without finance state in StackOS. | `uv run pytest tests/unit/test_finance_plugin.py tests/unit/test_finance_json_schema.py tests/unit/test_finance_workspace_contract.py tests/unit/test_finance_imap_handoff_contract.py tests/unit/test_agent_presets.py tests/unit/test_skill_presets.py tests/integration/test_repositories/test_finance_workflows.py tests/integration/test_mcp/test_mcp_agent_presets.py -q` plus the agent-executed rehearsal below |
+| Finance project-file workflows | Seven finance templates, five focused specialists plus an independent reviewer, main-agent skill/orchestrator guidance, safe reference outputs, technical approval gates, and external prepared bookkeeping/13-week cashflow/annual tax packets load and resolve without a financial ledger in the core database. | `uv run pytest tests/unit/test_finance_plugin.py tests/unit/test_finance_json_schema.py tests/unit/test_finance_workspace_contract.py tests/unit/test_finance_imap_handoff_contract.py tests/unit/test_agent_presets.py tests/unit/test_skill_presets.py tests/integration/test_repositories/test_finance_workflows.py tests/integration/test_mcp/test_mcp_agent_presets.py -q` plus the agent-executed rehearsal below |
+| Project Finance storage and recovery | Default initialization, retained migration, strict project identity, missing-original gaps, encrypted two-project round trip and inert adoption preserve source records and generations. | `uv run pytest tests/integration/test_routes/test_finance_project_storage.py tests/integration/test_routes/test_finance_backup_integration.py tests/unit/test_backup_project_files.py -q` plus Finance/Backup component tests and a local synthetic preview |
 | Stripe finance transport | Pinned API, daemon-held auth, explicit invoice currency, selected required/optional observations, typed reconciliation and unavailable-linkage recovery, fixed no-charge settlement/report forms, retry veto/idempotency conflict safety, test-only send status, separate gates and non-authoritative audit stay intact. | `uv run pytest tests/integration/test_integrations/test_stripe_transport.py tests/integration/test_repositories/test_stripe_actions.py tests/integration/test_mcp/test_mcp_stripe_actions.py tests/integration/test_mcp/test_mcp_finance_billing_workflow.py tests/integration/test_repositories/test_actions.py -q` |
 | Integrated finance billing | One billing role follows instructed/documented Stripe or SMTP routes; actual payment-request/follow-up templates execute through isolated MCP and mocked Stripe HTTP and mocked SMTP with external fixture records: two exact lines, distinct finalization/send gates, paid-before-send suppression, unknown-send recovery, and full/partial bank receipts with lost report or attachment responses. | `uv run pytest tests/integration/test_mcp/test_mcp_finance_billing_workflow.py tests/integration/test_mcp/test_mcp_finance_email_followups.py -q`; these tests simulate agent/owner judgment and provider responses, not real email delivery or production custody. |
 | IMAP finance evidence handoff | Verified TLS, UID-only read-only `BODY.PEEK[]` export, bounded MIME staging, host store-before-ack, epoch-qualified `mark_seen`, and transfer-id-only cleanup remain separate; raw evidence never becomes a StackOS record. | `uv run pytest tests/integration/test_repositories/test_imap_actions.py tests/unit/test_finance_imap_handoff_contract.py -q` |
 | S3 and FTP transfer connectors | Both providers keep their seven explicit file-management action categories while S3 preserves flat-key, AWS-policy authorization, conditional/versioning, bounded-prefix, and non-atomic move semantics. Direct and granted calls retain response-file and audit evidence without secrets. | `make test-transfer-connectors`<br>`pnpm --dir ui exec vitest run src/components/domain/ProviderMark.spec.ts` |
 | Workflow/run-plan execution | `runPlan.validate/create/start/claimStep/recordStep`, step grants, and non-executable warnings behave predictably. | `uv run pytest tests/unit/test_run_plan_schema.py tests/integration/test_mcp/test_mcp_run_plans.py tests/integration/test_mcp/test_mcp_tool_grants.py -q` |
-| Tracker task/ticket workflow | Bulk create/review/update, dependency previews, compact reads, history, and verification stay agent-friendly. | `uv run pytest tests/integration/test_mcp/test_mcp_tracker.py tests/integration/test_repositories/test_tracker.py tests/unit/test_operation_responses.py tests/unit/test_operations_registry.py -q` |
+| Tracker task/ticket workflow | Bulk create/review/update, dependency previews, compact reads, history, and verification stay agent-friendly. | `uv run pytest tests/integration/test_mcp/test_mcp_tracker.py tests/integration/test_repositories/test_tracker.py tests/unit/test_operation_responses.py tests/unit/test_operations_registry.py -q`  For timing, usage or stream changes, select the [retained history cases](./integration-testing.md#state-history-and-lifetime). |
 | Communication delivery | `communicationTarget.resolve`, `communication.send/reply`, dry-run effects, rich-feature rejection, local chat, and stored context field repair are clear. | `uv run pytest tests/integration/test_mcp/test_mcp_communications.py -q` |
 | Communication ingress | Slack ingress verifies transport auth, stores normalized resources, and creates agent requests only through shared policy. Telegram updates are verified and normalized by the Account-owned TDLib runtime. | `uv run pytest tests/integration/test_routes/test_slack_ingress_routes.py tests/integration/test_routes/test_telegram_ingress_retirement.py -q` |
 | Agent request handoff | Agent requests claim, prepare run plans atomically, link, complete, release, and hide claim tokens correctly. | `uv run pytest tests/integration/test_mcp/test_mcp_agent_requests.py tests/integration/test_repositories/test_agent_requests.py -q` |
@@ -104,6 +313,78 @@ Use the finance package's [signoff and activation checklist](../plugins/finance/
 for its synthetic-month rehearsal, external custody and selected provider-route
 checks. Passing fixtures proves the package contract, not production activation
 or authorization for live financial work.
+
+## Accepted Sources And Release Identity
+
+Before building a release, the named main integration/release owner reconciles
+the intended accepted source set in the existing release preparation or receipt.
+Ticket completion or the name `main` alone does not establish that set. Record:
+
+- Each admitted ticket/branch, exact accepted commit, independent review ref,
+  required prerequisites and inclusion evidence in the integration candidate.
+- Explicit excluded branches/work, their reason and the operator decision or
+  resume condition. Acceptance elsewhere does not admit an excluded branch.
+- The named integration owner, exact candidate commit, working tree and dirty
+  baseline, plus the owners of build outputs and the shared installed runtime.
+
+Use `git merge-base --is-ancestor <accepted-sha> <candidate-sha>` for each
+accepted merge-preserved source. Exit `1` means missing ancestry; other errors
+mean the check failed to execute. For cherry-picks or conflict resolutions,
+record the accepted-to-integrated commit mapping and independently reviewed
+diff/behavior evidence instead of treating missing ancestry as inclusion.
+Inspect the affected paths and prerequisites for reversions or overwritten fixes;
+ancestry alone cannot prove retained behavior. Reuse unchanged accepted fixes and
+valid proof; resolve omissions with the existing accepted source rather than
+reimplementing it. Main admits sources and resolves integration conflicts, then
+reruns affected proof and review when merged behavior changes.
+
+Execute the existing release path in this order, retaining evidence in that same
+receipt rather than creating another install tracker:
+
+1. Reconcile admitted/excluded sources and freeze the integration candidate.
+2. Run required integrated signoff once on that candidate, including the UI
+   production bundle. Record the resulting commit and generated asset hashes;
+   if generation changes the candidate, bind proof to the final committed state.
+3. Build the payload and package from that verified state using the existing
+   [desktop commands](./desktop-distribution.md#build-commands). Record the
+   source commit, exact command/result, payload `build-info.json` fields
+   (`version`, `buildId`, `builtAt`), produced app/package paths and checksums,
+   and representative packaged source/UI hashes. Build info has no Git commit;
+   the receipt must establish that source-to-artifact link. Version equality
+   alone cannot identify a same-version replacement.
+4. Before replacement, reconcile the produced app's identity and packaged
+   source/UI against that record. A missing accepted source, changed candidate,
+   unexplained artifact difference or mismatched build identity holds release
+   claims and requires affected re-verification.
+5. Only with explicit install authority and a coordinated shared-runtime window,
+   install/repair, restart and reopen the installed app. Execute the lifecycle
+   checks below and in [lifecycle smoke](./lifecycle-smoke-verification.md),
+   including health/doctor, launchd ownership, preserved database/auth/settings
+   and the affected installed UI flow. Read installed build info and compare
+   packaged/served assets to the produced artifact. Record installed identity,
+   commands/results and observations separately from produced identity.
+
+The build owner retains each mutable output until its consuming child process
+finishes: `stackos/ui_dist/`, `desktop/payload/`, generated packaging config and
+`desktop/dist/`. Sequence writers and consumers that share these paths; use
+test-owned isolated outputs where the existing scripts support them. Doctor or
+config tests must not delete another invocation's output. Packaging isolation
+does not authorize parallel installation or ownership of the live daemon.
+
+A source-ready handoff names the reconciled set, exclusions, candidate, proof
+and pending release owner/gates. It does not claim installed-complete. The
+existing release gate owns that claim only after identity reconciliation and
+installed proof; stale or unavailable evidence stays explicit.
+
+For a bounded guidance check, consume this procedure against a known accepted
+change and a candidate deliberately missing it; record the detected omission.
+Then use the reconciled candidate, deliberately mismatch a copied payload build
+identity, and record the hold before any installed-complete claim. Restore the
+matching identity as the safe alternative and confirm unrelated excluded work
+does not become required. Use read-only history and disposable evidence copies;
+do not rebuild accepted fixes, replace the app or restart shared processes for
+this exercise. Record source refs, actual commands/observations and substitution
+limits. This proves the reconciliation method, not a new live installation.
 
 ## Execution Evidence And Shared Runtime
 
@@ -128,6 +409,49 @@ required independent review; fixture/schema assertions alone do not prove agent
 behavior or real provider delivery.
 
 ## Focused Checks
+
+For a single test or small file, pass `-n0` to avoid worker startup and simplify
+debugging. This overrides the default parallel configuration without changing
+the selected tests:
+
+```bash
+uv run pytest -n0 tests/unit/test_operations_registry.py -q --durations=20
+```
+
+Encrypted backup changes require service, CLI, operation-authority and
+assembled finance recovery proof with synthetic inputs:
+
+```bash
+uv run pytest tests/unit/test_backups.py tests/unit/test_backup_cli.py \
+  tests/unit/test_backup_operations.py tests/integration/test_backup_recovery.py \
+  tests/integration/test_jobs/test_backup_maintenance.py \
+  tests/integration/test_routes/test_backup_operations_routes.py \
+  tests/integration/test_mcp/test_mcp_backups_boundary.py \
+  tests/integration/test_app_lifespan.py -q
+pnpm --dir ui exec vitest run src/lib/backups.spec.ts src/components/backups/BackupPanel.spec.ts src/views/HomeView.spec.ts src/App.local-setup.spec.ts
+```
+
+Prove default-off and persisted enable/disable, WAL and matching seed recovery,
+complete finance original/master custody, wrong-key/tamper/path rejection,
+busy/missing/changing sources, later key capture and public output denial.
+Verify the recovered policy is inert reference data. Use an isolated daemon
+and a Backups walkthrough, including the App footer with no projects; do not
+enable backups or read production financial content for source signoff. The
+full `make signoff` includes these backup authority and recovery checks.
+
+Native backup changes also require `pnpm --dir desktop check`, including the
+dialog/controller and IPC tests in `desktop/scripts/test-backups.cjs`. Prove
+cancellation before mutation, existing-recipient preservation, reservation
+before staging, unavailable protected storage, legacy original-key selection,
+exclusive outputs, sanitized failures and first-backup partial success. The
+integrated proof must use isolated synthetic data/state and desktop user data:
+run setup with real Electron `safeStorage` and the canonical CLI, restart the
+native process, export the key and archive, then verify an inert restore. Keep
+the portable setup key unavailable during the cached-export step to prove the
+protected copy is usable after restart. Compare existing setup and live-state
+hashes before and after rejected setup and restore attempts. Mock tests alone
+do not establish OS keychain or real CLI integration. Do not mutate production
+backup settings or install a package to obtain this source-level proof.
 
 For a faster local check while iterating on action execution, run the mock
 provider and connector-contract slice directly:
@@ -157,6 +481,16 @@ uv run pytest \
 pnpm --dir ui exec vitest run src/views/AccountsView.spec.ts src/views/ConnectionsView.accounts.spec.ts
 npm --prefix workers/oauth-callback-relay test
 ```
+
+For the QuickBooks host slice, add the focused
+`test_repositories/test_quickbooks_oauth.py`,
+`test_routes/test_quickbooks_callback.py` and
+`test_mcp/test_mcp_quickbooks.py` files under `tests/integration/`. These cover
+company-bound consent, scope evidence, both methods and read execution through
+the normal host boundaries. Verify the published connector wheel and deployed
+public relay match the reviewed candidate; source-only relay changes do not
+establish interactive readiness. Synthetic checks do not establish live Intuit
+consent or financial-record completeness.
 
 For provider connector changes, `make signoff` includes the integration wrapper
 tests and provider action execution tests. Amazon S3 and FTP share an explicit

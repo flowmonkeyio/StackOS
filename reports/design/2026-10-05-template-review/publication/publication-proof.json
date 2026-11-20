@@ -1,0 +1,159 @@
+{
+  "project_id": 1,
+  "run_plan_id": 556,
+  "execution_run_id": 551,
+  "design_run_plan_id": 555,
+  "status": "published-and-verified",
+  "operator_approval": "Conversation: Looks good. Proceed to deployment.",
+  "site_url": "https://stackos.flowmonkey.io/",
+  "candidate_sha256": "97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b",
+  "upload": {
+    "action_call_id": 11646,
+    "files": 460,
+    "bytes": 10601476,
+    "failed": 0,
+    "skipped": 0
+  },
+  "production_verification": {
+    "unique_urls": 475,
+    "attempts": 477,
+    "final_failures": 0,
+    "browser": "passed"
+  },
+  "preservation": {
+    "desktop_entries_unchanged": 112,
+    "ownership_bytes_unchanged": true,
+    "desktop_feed_bytes_unchanged": true,
+    "installer_head_identity_unchanged": true,
+    "recovery_files": 382
+  },
+  "independent_review": {
+    "reviewer": "/root/content_design_review",
+    "decision": "accept",
+    "findings": [],
+    "scope": "Candidate freshness, staged delta, exact transfer receipts and public hashes, recovery completeness, desktop preservation and bounded retries.",
+    "main_adjudication": "Accepted all three independent reviews; main separately viewed all four production browser screenshots and checked final console.",
+    "source_checks": "12 accepted file hashes,119 build-input hashes and protected baseline match.",
+    "artifact_identity_limit": "No historical whole-output manifest existed at design acceptance. Current output was independently pinned after verifying recorded hashes and timestamps."
+  },
+  "sitemap": {
+    "submit_action_call_id": 11648,
+    "list_action_call_id": 11649,
+    "url": "https://stackos.flowmonkey.io/sitemap.xml",
+    "submitted": true,
+    "last_submitted": "2026-10-05T21:40:16.785Z",
+    "is_pending": true,
+    "last_downloaded": "2026-10-05T19:33:51.682Z",
+    "errors": 0,
+    "warnings": 0,
+    "reported_url_count": 188
+  },
+  "limits": [
+    "Google processing pending; no claim about recrawl, page indexing or ranking.",
+    "No Hostinger cache purge performed. Ordinary public URLs and StackOS browser served the verified candidate.",
+    "Two TLS verification timeouts were each retried once; original evidence retained.",
+    "No desktop release, signing, install or daemon lifecycle mutation."
+  ],
+  "evidence": [
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/upload-manifest.json",
+      "sha256": "d3d8a65964285c90ed5a2a33187e7df0894e46bfde2d61a4864dd4c8b57c883c",
+      "bytes": 134643
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/upload-input.json",
+      "sha256": "37f7b0bc184a1e01f1316cc4f8b064c7db716dfcac0eb264fa029e8ec55dc6ed",
+      "bytes": 608
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/preparation-receipt.json",
+      "sha256": "4cfb03651640a81a8784245e827c5d0d12c3b29ccca526841a98cdea5b7276e1",
+      "bytes": 1491
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/public-preflight/result.json",
+      "sha256": "f44d2d3680f83a259c3aac0867fcef6336b2d5d802015be6badd7558999211d2",
+      "bytes": 651435
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/public-preflight/recovery-manifest.json",
+      "sha256": "8a28d1525d428f377f351976605b06a70a50446d7d5a7a1ba48d97c70608862d",
+      "bytes": 71257
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/public-preflight/recovery-upload-input.json",
+      "sha256": "de22bed766562995bc62dea7811c1b1bb0ea063ed6e88d7c119b31ef73e09bb8",
+      "bytes": 662
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/public-after/result.json",
+      "sha256": "abd6302e09c9312a389f99249097da938439b4b88986ace70347f9e256681c60",
+      "bytes": 721946
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/public-after-retry/result.json",
+      "sha256": "5dcf8fa05ba67633b5af55d2394efdaa77c858177d246fe78a38fd716b38fe3b",
+      "bytes": 727222
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/browser-verification.json",
+      "sha256": "dcdcb56ac15caadaa3471ab975a92864df2c4eb55d4308acf24cc46487843db5",
+      "bytes": 1495
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/sitemap-diff.json",
+      "sha256": "eaf06536eb5abe09704d8964602aaecea9552b2c811d82e86c2dd194e64e6622",
+      "bytes": 1862
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/receipts/seo511-content-quality-gsc-20261005T214016Z-11648.json",
+      "sha256": "264a8c6ed0e2226796dcbdeabdf6aa12df8cf92757e46b62a08b1582eb790c69",
+      "bytes": 2036
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/receipts/seo511-content-quality-gsc-20261005T214038Z-11649.json",
+      "sha256": "16635b8816d3953fd8d7c2bb62d7ffac0f16a1aa1780498897c5d5278d89fc35",
+      "bytes": 1919
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/receipts/stackos-2.1.18-release-20261005T212718Z-11644.json",
+      "sha256": "f592697a2b9c5c4d95aaa17569da88a7d13a36a2d937b566e3de95c9bdd59319",
+      "bytes": 7063
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/receipts/stackos-2.1.18-release-20261005T212728Z-11645.json",
+      "sha256": "3ff743fca7e3aefbcdc37d4ed07305afdd36c0fb83aea230eab4504d445176ff",
+      "bytes": 29757
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/receipts/stackos-2.1.18-release-20261005T213532Z-11646.json",
+      "sha256": "b551216b8a3b140b8649f90fe905c7bcadaed3b21fb2a6be223b3517e7b97bed",
+      "bytes": 153322
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/receipts/stackos-2.1.18-release-20261005T213629Z-11647.json",
+      "sha256": "e797770ab24356b6c7770ca89c45e84c4c4edd2ab179f4f9f00ff4f3d63a35a0",
+      "bytes": 29757
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/content-556-live-article-desktop.png",
+      "sha256": "63d88051a30d862e4908cbc33c3e8c896d10b3a017bb6eaf35428f60edf5007d",
+      "bytes": 323469
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/content-556-live-article-mobile.png",
+      "sha256": "5d14ff8243c33085517d13ee1c38c950464f1a6865fcd27be89d7f85afa8dec5",
+      "bytes": 83929
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/content-556-live-integration-desktop.png",
+      "sha256": "0188df0f6dd1ac9ac55076496058eacc7ac055362fffb2a684112df588bfafc1",
+      "bytes": 156248
+    },
+    {
+      "path": "reports/design/2026-10-05-template-review/publication/content-556-live-workflow-mobile.png",
+      "sha256": "3b82fa760b3744cd9baa53d3c1bd5b543260cbb47f5fdcd4b4fb88f1932d733d",
+      "bytes": 90103
+    }
+  ]
+}

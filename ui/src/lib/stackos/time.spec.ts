@@ -1,13 +1,65 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
+import { WorkDurationOutCoverage } from '@/api'
 
 import {
   formatDurationBetween,
   formatDurationMinutes,
+  formatWorkTime,
   formatRelativeDateTime,
+  formatShortDate,
   newestFirst,
 } from './time'
 
 const NOW = new Date('2026-06-09T12:00:00Z')
+
+const live = { invocation_id: 'owned', agent: 'delivery', host_key: 'codex', model: 'model', ticket_key: 'child', started_at: '2026-06-09T11:00:00Z' }
+const duration = { coverage: WorkDurationOutCoverage.complete, total_seconds: 1200, observed_at: '2026-06-09T11:59:00Z', endpoint_at: '2026-06-09T11:59:00Z', recorded_intervals: 2, unavailable_intervals: 0, live: [live], issues: [] }
+
+describe('formatWorkTime', () => {
+  it('formats the measured union and extends it once for an exact owned live identity', () => {
+    expect(formatWorkTime(duration, live, NOW)).toBe('21m')
+    expect(formatWorkTime({ ...duration, live: [live, { ...live, invocation_id: 'parallel' }] }, live, NOW)).toBe('21m')
+    expect(formatWorkTime({ ...duration, total_seconds: 0, live: [] }, null, NOW)).toBe('0m')
+    expect(formatWorkTime({ ...duration, total_seconds: 20, live: [] }, null, NOW)).toBe('<1m')
+  })
+
+  it('freezes at the recorded observation after stop, final receipt, remount or an unrelated execution', () => {
+    expect(formatWorkTime(duration, null, NOW)).toBe('20m')
+    expect(formatWorkTime({ ...duration, live: [] }, live, new Date('2026-06-10T12:00:00Z'))).toBe('20m')
+    for (const key of ['invocation_id', 'agent', 'host_key', 'model', 'ticket_key', 'started_at'] as const) {
+      expect(formatWorkTime(duration, { ...live, [key]: 'other' }, NOW)).toBe('20m')
+    }
+    expect(formatWorkTime({ ...duration, live: [{ ...live, invocation_id: null }] }, { ...live, invocation_id: null }, NOW)).toBe('20m')
+  })
+
+  it('keeps partial totals, unavailable history and clock anomalies honest', () => {
+    expect(formatWorkTime({ ...duration, coverage: WorkDurationOutCoverage.partial }, null, NOW)).toBe('20m')
+    expect(formatWorkTime(null, live, NOW)).toBe('N/A')
+    expect(formatWorkTime({ ...duration, coverage: WorkDurationOutCoverage.unavailable }, live, NOW)).toBe('N/A')
+    for (const total_seconds of [null, -1, NaN, Infinity]) {
+      expect(formatWorkTime({ ...duration, total_seconds }, live, NOW)).toBe('N/A')
+    }
+    for (const observed_at of [null, 'invalid', '2026-06-09T13:00:00Z']) {
+      expect(formatWorkTime({ ...duration, observed_at }, live, NOW)).toBe('20m')
+    }
+  })
+})
+
+describe('formatShortDate', () => {
+  it('keeps older years distinguishable and normalizes daemon UTC timestamps', () => {
+    const current = formatShortDate('2026-06-09T12:00:00', NOW)
+    expect(current).toBe(formatShortDate('2026-06-09T12:00:00Z', NOW))
+    expect(current).not.toContain('2026')
+    expect(formatShortDate('2025-06-09T12:00:00Z', NOW)).toContain('2025')
+  })
+
+  it('handles absent and malformed creation dates', () => {
+    expect(formatShortDate(null, NOW)).toBe('-')
+    expect(formatShortDate('not-a-date', NOW)).toBe('not-a-date')
+  })
+})
 
 describe('formatRelativeDateTime', () => {
   it('handles empty and invalid values', () => {

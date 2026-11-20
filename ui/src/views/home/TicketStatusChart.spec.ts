@@ -70,11 +70,15 @@ describe('compact ticket status snapshot', () => {
     expect(wrapper.findAll('[role="group"] button')).toHaveLength(7)
     expect(wrapper.findAll('[role="group"] button strong').map((count) => count.text()))
       .toEqual(['0', '1', '2', '0', '0', '1', '0'])
-    await wrapper.get('button[aria-label="In Progress: 1 tickets"]').trigger('click')
+    const activeStatus = wrapper.findAll('[role="group"] button')[1]
+    expect(activeStatus.attributes('aria-label')).toBeUndefined()
+    expect(activeStatus.text()).toContain('In Progress')
+    expect(activeStatus.text()).toContain('tickets')
+    await activeStatus.trigger('click')
     expect(wrapper.emitted('select')?.[0]).toEqual(['in-progress'])
     await wrapper.setProps({ selectedStatus: 'in-progress' })
     expect(
-      wrapper.get('button[aria-label="In Progress: 1 tickets"]').attributes('aria-pressed'),
+      activeStatus.attributes('aria-pressed'),
     ).toBe('true')
     wrapper.unmount()
     expect(mocks.destroyed).toHaveBeenCalledTimes(1)
@@ -98,8 +102,9 @@ describe('compact ticket status snapshot', () => {
       total: 0,
     })
     expect(wrapper.text()).toContain('No tickets recorded in this scope.')
-    expect(wrapper.findAll('button[aria-label$=": 0 tickets"]')).toHaveLength(7)
-    await wrapper.get('button[aria-label="Skipped: 0 tickets"]').trigger('click')
+    expect(wrapper.findAll('[role="group"] button strong').map((count) => count.text()))
+      .toEqual(['0', '0', '0', '0', '0', '0', '0'])
+    await wrapper.findAll('[role="group"] button')[6].trigger('click')
     expect(wrapper.emitted('select')?.[0]).toEqual(['skipped'])
     const chart = mocks.updated.mock.contexts[0] as UpdatedChart
     expect(chart.options.scales.x.max).toBe(0)

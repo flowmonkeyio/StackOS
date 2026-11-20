@@ -1,21 +1,22 @@
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, onBeforeUnmount, ref, type ComputedRef, type Ref } from 'vue'
 import type { Edge, EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
 
 import { trackerStatus } from '@/design/status'
 import { callOperation } from '@/lib/operations'
 import { graphFocusFor, graphItemFromNodeId } from '@/lib/task-tracker/graphFocus'
-import { buildTrackerFlowModel, type TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
+import { createTrackerFlowProjector, type TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type {
   TrackerSelectedItem,
   TrackerSnapshot,
   TrackerStatus,
-  TrackerTicket,
 } from '@/lib/task-tracker/types'
 
-import type { GraphBlockFilter, TaskProgressRow } from './viewTypes'
+import type { GraphBlockFilter, TaskProgressRow, TrackerGraphTicketSelection } from './viewTypes'
 import { useTrackerGraphViewport } from './useTrackerGraphViewport'
 import { useTrackerLiveUpdates } from './useTrackerLiveUpdates'
+import { patchUsageSnapshot, patchUsageAfter, usageCheckpoint } from '@/lib/usageUpdates'
+import type { UsageProjection } from '@/lib/usageUpdates'
 import {
   buildFilteredTrackerSnapshot,
   countStatuses,
@@ -26,15 +27,20 @@ import {
 interface TrackerReloadOptions {
   refocus?: boolean
   restartStream?: boolean
+  quiet?: boolean
+  minRevision?: number
+  taskKeys?: string[]
 }
 
 interface UseTrackerGraphSessionOptions {
   projectId: Readonly<Ref<number>>
   activeTaskKey: Ref<string>
+  liveTaskKey?: Readonly<Ref<string>>
   activeTaskRow: ComputedRef<TaskProgressRow | null>
   snapshot: Readonly<Ref<TrackerSnapshot | null>>
   routeError: Ref<string | null>
   reload: (options?: TrackerReloadOptions) => Promise<void>
+  refreshUsage?: (updates?: UsageProjection) => void
 }
 
 export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
@@ -48,15 +54,32 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
   const selectedNodeFocusId = ref<string | null>(null)
   const detailPanelOpen = ref(false)
   let requestSeq = 0
+  let graphRead: { taskKey: string; promise: Promise<TrackerSnapshot | null> } | null = null
+  let metricKeys: string[] = []
+  let acceptedDemand = ''
+  let metricEpoch = 0
+  let acceptedEpoch = -1
+  let lastReadInvalidated = false
+  let retired = false
+  const graphFailure = ref<string | null>(null)
+  onBeforeUnmount(() => { retired = true; requestSeq++ })
+  function invalidateMetrics(): void { metricEpoch++ }
+  function metricsAreCurrent(): boolean { return acceptedEpoch === metricEpoch && acceptedDemand === JSON.stringify(metricKeys) }
+  function setMetricDemand(keys: string[]): void { metricKeys = keys.slice(0, 199) }
   const {
     liveError,
+    feedState,
     recentNodeIds,
     restart: restartStatusStream,
     stop: stopStatusStream,
   } = useTrackerLiveUpdates({
     projectId,
-    activeTaskKey,
-    reload: () => reload({ refocus: false, restartStream: false }),
+    activeTaskKey: options.liveTaskKey ?? activeTaskKey,
+    reload: (minRevision, taskKeys) => {
+      if (minRevision === undefined) invalidateMetrics()
+      return reload({ refocus: false, restartStream: false, quiet: true, minRevision, taskKeys })
+    },
+    refreshUsage: options.refreshUsage,
   })
 
   const focusedGraph = computed(() => {
@@ -127,7 +150,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
       focusedGraph.value,
     )
   })
-  const selectedTicket = computed(() =>
+  const selectedTicket = computed<TrackerGraphTicketSelection | null>(() =>
     selected.value?.kind === 'ticket'
       ? (tickets.value.find((ticket) => ticket.key === selected.value?.key) ?? null)
       : null,
@@ -194,9 +217,10 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     storageKey: viewportStorageKey,
     refocusScopeKey: flowRenderKey,
   })
+  const projectFlow = createTrackerFlowProjector()
   const flow = computed(() =>
     filteredSnapshot.value
-      ? buildTrackerFlowModel(filteredSnapshot.value, {
+      ? projectFlow(filteredSnapshot.value, {
           selected: selected.value,
           highlightedNodeIds: relationFocus.value.nodeIds,
           highlightedEdgeIds: relationFocus.value.edgeIds,
@@ -223,10 +247,10 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
       : `${tickets.value.length} ${pluralize('ticket', tickets.value.length)}`
   })
   const edgeStatLabel = computed(() => {
-    if (!graphDataAvailable.value) return 'relations pending'
+    if (!graphDataAvailable.value) return 'dependencies pending'
     return filtersActive.value
-      ? `${flow.value.edges.length} visible ${pluralize('relation', flow.value.edges.length)}`
-      : `${flow.value.edges.length} ${pluralize('relation', flow.value.edges.length)}`
+      ? `${flow.value.edges.length} visible ${pluralize('dependency', flow.value.edges.length)}`
+      : `${flow.value.edges.length} ${pluralize('dependency', flow.value.edges.length)}`
   })
   const selectedEdge = computed(
     () =>
@@ -254,28 +278,81 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
 
   async function loadFocusedGraph(
     taskKey: string,
-    loadOptions: { refocus?: boolean } = {},
+    loadOptions: { refocus?: boolean; minRevision?: number; force?: boolean } = {},
+  ): Promise<TrackerSnapshot | null> {
+    if (retired) return null
+    if (graphSnapshot.value?.tasks[0]?.key !== taskKey && graphRead?.taskKey !== taskKey) metricKeys = []
+    if (graphRead?.taskKey === taskKey) {
+      const next = await graphRead.promise
+      if (retired || activeTaskKey.value !== taskKey) return null
+      if (lastReadInvalidated) return loadFocusedGraph(taskKey, { ...loadOptions, force: true })
+      if (!next) return null
+      if (acceptedDemand !== JSON.stringify(metricKeys) || next.tracker.rev < (loadOptions.minRevision ?? 0)) return loadFocusedGraph(taskKey, { ...loadOptions, force: false })
+      return next
+    }
+    if (!loadOptions.force && loadOptions.minRevision === undefined && graphSnapshot.value?.tasks[0]?.key === taskKey
+      && graphSnapshot.value.tracker.rev >= (snapshot.value?.tracker.rev ?? 0)
+      && metricsAreCurrent()) return graphSnapshot.value
+    const covered = () => graphSnapshot.value?.tasks[0]?.key === taskKey && graphSnapshot.value.tracker.rev >= loadOptions.minRevision!
+      && metricsAreCurrent()
+    if (!loadOptions.force && loadOptions.minRevision !== undefined) {
+      if (covered()) return graphSnapshot.value
+      while (graphRead?.taskKey === taskKey) {
+        const next = await graphRead.promise
+        if (!next) return null
+        if (covered()) return graphSnapshot.value
+      }
+    }
+    const read = { taskKey, promise: readFocusedGraph(taskKey, loadOptions) }
+    graphRead = read
+    try { return await read.promise } finally { if (graphRead === read) graphRead = null }
+  }
+
+  async function readFocusedGraph(
+    taskKey: string,
+    loadOptions: { refocus?: boolean; minRevision?: number },
   ): Promise<TrackerSnapshot | null> {
     if (!validProjectId(projectId.value) || !taskKey) {
       graphSnapshot.value = null
       return null
     }
     const currentRequest = ++requestSeq
+    const requestedEpoch = metricEpoch
+    lastReadInvalidated = false
+    const requestedProject = projectId.value
+    const requestedDemand = [...metricKeys]
+    const usageVersion = usageCheckpoint()
     loading.value = true
     try {
       const nextGraph = await callOperation<TrackerSnapshot>('tracker.get', {
         project_id: projectId.value,
         task_key: taskKey,
         include_graph: true,
+        projection: 'ui', metric_demand: { task_keys: [taskKey], ticket_keys: requestedDemand },
       })
-      if (currentRequest !== requestSeq) return null
+      if (currentRequest !== requestSeq || requestedProject !== projectId.value || activeTaskKey.value !== taskKey) return null
+      if (requestedEpoch !== metricEpoch || JSON.stringify(requestedDemand) !== JSON.stringify(metricKeys)) {
+        lastReadInvalidated = true
+        return null
+      }
+      if (nextGraph.tracker.project_id !== requestedProject || nextGraph.tasks.some(task => task.project_id !== requestedProject)) throw new Error('The task graph response scope did not match the requested project.')
+      if (loadOptions.minRevision !== undefined && nextGraph.tracker.rev < loadOptions.minRevision) throw new Error('The task graph is older than the change. Use Refresh to retry.')
+      if (nextGraph.tracker.rev < (snapshot.value?.tracker.rev ?? 0)) {
+        lastReadInvalidated = true
+        return null
+      }
+      patchUsageAfter(nextGraph, projectId.value, usageVersion)
       graphSnapshot.value = nextGraph
+      if (graphFailure.value !== null && routeError.value === graphFailure.value) routeError.value = null
+      graphFailure.value = null
+      acceptedDemand = JSON.stringify(requestedDemand)
+      acceptedEpoch = requestedEpoch
       if (loadOptions.refocus) requestRefocus()
       return nextGraph
     } catch (cause) {
       if (currentRequest === requestSeq) {
-        graphSnapshot.value = null
-        routeError.value = cause instanceof Error ? cause.message : 'failed to load task graph'
+        graphFailure.value = cause instanceof Error ? cause.message : 'failed to load task graph'
+        routeError.value = graphFailure.value
       }
       return null
     } finally {
@@ -346,17 +423,6 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     clearFocus()
   }
 
-  function selectTicket(ticket: TrackerTicket, openDetail = true): void {
-    selectedEdgeId.value = null
-    selectedNodeFocusId.value = `ticket:${ticket.key}`
-    selected.value = { kind: 'ticket', key: ticket.key }
-    detailPanelOpen.value = openDetail
-  }
-
-  function openSelectedDetail(): void {
-    if (selectedTicket.value) detailPanelOpen.value = true
-  }
-
   function clearFocus(): void {
     selectedEdgeId.value = null
     selectedNodeFocusId.value = null
@@ -364,7 +430,12 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     detailPanelOpen.value = false
   }
 
+  function openSelectedDetail(): void {
+    if (selectedTicket.value) detailPanelOpen.value = true
+  }
+
   return {
+    patchUsage: (next: UsageProjection) => patchUsageSnapshot(graphSnapshot.value, next),
     graphSnapshot,
     loading,
     graphDataAvailable,
@@ -377,6 +448,8 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     selectedNodeFocusId,
     detailPanelOpen,
     liveError,
+    metricError: graphFailure,
+    feedState,
     tickets,
     statusRows,
     blockRows,
@@ -394,6 +467,8 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     selectionVisible,
     selectionStats,
     loadFocusedGraph,
+    setMetricDemand,
+    invalidateMetrics, metricsAreCurrent,
     toggleStatus,
     toggleBlock,
     clearFilters,
@@ -405,7 +480,6 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     onNodeClick,
     onEdgeClick,
     onCanvasClick,
-    selectTicket,
     openSelectedDetail,
     clearFocus,
   }
@@ -416,5 +490,5 @@ function validProjectId(projectId: number): boolean {
 }
 
 function pluralize(label: string, count: number): string {
-  return count === 1 ? label : `${label}s`
+  return count === 1 ? label : label === 'dependency' ? 'dependencies' : `${label}s`
 }

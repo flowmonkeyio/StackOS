@@ -327,6 +327,38 @@ async function main() {
     assert.equal(failedUpgradeRetry.skipped, false);
     assert.equal(failedUpgradeCalls, 2);
 
+    // Exercise the actual service subprocess and install-state consumer. A CLI
+    // partial result is a failed continuation even after its global fence clears.
+    const partialCliDir = makeUserDataPath();
+    tempPaths.push(partialCliDir);
+    const partialCli = path.join(partialCliDir, "stackos");
+    const partialReceipt = {
+      upgrade_id: "upgrade-partial-fixture",
+      status: "partial",
+      fenced: false,
+      checkpoints: [{ project_id: 7, task_key: "held-task", handoff_id: "original", status: "held" }]
+    };
+    fs.writeFileSync(partialCli, `#!${process.execPath}
+if (process.argv[2] === "restart") {
+  console.log(JSON.stringify(${JSON.stringify(partialReceipt)}));
+  console.error("Managed upgrade: upgrade-partial-fixture has held task held-task handoff original; after repair use stackos finish-upgrade --upgrade-id upgrade-partial-fixture.");
+  process.exitCode = 1;
+}
+`, { encoding: "utf8", mode: 0o755 });
+    process.env.STACKOS_DESKTOP_CLI = partialCli;
+    const lastGoodState = service.readInstallState(failedUpgradeUserDataPath);
+    const partialInstall = await service.prepareInstalledVersion({
+      version: "1.0.0",
+      userDataPath: failedUpgradeUserDataPath,
+      payloadInfo: payloadB
+    });
+    assert.equal(partialInstall.ok, false);
+    assert.equal(partialInstall.phase, "restart");
+    assert.equal(partialInstall.start.exitCode, 1);
+    assert.deepEqual(JSON.parse(partialInstall.start.stdout), partialReceipt);
+    assert.match(partialInstall.start.stderr, /finish-upgrade --upgrade-id upgrade-partial-fixture/);
+    assert.deepEqual(service.readInstallState(failedUpgradeUserDataPath), lastGoodState);
+
     console.log("desktop service upgrade test ok");
   } finally {
     if (originalDesktopCli === undefined) {

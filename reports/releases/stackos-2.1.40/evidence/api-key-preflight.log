@@ -1,0 +1,41 @@
+
+> stackos-desktop@2.1.40 release:preflight /private/tmp/stackos-release-20261028/release-tree/desktop
+> STACKOS_REQUIRE_UPDATE_URL=1 node scripts/release-preflight.mjs
+
+StackOS desktop release preflight
+version: 2.1.40
+targetArches: arm64
+updateUrl: configured
+publicRelease: yes
+
+Build tools:
+  bash: ok
+  rsync: ok
+  uv: ok
+  file: ok
+  otool: ok
+  codesign: ok
+  security: ok
+  xcrun: ok
+
+Signing:
+  CSC_NAME: ok
+  CSC_LINK: missing
+  autoDiscovery: disabled
+  visible Developer ID Application identities:
+    - [configured]
+
+Notarization:
+  APPLE_API_KEY trio: ok
+  APPLE_ID trio: missing
+  APPLE_KEYCHAIN_PROFILE: missing
+  credentialValidation: ok
+
+Commands:
+  dev unsigned: pnpm --dir desktop run dist:mac:dev
+  signed local: pnpm --dir desktop run dist:mac:signed
+  signed local pinned: CSC_NAME='Name (TEAMID)' pnpm --dir desktop run dist:mac:signed
+  notarized release: CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' pnpm --dir desktop run dist:mac:release
+  validate notary profile: STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' pnpm --dir desktop run release:preflight
+
+Release preflight ok

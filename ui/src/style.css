@@ -13,10 +13,11 @@ body,
 }
 
 /*
- * Reserve the scrollbar gutter on the main scroll region so content width is
- * identical whether or not a page is long enough to scroll — otherwise the
- * styled (space-taking) scrollbar shifts content ~15px between pages.
+ * Either the document or the main region can scroll, depending on the window
+ * and page height. Reserve both gutters so feedback and page changes cannot
+ * shift controls horizontally when a space-taking scrollbar appears.
  */
+html,
 #cs-main {
   scrollbar-gutter: stable;
 }

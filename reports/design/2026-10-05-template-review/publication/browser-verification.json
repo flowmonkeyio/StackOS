@@ -1,0 +1,17 @@
+{
+  "run_plan_id": 556,
+  "execution_run_id": 551,
+  "status": "passed",
+  "session_ref": "browser-session:project-1:deployment-audit:website-design-review-20261005",
+  "tab_id": 1,
+  "origin": "https://stackos.flowmonkey.io",
+  "checks": [
+    {"page":"/library/articles/how-to-do-keyword-research-for-ai-search/","viewport":[1440,1800],"evidence_rows":4,"scroll_width":1425,"fonts":"loaded","screenshot":"content-556-live-article-desktop.png"},
+    {"page":"/library/articles/how-to-do-keyword-research-for-ai-search/","viewport":[390,844],"evidence_rows":4,"scroll_width":375,"grid_columns":"343px","screenshot":"content-556-live-article-mobile.png"},
+    {"page":"/library/workflows/seo-content-refresh/","viewport":[390,844],"scroll_width":375,"label_color":"rgb(49, 83, 214)","screenshot":"content-556-live-workflow-mobile.png"},
+    {"page":"/library/integrations/google-search-console/","viewport":[1440,1100],"scroll_width":1425,"label_color":"rgb(217, 255, 99)","screenshot":"content-556-live-integration-desktop.png"}
+  ],
+  "console":"No console errors after clearing before production navigation and reading after all three pages.",
+  "main_visual_review":"All four screenshots inspected. Approved content structure and repaired label colors are live; no content clipping or page overflow observed.",
+  "limits":"Focused production smoke. Full interaction and multi-template checks remain in accepted implementation/browser-verification.json; deployed bytes verified separately."
+}

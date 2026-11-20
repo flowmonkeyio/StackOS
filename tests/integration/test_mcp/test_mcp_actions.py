@@ -4,19 +4,44 @@ from __future__ import annotations
 
 import base64
 import json
+import wave
+from collections.abc import Iterator
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+from jsonschema import Draft202012Validator
 from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
+from stackos_connectors import get_default_client
 
 from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
+from stackos.actions.repository.utils import _redact_for_audit
 from stackos.config import Settings
 from stackos.db.connection import make_engine
-from stackos.db.models import Action, ActionCall, ActionCallStatus, IdempotencyKey, PayloadSecret
+from stackos.db.models import (
+    Action,
+    ActionCall,
+    ActionCallStatus,
+    Artifact,
+    IdempotencyKey,
+    PayloadSecret,
+)
+from stackos.repositories.resources import ArtifactRepository
+from tests.helpers.integration_clock import IntegrationClock, isolated_provider_clock
 
 from .conftest import MCPClient
+
+
+@pytest.fixture
+def _media_provider_clock(
+    mcp_client: MCPClient, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[IntegrationClock]:
+    """Only mocked provider pacing is virtual; the app is already started."""
+    with isolated_provider_clock(monkeypatch) as clock:
+        yield clock
 
 
 def _png_header(width: int, height: int) -> bytes:
@@ -590,6 +615,1038 @@ def _create_openai_credential(mcp: MCPClient, project_id: int) -> str:
         auth_method_key="api_key",
         fields={"api_key": "sk-openai"},
     )
+
+
+def test_elevenlabs_discovery_projects_executable_actions_without_placeholders(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    filters = {"project_id": project_id, "provider_key": "elevenlabs"}
+    inventory = mcp_client.call_tool_structured("integration.list", filters)
+    (setup,) = inventory["items"]
+    assert setup["state"] == "not_connected"
+    assert setup["setup"]["credential_label"] == "ElevenLabs API key"
+    assert setup["setup"]["local_setup_url"].endswith(
+        f"/projects/{project_id}/connections?provider_key=elevenlabs"
+    )
+    assert mcp_client.call_tool_structured("action.list", filters)["items"] == []
+    catalog = mcp_client.call_tool_structured(
+        "action.list", {**filters, "include_unavailable_integrations": True}
+    )["items"]
+    assert len(catalog) == setup["hidden_action_count"]
+    assert all(entry["connector_key"] for entry in catalog)
+    denied = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.elevenlabs.subscription.get",
+            "input_json": {},
+        },
+    )
+    assert denied["data"]["status"] == "missing_credential"
+
+    credential_ref = _create_account(
+        mcp_client,
+        project_id,
+        provider_key="elevenlabs",
+        auth_method_key="api_key",
+        fields={"api_key": "synthetic-elevenlabs-action-key"},
+    )
+    listed = mcp_client.call_tool_structured("action.list", filters)
+    expected_effects = {
+        "subscription.get": "read",
+        "models.list": "read",
+        "voices.list": "read",
+        "voices.settings.default.get": "read",
+        "voices.settings.get": "read",
+        "library.search": "read",
+        "library.add": "write",
+        "voices.create": "write",
+        "dictionaries.create": "write",
+        "speech.generate": "cost",
+        "voices.design": "cost",
+        "alignment.create": "cost",
+    }
+    expected_refs = {f"utils.elevenlabs.{operation}" for operation in expected_effects}
+    assert expected_refs == {entry["action_ref"] for entry in listed["items"]}
+    client = get_default_client()
+    for operation, effect in expected_effects.items():
+        key = f"elevenlabs.{operation}"
+        (native,) = client.describe("elevenlabs", key)["actions"]
+        manifest = _call_tool_raw(
+            mcp_client, "action.describe", {"project_id": project_id, "action_ref": f"utils.{key}"}
+        )["manifest"]
+        if operation == "alignment.create":
+            host_input = manifest["input_schema_json"]
+            assert host_input["additionalProperties"] is False
+            assert (
+                set(host_input["required"])
+                == set(host_input["properties"])
+                == {
+                    "audio_artifact_id",
+                    "text",
+                }
+            )
+            assert host_input["properties"]["text"] == native["input_schema"]["properties"]["text"]
+            native["output_schema"]["$defs"]["timed_item"]["additionalProperties"] = False
+        else:
+            assert manifest["input_schema_json"] == native["input_schema"]
+        if operation not in {"speech.generate", "voices.design"}:
+            assert manifest["output_schema_json"] == native["output_schema"]
+        assert manifest["operation"] == native["operation"]
+        assert manifest["risk_level"] == native["risk_level"] == effect
+        assert manifest["requires_credential"] is True
+    arguments = {
+        "project_id": project_id,
+        "action_ref": "utils.elevenlabs.dictionaries.create",
+        "credential_ref": credential_ref,
+        "input_json": {
+            "name": "Test",
+            "rules": [{"type": "phoneme", "string_to_replace": "test", "phoneme": "test"}],
+        },
+    }
+    assert _call_tool_raw(mcp_client, "action.validate", arguments)["valid"] is False
+    invalid = mcp_client.call_tool_error(
+        "action.run", {**arguments, "confirm_direct": True, "intent_summary": "Test invalid rules."}
+    )
+    assert invalid["code"] == -32602
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.fixture
+def elevenlabs_action_account(mcp_client: MCPClient, seeded_project: dict) -> str:
+    return _create_account(
+        mcp_client,
+        seeded_project["data"]["id"],
+        provider_key="elevenlabs",
+        auth_method_key="api_key",
+        fields={"api_key": "synthetic-elevenlabs-action-key"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("operation", "path", "inputs", "query", "response", "expected"),
+    [
+        (
+            "subscription.get",
+            "/v1/user/subscription",
+            {},
+            {},
+            {"tier": "free", "character_count": 0, "character_limit": 0, "extra": "ignored"},
+            {"tier": "free", "character_count": 0, "character_limit": 0},
+        ),
+        (
+            "models.list",
+            "/v1/models",
+            {},
+            {},
+            [{"model_id": "test-model"}],
+            {"models": [{"model_id": "test-model"}]},
+        ),
+        (
+            "voices.settings.default.get",
+            "/v1/voices/settings/default",
+            {},
+            {},
+            {"stability": 0, "use_speaker_boost": False},
+            {"stability": 0, "use_speaker_boost": False},
+        ),
+        (
+            "voices.settings.get",
+            "/v1/voices/saved-id/settings",
+            {"voice_id": "saved-id"},
+            {},
+            {"speed": None},
+            {"speed": None},
+        ),
+        (
+            "library.search",
+            "/v1/shared-voices",
+            {"search": "narrator"},
+            {"search": "narrator", "page": "0", "page_size": "30"},
+            {
+                "voices": [
+                    {"voice_id": "shared-id", "public_owner_id": "owner-id", "name": "Voice"}
+                ],
+                "has_more": False,
+            },
+            {
+                "voices": [
+                    {"voice_id": "shared-id", "public_owner_id": "owner-id", "name": "Voice"}
+                ],
+                "has_more": False,
+            },
+        ),
+    ],
+)
+def test_elevenlabs_direct_reads_cross_native_transport(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+    operation: str,
+    path: str,
+    inputs: dict,
+    query: dict,
+    response: object,
+    expected: dict,
+) -> None:
+    httpx_mock.add_response(
+        method="GET",
+        url=f"https://api.elevenlabs.io{path}",
+        match_params=query,
+        match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+        json=response,
+    )
+    out = _call_tool_raw(
+        mcp_client,
+        "action.run",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "action_ref": f"utils.elevenlabs.{operation}",
+            "input_json": inputs,
+            "credential_ref": elevenlabs_action_account,
+            "output_policy_json": {"mode": "inline"},
+        },
+    )
+    assert out["data"]["output_json"] == expected
+    assert out["data"]["action_call"]["response_json"] == expected
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_elevenlabs_returned_voice_cursor_fetches_next_page(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+) -> None:
+    arguments = {
+        "project_id": seeded_project["data"]["id"],
+        "action_ref": "utils.elevenlabs.voices.list",
+        "credential_ref": elevenlabs_action_account,
+    }
+    url = "https://api.elevenlabs.io/v2/voices"
+    httpx_mock.add_response(
+        method="GET",
+        url=url,
+        match_params={"page_size": "10"},
+        json={"voices": [{"voice_id": "first"}], "has_more": True, "next_page_token": "page-2"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=url,
+        match_params={"page_size": "10", "next_page_token": "page-2"},
+        json={"voices": [{"voice_id": "second"}], "has_more": False},
+    )
+    first = _call_tool_raw(mcp_client, "action.run", arguments)["data"]
+    path = Path(first["output_json"]["file"]["path"])
+    page = json.loads(path.read_text(encoding="utf-8"))["response"]["output_json"]
+    assert page["voices"] == [{"voice_id": "first"}]
+    assert page["page_token"] is None and page["has_more"] is True
+    cursor = page["next_page_token"]
+    assert cursor == "page-2"
+
+    second = _call_tool_raw(
+        mcp_client,
+        "action.run",
+        {
+            **arguments,
+            "input_json": {"page_token": cursor},
+            "output_policy_json": {"mode": "inline"},
+        },
+    )["data"]
+    assert second["output_json"] == {
+        "voices": [{"voice_id": "second"}],
+        "has_more": False,
+        "page_size": 10,
+        "page_token": cursor,
+        "next_page_token": None,
+    }
+    assert second["action_call"]["request_json"] == {"page_token": cursor}
+    assert second["action_call"]["response_json"] == second["output_json"]
+    denied = mcp_client.call_tool_error(
+        "action.validate",
+        {**arguments, "input_json": {"page_token": "api_key=synthetic-value"}},
+    )
+    assert denied["data"]["paths"] == ["$.page_token"]
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_elevenlabs_cursor_policy_keeps_generic_audit_protection() -> None:
+    assert _redact_for_audit({"page_token": "secret", "next_page_token": "secret"}) == {
+        "page_token": "[redacted]",
+        "next_page_token": "[redacted]",
+    }
+
+
+_ELEVENLABS_LIBRARY_ADD = {
+    "public_owner_id": "owner-id",
+    "voice_id": "shared-id",
+    "new_name": "Reference narrator",
+}
+_ELEVENLABS_VOICE_CREATE = {
+    "generated_voice_id": "preview-id",
+    "voice_name": "Test narrator",
+    "voice_description": "A fictional narrator for product tests",
+}
+_ELEVENLABS_DICTIONARY_CREATE = {
+    "name": "Test names",
+    "rules": [{"type": "alias", "string_to_replace": "UN", "alias": "United Nations"}],
+}
+
+
+@pytest.mark.parametrize("status_code", [200, 429, 503])
+@pytest.mark.parametrize(
+    ("operation", "path", "inputs", "body", "result"),
+    [
+        (
+            "library.add",
+            "/v1/voices/add/owner-id/shared-id",
+            _ELEVENLABS_LIBRARY_ADD,
+            {"new_name": "Reference narrator"},
+            {"voice_id": "added-id"},
+        ),
+        (
+            "voices.create",
+            "/v1/text-to-voice",
+            _ELEVENLABS_VOICE_CREATE,
+            _ELEVENLABS_VOICE_CREATE,
+            {"voice_id": "created-id"},
+        ),
+        (
+            "dictionaries.create",
+            "/v1/pronunciation-dictionaries/add-from-rules",
+            _ELEVENLABS_DICTIONARY_CREATE,
+            _ELEVENLABS_DICTIONARY_CREATE,
+            {"id": "dict-id", "version_id": "version-id"},
+        ),
+    ],
+)
+def test_elevenlabs_direct_writes_require_confirmation_and_replay_once(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+    operation: str,
+    path: str,
+    inputs: dict,
+    body: dict,
+    result: dict,
+    status_code: int,
+) -> None:
+    arguments = {
+        "project_id": seeded_project["data"]["id"],
+        "action_ref": f"utils.elevenlabs.{operation}",
+        "input_json": inputs,
+        "credential_ref": elevenlabs_action_account,
+    }
+    checked = _call_tool_raw(mcp_client, "action.validate", arguments)
+    assert checked["valid"] is True
+    denied = mcp_client.call_tool_error("action.run", arguments)
+    assert denied["code"] == -32602
+    assert "confirm_direct=true" in denied["data"]["detail"]
+    assert httpx_mock.get_requests() == []
+
+    httpx_mock.add_response(
+        method="POST",
+        url=f"https://api.elevenlabs.io{path}",
+        match_json=body,
+        match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+        status_code=status_code,
+        headers={"request-id": "synthetic-provider-request"},
+        json={**result, "provider_echo": "synthetic-elevenlabs-action-key"},
+        is_reusable=status_code == 503,
+    )
+    confirmed = {
+        **arguments,
+        "confirm_direct": True,
+        "intent_summary": "Create one synthetic fixture.",
+        "idempotency_key": "elevenlabs-test-mutation",
+        "output_policy_json": {"mode": "inline"},
+    }
+    if status_code != 200:
+        failure = mcp_client.call_tool_error("action.run", confirmed)
+        assert failure["data"]["provider_status_code"] == status_code
+        assert len(httpx_mock.get_requests()) == 1
+        return
+    first = _call_tool_raw(mcp_client, "action.run", confirmed)["data"]
+    replay = _call_tool_raw(mcp_client, "action.run", confirmed)["data"]
+    assert first["output_json"] == result
+    assert replay["action_call"]["id"] == first["action_call"]["id"]
+    assert first["action_call"]["connector_key"] == "elevenlabs"
+    assert "synthetic-elevenlabs-action-key" not in json.dumps(first)
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_elevenlabs_post_timeout_does_not_retry(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+) -> None:
+    httpx_mock.add_exception(
+        httpx.ReadTimeout("synthetic timeout"),
+        method="POST",
+        url="https://api.elevenlabs.io/v1/voices/add/owner-id/shared-id",
+    )
+    failed = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "action_ref": "utils.elevenlabs.library.add",
+            "input_json": _ELEVENLABS_LIBRARY_ADD,
+            "credential_ref": elevenlabs_action_account,
+            "confirm_direct": True,
+            "intent_summary": "Exercise a synthetic timeout.",
+            "idempotency_key": "timeout-fixture",
+        },
+    )
+    assert failed["data"]["status"] == "failed"
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def _start_elevenlabs_write_step(
+    mcp_client: MCPClient,
+    project_id: int,
+    granted_ref: str = "utils.elevenlabs.library.add",
+    denied_ref: str = "utils.elevenlabs.voices.create",
+) -> tuple[dict, dict]:
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": {
+                "schema_version": "stackos.run-plan.v1",
+                "key": "elevenlabs-grant-test",
+                "title": "ElevenLabs grant test",
+                "grants": {
+                    "mcp_tool_grants": [
+                        {
+                            "step_id": "add-voice",
+                            "tool": "action.execute",
+                            "action_refs": [granted_ref],
+                        },
+                    ]
+                },
+                "steps": [
+                    {
+                        "id": "add-voice",
+                        "title": "Add a voice",
+                        "action_refs": [granted_ref, denied_ref],
+                    }
+                ],
+            },
+        },
+    )["data"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start", {"project_id": project_id, "run_plan_id": plan["id"]}
+    )["data"]
+    run_scope = {"run_plan_id": plan["id"], "run_token": started["run_token"]}
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            **run_scope,
+            "step_id": "add-voice",
+        },
+    )["data"]
+    return started, claimed
+
+
+_ELEVENLABS_SPEECH = {"voice_id": "test-voice", "text": "Hi", "output_format": "wav_44100"}
+_ELEVENLABS_DESIGN = {
+    "voice_description": "A warm and deliberate narrator",
+    "auto_generate_text": True,
+    "model_id": "eleven_ttv_v3",
+    "reference_audio_base64": "cHJpdmF0ZS1yZWZlcmVuY2UtYXVkaW8=",
+}
+_ELEVENLABS_TIMINGS = {
+    "alignment": {
+        "characters": ["H", "i"],
+        "character_start_times_seconds": [0, 0.2],
+        "character_end_times_seconds": [0.2, 0.4],
+    },
+    "normalized_alignment": {
+        "characters": ["h", "i", "."],
+        "character_start_times_seconds": [0, 0.1, 0.3],
+        "character_end_times_seconds": [0.1, 0.3, 0.4],
+    },
+}
+
+
+def _mock_elevenlabs_audio(httpx_mock: HTTPXMock, operation: str) -> None:
+    if operation == "speech.generate":
+        httpx_mock.add_response(
+            method="POST",
+            url="https://api.elevenlabs.io/v1/text-to-speech/test-voice/with-timestamps"
+            "?output_format=wav_44100",
+            match_json={"text": "Hi"},
+            match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+            headers={"request-id": "request-123", "history-item-id": "history-456"},
+            json={
+                **_ELEVENLABS_TIMINGS,
+                "alignment": {**_ELEVENLABS_TIMINGS["alignment"], "audio_base64": "unexpected"},
+                "audio_base64": "c3ludGhldGljLXdhdg==",
+            },
+        )
+    else:
+        httpx_mock.add_response(
+            method="POST",
+            url="https://api.elevenlabs.io/v1/text-to-voice/design",
+            match_json=_ELEVENLABS_DESIGN,
+            match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+            headers={"request-id": "request-123"},
+            json={
+                "text": "The provider's script",
+                "previews": [
+                    {
+                        "generated_voice_id": voice_id,
+                        "duration_secs": duration,
+                        "media_type": mime,
+                        "language": "en",
+                        "audio_base_64": encoded,
+                    }
+                    for voice_id, duration, mime, encoded in (
+                        ("preview-first", 1.2, "audio/mpeg", "Zmlyc3Q="),
+                        ("preview-middle", 2.3, "audio/mpeg", "***"),
+                        ("preview-last", 3.4, "audio/ogg", "bGFzdA=="),
+                    )
+                ],
+            },
+        )
+
+
+def _stored_elevenlabs_audio(settings: Settings, artifact_id: int, project_id: int) -> Path:
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            artifact = session.get(Artifact, artifact_id)
+            assert artifact is not None and artifact.project_id == project_id
+            custody = artifact.managed_file_json
+            assert custody is not None
+            path = Path(custody["root"]) / custody["path"]
+            assert path.is_relative_to(settings.generated_assets_dir.resolve())
+            info = path.stat()
+            assert (info.st_dev, info.st_ino) == (custody["device"], custody["inode"])
+            return path
+    finally:
+        engine.dispose()
+
+
+_ALIGNMENT_REF = "utils.elevenlabs.alignment.create"
+_ALIGNMENT_TEXT = "  Caf\u00e9, go! "
+
+
+def _alignment_wav() -> bytes:
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as audio:
+        audio.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
+        audio.writeframes(b"offline-wave-sample-42")
+    return buffer.getvalue()
+
+
+def _seed_alignment_audio(
+    settings: Settings,
+    project_id: int,
+    *,
+    mime_type: str = "audio/wav",
+    managed: bool = True,
+    generated: bool = True,
+    filename: str = "private-source.wav",
+) -> tuple[int, Path]:
+    root = settings.generated_assets_dir.resolve()
+    relative = Path("telegram") / str(project_id) / filename
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    audio = _alignment_wav()
+    path.write_bytes(audio)
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            repository = ArtifactRepository(session)
+            fields = {
+                "kind": "file" if generated else "audio",
+                "project_id": project_id,
+                "mime_type": mime_type,
+                "size_bytes": len(audio),
+            }
+            generated_uri = f"/generated-assets/{relative.as_posix()}"
+            if managed:
+                artifact = repository.create_generated_file(
+                    asset_root=root, path=path, uri=generated_uri, **fields
+                )
+            else:
+                artifact = repository.create(uri=path.as_uri(), **fields)
+            return artifact.data.id, path
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("granted", "generated", "mode"),
+    [(False, True, "file"), (True, True, "inline")],
+)
+def test_elevenlabs_alignment_uploads_owned_audio_once(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    granted: bool,
+    generated: bool,
+    mode: str,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    artifact_id, source = _seed_alignment_audio(mcp_settings, project_id, generated=generated)
+    audio_bytes = source.read_bytes()
+    arguments = {
+        "project_id": project_id,
+        "action_ref": _ALIGNMENT_REF,
+        "credential_ref": elevenlabs_action_account,
+        "input_json": {"audio_artifact_id": artifact_id, "text": _ALIGNMENT_TEXT},
+    }
+    validation_arguments = dict(arguments)
+    validated = _call_tool_raw(mcp_client, "action.validate", validation_arguments)
+    assert validated["valid"] is True, validated
+    assert validated["manifest"]["risk_level"] == "cost"
+    if mode == "inline":
+        arguments["output_policy_json"] = {"mode": "inline"}
+
+    if granted:
+        tool = "action.execute"
+        other = "utils.elevenlabs.speech.generate"
+        started, claimed = _start_elevenlabs_write_step(
+            mcp_client, project_id, other, _ALIGNMENT_REF
+        )
+        denied = mcp_client.call_tool_error(tool, {**arguments, "run_token": started["run_token"]})
+        assert denied["code"] == -32007
+        started, claimed = _start_elevenlabs_write_step(
+            mcp_client, project_id, _ALIGNMENT_REF, other
+        )
+        arguments["run_token"] = started["run_token"]
+    else:
+        tool = "action.run"
+        denied = mcp_client.call_tool_error(tool, arguments)
+        assert denied["data"]["risk_level"] == "cost"
+        arguments.update(
+            confirm_direct=True,
+            intent_summary="Align synthetic project audio.",
+        )
+        arguments["idempotency_key"] = "elevenlabs-alignment-intent"
+    assert httpx_mock.get_requests() == []
+    timings = {
+        "words": [
+            {"text": "Caf\u00e9", "start": 0, "end": 0.375, "loss": None},
+            {"text": "go!", "start": 0.5, "end": 0.95},
+        ],
+        "characters": [{"text": "C", "start": 0, "end": 0.075, "loss": 0}],
+        "loss": 0.125,
+    }
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/forced-alignment",
+        match_headers={"xi-api-key": "synthetic-elevenlabs-action-key"},
+        headers={"request-id": "alignment-fixture-request"},
+        json={
+            **timings,
+            "words": [
+                {**entry, "audio_base64": base64.b64encode(audio_bytes).decode()}
+                for entry in timings["words"]
+            ],
+            "characters": [{**timings["characters"][0], "private_path": str(source)}],
+            "private_path": str(source),
+        },
+    )
+    first = mcp_client.call_tool_structured(tool, arguments)["data"]
+    assert source.read_bytes() == audio_bytes
+    replay = _call_tool_raw(mcp_client, tool, arguments)["data"]
+    (sent,) = httpx_mock.get_requests()
+    assert sent.headers["content-type"].startswith("multipart/form-data;")
+    assert b'name="file"; filename="private-source.wav"' in sent.content
+    assert b"Content-Type: audio/wav\r\n\r\n" + audio_bytes + b"\r\n" in sent.content
+    assert b'name="text"\r\n\r\n' + _ALIGNMENT_TEXT.encode() + b"\r\n" in sent.content
+    assert first["action_call_id"] == replay["action_call"]["id"]
+    if granted:
+        assert replay["action_call"]["run_plan_step_id"] == claimed["id"]
+    if mode == "file":
+        pointer = replay["output_json"]["file"]
+        for key in ("path", "sha256", "schema_ref", "schema_operation"):
+            assert first["output"][key] == pointer[key]
+        content = json.loads(Path(pointer["path"]).read_text())
+        assert content["request"]["input_json"] == arguments["input_json"]
+        result = content["response"]
+    else:
+        result = replay
+    assert result["output_json"] == timings
+    Draft202012Validator(validated["manifest"]["output_schema_json"]).validate(
+        result["output_json"]
+    )
+    assert result["metadata_json"]["provider_request_id"] == "alignment-fixture-request"
+    rendered = json.dumps([first, replay, result])
+    for private in (
+        str(source),
+        source.name,
+        "offline-wave-sample-42",
+        base64.b64encode(audio_bytes).decode(),
+        "synthetic-elevenlabs-action-key",
+        "stackos-alignment-",
+    ):
+        assert private not in rendered
+
+
+@pytest.mark.parametrize(
+    ("case", "granted", "generated"),
+    [
+        ("missing", False, False),
+        ("foreign", False, False),
+        ("foreign", True, False),
+        ("foreign", False, True),
+        ("non-audio", False, False),
+        ("unmanaged", False, False),
+        ("removed", False, False),
+        ("escape", False, True),
+        ("outside-symlink", False, True),
+        ("private-staging", False, True),
+        ("caller-path", False, False),
+    ],
+)
+def test_elevenlabs_alignment_rejects_unsafe_inputs_before_transport(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    case: str,
+    granted: bool,
+    generated: bool,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    owner = project_id
+    if case == "foreign":
+        owner = _call_tool_raw(
+            mcp_client,
+            "project.create",
+            {
+                "slug": "other-alignment-fixture",
+                "name": "Other alignment fixture",
+                "domain": "other-alignment.example",
+                "locale": "en-US",
+            },
+        )["data"]["id"]
+    artifact_id, source = _seed_alignment_audio(
+        mcp_settings,
+        owner,
+        mime_type="text/plain" if case == "non-audio" else "audio/wav",
+        managed=case != "unmanaged",
+        generated=generated,
+    )
+    if case == "removed":
+        source.unlink()
+    if case == "outside-symlink":
+        outside = mcp_settings.data_dir / "outside-generated-assets.wav"
+        outside.write_bytes(source.read_bytes())
+        source.unlink()
+        source.symlink_to(outside)
+    if case in {"escape", "private-staging"}:
+        uri = "/generated-assets/../../outside.wav"
+        if case == "private-staging":
+            staged = mcp_settings.generated_assets_dir / "imap-transfers" / "input.wav"
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_bytes(source.read_bytes())
+            uri = "/generated-assets/imap-transfers/input.wav"
+        engine = make_engine(mcp_settings.db_path)
+        try:
+            with Session(engine) as session:
+                artifact = session.get(Artifact, artifact_id)
+                assert artifact is not None
+                artifact.uri = uri
+                session.add(artifact)
+                session.commit()
+        finally:
+            engine.dispose()
+    payload = {
+        "audio_artifact_id": artifact_id + 1000 if case == "missing" else artifact_id,
+        "text": _ALIGNMENT_TEXT,
+    }
+    if case == "caller-path":
+        payload["audio_path"] = str(source)
+    arguments = {
+        "project_id": project_id,
+        "action_ref": _ALIGNMENT_REF,
+        "credential_ref": elevenlabs_action_account,
+        "input_json": payload,
+    }
+    validated = _call_tool_raw(mcp_client, "action.validate", arguments)
+    assert validated["valid"] is False
+    expected_path = "$.audio_path" if case == "caller-path" else "$.audio_artifact_id"
+    assert any(issue["path"] == expected_path for issue in validated["issues"])
+    if granted:
+        started, _ = _start_elevenlabs_write_step(
+            mcp_client, project_id, _ALIGNMENT_REF, "utils.elevenlabs.speech.generate"
+        )
+        denied = mcp_client.call_tool_error(
+            "action.execute", {**arguments, "run_token": started["run_token"]}
+        )
+    else:
+        denied = mcp_client.call_tool_error(
+            "action.run",
+            {
+                **arguments,
+                "confirm_direct": True,
+                "intent_summary": "Reject invalid alignment audio.",
+            },
+        )
+    assert denied["code"] == -32602
+    assert any(issue["path"] == expected_path for issue in denied["data"]["issues"])
+    assert str(source) not in json.dumps([validated, denied])
+    assert httpx_mock.get_requests() == []
+
+
+def test_elevenlabs_alignment_rechecks_file_after_preflight(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stackos.actions import ActionRepository
+
+    project_id = seeded_project["data"]["id"]
+    artifact_id, source = _seed_alignment_audio(mcp_settings, project_id)
+    resolve = ActionRepository._resolve_credential
+
+    async def replace_after_validation(self, **kwargs):
+        credential = await resolve(self, **kwargs)
+        source.unlink()
+        return credential
+
+    monkeypatch.setattr(ActionRepository, "_resolve_credential", replace_after_validation)
+    denied = mcp_client.call_tool_error(
+        "action.run",
+        {
+            "project_id": project_id,
+            "action_ref": _ALIGNMENT_REF,
+            "credential_ref": elevenlabs_action_account,
+            "input_json": {"audio_artifact_id": artifact_id, "text": _ALIGNMENT_TEXT},
+            "confirm_direct": True,
+            "intent_summary": "Align audio with a changed local file.",
+            "idempotency_key": "alignment-race-intent",
+        },
+    )
+    assert not source.exists()
+    assert denied["code"] == -32008
+    assert denied["data"]["error"] == "project audio artifact is unavailable"
+    receipt = _call_tool_raw(
+        mcp_client,
+        "actionCall.get",
+        {"project_id": project_id, "action_call_id": denied["data"]["action_call_id"]},
+    )
+    assert receipt["status"] == "failed"
+    assert str(source) not in json.dumps([denied, receipt])
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("operation", ["speech.generate", "voices.design"])
+@pytest.mark.parametrize("granted", [False, True], ids=["direct", "granted"])
+def test_elevenlabs_audio_outputs_cross_real_mcp_and_artifact_owners(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+    elevenlabs_action_account: str,
+    operation: str,
+    granted: bool,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    speech = operation == "speech.generate"
+    action_ref = f"utils.elevenlabs.{operation}"
+    arguments = {
+        "project_id": project_id,
+        "action_ref": action_ref,
+        "credential_ref": elevenlabs_action_account,
+        "input_json": _ELEVENLABS_SPEECH if speech else _ELEVENLABS_DESIGN,
+    }
+    validated = _call_tool_raw(mcp_client, "action.validate", arguments)
+    assert validated["valid"] is True, validated
+    assert validated["manifest"]["risk_level"] == "cost"
+    invalid = _call_tool_raw(
+        mcp_client,
+        "action.validate",
+        {**arguments, "input_json": {**arguments["input_json"], "output_dir": "/tmp/choose"}},
+    )
+    assert invalid["valid"] is False
+    if granted:
+        tool = "action.execute"
+        other = "utils.elevenlabs.voices.design" if speech else "utils.elevenlabs.speech.generate"
+        started, claimed = _start_elevenlabs_write_step(mcp_client, project_id, action_ref, other)
+        arguments["run_token"] = started["run_token"]
+        denied = mcp_client.call_tool_error(
+            tool,
+            {
+                **arguments,
+                "action_ref": other,
+                "input_json": _ELEVENLABS_DESIGN if speech else _ELEVENLABS_SPEECH,
+            },
+        )
+        assert denied["code"] == -32007
+    else:
+        tool = "action.run"
+        denied = mcp_client.call_tool_error(tool, arguments)
+        assert denied["data"]["risk_level"] == "cost"
+        arguments.update(
+            confirm_direct=True,
+            intent_summary="Generate synthetic project audio.",
+            idempotency_key="elevenlabs-audio-intent",
+        )
+    assert httpx_mock.get_requests() == []
+    assert (
+        mcp_client.call_tool_structured("artifact.query", {"project_id": project_id})["items"] == []
+    )
+
+    _mock_elevenlabs_audio(httpx_mock, operation)
+    first = _call_tool_raw(mcp_client, tool, arguments)["data"]
+    replay = _call_tool_raw(mcp_client, tool, arguments)["data"]
+    assert len(httpx_mock.get_requests()) == 1
+    assert first["action_call"]["id"] == replay["action_call"]["id"]
+    assert first["output_json"] == replay["output_json"]
+    if granted:
+        assert first["action_call"]["run_plan_step_id"] == claimed["id"]
+    pointer = first["output_json"]["file"]
+    content = json.loads(Path(pointer["path"]).read_text())
+    output = content["response"]["output_json"]
+    Draft202012Validator(validated["manifest"]["output_schema_json"]).validate(output)
+    assert content["response"]["metadata_json"]["provider_request_id"] == "request-123"
+    if speech:
+        assert output == {
+            "output_format": "wav_44100",
+            **_ELEVENLABS_TIMINGS,
+            "artifact_id": output["artifact_id"],
+        }
+        files = [(output["artifact_id"], "audio/wav", b"synthetic-wav", None)]
+    else:
+        assert output["status"] == "partial"
+        assert output["text"] == "The provider's script"
+        first_preview, middle, last = output["previews"]
+        assert middle == {
+            "generated_voice_id": "preview-middle",
+            "duration_secs": 2.3,
+            "media_type": "audio/mpeg",
+            "language": "en",
+            "reason_code": "invalid_preview",
+        }
+        assert (first_preview["file_index"], last["file_index"]) == (0, 1)
+        assert (first_preview["generated_voice_id"], last["generated_voice_id"]) == (
+            "preview-first",
+            "preview-last",
+        )
+        files = [
+            (first_preview["artifact_id"], "audio/mpeg", b"first", "preview-first"),
+            (last["artifact_id"], "audio/ogg", b"last", "preview-last"),
+        ]
+    items = mcp_client.call_tool_structured("artifact.query", {"project_id": project_id})["items"]
+    assert {item["id"] for item in items} == {file[0] for file in files}
+    rendered = json.dumps([first, content, items])
+    for private in (
+        "synthetic-elevenlabs-action-key",
+        _ELEVENLABS_DESIGN["reference_audio_base64"],
+        "c3ludGhldGljLXdhdg==",
+        "audio_base_64",
+        '"audio_base64"',
+    ):
+        assert private not in rendered
+    for artifact_id, mime, expected_bytes, voice_id in files:
+        assert type(artifact_id) is int
+        artifact = _call_tool_raw(
+            mcp_client,
+            "artifact.get",
+            {"artifact_id": artifact_id, "project_id": project_id},
+        )
+        assert artifact["mime_type"] == mime
+        assert artifact["kind"] == "audio"
+        assert artifact["size_bytes"] == len(expected_bytes)
+        assert artifact["metadata_json"].get("generated_voice_id") == voice_id
+        read = _call_tool_raw(
+            mcp_client, "artifact.read", {"artifact_id": artifact_id, "project_id": project_id}
+        )
+        assert read["artifact"] == artifact
+        assert read["content_available"] is False
+        assert read["content_type"] == mime
+        assert read["bytes"] == len(expected_bytes)
+        assert "content" not in read
+        assert artifact["uri"].startswith("/generated-assets/")
+        path = _stored_elevenlabs_audio(mcp_settings, artifact_id, project_id)
+        assert path.read_bytes() == expected_bytes
+        assert read["path"] == str(path)
+        assert str(path) not in rendered
+
+
+def test_elevenlabs_workflow_grant_restricts_mutation_before_transport(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    elevenlabs_action_account: str,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    add_ref = "utils.elevenlabs.library.add"
+    create_ref = "utils.elevenlabs.voices.create"
+    started, claimed = _start_elevenlabs_write_step(mcp_client, project_id)
+    arguments = {
+        "project_id": project_id,
+        "credential_ref": elevenlabs_action_account,
+        "run_token": started["run_token"],
+    }
+    denied = mcp_client.call_tool_error(
+        "action.execute",
+        {
+            **arguments,
+            "action_ref": create_ref,
+            "input_json": _ELEVENLABS_VOICE_CREATE,
+        },
+    )
+    assert denied["code"] == -32007
+    assert "arguments do not match" in denied["data"]["detail"]
+    assert httpx_mock.get_requests() == []
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/voices/add/owner-id/shared-id",
+        match_json={"new_name": "Reference narrator"},
+        json={"voice_id": "granted-id"},
+    )
+    out = _call_tool_raw(
+        mcp_client,
+        "action.execute",
+        {**arguments, "action_ref": add_ref, "input_json": _ELEVENLABS_LIBRARY_ADD},
+    )["data"]
+    pointer = out["output_json"]["file"]
+    assert pointer["schema_ref"] == "stackos.action-output.v1"
+    assert pointer["schema_operation"] == "schema.get"
+    receipt = json.loads(Path(pointer["path"]).read_text(encoding="utf-8"))
+    assert receipt["request"]["input_json"] == _ELEVENLABS_LIBRARY_ADD
+    assert receipt["response"]["output_json"] == {"voice_id": "granted-id"}
+    assert out["action_call"]["run_id"] == started["run_id"]
+    assert out["action_call"]["run_plan_step_id"] == claimed["id"]
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.elevenlabs.io/v1/voices/add/owner-id/shared-id",
+        match_json={"new_name": "Reference narrator"},
+        status_code=503,
+        json={"detail": "provider failed"},
+        is_reusable=True,
+    )
+    failed = mcp_client.call_tool_error(
+        "action.execute",
+        {
+            **arguments,
+            "action_ref": add_ref,
+            "input_json": _ELEVENLABS_LIBRARY_ADD,
+            "idempotency_key": "another-granted-evidence-intent",
+        },
+    )
+    assert failed["data"]["provider_status_code"] == 503
+    assert len(httpx_mock.get_requests()) == 2
 
 
 def _create_xai_credential(mcp: MCPClient, project_id: int) -> str:
@@ -1724,6 +2781,7 @@ def test_action_execute_xai_video_grant_returns_sanitized_artifact_refs(
     assert any(row["id"] == item["artifact_id"] for row in artifacts["items"])
 
 
+@pytest.mark.usefixtures("_media_provider_clock")
 def test_action_execute_provider_video_grants_return_sanitized_artifact_refs(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -2339,6 +3397,7 @@ def test_action_execute_google_gemini_image_grant_returns_sanitized_artifact_ref
     assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
 
 
+@pytest.mark.usefixtures("_media_provider_clock")
 def test_action_execute_ideogram_image_grant_returns_sanitized_artifact_refs(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -2498,6 +3557,7 @@ def test_action_execute_ideogram_image_grant_returns_sanitized_artifact_refs(
     assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
 
 
+@pytest.mark.usefixtures("_media_provider_clock")
 def test_action_execute_byteplus_seedream_image_grant_returns_sanitized_artifact_refs(
     mcp_client: MCPClient,
     seeded_project: dict,

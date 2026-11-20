@@ -6,18 +6,32 @@ import json
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
+from stackos.host_mcp.agent_execution import (
+    ManagedProcessControl,
+    execute_json_agent,
+    json_object,
+    structured_prompt,
+)
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     command_from_output_row,
     command_line_mentions,
+    command_matches,
     is_stackos_bridge_command,
     output_row_matches_server,
     resolve_bridge_command,
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
+    HostMcpResult,
+    looks_secretish,
+    usage_snapshot,
+)
 
 HOST_KEY = "gemini-cli"
 SURFACE = "cli-config"
@@ -32,6 +46,108 @@ COMMON_GEMINI_CLI_CANDIDATES = (
 GEMINI_COMPAT_WARNING = (
     "Gemini CLI support is compatibility-only while consumer Gemini CLI transitions."
 )
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+    resume_thread_id: str | None = None,
+    process_control: ManagedProcessControl | None = None,
+) -> AgentRunResult:
+    if sandbox == "read-only":
+        return AgentRunResult(None, error="Gemini CLI does not support strict read-only review.")
+    cli = resolve_gemini_bin()
+    if cli is None:
+        return AgentRunResult(None, error="No Gemini CLI was found by host discovery.")
+    command = [
+        cli,
+        "-p",
+        structured_prompt(instructions + "\n\n" + prompt, output_schema),
+        "--output-format",
+        "json",
+    ]
+    if sandbox == "workspace-write":
+        command += ["--approval-mode", "auto_edit"]
+    if model is not None:
+        command += ["--model", model]
+    if resume_thread_id is not None:
+        command += ["--resume", resume_thread_id]
+    return execute_json_agent(
+        command,
+        project_dir,
+        "",
+        output_schema,
+        "Gemini CLI",
+        _agent_result,
+        **({"process_control": process_control} if process_control else {}),
+    )
+
+
+def _agent_result(stdout: str) -> AgentRunResult:
+    value = json_object(stdout)
+    usage = _agent_usage(value)
+    if value.get("error"):
+        return AgentRunResult(
+            0, thread_id=value.get("session_id"), usage=usage, error=str(value["error"])
+        )
+    try:
+        result = json_object(value["response"])
+    except (ValueError, KeyError, TypeError) as exc:
+        return AgentRunResult(
+            0,
+            thread_id=value.get("session_id"),
+            usage=usage,
+            error=f"Invalid Gemini CLI result: {exc}",
+        )
+    return AgentRunResult(0, thread_id=value.get("session_id"), result=result, usage=usage)
+
+
+def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
+    # uiTelemetry.hydrate restores stats.models on resume. Sum models, not
+    # their nested roles. prompt includes cached; total includes thoughts/tool.
+    stats = value.get("stats")
+    models = stats.get("models") if isinstance(stats, dict) else None
+    if not isinstance(models, dict) or not models:
+        return None
+    inputs = outputs = total = 0
+    cache_read: int | None = 0
+    reasoning = 0
+    for row in models.values():
+        counters = row.get("tokens") if isinstance(row, dict) else None
+        if not isinstance(counters, dict):
+            return None
+        counts: list[Any] = [
+            counters.get(k) for k in ("prompt", "candidates", "thoughts", "tool", "total")
+        ]
+        if any(type(n) is not int or n < 0 for n in counts):
+            return None
+        if counts[4] != sum(counts[:4]):
+            return None
+        inputs += counts[0]
+        outputs += sum(counts[1:4])
+        total += counts[4]
+        reasoning += counts[2]
+        cached = counters.get("cached")
+        if cache_read is not None and type(cached) is int and 0 <= cached <= counts[0]:
+            cache_read += cached
+        else:
+            cache_read = None
+    return usage_snapshot(
+        "gemini.models",
+        "session",
+        inputs,
+        outputs,
+        total,
+        cache_read=cache_read,
+        reasoning=reasoning,
+    )
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
@@ -203,7 +319,7 @@ def _inspect_config_entry(
         and all(isinstance(value, str) for value in args)
         else []
     )
-    if stored_command == expected_command:
+    if command_matches(expected_command, stored_command):
         return HostMcpResult(
             host_key=HOST_KEY,
             surface=SURFACE,

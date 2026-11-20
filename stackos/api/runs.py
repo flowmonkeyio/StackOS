@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -83,11 +83,21 @@ async def get_run_children(
 )
 async def abort_run(
     run_id: int,
+    request: Request,
     cascade: bool = Query(False),
     session: Session = Depends(get_session),
 ) -> WriteResponse[RunOut]:
     """Abort a run; ``?cascade=true`` walks live children too."""
-    return write_response(RunRepository(session).abort(run_id, cascade=cascade))
+    from stackos.task_delivery import abort_audit_run
+
+    return write_response(
+        abort_audit_run(
+            session,
+            run_id,
+            cascade=cascade,
+            scheduler=getattr(request.app.state, "scheduler", None),
+        )
+    )
 
 
 @run_router.post(

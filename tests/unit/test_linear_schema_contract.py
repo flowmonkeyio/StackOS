@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 from graphql import (
+    GraphQLSchema,
     NoDeprecatedCustomRule,
     build_client_schema,
     parse,
@@ -100,8 +101,7 @@ def _query_type(snapshot: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _validation_errors(snapshot: dict[str, Any], document_text: str) -> list[str]:
-    schema = build_client_schema(snapshot)
+def _validation_errors(schema: GraphQLSchema, document_text: str) -> list[str]:
     errors = validate(
         schema,
         parse(document_text),
@@ -160,7 +160,7 @@ def test_exactly_34_fixed_linear_action_documents_validate() -> None:
     }
     assert actual_paths == expected_paths
 
-    snapshot = _load_snapshot()
+    schema = build_client_schema(_load_snapshot())
     for action_ref, (relative_path, expected_root) in {
         **ACTION_DOCUMENTS,
         **AUTH_DOCUMENTS,
@@ -170,7 +170,7 @@ def test_exactly_34_fixed_linear_action_documents_validate() -> None:
         assert operation.name is not None, action_ref
         assert len(operation.selection_set.selections) == 1, action_ref
         assert operation.selection_set.selections[0].name.value == expected_root, action_ref
-        assert _validation_errors(snapshot, document_text) == [], action_ref
+        assert _validation_errors(schema, document_text) == [], action_ref
 
 
 def test_unselected_and_forbidden_roots_are_absent_from_fixed_documents() -> None:
@@ -261,14 +261,14 @@ def test_schema_drift_is_additive_or_selected_contract_breaking() -> None:
             "deprecationReason": None,
         }
     )
-    assert _validation_errors(additive_snapshot, viewer_document) == []
+    assert _validation_errors(build_client_schema(additive_snapshot), viewer_document) == []
 
     removed_snapshot = copy.deepcopy(snapshot)
     removed_query = _query_type(removed_snapshot)
     removed_query["fields"] = [
         field for field in removed_query["fields"] if field["name"] != "viewer"
     ]
-    assert _validation_errors(removed_snapshot, viewer_document)
+    assert _validation_errors(build_client_schema(removed_snapshot), viewer_document)
 
     deprecated_snapshot = copy.deepcopy(snapshot)
     deprecated_viewer = next(
@@ -276,4 +276,4 @@ def test_schema_drift_is_additive_or_selected_contract_breaking() -> None:
     )
     deprecated_viewer["isDeprecated"] = True
     deprecated_viewer["deprecationReason"] = "contract drift fixture"
-    assert _validation_errors(deprecated_snapshot, viewer_document)
+    assert _validation_errors(build_client_schema(deprecated_snapshot), viewer_document)

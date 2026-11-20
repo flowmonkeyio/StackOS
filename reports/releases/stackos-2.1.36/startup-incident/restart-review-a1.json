@@ -1,0 +1,90 @@
+{
+  "attempt": "restart605-a1-independent-review",
+  "contract_revision": "r5-restart",
+  "project_id": 1,
+  "run_plan_id": 605,
+  "run_id": 599,
+  "run_plan_step_id": 6211,
+  "step_key": "verify-delivery",
+  "ticket_id": 12919,
+  "ticket_key": "global-605-restart-readiness",
+  "reviewer": "/root/global_readiness_review",
+  "independence": "Reviewer performed no production or acceptance-test edits, no lifecycle actions, no durable StackOS writes and no delegation. Independent source inspection and focused test executions only.",
+  "disposition": "approve_source_candidate",
+  "candidate": {
+    "source_root": "/private/tmp/stackos-restart605-fix",
+    "base_commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+    "candidate_sha256": "eef0cd95be13a5991af9239b7347ff31ad97f3b5dafb10e7da6a0420a310b9c8",
+    "diff_sha256": "218bddfd408b079a2762db5ad3478de70667a03638d16179738addb0a301d30f",
+    "manifest": "/tmp/stackos-global-planning-605/restart605-candidate-a1.json",
+    "freshness": "All five exact file hashes independently matched after focused checks; HEAD matched, git status contained only the five assigned candidate paths."
+  },
+  "sources": [
+    "Complete current native tracker.brief(global-605-restart-readiness), project1/ticket12919/task929/runplan605/step6211",
+    "Main assignment restart605-a1/r5-restart and reported 26-second installed startup incident",
+    "Current replacement AGENTS.md, complete local delivery-reviewer contract, product contract/principles and applicable setup/release guidance consumed during immediately preceding design review",
+    "Accepted /tmp/stackos-global-planning-605/restart-design-review-a1.json, SHA256 f8012fff70457ca005369bd7ef227b842952642e264d17dec9981ce125160906",
+    "Frozen five-file candidate, full new lifecycle regression, real service owner and CLI phase owners inspected in design review",
+    "/tmp/stackos-global-planning-605/restart-delivery-a1.json, SHA256 649c905d3526893d00fce8aee4632e2cabf0b34466c481e1df5e419e4e97404e"
+  ],
+  "per_acceptance": [
+    {
+      "criterion": "A healthy 26-second startup succeeds through real install/repair and prepare functions, once, with correct prepared state",
+      "result": "pass",
+      "evidence": "New tests load actual service.js in an isolated VM, mock transport/child processes/time, and use isolated real state files; they do not replace installOrRepair with a success stub. Independent execution passed delayed automatic/forced/direct/prepared-repair cases. Exactly one restart, successful health, correct current install key and next-launch full-install skip are asserted."
+    },
+    {
+      "criterion": "One 60-second desktop readiness default, preserving explicit timeouts and distinct budgets",
+      "result": "pass",
+      "evidence": "Single DAEMON_READINESS_TIMEOUT_SECONDS constant feeds waitForHealth/start/restart/ensure and restart calls inside install/prepared repair. Numeric and options-based 20-second callers retain their CLI deadline. Python CLI and its defaults are unchanged. Existing install 240/180-second and status 20-second budgets remain unchanged."
+    },
+    {
+      "criterion": "Outer watchdog permits valid CLI phase progress and remains bounded",
+      "result": "pass",
+      "evidence": "Start watchdog T+120 and restart 3*T+120 implement accepted phase accounting. Independent tests pass 169-second start and 287-second restart simulated control/readiness progress without kill, and hung children are terminated at configured 180/300-second guards. RESTART-D01 is resolved in this candidate."
+    },
+    {
+      "criterion": "Genuine nonzero/bootstrap/blocker/never-ready failures remain failures without prepared-state writes",
+      "result": "pass",
+      "evidence": "No error-to-health fallback or retry was added. Independent tests show exit1/null signal retained, no subsequent health override even with another healthy process, no Doctor or prepared marker on failure. Existing upgrade-state tests also pass and preserve the prior marker on failed upgrade."
+    },
+    {
+      "criterion": "Doctor policy and canonical ownership remain intact",
+      "result": "pass",
+      "evidence": "Automatic preparation still skips Doctor; force/explicit request runs Doctor after a healthy single restart. Changes stay in existing service owner plus one focused test file, check-command wiring and two technical docs. No new manager/state machine/registry/retry abstraction or Python behavior changes."
+    },
+    {
+      "criterion": "Focused desktop/CLI checks and independent review",
+      "result": "pass_source_scope",
+      "evidence": "Independent lifecycle23/23, existing upgrade test and diff check passed on frozen hashes. Worker full desktop check passed and its log hash matched. Main reports the unchanged CLI lifecycle suite30/30 in isolated frozen environment; this reviewer did not repeat that suite."
+    },
+    {
+      "criterion": "Separate old installed recovery from the new source fix and require matching package proof",
+      "result": "correctly_open",
+      "evidence": "Recovered installed2.1.36 and Doctor success are separate incident recovery, not evidence that this patch is installed. No matching new package or installed lifecycle proof was produced by this assignment."
+    }
+  ],
+  "executed_checks": [
+    {"command": "node --test desktop/scripts/test-service-lifecycle.cjs", "cwd": "/private/tmp/stackos-restart605-fix", "exit_code": 0, "passed": 23, "failed": 0, "skipped": 0, "duration_ms": 81.67},
+    {"command": "node desktop/scripts/test-service-upgrade.cjs", "cwd": "/private/tmp/stackos-restart605-fix", "exit_code": 0, "result": "desktop service upgrade test ok"},
+    {"command": "git diff --check", "cwd": "/private/tmp/stackos-restart605-fix", "exit_code": 0},
+    {"check": "Candidate and evidence SHA256 verification", "result": "All five source hashes, delivery receipt, red/green/full-desktop/setup-attempt log hashes matched; no out-of-scope source changes"}
+  ],
+  "proof_history": {
+    "pre_fix_red": "Inspected retained TAP:12 pass/11 fail; delayed readiness and watchdog cases reproduce the original 20-second limitation.",
+    "post_fix_green": "23 pass/0 fail from both worker and independent execution.",
+    "full_desktop": {"path": "/tmp/stackos-global-planning-605/restart605-desktop-check-a3.log", "sha256": "fc4efb5226af78a5d1c14222ea6f2e3a57942ccb1e7324465b5c3b36ffa94c57", "result": "passed; unchanged locked dependency reuse"},
+    "historical_setup_failures": "Earlier Corepack lookup and missing electron-builder attempts remain environment failures; neither was relabeled as a passing test run."
+  },
+  "findings": [],
+  "metadata_reconciliation": [
+    "Native ticket context.readiness still ends with 'implementer has not started', while current status/completion evidence correctly say candidate-ready. Main should reconcile that historical label at acceptance; it is not a source defect."
+  ],
+  "residuals": [
+    "Matching repaired-package lifecycle validation remains required before release claims, including installed cold startup/warm restart and applicable Doctor/launchd/state-preservation proof.",
+    "The change increases bounded tolerance; it is not a startup-performance optimization and does not attribute the original26-second delay to individual components. Later isolated warm measurements do not retrospectively establish first-launch causality.",
+    "No commit, package, signed artifact replacement, deployment, application restart, shared DB or host-registration mutation was performed by this reviewer.",
+    "Run605's broader outstanding M1/M2 obligations are not closed by this ticket-local source approval."
+  ],
+  "next_disposition": "Main may accept ticket12919's source candidate and continue toward separately authorized matching-package validation; do not describe the installed2.1.36 app as containing this fix."
+}

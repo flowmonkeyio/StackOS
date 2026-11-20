@@ -12,6 +12,15 @@ import typer
 from stackos.config import Settings, get_settings
 
 
+class DaemonAPIError(typer.Exit):
+    """Retain daemon repair data for lifecycle callers that render their own copy."""
+
+    def __init__(self, status_code: int | None, payload: Any):
+        super().__init__(code=1)
+        self.status_code = status_code
+        self.payload = payload
+
+
 def _read_daemon_token(settings: Settings) -> str:
     try:
         return settings.token_path.read_text(encoding="utf-8").strip()
@@ -29,6 +38,9 @@ def _api_request(
     *,
     body: dict[str, Any] | None = None,
     settings: Settings | None = None,
+    allow_not_found: bool = False,
+    allow_unavailable: bool = False,
+    quiet_errors: bool = False,
 ) -> Any:
     """Call the local daemon REST API and return parsed JSON."""
     from urllib.error import HTTPError, URLError
@@ -50,23 +62,29 @@ def _api_request(
         },
     )
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=5 if allow_unavailable else 30) as response:
             raw = response.read().decode("utf-8")
     except HTTPError as exc:
+        if allow_not_found and exc.code == 404:
+            return None
         raw = exc.read().decode("utf-8", errors="replace")
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
             payload = raw
-        typer.echo(_format_daemon_api_error(exc.code, payload), err=True)
-        raise typer.Exit(code=1) from None
+        if not quiet_errors:
+            typer.echo(_format_daemon_api_error(exc.code, payload), err=True)
+        raise DaemonAPIError(exc.code, payload) from None
     except (OSError, TimeoutError, URLError) as exc:
-        typer.echo(
+        if allow_unavailable:
+            return None
+        message = (
             f"daemon API request failed: {exc}; is StackOS running on "
-            f"{settings.host}:{settings.port}?",
-            err=True,
+            f"{settings.host}:{settings.port}?"
         )
-        raise typer.Exit(code=1) from None
+        if not quiet_errors:
+            typer.echo(message, err=True)
+        raise DaemonAPIError(None, message) from None
     if not raw:
         return None
     return json.loads(raw)

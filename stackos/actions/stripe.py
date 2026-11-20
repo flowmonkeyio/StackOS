@@ -31,8 +31,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlsplit
 
-from stackos_connectors import CallOptions, ConnectorClient
-from stackos_connectors.catalog import load_registry
+from stackos_connectors import CallOptions
 from stackos_connectors.connectors.stripe.contract import STRIPE_ACTION_SPECS as _NATIVE_SPECS
 from stackos_connectors.connectors.stripe.integration import (
     STRIPE_API_VERSION,
@@ -2359,7 +2358,6 @@ def _native_adapter(request):
 
     return PackageActionConnector(
         "stripe",
-        client=ConnectorClient(registry=load_registry("connectors/stripe/catalog.json")),
         options=CallOptions(
             rate_limiter=get_bucket(
                 project_id=request.project_id, kind="stripe", qps=StripeIntegration.default_qps

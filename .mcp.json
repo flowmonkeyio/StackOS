@@ -3,7 +3,7 @@
     "serena": {
       "command": "python3",
       "args": [
-        "/Users/sergeyrura/Bin/content-stack/.mcp/serena-mcp-wrapper.py"
+        "/Users/sergeyrura/.serena/bin/serena-mcp-wrapper.py"
       ],
       "env": {
         "SERENA_PROJECT": "/Users/sergeyrura/Bin/content-stack",

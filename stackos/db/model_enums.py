@@ -34,6 +34,100 @@ class RunStepStatus(enum.StrEnum):
     SKIPPED = "skipped"
 
 
+class RunObservationState(enum.StrEnum):
+    """Observation annotations; never a second tracker or run lifecycle."""
+
+    RUNNING = "running"
+    WAITING = "waiting"
+    SUSPECTED_STALL = "suspected_stall"
+    CONFIRMED_HANG = "confirmed_hang"
+    HOST_SUSPENDED = "host_suspended"
+    BLOCKED = "blocked"
+    SCOPE_DRIFT = "scope_drift"
+    REVIEW_READY = "review_ready"
+    ACCEPTED_COMPLETION = "accepted_completion"
+
+
+class RunAttemptDisposition(enum.StrEnum):
+    """Terminal attempt reasons mapped onto existing RunStatus."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    ABANDONED = "abandoned"
+    SUPERSEDED = "superseded"
+
+
+RUN_OBSERVATION_TRANSITIONS: dict[RunObservationState, frozenset[RunObservationState]] = {
+    RunObservationState.RUNNING: frozenset(
+        {
+            RunObservationState.WAITING,
+            RunObservationState.SUSPECTED_STALL,
+            RunObservationState.CONFIRMED_HANG,
+            RunObservationState.HOST_SUSPENDED,
+            RunObservationState.BLOCKED,
+            RunObservationState.SCOPE_DRIFT,
+            RunObservationState.REVIEW_READY,
+        }
+    ),
+    RunObservationState.WAITING: frozenset(
+        {
+            RunObservationState.RUNNING,
+            RunObservationState.BLOCKED,
+            RunObservationState.HOST_SUSPENDED,
+        }
+    ),
+    RunObservationState.SUSPECTED_STALL: frozenset(
+        {
+            RunObservationState.RUNNING,
+            RunObservationState.CONFIRMED_HANG,
+            RunObservationState.WAITING,
+            RunObservationState.BLOCKED,
+            RunObservationState.HOST_SUSPENDED,
+            RunObservationState.REVIEW_READY,
+        }
+    ),
+    RunObservationState.CONFIRMED_HANG: frozenset({RunObservationState.BLOCKED}),
+    RunObservationState.HOST_SUSPENDED: frozenset(
+        {
+            RunObservationState.RUNNING,
+            RunObservationState.WAITING,
+            RunObservationState.SUSPECTED_STALL,
+            RunObservationState.BLOCKED,
+            RunObservationState.CONFIRMED_HANG,
+        }
+    ),
+    RunObservationState.BLOCKED: frozenset(
+        {
+            RunObservationState.RUNNING,
+            RunObservationState.WAITING,
+        }
+    ),
+    RunObservationState.SCOPE_DRIFT: frozenset(
+        {
+            RunObservationState.RUNNING,
+            RunObservationState.WAITING,
+        }
+    ),
+    RunObservationState.REVIEW_READY: frozenset(
+        {
+            RunObservationState.ACCEPTED_COMPLETION,
+            RunObservationState.BLOCKED,
+            RunObservationState.SCOPE_DRIFT,
+        }
+    ),
+    RunObservationState.ACCEPTED_COMPLETION: frozenset(),
+}
+
+RUN_ATTEMPT_DISPOSITION_STATUS: dict[RunAttemptDisposition, RunStatus] = {
+    RunAttemptDisposition.SUCCEEDED: RunStatus.SUCCESS,
+    RunAttemptDisposition.FAILED: RunStatus.FAILED,
+    RunAttemptDisposition.CANCELLED: RunStatus.ABORTED,
+    RunAttemptDisposition.ABANDONED: RunStatus.ABORTED,
+    RunAttemptDisposition.SUPERSEDED: RunStatus.ABORTED,
+}
+
+
 class RunPlanStatus(enum.StrEnum):
     """Persists to ``run_plans.status`` for StackOS run-plan lifecycle."""
 
@@ -371,6 +465,8 @@ __all__ = [
     "ACTION_CALL_STATUS_TRANSITIONS",
     "AGENT_REQUEST_STATUS_TRANSITIONS",
     "APPROVAL_REQUEST_STATUS_TRANSITIONS",
+    "RUN_ATTEMPT_DISPOSITION_STATUS",
+    "RUN_OBSERVATION_TRANSITIONS",
     "RUN_PLAN_STATUS_TRANSITIONS",
     "RUN_PLAN_STEP_STATUS_TRANSITIONS",
     "RUN_STATUS_TRANSITIONS",
@@ -380,7 +476,9 @@ __all__ = [
     "AgentRequestStatus",
     "ApprovalRequestStatus",
     "PluginSource",
+    "RunAttemptDisposition",
     "RunKind",
+    "RunObservationState",
     "RunPlanStatus",
     "RunPlanStepStatus",
     "RunStatus",

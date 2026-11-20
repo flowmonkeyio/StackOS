@@ -79,15 +79,12 @@ class SlackBotActionConnector:
         return 0
 
     async def _native(self, request, prepared):
-        from stackos_connectors import ConnectorClient
-        from stackos_connectors.catalog import load_registry
+        from stackos_connectors import get_default_client
 
         from stackos.actions.package_bridge import PackageActionConnector
 
         if self._client is None:
-            self._client = ConnectorClient(
-                registry=load_registry("connectors/slack_bot/catalog.json")
-            )
+            self._client = get_default_client()
         return await PackageActionConnector(
             "slack-bot", client=self._client, options=self._options
         ).execute_native(replace(request, input_json=prepared))

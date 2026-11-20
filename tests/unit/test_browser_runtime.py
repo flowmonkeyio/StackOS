@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 import pytest
 
@@ -16,11 +18,46 @@ from stackos.browser.runtime import (
     BrowserRuntime,
     NativeProcessResult,
     ProcessIdentity,
+    _default_health_probe,
     browser_profile_dir,
     gstack_state_file,
     native_process_env,
 )
 from stackos.repositories.base import ConflictError, ValidationError
+
+
+@pytest.mark.parametrize(
+    ("status", "active_tab", "expected"),
+    [
+        ("healthy", {"id": 1, "responsive": True}, True),
+        ("healthy", {"id": 1, "responsive": False}, True),
+        ("healthy", None, True),
+        ("unhealthy", {"id": 1, "responsive": True}, False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_health_probe_uses_browser_liveness_not_active_tab_responsiveness(
+    status: str, active_tab: dict[str, object] | None, expected: bool
+) -> None:
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            assert self.path == "/health"
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": status, "activeTab": active_tab}).encode())
+
+        def log_message(self, _format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert await _default_health_probe(server.server_port) is expected
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def _runtime_layout(root: Path) -> tuple[Path, Path]:
@@ -163,6 +200,37 @@ async def test_unhealthy_owner_and_stopped_session_receive_native_context(tmp_pa
     with pytest.raises(ConflictError) as raised:
         await runtime.session_context(**stopped_args, observed=stopped)  # type: ignore[arg-type]
     assert raised.value.data["owner_session_ref"] == "browser-session:project-7:persisted:owner"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["session_context", "start_session"])
+async def test_profile_conflict_offers_reuse_without_stopping_healthy_owner(
+    tmp_path: Path, operation: str
+) -> None:
+    data_dir = tmp_path / "data"
+    _executable, server = _runtime_layout(data_dir / "browser-runtime")
+    started_at = datetime.now(tz=UTC) - timedelta(seconds=2)
+    owner_args = _session_args(data_dir, "owner")
+    _state(owner_args["state_file"], pid=9124, server=server, started_at=started_at)  # type: ignore[arg-type]
+    before = Path(owner_args["state_file"]).read_bytes()  # type: ignore[arg-type]
+    runtime = BrowserRuntime(
+        data_dir=data_dir,
+        process_inspector=_Inspector(
+            {9124: ProcessIdentity(pid=9124, started_at=started_at, command=f"bun run {server}")}
+        ),
+        health_probe=_healthy,
+    )
+
+    with pytest.raises(ConflictError) as raised:
+        await getattr(runtime, operation)(**_session_args(data_dir, "next-ticket"))
+
+    assert raised.value.data["owner_session_ref"] == owner_args["session_ref"]
+    assert raised.value.data["owner_healthy"] is True
+    repair = raised.value.data["repair"]
+    assert "task-owned tab" in repair and "--tab-id" in repair
+    assert "separate profile" in repair and "authority" in repair
+    assert Path(owner_args["state_file"]).read_bytes() == before  # type: ignore[arg-type]
+    assert (await runtime.inspect_session(**owner_args)).healthy is True  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

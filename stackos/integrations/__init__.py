@@ -30,6 +30,7 @@ from stackos_connectors.connectors.linear.integration import LinearIntegration
 from stackos_connectors.connectors.openai_images.integration import OpenAIImagesIntegration
 from stackos_connectors.connectors.openrouter.integration import OpenRouterIntegration
 from stackos_connectors.connectors.pipedrive.integration import PipedriveIntegration
+from stackos_connectors.connectors.quickbooks_online.integration import QuickBooksIntegration
 from stackos_connectors.connectors.reddit.integration import RedditIntegration
 from stackos_connectors.connectors.reve.integration import ReveImagesIntegration
 from stackos_connectors.connectors.salesloft.integration import SalesloftIntegration
@@ -75,6 +76,7 @@ REGISTRY: dict[str, type[Any]] = {
     "google-tag-manager": GoogleTagManagerIntegration,
     "hubspot": HubSpotIntegration,
     "pipedrive": PipedriveIntegration,
+    "quickbooks-online": QuickBooksIntegration,
     "salesloft": SalesloftIntegration,
     "wordpress": WordPressIntegration,
     "ghost": GhostIntegration,

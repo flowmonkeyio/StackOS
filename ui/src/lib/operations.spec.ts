@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { callOperation } from './operations'
@@ -28,6 +30,19 @@ describe('callOperation', () => {
     }) as typeof fetch
 
     await callOperation('tracker.get', { project_id: 1, response_mode: 'compact' })
+  })
+
+  it('passes cancellation to the fetch boundary without serializing it into operation arguments', async () => {
+    const controller = new AbortController()
+    globalThis.fetch = vi.fn((_input, init) => new Promise((_resolve, reject) => {
+      expect(init?.signal).toBe(controller.signal)
+      expect(JSON.parse(String(init?.body)).arguments).toEqual({ response_mode: 'raw', project_id: 1 })
+      init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true })
+    })) as typeof fetch
+    const request = callOperation('tracker.get', { project_id: 1 }, { signal: controller.signal })
+    controller.abort()
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    expect(globalThis.fetch).toHaveBeenCalledOnce()
   })
 })
 

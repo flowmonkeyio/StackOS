@@ -13,8 +13,14 @@ experience:
     with existing-page evidence and a clear validation handoff.
   why_ai: AI can connect keyword data, SERP patterns, competitor evidence, and project context while the operator
     owns positioning and priority.
-  operator_path: ['State the business goal, audience, product proximity, markets, and topics to avoid.', Choose
-      approved keyword and competitor data sources., Review the opportunity map and select content priorities.]
+  operator_path:
+  - 'Example request: “Use SEO Keyword Research for our time-tracking app. We sell to small UK agencies. Review our
+    current pages and Search Console export. Recommend pages to improve or add, and topics to leave alone. Stop with
+    the plan.”'
+  - Supply the website URL, audience and market. Name what the product does, topics to avoid, and the sources the
+    agent may use.
+  - Review the recommended action for each topic and its supporting evidence. Check whether an existing page already
+    answers the question before assigning new content.
   agent_path: ['Read business goals and an existing-content inventory, including pages absent from Search Console.',
     'Collect the smallest useful approved research, first-party or export evidence set.', 'Map intent and business
       fit to existing pages, independently review dispositions, and store one canonical opportunity map.']
@@ -31,10 +37,22 @@ experience:
 public:
   audience: SEO and content teams choosing which existing pages to improve and which content gaps to fill
   setup: mixed
-  prerequisites: ['A business goal, audience, market, and product-proximity boundary', Topics to include and avoid,
-    Connected keyword and SERP data sources or approved exports]
-  proof: [Source-linked intent and existing-page map, 'Reviewed dispositions, confidence and next validation', Explicit
-      avoidance and defer decisions, Durable evidence and current opportunity resource refs]
+  prerequisites:
+  - Your website, business goal, intended readers and target market
+  - What the business can credibly help with, plus topics or competitors to exclude
+  - Access to current pages and approved evidence, such as a Search Console export, keyword research or competitor
+    pages; available connected tools can supply that evidence
+  proof:
+  - A map from reader questions to existing pages or genuine gaps, with sources, recommended actions, confidence and
+    the next check.
+  - 'Illustrative refresh entry: the pricing page covers billing rules, but readers have to search the FAQ to find
+    them. Bring those rules beside the price and keep the existing URL.'
+  - 'Illustrative new-page entry: no checked page explains timesheet approval, and the product documentation can support
+    a worked guide. Propose that guide and name the evidence the writer should use.'
+  - 'Illustrative defer entry: “best accounting software” asks about a different purchase from the time-tracking app.
+    Leave it outside this plan.'
+  - One saved, reviewed opportunity map, including decisions to leave content alone. Writing and publication are separate
+    jobs.
   featured: true
 when_to_use: ['A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle.']
 when_not_to_use: [The user already has a reviewed opportunity set and only needs execution.]

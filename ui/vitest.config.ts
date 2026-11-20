@@ -1,4 +1,6 @@
-// Vitest config — jsdom environment, alias mirrors Vite, excludes Playwright.
+// Component/browser specs use jsdom by default. Pure source, data, and state
+// contracts explicitly opt into Node with a per-file @vitest-environment tag.
+// Alias mirrors Vite; Playwright runs through its own configuration.
 
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
@@ -10,6 +12,8 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, 'src') },
   },
   test: {
+    minWorkers: 1,
+    maxWorkers: 6,
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.spec.ts'],

@@ -1,0 +1,521 @@
+{
+  "source_path": "source-process.md",
+  "source_sha256": "26ea2a3b0a118e4959021f2ab84f87146c2bf1b9e8739c3ec08861b1c1f747aa",
+  "meaning": "Edges represent permitted next steps. Decision edge labels are conditions. Actor names are in node text. Return paths repeat the reference check. There is no parallel-execution or authority grouping.",
+  "diagrams": [
+    {
+      "variant": "flawed",
+      "nodes": [
+        {
+          "id": "N1",
+          "label": [
+            "Author submits",
+            "saved draft"
+          ],
+          "actor": "author",
+          "shape": "box",
+          "x": 154,
+          "y": 28,
+          "w": 184,
+          "h": 86,
+          "source_refs": [
+            "R1"
+          ]
+        },
+        {
+          "id": "N2",
+          "label": [
+            "Assistant:",
+            "references",
+            "complete?"
+          ],
+          "actor": "assistant",
+          "shape": "decision",
+          "x": 148,
+          "y": 162,
+          "w": 196,
+          "h": 136,
+          "source_refs": [
+            "R2"
+          ]
+        },
+        {
+          "id": "N3",
+          "label": [
+            "Author adds",
+            "missing",
+            "references"
+          ],
+          "actor": "author",
+          "shape": "box",
+          "x": 16,
+          "y": 322,
+          "w": 126,
+          "h": 100,
+          "source_refs": [
+            "R2"
+          ]
+        },
+        {
+          "id": "N4",
+          "label": [
+            "Assistant",
+            "prepares packet"
+          ],
+          "actor": "assistant",
+          "shape": "box",
+          "x": 154,
+          "y": 450,
+          "w": 184,
+          "h": 86,
+          "source_refs": [
+            "R3"
+          ]
+        },
+        {
+          "id": "N5",
+          "label": [
+            "Assistant:",
+            "approve?"
+          ],
+          "actor": "assistant",
+          "shape": "decision",
+          "x": 148,
+          "y": 582,
+          "w": 196,
+          "h": 136,
+          "source_refs": [
+            "R4",
+            "R5"
+          ]
+        },
+        {
+          "id": "N6",
+          "label": [
+            "Author",
+            "revises draft"
+          ],
+          "actor": "author",
+          "shape": "box",
+          "x": 16,
+          "y": 750,
+          "w": 126,
+          "h": 100,
+          "source_refs": [
+            "R4"
+          ]
+        },
+        {
+          "id": "N7",
+          "label": [
+            "Worker queues",
+            "approved revision"
+          ],
+          "actor": "delivery worker",
+          "shape": "box",
+          "x": 154,
+          "y": 900,
+          "w": 184,
+          "h": 86,
+          "source_refs": [
+            "R5"
+          ]
+        },
+        {
+          "id": "N8",
+          "label": [
+            "Queued",
+            "confirmation"
+          ],
+          "actor": "delivery worker",
+          "shape": "end",
+          "x": 154,
+          "y": 1040,
+          "w": 184,
+          "h": 68,
+          "source_refs": [
+            "R6"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "E1",
+          "from": "N2",
+          "to": "N1",
+          "condition": "Arrow points from reference check to submission",
+          "path": "M246 162 V114",
+          "label": null,
+          "source_refs": [
+            "R1"
+          ]
+        },
+        {
+          "id": "E2",
+          "from": "N2",
+          "to": "N3",
+          "condition": "Any reference missing",
+          "path": "M148 230 H79 V322",
+          "label": [
+            "Missing",
+            79,
+            282
+          ],
+          "source_refs": [
+            "R2"
+          ]
+        },
+        {
+          "id": "E3",
+          "from": "N3",
+          "to": "N2",
+          "condition": "Missing references supplied; repeat check",
+          "path": "M79 422 V436 H8 V140 H246 V162",
+          "label": null,
+          "source_refs": [
+            "R2"
+          ]
+        },
+        {
+          "id": "E4",
+          "from": "N2",
+          "to": "N4",
+          "condition": "Every factual claim has a reference",
+          "path": "M246 298 V450",
+          "label": [
+            "All present",
+            246,
+            383
+          ],
+          "source_refs": [
+            "R2",
+            "R3"
+          ]
+        },
+        {
+          "id": "E5",
+          "from": "N4",
+          "to": "N5",
+          "condition": "Review packet delivered to assistant approval decision",
+          "path": "M246 536 V582",
+          "label": null,
+          "source_refs": [
+            "R3"
+          ]
+        },
+        {
+          "id": "E7",
+          "from": "N6",
+          "to": "N2",
+          "condition": "Revised draft must repeat source check",
+          "path": "M16 800 H8 V140 H246 V162",
+          "label": [
+            "Recheck",
+            57,
+            584
+          ],
+          "source_refs": [
+            "R4"
+          ]
+        },
+        {
+          "id": "E8",
+          "from": "N5",
+          "to": "N7",
+          "condition": "Assistant approves the draft revision",
+          "path": "M246 718 V900",
+          "label": [
+            "Approved",
+            246,
+            823
+          ],
+          "source_refs": [
+            "R4",
+            "R5"
+          ]
+        },
+        {
+          "id": "E9",
+          "from": "N7",
+          "to": "N8",
+          "condition": "Worker confirms approved revision is queued",
+          "path": "M246 986 V1040",
+          "label": null,
+          "source_refs": [
+            "R5",
+            "R6"
+          ]
+        },
+        {
+          "id": "E10",
+          "from": "N4",
+          "to": "N7",
+          "condition": "Direct path from prepared packet to queuing",
+          "path": "M338 493 H352 V943 H338",
+          "label": null,
+          "source_refs": []
+        }
+      ]
+    },
+    {
+      "variant": "corrected",
+      "nodes": [
+        {
+          "id": "N1",
+          "label": [
+            "Author submits",
+            "saved draft"
+          ],
+          "actor": "author",
+          "shape": "box",
+          "x": 154,
+          "y": 28,
+          "w": 184,
+          "h": 86,
+          "source_refs": [
+            "R1"
+          ]
+        },
+        {
+          "id": "N2",
+          "label": [
+            "Assistant:",
+            "references",
+            "complete?"
+          ],
+          "actor": "assistant",
+          "shape": "decision",
+          "x": 148,
+          "y": 162,
+          "w": 196,
+          "h": 136,
+          "source_refs": [
+            "R2"
+          ]
+        },
+        {
+          "id": "N3",
+          "label": [
+            "Author adds",
+            "missing",
+            "references"
+          ],
+          "actor": "author",
+          "shape": "box",
+          "x": 16,
+          "y": 322,
+          "w": 126,
+          "h": 100,
+          "source_refs": [
+            "R2"
+          ]
+        },
+        {
+          "id": "N4",
+          "label": [
+            "Assistant",
+            "prepares packet"
+          ],
+          "actor": "assistant",
+          "shape": "box",
+          "x": 154,
+          "y": 450,
+          "w": 184,
+          "h": 86,
+          "source_refs": [
+            "R3"
+          ]
+        },
+        {
+          "id": "N5",
+          "label": [
+            "Human editor:",
+            "approve?"
+          ],
+          "actor": "human editor",
+          "shape": "decision",
+          "x": 148,
+          "y": 582,
+          "w": 196,
+          "h": 136,
+          "source_refs": [
+            "R4",
+            "R5"
+          ]
+        },
+        {
+          "id": "N6",
+          "label": [
+            "Author",
+            "revises draft"
+          ],
+          "actor": "author",
+          "shape": "box",
+          "x": 16,
+          "y": 750,
+          "w": 126,
+          "h": 100,
+          "source_refs": [
+            "R4"
+          ]
+        },
+        {
+          "id": "N7",
+          "label": [
+            "Worker queues",
+            "approved revision"
+          ],
+          "actor": "delivery worker",
+          "shape": "box",
+          "x": 154,
+          "y": 900,
+          "w": 184,
+          "h": 86,
+          "source_refs": [
+            "R5"
+          ]
+        },
+        {
+          "id": "N8",
+          "label": [
+            "Queued",
+            "confirmation"
+          ],
+          "actor": "delivery worker",
+          "shape": "end",
+          "x": 154,
+          "y": 1040,
+          "w": 184,
+          "h": 68,
+          "source_refs": [
+            "R6"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "E1",
+          "from": "N1",
+          "to": "N2",
+          "condition": "Submitted draft and source references",
+          "path": "M246 114 V162",
+          "label": null,
+          "source_refs": [
+            "R1"
+          ]
+        },
+        {
+          "id": "E2",
+          "from": "N2",
+          "to": "N3",
+          "condition": "Any reference missing",
+          "path": "M148 230 H79 V322",
+          "label": [
+            "Missing",
+            79,
+            282
+          ],
+          "source_refs": [
+            "R2"
+          ]
+        },
+        {
+          "id": "E3",
+          "from": "N3",
+          "to": "N2",
+          "condition": "Missing references supplied; repeat check",
+          "path": "M79 422 V436 H8 V140 H246 V162",
+          "label": null,
+          "source_refs": [
+            "R2"
+          ]
+        },
+        {
+          "id": "E4",
+          "from": "N2",
+          "to": "N4",
+          "condition": "Every factual claim has a reference",
+          "path": "M246 298 V450",
+          "label": [
+            "All present",
+            246,
+            383
+          ],
+          "source_refs": [
+            "R2",
+            "R3"
+          ]
+        },
+        {
+          "id": "E5",
+          "from": "N4",
+          "to": "N5",
+          "condition": "Review packet delivered to human editor",
+          "path": "M246 536 V582",
+          "label": null,
+          "source_refs": [
+            "R3"
+          ]
+        },
+        {
+          "id": "E6",
+          "from": "N5",
+          "to": "N6",
+          "condition": "Editor requests changes",
+          "path": "M148 650 H79 V750",
+          "label": [
+            "Changes",
+            79,
+            705
+          ],
+          "source_refs": [
+            "R4"
+          ]
+        },
+        {
+          "id": "E7",
+          "from": "N6",
+          "to": "N2",
+          "condition": "Revised draft must repeat source check",
+          "path": "M16 800 H8 V140 H246 V162",
+          "label": [
+            "Recheck",
+            57,
+            584
+          ],
+          "source_refs": [
+            "R4"
+          ]
+        },
+        {
+          "id": "E8",
+          "from": "N5",
+          "to": "N7",
+          "condition": "Editor approves exact draft revision",
+          "path": "M246 718 V900",
+          "label": [
+            "Approved",
+            246,
+            823
+          ],
+          "source_refs": [
+            "R4",
+            "R5"
+          ]
+        },
+        {
+          "id": "E9",
+          "from": "N7",
+          "to": "N8",
+          "condition": "Worker confirms approved revision is queued",
+          "path": "M246 986 V1040",
+          "label": null,
+          "source_refs": [
+            "R5",
+            "R6"
+          ]
+        }
+      ]
+    }
+  ]
+}

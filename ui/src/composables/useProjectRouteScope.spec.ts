@@ -1,9 +1,21 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
 
 import { useProjectRouteScope } from './useProjectRouteScope'
 
 describe('useProjectRouteScope', () => {
+  it('retains the global Patterns owner across list/detail transitions', () => {
+    const route = reactive({ path: '/patterns', params: {} })
+    const scope = useProjectRouteScope(route)
+    route.path = '/patterns/42'
+    expect(scope.scopeKey.value).toBe('/patterns')
+    expect(scope.isProjectRoute.value).toBe(false)
+    expect(scope.routeProjectId.value).toBeNull()
+    route.path = '/accounts'
+    expect(scope.scopeKey.value).toBe('/accounts')
+  })
   it('returns one strict reactive project scope contract', () => {
     const route = reactive({
       path: '/projects/7/connections',

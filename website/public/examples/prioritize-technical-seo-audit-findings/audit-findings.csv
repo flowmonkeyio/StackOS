@@ -1,0 +1,13 @@
+finding_id,template_family,url,tool_warning,evidence_id,adjudication,task_id,cause_id
+F01,product,https://example.com/pricing/,HTTP 503,E01,confirmed defect,T1,C01
+F02,product,https://example.com/product/,Broken start link,E02,confirmed defect,T2,C02
+F03,product,https://example.com/product/,Meta description shorter than tool minimum,E03,reject length-only defect,,
+F04,integration,https://example.com/integrations/slack/,Noindex,E04,confirmed unintended exclusion,T3,C03
+F05,integration,https://example.com/integrations/google-drive/,Noindex,E04,confirmed unintended exclusion,T3,C03
+F06,integration,https://example.com/integrations/notion/,Noindex,E04,confirmed unintended exclusion,T3,C03
+F07,guide,https://example.com/guides/approval-routing/,Canonical points to guide index,E05,confirmed wrong declaration,T4,C04
+F08,guide,https://example.com/guides/workflow-retries/,Canonical points to guide index,E05,confirmed wrong declaration,T4,C04
+F09,guide,https://example.com/guides/workflow-retries/,Low aggregate lab performance score,E06,investigate before specifying repair,,
+F10,utility,https://example.com/contact/,Contact form moves during load,E07,confirmed reproducible shift,T5,C05
+F11,utility,https://example.com/search/?q=retry,Noindex,E08,accept intentional exclusion,,
+F12,utility,https://example.com/contact/,Possible unused JavaScript,E09,defer pending interaction and bundle evidence,,

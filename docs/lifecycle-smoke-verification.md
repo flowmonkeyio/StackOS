@@ -13,6 +13,7 @@ Run the checks that match the changed surface:
 
 ```bash
 .venv/bin/python -m pytest tests/unit/test_cli_install.py -q
+.venv/bin/python -m pytest tests/integration/test_routes/test_upgrade_callers.py tests/integration/test_routes/test_managed_upgrade_routes.py -q
 .venv/bin/python -m pytest tests/integration/test_install_scripts -q
 pnpm --dir desktop check
 git diff --check
@@ -62,6 +63,26 @@ Expected evidence:
 - payload-change repair result
 - failed-upgrade preservation result
 
+For managed continuation, also exercise the actual caller/operation envelopes:
+source capability probe and preparation precede replacement; the staged ZIP/CLI
+identity matches the running target; target health and successful doctor precede
+finish. Preserve install/restart/doctor failures and prove retry keeps the same
+upgrade/checkpoint identity. Include a mixed safe/held continuation: `partial`
+must fail the caller even when `fenced=false`, preserve the desktop's last good
+install state, and name the original upgrade/checkpoints. Repair the cause and
+retry with `finish-upgrade --upgrade-id <original-upgrade-id>`; confirm only the
+remaining checkpoint is consumed, safe/unrelated work stays unchanged, and
+repeated named finish creates no duplicate continuation.
+Test a pre-handshake source with admitted synthetic
+work: refusal names its owners, leaves the service running and changes no work.
+Only a coordinated quiescent bootstrap may install the feature there.
+
+Use disposable HOME/data/state, unique ports and exact owned processes. A
+same-user alternate app path or port does not isolate launchd. Full packaged
+install/repair and signed installed desktop update/relaunch require an isolated
+macOS user/VM or explicitly coordinated maintenance; mocked lifecycle tests and
+detached CLI fixtures do not satisfy that installed-app gate.
+
 ### Uninstall
 
 Run both supported entrypoints in a temp home when either path changed:
@@ -97,21 +118,30 @@ Confirm preserved:
 
 ### Backup
 
-In a temp home with a real SQLite DB, seed, and token:
+In an isolated temp home with a synthetic SQLite DB, seed, token and finance
+folder, follow [backup setup](./backups.md). Keep test recovery keys outside
+the data/state, finance and archive directories:
 
 ```bash
-STACKOS_HOME="$tmp_home" HOME="$tmp_home" .venv/bin/python -m stackos backup --output "$tmp/backup.zip"
+STACKOS_HOME="$tmp_home" HOME="$tmp_home" .venv/bin/python -m stackos backup --output "$tmp/archive.sbak"
+STACKOS_HOME="$tmp_home" HOME="$tmp_home" .venv/bin/python -m stackos restore "$tmp/archive.sbak" --private-key-file "$tmp_keys/private.pem" --output-dir "$tmp/recovered"
 ```
 
 Confirm:
 
 - archive mode is `0600`
-- archive includes `manifest.json`, `data/stackos.db`, `state/seed.bin`, and
-  `state/auth.token`
-- archive includes `state/seed.bin.bak` when a staged seed backup exists
-- manifest schema is `stackos.local-backup.v1`
-- manifest says automated restore is not implemented
-- copied SQLite DB opens and contains expected data
+- archive is encrypted; raw bytes reveal neither token nor finance originals
+- verified recovery includes manifest, `data/stackos.db`, `state/seed.bin`,
+  `state/auth.token` and `state/seed.bin.bak` when present
+- every enrolled finance original/master/review matches the source bytes/hash
+- copied SQLite DB passes integrity and contains expected WAL-committed data
+- wrong key, tampering, unsafe members, busy writer and missing targets fail
+  without publishing partial archives or recovery folders
+- fresh startup makes no backups; explicit enable survives restart, due work
+  creates a recoverable archive, and disable stops subsequent execution
+- a failed attempt preserves the previous success and manual archives survive
+  scheduled retention
+- recovery never overwrites live files or activates a schedule
 
 ## Closeout
 

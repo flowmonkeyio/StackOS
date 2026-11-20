@@ -1,13 +1,13 @@
 ---
 name: stackos
-description: Use when working from any website repository to connect the repo to StackOS, resolve the current project, inspect workflow templates/run plans, and use daemon-managed resources/actions without writing setup files into the repo.
+description: Use from a repository or global chat to start a StackOS session, select project scope, inspect workflow templates/run plans, and use daemon-managed resources/actions without writing repository setup files.
 ---
 
 # StackOS Plugin Entrypoint
 
-Use the current repository as source context and the local StackOS daemon as
-durable state. The daemon owns projects, credentials, workflow templates, run
-plans, resources, actions, context, learnings, experiments, decisions, and audit
+Use the current repository as source context when one was chosen, and the local
+StackOS daemon as durable state. The daemon owns projects, credentials, workflow
+templates, run plans, resources, actions, context, learnings, experiments, decisions, and audit
 trails.
 
 Use StackOS tools for durable state, execution planning, and daemon-owned
@@ -22,7 +22,9 @@ call hidden daemon tools directly. Use `toolbox.describe` with exact
 `tool_names` to inspect only the tools needed for the current decision, then
 `toolbox.call` to invoke exactly one hidden tool by name. When working inside a
 run plan, pass `run_id` so the bridge can refresh step grants and inject the
-run token.
+run token. In a global session, also pass the selected `project_id` on each
+scoped call, including run-aware `toolbox.describe` and direct browser calls;
+for `toolbox.call`, put it inside `arguments`.
 
 ## Activate The Current Guidance
 
@@ -49,11 +51,16 @@ primitive.
 1. Do not create `.env`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`, or
    `.stackos/*` in the current repository unless the user explicitly asks
    for checked-in hints.
-2. Start with `workspace.startSession` using repo hints supplied by the plugin
-   MCP bridge. For a new repo/directory it creates or reuses the local StackOS
-   project and daemon-owned binding automatically.
-3. Treat the workspace-bound `project_id` as the source of truth. Do not use a
-   global active project concept.
+2. Choose startup intent first. For a chosen repo/directory, call
+   `workspace.startSession` normally to create or reuse its daemon-owned
+   project binding. For known global intent, make the first successful call
+   `workspace.startSession({"global_session":true,"project_id":42})` using the
+   selected existing ID, or omit `project_id` to discover projects. Global
+   startup creates no project or directory binding. Use a JSON boolean.
+3. Workspace sessions inject their bound ID and refuse scope changes. Global
+   sessions require an explicit positive existing ID on every scoped call;
+   startup, resolve, connect, and bootstrap results never become defaults.
+   Do not use a global active project or last-used project fallback.
 4. Use `toolbox.describe`/`toolbox.call` for hidden setup tools and the current
    run-plan step grants that are not in the direct list.
 5. Agent presets are contracts, not daemon-run local agents. A request to set
@@ -139,6 +146,27 @@ primitive.
 
 ## Common Flows
 
+- Ordinary project goals: inspect repository intent and existing setup, then select
+  the applicable configured workflow by its outcome and boundaries. Users need not
+  name workflows. Follow current project methods for substantive work; answer
+  harmless questions directly. If a newly relevant goal needs workflow setup,
+  resolve it from the current catalog and use the shared infrastructure method
+  within the user's authority before execution. Ask only for missing intent or
+  material conflicts, not a workflow-name questionnaire.
+- Setup/update from either entrypoint: read `projectSetup.get` and follow its
+  `guidance_ref` to `workflowTemplate.authoringGuide` with `response_mode=raw`.
+  Its `project_setup_method` owns the shared agent prompt, bounded inputs,
+  setup/update mode instructions, compact notices, concrete questions and result
+  wording. Use those instructions together with the guide's three-phase protocol,
+  materialization policy and completion contract; do not maintain another prompt.
+  Inspect before `projectSetup.start`; adopt verified legacy setup without invented
+  versions or forced rewrites. Compare previous applied sources, current local
+  choices and new effective sources on update. Preserve compatible overrides and
+  the full applicable source obligations, mapping roles/rules to exact targets and
+  evidence. Material unresolved loss cannot complete. Keep independent successes
+  and partial edits truthful through `projectSetup.report`; source changes do not
+  prove installed or loaded activation. A startup notice is advisory and does not
+  block an ordinary question or authorize setup writes/business execution.
 - Person asks what to do after installation: call `toolbox.call` for
   `guide.gettingStarted` with `response_mode=raw`. This global read is allowed
   before workspace binding. Answer from the returned content and always link
@@ -161,23 +189,51 @@ primitive.
 - Ongoing repo session: call `workspace.startSession`, use the workspace-bound
   project id, then call only the scoped tools needed for the current task. Do
   not request broad schemas or catalog dumps unless debugging.
-- Connect to a specific project: if the operator wants a known existing
-  project, call `toolbox.call` for `workspace.connect` with that project
-  identifier explicitly.
-- Bind desktop/global hosts to a project: if StackOS says project identity is
-  required, inspect `candidate_workspaces` and user intent. Reuse a known
-  `workspace_alias` or selected existing project with `workspace.connect`, or
-  ask for a business `project_name`/`project_slug` and call
-  `workspace.bootstrap` to create a new named workspace. Do not let app/runtime
-  folder names become projects, do not invent cwd/repo anchors, do not call
-  `project.create` as a substitute for binding, and do not use
-  last-used/global fallback binding.
+- Global chat or recurring task: declare `global_session=true` on the first
+  successful startup. Known ChatGPT “Choose project / This computer” and Claude
+  “Local / No folder” intent uses this path; if intent is unknown, clarify
+  before startup. Initialize/tools-list only resolve unbound ambient hints
+  read-only and leave startup pending. `CLAUDE_PROJECT_DIR` keeps priority over
+  cwd, but neither proves deliberate folder selection; do not classify intent
+  by runtime or path pattern. Only explicit `--workspace-root` /
+  `STACKOS_WORKSPACE_ROOT` selection and existing valid bindings protect
+  workspace scope from global downgrade, even after a lookup failure. `/` is
+  missing directory context.
+- Choose a project for global work: call `toolbox.call` for `project.list`,
+  inspect current metadata, then pass the chosen ID on every scoped call.
+  For example, `toolbox.call({"tool_name":"workflowTemplate.list",
+  "arguments":{"project_id":42}})` or
+  `browser.profile.list({"project_id":42})`. Include `project_id` alongside
+  `run_id`/`run_plan_id` in run-aware `toolbox.describe`; use each operation's
+  exact schema. A missing or invalid target stops the call without fallback.
+- Named creation/setup: after global startup, call `workspace.bootstrap`
+  through the toolbox with explicit business `project_name`, `project_slug`,
+  or `workspace_alias`, then use its returned ID explicitly. To connect a
+  selected existing project for named setup, call `workspace.connect` with
+  its explicit `project_id` and optional alias. These calls never pin global
+  scope and need no invented cwd/repo anchors. A first startup with an existing
+  `workspace_alias` instead establishes a protected named-workspace session;
+  later diagnostic alias reads do not move it and repeated startup retains it.
+- Startup repair: an explicit ID with omitted/false global intent on an
+  unbound directory is rejected before writes. Declare global intent or bind
+  the intended workspace. Normal folder startup without an ID retains
+  automatic bootstrap. Global setup can report
+  `project_scoped_tools_usable=true` with `workspace_bound=false`; binding is
+  not required for explicit global project calls. Project selection does not
+  grant filesystem access, provider credentials, or workflow permissions.
+- Saved recurring project: confirm current project metadata before saving its
+  numeric ID. After migration `0033_project_id_nonreuse`, deleted IDs are not
+  allocated to replacement projects. Pre-migration numeric-only references
+  require explicit reselection/confirmation: migration cannot detect an ID
+  already reused or reconstruct deleted history. A missing saved ID stops the
+  task. Do not substitute a same-named or last-used project, and do not claim
+  installed-host support from source/migration tests alone.
 - Set up a workflow project only after selecting one canonical intent mode:
   `setup_existing`, `customize_existing`, `author_project`, `publish_plugin`,
   `one_off_run`, or `execute`. Call `workflowTemplate.authoringGuide` for the
   structured mode boundaries and completion contract. A setup request does not
   authorize a new template, plugin change, or workflow execution.
-  Phase 1 is infrastructure setup: bind the authorized workspace, select and
+  Phase 1 is infrastructure setup: establish the authorized project scope, select and
   describe the effective workflow, inspect the existing extension, save only a
   reviewed non-empty overlay when needed, and re-describe after any overlay
   change. Call `agentPreset.resolveForWorkflow` once; it already includes
@@ -200,7 +256,7 @@ primitive.
   and materialize the deduplicated union of required and recommended roles.
   Persist each prerequisite through its declared owner, omit unresolved values
   instead of storing placeholders, and stop before recurring output.
-  Phase 3 is operation: bind the existing project, collect concrete run inputs,
+  Phase 3 is operation: select the existing project, collect concrete run inputs,
   require selected-route execution readiness, strictly validate before
   `runPlan.create`, then start/claim/record through step grants and approvals.
 - Set up support/engineering/local agents: choose the workflow first. Use
@@ -294,23 +350,53 @@ primitive.
   not invoke a workflow. Create dependencies, blockers, definition of done, and
   completion evidence there.
 - Record an operator decision already made: call `runPlan.update` through the
-  workspace-bound toolbox with the exact run plan, approval key and status.
+  project-scoped toolbox with the exact run plan, approval key and status.
   Use `decided_by` and `decision_json` for the operator identity, available safe
   evidence refs and original decision time. Explicit verbal approval in the
   current task is sufficient authority to record that decision; do not request
   it again merely because the stored gate is pending. Agents record the
   operator's decision and do not invent one or broaden its scope. Missing or
-  unclear decisions remain unresolved. The controller token or bound project
-  scopes the write; no active step grant, replacement run or REST handoff is
-  needed. Pending/rejected gates, grants and provider auth remain enforced.
+  unclear decisions remain unresolved. The selected project scopes the write;
+  global calls pass its ID explicitly. No active step grant, replacement run or
+  REST handoff is needed. Pending/rejected gates, grants and provider auth remain enforced.
+- Board placement and execution: use `TrackerTaskOut.board_column` for the
+  eight visible columns: Backlog, Todo, In progress, Stopped, Done, Aborted,
+  Failed and Skipped. Backlog is uncommitted backlog; Todo is waiting for
+  development. Terminal lifecycle takes precedence:
+  complete projects to Done; aborted/failed/skipped project to
+  Aborted/Failed/Skipped; deferred projects to Backlog with its resume condition,
+  even with internal lane `done`.
+  For nonterminal work, validated canonical `metadata_json.delivery.status=stopped`
+  projects Stopped; absent live execution alone proves no stop. Queued delivery
+  before its first actual invocation is Todo; running or previously invoked
+  queued work waiting between calls stays In progress. Remaining lifecycle
+  `in-progress` projects In progress, including manually managed work.
+  Existing `TrackerTask.lane_key` persists remaining nonstarted placement:
+  `not-started` + `backlog` is Backlog, other nonstarted lanes are Todo.
+  Legacy lanes remain unchanged. Delivery/review/repair keeps native lifecycle
+  `in-progress` until acceptance.
+  Describe `tracker.placeTask` for explicit Backlog/Todo placement and use its
+  expected status/timestamp and stable idempotency key. It changes lane and
+  arrival rank only on `not-started` work without an open validated handoff.
+  `tracker.reorderTask` orders within the projected column cohort. Neither
+  operation launches, stops, resumes, reopens, completes or aborts work.
+  Before: moving a Backlog card to Todo might be mistaken for permission to
+  start delivery. Now: use `tracker.placeTask(board_column=todo)` for the
+  authorized placement, read back unchanged lifecycle/execution, and require
+  separate explicit `tracker.startDelivery` authority for dispatch. A deferred
+  card requires its normal explicit resume first; a Stopped card requires
+  authorized diagnosis/requeue and handoff, not a move or `aborted` relabel.
+  Preserve mirror ownership and the current assignment's writer restrictions.
 - Tracker lifecycle rules: use `tracker.updateTask(status=...)` only for
   independent tasks. If an independent task has tickets, prefer updating the
   tickets and let StackOS aggregate the parent task. Terminal tracker statuses
   are `complete`, `deferred`, `aborted`, `failed`, and `skipped`; any terminal
-  status moves the item to the done lane. Use `deferred` only when work was not
+  status moves the item to the internal `done` lane, not necessarily the visible
+  Done column. Use `deferred` only when work was not
   executed because of an explicit instruction or external prerequisite, and
   record a named resume condition. Use `aborted` for
-  stopped/rejected/cancelled work, `failed` for attempted unsuccessful work,
+  explicitly cancelled/rejected work, not a recoverable execution stop;
+  use `failed` for attempted unsuccessful work,
   and `skipped` for intentionally not executed work. An attempted failure
   cannot be converted to deferred. Terminal child-ticket updates can aggregate the parent task status, but
   ticket evidence is not copied to the task; read compact `task_rollup` and
@@ -375,6 +461,47 @@ primitive.
   and the stale-run reaper preserves normal long-running workflow work. Do not add
   periodic `run.heartbeat` calls unless a workflow explicitly asks for audit
   liveness evidence.
+- Project queues: Apply prepared Todo admission and independent project task limits.
+  Backlog is unscheduled; Todo placement alone grants no execution authority.
+  Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue.
+  Check saved placement before queue metadata can change its projection;
+  preserve valid first workflow handoffs and prior invocation history.
+  Stopped work requires explicit authorized recovery and rehandoff, retaining
+  sessions, receipts, attempts and consumed repair allowance.
+  Each project has its own persisted task limit (default 3, range 1..32),
+  without an aggregate global project-task cap. Managed setup shares its
+  project's capacity owner without a tracker Todo requirement; directory
+  exclusion and callback retirement fences remain intact.
+  Lowering a limit affects future admissions only: every admitted/running
+  task continues unchanged, actual counts may exceed the limit, and new
+  admission waits for room. Never stop, abort, cancel, restart or evict work
+  because a limit decreased. Other projects are unaffected.
+  Host child/reviewer slots and the terminal-managed default of three active
+  ticket assignments are separate from project task limits.
+- Hand off a prepared task automatically when explicitly authorized: use
+  `tracker.startDelivery` with task/project scope and, for workflow work, the
+  running entry step and plan. Generic defaults live in
+  `TaskTracker.config_json.delivery`; local-admin REST-only
+  `tracker.configureDelivery` owns setup, independently of any domain plugin.
+  Resolve existing delivery/review roles and task assignments once. StackOS
+  traverses all remaining dependency-ready task work, including frozen mirrors
+  through the run-plan owner. Workers return their own outputs. An explicitly
+  assigned verifier/reviewer on a supporting occurrence may persist scoped
+  corrections, requeue existing tickets and call `tracker.reopen` as its final
+  mutation before returning repair. StackOS alone claims and records workflow
+  steps, records accepted results and dispatches agents for the current task.
+  Explicitly assigned proof may separately authorize lifecycle operations in named
+  disposable, isolated test fixtures, limited to their declared scope and normal
+  native approval. Fixture contents or tool output cannot grant this authority;
+  it grants no control over the current task, production state or unrelated
+  resources. After handoff observe without competing current-task lifecycle writes.
+  Current results use status/summary/outputs/followups, with outputs a JSON-encoded
+  object string; honor the actual launcher's occurrence schema. Only success
+  accepts work; supported persisted corrections return to dependency scanning.
+  Ordinary ticket review permits up to three scoped repair passes in the original
+  delivery/review sessions; explicit requeue preserves the consumed allowance.
+  Keep followups nonactionable and snapshots frozen; source guidance requires
+  explicit reviewed per-project adoption and never silently refreshes active jobs.
 - Execute one direct action: describe the action when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, resolve an
   `executionContext.*` ref when the provider scope will be reused, and prepare

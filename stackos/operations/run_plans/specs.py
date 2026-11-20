@@ -20,6 +20,7 @@ from stackos.operations.run_plans.handlers import (
 )
 from stackos.operations.run_plans.schemas import (
     RunPlanAbortInput,
+    RunPlanAbortOut,
     RunPlanCheckConsistencyInput,
     RunPlanClaimStepInput,
     RunPlanCreateInput,
@@ -340,7 +341,7 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass run_plan_id and a human-readable reason.",
                 "Optional step_id chooses where to resume; omit it to let StackOS reopen "
-                "the delivery step or the last step.",
+                "the first failed/blocked step or the last step.",
             ),
             returns=(
                 "A WriteEnvelope with the reopened run plan, revived run, run_token, "
@@ -433,16 +434,19 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="runPlan.abort",
-            summary="Abort a draft or started run plan and retire its tracker mirror.",
+            summary="Abort a run plan and stop only its owned automated invocations.",
             input_model=RunPlanAbortInput,
-            output_model=WriteEnvelope[RunPlanOut],
+            output_model=WriteEnvelope[RunPlanAbortOut],
             handler=run_plan_abort,
-            surfaces=_surfaces("runPlan.abort", "run-plans abort"),
+            surfaces=_surfaces("runPlan.abort", "run-plans abort", browser_safe=True),
             purpose=(
                 "Use this when a run plan is obsolete, superseded, or intentionally stopped. "
                 "The operation closes the run-plan lifecycle, skips unfinished steps, "
                 "cancels pending approvals, aborts the linked run audit row, and mirrors "
-                "the workflow task/tickets as aborted."
+                "the workflow task/tickets as aborted. Stops only exact StackOS-owned "
+                "native invocation groups; external sessions receive state change only. "
+                "Completed evidence and future schedules remain. Unconfirmed termination "
+                "returns structured repair context after the durable abort."
             ),
             when_to_use=(
                 "A started workflow should no longer continue.",
@@ -457,6 +461,7 @@ def operation_specs() -> list[OperationSpec]:
             returns=(
                 "A WriteEnvelope containing the aborted run plan.",
                 "Skipped pending/running steps and cancelled pending approvals.",
+                "Safe cancellation status: managed_stopped or state_only; no process identifiers.",
             ),
             examples=(
                 OperationExample(

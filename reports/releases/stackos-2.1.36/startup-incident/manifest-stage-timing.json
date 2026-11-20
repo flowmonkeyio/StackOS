@@ -1,0 +1,1 @@
+{"prerequisite_import_s": 0.5637925830669701, "manifest_import_s": 1.7831025002524257, "stages": {"safe_load_calls": 14, "safe_load_s": 0.4798788339830935, "check_schema_calls": 2118, "check_schema_s": 0.823694683611393, "default_registry_calls": 1, "default_registry_s": 0.9058133750222623}, "actions": 376, "lifespan_executed": false, "production_state_used": false}

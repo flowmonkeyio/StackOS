@@ -47,6 +47,7 @@ const search = ref('')
 
 const {
   error,
+  loading,
   panelOpen,
   busyAction,
   providerMessages,
@@ -159,7 +160,6 @@ function projectName(projectId: number): string {
 }
 
 async function load(): Promise<void> {
-  initialLoadComplete.value = false
   try {
     await Promise.all([loadAccounts(), projectsStore.refresh()])
     handleOAuthReturn()
@@ -273,6 +273,15 @@ onMounted(load)
       description="Set up provider Accounts once, then reuse them across projects."
     >
       <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading"
+          @click="load"
+        >
+          Refresh
+        </UiButton>
         <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddAccount()">
           Add Account
         </UiButton>
@@ -465,7 +474,7 @@ onMounted(load)
                       "
                       @click="requestRevoke(account)"
                     >
-                      Revoke
+                      {{ account.provider_key === 'cfobooth' ? 'Disconnect' : 'Revoke' }}
                     </UiButton>
                   </div>
                 </div>
@@ -631,13 +640,15 @@ onMounted(load)
 
     <UiConfirmDialog
       :model-value="Boolean(pendingRevoke)"
-      title="Revoke this Account?"
+      :title="pendingRevoke?.provider_key === 'cfobooth' ? 'Disconnect local Account?' : 'Revoke this Account?'"
       :description="
         pendingRevoke
-          ? `${pendingRevoke.display_name} will stop working everywhere. This cannot be undone.`
+          ? pendingRevoke.provider_key === 'cfobooth'
+            ? `Remove ${pendingRevoke.display_name} and its key from this StackOS installation. This does not revoke the remote key. Use API key management in your CFOBooth organization to revoke it remotely.`
+            : `${pendingRevoke.display_name} will stop working everywhere. This cannot be undone.`
           : undefined
       "
-      confirm-label="Revoke Account"
+      :confirm-label="pendingRevoke?.provider_key === 'cfobooth' ? 'Disconnect' : 'Revoke Account'"
       cancel-label="Keep Account"
       tone="danger"
       :loading="

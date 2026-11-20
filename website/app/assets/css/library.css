@@ -295,7 +295,7 @@
 
 .detail-list {
   display: grid;
-  gap: 11px;
+  gap: 0;
   margin: 30px 0 0;
   padding: 0;
   list-style: none;
@@ -303,21 +303,21 @@
 
 .detail-list li {
   position: relative;
-  padding: 17px 18px 17px 48px;
+  padding: 20px 0 20px 26px;
   color: #3e3e39;
   font-size: 17px;
   line-height: 1.65;
-  background: #eceae2;
-  border: 1px solid var(--paper-border);
-  border-radius: 12px;
+  border-top: 1px solid var(--paper-border);
 }
+
+.detail-list li:last-child { border-bottom: 1px solid var(--paper-border); }
 
 .detail-list li::before {
   position: absolute;
-  top: 25px;
-  left: 19px;
-  width: 8px;
-  height: 8px;
+  top: 30px;
+  left: 0;
+  width: 6px;
+  height: 6px;
   content: '';
   background: var(--cobalt);
   border-radius: 50%;
@@ -449,6 +449,23 @@
 }
 
 .article-prose strong { color: var(--ink); }
+
+/* Article-only reading treatment; the getting-started guide shares base prose. */
+.article-body--reading { padding-top: 42px; }
+.article-prose--reading { width: min(960px, calc(100% - 48px)); }
+.article-prose--reading > div > p:first-child {
+  margin-bottom: 24px;
+  padding: 0;
+  font-size: clamp(20px, 2vw, 24px);
+  font-weight: 500;
+  line-height: 1.5;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.article-prose--reading > div > p { font-size: 20px; line-height: 1.6; }
+.article-prose--reading h2 { margin-top: 48px; }
+.article-prose--reading .article-evidence-row + h2 { margin-top: 0; }
 
 .article-table {
   width: 100%;
@@ -628,6 +645,10 @@
     padding: 18px;
     font-size: 18px;
   }
+
+  .article-body--reading { padding-top: 32px; }
+  .article-prose--reading > div > p { font-size: 18px; }
+  .article-prose--reading > div > p:first-child { padding: 0; font-size: 20px; }
 
   .article-prose blockquote {
     margin-block: 30px 34px;

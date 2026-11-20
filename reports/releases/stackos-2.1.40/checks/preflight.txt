@@ -1,0 +1,43 @@
+
+> stackos-desktop@2.1.39 release:preflight /Users/sergeyrura/Bin/content-stack/desktop
+> STACKOS_REQUIRE_UPDATE_URL=1 node scripts/release-preflight.mjs
+
+StackOS desktop release preflight
+version: 2.1.39
+targetArches: arm64
+updateUrl: configured
+publicRelease: yes
+
+Build tools:
+  bash: ok
+  rsync: ok
+  uv: ok
+  file: ok
+  otool: ok
+  codesign: ok
+  security: ok
+  xcrun: ok
+
+Signing:
+  CSC_NAME: ok
+  CSC_LINK: missing
+  autoDiscovery: disabled
+  visible Developer ID Application identities:
+    - SERGEY RURA (TSHN26FR48)
+
+Notarization:
+  APPLE_API_KEY trio: missing
+  APPLE_ID trio: missing
+  APPLE_KEYCHAIN_PROFILE: ok
+  credentialValidation: failed (69)
+
+Commands:
+  dev unsigned: pnpm --dir desktop run dist:mac:dev
+  signed local: pnpm --dir desktop run dist:mac:signed
+  signed local pinned: CSC_NAME='Name (TEAMID)' pnpm --dir desktop run dist:mac:signed
+  notarized release: CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' pnpm --dir desktop run dist:mac:release
+  validate notary profile: STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' pnpm --dir desktop run release:preflight
+
+Release preflight failed:
+- notarytool credential validation failed
+ ELIFECYCLE  Command failed with exit code 1.

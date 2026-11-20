@@ -2,7 +2,99 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import MCPClient
+
+
+@pytest.mark.parametrize(
+    "operation,arguments,groups",
+    [
+        ("agentPreset.describe", {"key": "stackos.sdlc.delivery"}, []),
+        ("skillPreset.describe", {"key": "stackos.sdlc.delivery-orchestrator"}, []),
+        (
+            "agentPreset.resolveForWorkflow",
+            {"workflow_key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
+            ["required_agents", "recommended_agents", "required_skill_presets"],
+        ),
+        (
+            "skillPreset.resolveForWorkflow",
+            {"workflow_key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
+            ["required_skill_presets"],
+        ),
+    ],
+)
+def test_compact_preset_operations_preserve_actionable_adaptation(
+    mcp_client: MCPClient, operation: str, arguments: dict, groups: list[str]
+) -> None:
+    raw = mcp_client.call_tool_structured(operation, {**arguments, "response_mode": "raw"})
+    compact = mcp_client.call_tool_structured(operation, {**arguments, "response_mode": "compact"})
+    assert compact["ok"] is True
+    assert compact["operation"] == operation
+    compact = compact["data"]
+    pairs = [(raw, compact)]
+    if groups:
+        pairs = []
+        for group in groups:
+            assert len(raw[group]) == len(compact[group]) > 0
+            pairs.extend(zip(raw[group], compact[group], strict=True))
+    for full, bounded in pairs:
+        expected = full["project_adaptation"]
+        actual = bounded["project_adaptation"]
+        assert actual["adaptation_status"] == expected["adaptation_status"] == "required"
+        assert actual["adaptation_required"] is expected["adaptation_required"] is True
+        assert actual["do_not_use_verbatim"] is True
+        assert actual["instruction"] == expected["instruction"]
+        assert expected["required_agent_action"].startswith(
+            actual["required_agent_action"].removesuffix("...")
+        )
+        assert actual["prompt_assembly_order"] == expected["prompt_assembly_order"]
+        for field in ("required_context_refs", "conditional_context_refs"):
+            assert actual[field] == expected[field]
+            assert actual[field]
+            assert all(
+                item["ref"] and item["purpose"] and item["required"] for item in actual[field]
+            )
+        assert all(item["when"] for item in actual["conditional_context_refs"])
+        summary = full["preset"]["summary"]
+        identity = bounded["preset"] if groups else bounded["preset"]["summary"]
+        for field in ("key", "version", "source", "plugin_slug"):
+            assert identity[field] == summary[field]
+    # A compact read must leave the canonical response available without loss.
+    assert mcp_client.call_tool_structured(operation, {**arguments, "response_mode": "raw"}) == raw
+
+
+def test_engineering_compact_recovery_summary_keeps_automatic_caller_active(
+    mcp_client: MCPClient,
+) -> None:
+    request = {"key": "engineering.tracked-delivery", "plugin_slug": "engineering"}
+    raw = mcp_client.call_tool_structured(
+        "workflowTemplate.describe", {**request, "response_mode": "raw"}
+    )
+    compact = mcp_client.call_tool_structured("workflowTemplate.describe", request)
+    compact = compact.get("data", compact)
+    recovery = compact["spec"]["experience"]["recovery"]
+    # This summary reaches agents verbatim, independently of detailed policies.
+    assert recovery == raw["spec"]["experience"]["recovery"]
+    assert any(
+        "terminal-managed" in item and "stop active assignments and their processes" in item
+        for item in recovery
+    )
+    assert any(
+        all(
+            obligation in item
+            for obligation in (
+                "supported automatic correction",
+                "finish checks",
+                "other affected work",
+                "caller active",
+                "final tracker.reopen",
+                "return repair",
+                "do not wait for the caller to terminate",
+            )
+        )
+        for item in recovery
+    )
 
 
 def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
@@ -80,7 +172,9 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     assert described["preset"]["summary"]["key"] == "stackos.sdlc.planning"
     assert described["preset"]["summary"]["plugin_slug"] == "engineering"
     planning_contract = described["preset"]["preset"]["prompt_contract"]
-    assert "workflow graph check" in " ".join(planning_contract["responsibilities"])
+    assert "actual attachments and runner eligibility" in " ".join(
+        planning_contract["responsibilities"]
+    )
     planning_text = " ".join(planning_contract["must_do"])
     assert "attachment/provenance only" in planning_text
     assert "tracker.updateTicket" in planning_text
@@ -205,10 +299,33 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
 
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
-    assert set(actual) == set(expected)
-    assert "stackos.sdlc.delivery-reviewer" in actual
+    raw_recommended = {item["preset"]["summary"]["key"]: item for item in raw["recommended_agents"]}
+    compact_recommended = {item["preset"]["key"]: item for item in compact["recommended_agents"]}
+    assert (
+        raw_recommended["stackos.sdlc.test-designer"]["preset"]["summary"]["version"]
+        == compact_recommended["stackos.sdlc.test-designer"]["preset"]["version"]
+        == "0.6.14"
+    )
+    expected_versions = {
+        "stackos.sdlc.requirements-flow-definer": "0.6.8",
+        "stackos.sdlc.planning": "0.7.30",
+        "stackos.sdlc.delivery": "0.7.27",
+        "stackos.sdlc.delivery-reviewer": "0.6.28",
+    }
+    assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
-        assert item["preset"]["version"] == "0.3.1"
+        assert (
+            item["preset"]["version"]
+            == expected[key]["preset"]["summary"]["version"]
+            == expected_versions[key]
+        )
+        if key != "stackos.sdlc.requirements-flow-definer":
+            described = mcp_client.call_tool_structured(
+                "agentPreset.describe",
+                {"key": key, "plugin_slug": "engineering", "response_mode": "raw"},
+            )
+            # Full resolution and targeted retrieval must carry the same current contract.
+            assert described["preset"] == expected[key]["preset"]
         adaptation = item["project_adaptation"]
         full_adaptation = expected[key]["project_adaptation"]
         assert adaptation["adaptation_required"] is True
@@ -220,11 +337,46 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         )
         assert "assignment attempt" in full_adaptation["required_agent_action"]
         assert "stale, or contradictory inputs" in full_adaptation["required_agent_action"]
+        assert "tracker.reopen" in full_adaptation["required_agent_action"]
+        assert (
+            "this receiving agent has actually read it" in full_adaptation["required_agent_action"]
+        )
+        assert (
+            "Read changed or unknown applicable contracts fully"
+            in full_adaptation["required_agent_action"]
+        )
+        assert "full-read/merge" not in full_adaptation["required_agent_action"]
+        full_rules = expected[key]["preset"]["preset"]["prompt_contract"]["must_do"]
+        has_correction = any("full-read/merge" in rule for rule in full_rules)
+        assert has_correction == (
+            key in {"stackos.sdlc.delivery", "stackos.sdlc.delivery-reviewer"}
+        )
+        if key in {"stackos.sdlc.delivery", "stackos.sdlc.delivery-reviewer"}:
+            # These are recommendations for the bounded method, never controller grants.
+            recommended = set(expected[key]["preset"]["preset"]["recommended_tools"])
+            assert {"tracker.updateTicket", "tracker.reopen"} <= recommended
+            assert {"tracker.pick", "runPlan.claimStep", "runPlan.recordStep"}.isdisjoint(
+                recommended
+            )
+        assert (
+            "terminal-managed engineering.tracked-delivery"
+            in full_adaptation["required_agent_action"]
+        )
+        assert "tracker.startDelivery" in full_adaptation["required_agent_action"]
+        assert (
+            "Ordinary tickets require independent approval"
+            in full_adaptation["required_agent_action"]
+        )
+        assert "workflow phase gates" in full_adaptation["required_agent_action"]
         assert item["preset"]["handoff_outputs"]
         assert (
-            "sole writer of durable run/tracker state"
-            in (item["project_adaptation"]["required_agent_action"])
+            "sole writer of durable run/tracker state" in full_adaptation["required_agent_action"]
         )
+        assert (
+            "fallible evidence of the original operator outcome"
+            in full_adaptation["required_agent_action"]
+        )
+        assert "without routine main-agent relay" in full_adaptation["required_agent_action"]
 
     delivery = actual["stackos.sdlc.delivery"]["preset"]
     assert "candidate-ready" in " ".join(delivery["must_do"])
@@ -232,6 +384,101 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     reviewer = actual["stackos.sdlc.delivery-reviewer"]["preset"]
     assert "every executable child" in " ".join(reviewer["must_do"])
     assert "pass/repair/blocked recommendation" in " ".join(reviewer["handoff_outputs"])
+    full_reviewer = expected["stackos.sdlc.delivery-reviewer"]["preset"]["preset"][
+        "prompt_contract"
+    ]
+    # Navigation bounds rule lists as well as prose; raw retains every rule.
+    assert len(reviewer["must_do"]) == min(25, len(full_reviewer["must_do"]))
+    for brief_rule, full_rule in zip(
+        reviewer["must_do"], full_reviewer["must_do"][:25], strict=True
+    ):
+        assert full_rule.startswith(brief_rule.removesuffix("..."))
+    for requirement in (
+        "planned specs and integration checks",
+        "business regression",
+        "architecture gaps",
+        "inaccurate wiring",
+        "canonical ownership",
+        "nonblocking followups",
+        "when Git evidence is supplied",
+        "genuinely unavailable required verification blocks",
+        "three automatic repair passes per ticket",
+        "repair_count",
+        "rejection after the third repair",
+        "completeness, ticket sizing and proportionality",
+        "omitted checks",
+    ):
+        assert requirement in " ".join(full_reviewer["must_do"]), requirement
+    full_delivery = expected["stackos.sdlc.delivery"]["preset"]["preset"]["prompt_contract"]
+    assert "recording the gap" in " ".join(full_delivery["must_do"])
+    assert "necessary and proportionate" in " ".join(full_delivery["must_do"])
+    assert len(delivery["must_do"]) == min(25, len(full_delivery["must_do"]))
+    for brief_rule, full_rule in zip(
+        delivery["must_do"], full_delivery["must_do"][:25], strict=True
+    ):
+        assert full_rule.startswith(brief_rule.removesuffix("..."))
+    assert "new descendant commit" in " ".join(full_delivery["must_do"])
+    compact_skill_binding = compact["required_skill_presets"][0]
+    compact_skill = compact_skill_binding["preset"]
+    full_skill = raw["required_skill_presets"][0]["preset"]
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.32"
+    full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
+    # Skill lists are bounded navigation; raw retains the full contract.
+    assert len(compact_skill["must_do"]) == 25
+    for brief_rule, full_rule in zip(compact_skill["must_do"], full_instructions[:25], strict=True):
+        assert full_rule.startswith(brief_rule.removesuffix("..."))
+    assert (
+        "targeted raw resolution/description"
+        in compact_skill_binding["project_adaptation"]["required_agent_action"]
+    )
+    described_skill = mcp_client.call_tool_structured(
+        "skillPreset.describe",
+        {
+            "key": compact_skill["key"],
+            "plugin_slug": request["plugin_slug"],
+            "response_mode": "raw",
+        },
+    )
+    assert described_skill["preset"] == full_skill
+    observation = next(
+        rule for rule in full_instructions if rule.startswith("Start routine observation")
+    )
+    assert "tracker.changed" in observation
+    assert "no-change observations in the occurrence summary" in observation
+    assert "Refresh relevant state before final claims" in observation
+    # Adoption rules may fall beyond the compact list; targeted raw retrieval keeps them complete.
+    for requirement in (
+        "Diagnose the prerequisite before repeating dependent suites",
+        "Read back the pending ticket",
+        "in-progress alone is not runnable pending work",
+        "retaining one mandatory final project signoff",
+        "choose and verify the StackOS browser route before dispatch or resume",
+        "leaving all other verification agent-owned",
+        "Fresh Codex admission selects exact project source_ref bindings",
+        "Adopt Codex source references explicitly",
+        "tracker.configureDelivery adopt_sources preview/write with expected digests",
+        "instruction-only saved-default adoption",
+        "Preserve model and reasoning inheritance without guessing a host default",
+        "separate saved delivery.main_agent preferences",
+        "Source edits affect future Codex admissions, never active/historical snapshots "
+        "or resumed sessions",
+    ):
+        assert requirement in " ".join(full_instructions), requirement
+    # Later rules are deliberately outside the compact 25-rule navigation slice.
+    # The raw read above must preserve the complete execution/repair contract.
+    assert "three automatic repair passes per ticket" in " ".join(full_instructions)
+    assert "repair_count" in " ".join(full_instructions)
+    assert "rejection after the third repair" in " ".join(full_instructions)
+    for instruction in (
+        "exact final mutation payload",
+        "temporary safeguard, owner and resume condition",
+        "repair_count=3",
+        "no fourth ordinary repair",
+    ):
+        assert instruction in " ".join(full_instructions)
+    assert "Give concise ticket start/end" in " ".join(full_instructions)
+    assert "followup_resolutions" in " ".join(full_instructions)
+    assert "No comparable opportunity means unproven" in " ".join(full_instructions)
 
 
 def test_branding_content_production_presets_resolve_end_to_end(
@@ -405,11 +652,11 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
         for agent in resolved["required_agents"]
         if agent["preset"]["summary"]["key"] == "seo.workflow.website-analysis"
     )
-    assert website_agent["preset"]["summary"]["version"] == "0.5.1"
+    assert website_agent["preset"]["summary"]["version"] == "0.5.2"
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )
-    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.5"
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.7"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []
 
@@ -440,7 +687,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert raw["unresolved_skill_preset_requirements"] == []
         raw_summary = raw["required_skill_presets"][0]["preset"]["summary"]
         assert raw_summary["key"] == "stackos.workflow-orchestrator"
-        assert raw_summary["version"] == "0.1.5"
+        assert raw_summary["version"] == "0.1.7"
         assert raw_summary["generic_preset"] is True
         assert raw_summary["adaptation_required"] is True
         assert compact["required_agents"] == []
@@ -448,11 +695,15 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert compact["required_skill_presets"][0]["preset"]["key"] == (
             "stackos.workflow-orchestrator"
         )
-        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.5"
+        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.7"
 
 
 def test_finance_workflow_presets_resolve_end_to_end(mcp_client: MCPClient) -> None:
     expected_roles = {
+        "finance.management-review": (
+            {"stackos.finance.bookkeeping-preparer", "stackos.finance.control-reviewer"},
+            {"stackos.finance.cashflow-preparer"},
+        ),
         "finance.receipt-intake": (
             {"stackos.finance.receipt-operator"},
             {"stackos.finance.control-reviewer"},
@@ -524,6 +775,7 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         "payment-request-followups",
         "cashflow-management",
         "tax-estimates",
+        "management-review",
     ):
         request = {"workflow_key": f"finance.{workflow}", "plugin_slug": "finance"}
         raw = mcp_client.call_tool_structured(
@@ -533,8 +785,15 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         compact = compact.get("data", compact)
         raw_skill = raw["required_skill_presets"][0]
         compact_skill = compact["required_skill_presets"][0]
-        assert compact_skill["preset"]["version"] == "0.7.5"
+        assert compact_skill["preset"]["version"] == "0.8.3"
         assert compact_skill["project_adaptation"] == raw_skill["project_adaptation"]
+        raw_rules = raw_skill["preset"]["preset"]["operating_contract"]["must_do"]
+        compact_rules = compact_skill["preset"]["must_do"]
+        assert compact_rules[:3] == raw_rules[:3]
+        assert "summary retains disposition" in compact_rules[0]
+        assert "never financial facts or report contents" in compact_rules[0]
+        assert "runPlan.getStep(raw)" in compact_rules[1]
+        assert "remaining repair allowance" in compact_rules[2]
         assert any("capability preflight" in item for item in compact_skill["preset"]["must_do"])
         conditional = {
             item["ref"]: item
@@ -547,6 +806,9 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
             for item in compact[group]:
                 source = expected[item["preset"]["key"]]
                 assert item["project_adaptation"] == source["project_adaptation"]
+                raw_rules = source["preset"]["preset"]["prompt_contract"]["must_do"]
+                assert item["preset"]["must_do"][:3] == raw_rules[:3]
+                assert raw_rules[:3] == compact_rules[:3]
                 assert item["preset"]["handoff_outputs"]
                 assert "capability preflight" in item["project_adaptation"]["required_agent_action"]
                 if item["preset"]["role_class"] == "review":

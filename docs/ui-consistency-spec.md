@@ -1,5 +1,9 @@
 # StackOS UI Consistency Spec
 
+Earlier route-specific examples are historical. Apply shared primitives to the
+current [page layout map](./ui-page-layout-map.md); removed standalone inspection
+pages must not be recreated from these examples.
+
 Status: retained consistency proposal, not the current implementation contract.
 Use [ui-design-system.md](./ui-design-system.md) for current rules and
 [ui-component-inventory.md](./ui-component-inventory.md) for existing primitives.

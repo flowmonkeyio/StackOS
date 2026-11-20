@@ -98,15 +98,12 @@ class ShopifyActionConnector:
         if request.action_key in {"low_stock_report", "inventory_risk_report"}:
             from contextlib import nullcontext
 
-            from stackos_connectors import CallOptions, ConnectorClient
-            from stackos_connectors.catalog import load_registry
+            from stackos_connectors import CallOptions, get_default_client
 
             from stackos.integrations._rate_limit import get_bucket
 
             if self._client is None:
-                self._client = ConnectorClient(
-                    registry=load_registry("connectors/shopify/catalog.json")
-                )
+                self._client = get_default_client()
             options = self._options or CallOptions()
             limiter = (
                 options.rate_limiter

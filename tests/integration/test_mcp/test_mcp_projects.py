@@ -2,7 +2,47 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import MCPClient
+
+
+@pytest.mark.parametrize("mode", ["compact", "raw"])
+def test_confirmed_delete_through_mcp_uses_cleanup_and_truthful_retry(
+    mcp_client, seeded_project, mcp_settings, mode
+):
+    project = seeded_project["data"]
+    names = {tool["name"] for tool in mcp_client.list_tools()}
+    assert "project.reconcileFileOwnership" not in names
+    root = mcp_settings.data_dir / "projects" / str(project["id"])
+    root.mkdir(parents=True)
+    (root / "fixture.txt").write_text("disposable")
+    args = {
+        "project_id": project["id"],
+        "response_mode": mode,
+        "idempotency_key": "mcp-delete",
+        "confirmation": {
+            "project_id": project["id"],
+            "project_slug": project["slug"],
+            "permanent": True,
+        },
+    }
+    for invalid in (
+        {"project_id": project["id"]},
+        {**args, "hard": True},
+        {**args, "confirmation": {**args["confirmation"], "project_slug": "wrong"}},
+    ):
+        assert mcp_client.call_tool_error("project.delete", invalid)["code"] == -32602
+        assert root.exists()
+    assert (
+        mcp_client.call_tool_error("project.delete", {**args, "scope": "catalog"})["code"] == -32007
+    )
+    result = mcp_client.call_tool_structured("project.delete", args)
+    assert result["data"]["status"] == "deleted", result
+    assert not root.exists()
+    repeated = mcp_client.call_tool_structured("project.delete", args)
+    assert repeated["data"]["status"] == "missing"
+    assert not root.exists()
 
 
 def test_project_create_returns_envelope(mcp_client: MCPClient) -> None:
@@ -52,6 +92,42 @@ def test_project_update_returns_envelope(mcp_client: MCPClient, seeded_project: 
     assert env["data"]["name"] == "Renamed"
 
 
+@pytest.mark.parametrize("name", ["", "  ", "x" * 201, None, 7])
+def test_project_name_rejects_through_mcp(mcp_client, seeded_project, name):
+    pid = seeded_project["data"]["id"]
+    original = mcp_client.call_tool_structured("project.get", {"project_id": pid})
+    error = mcp_client.call_tool_error(
+        "project.update", {"project_id": pid, "patch": {"name": name}}
+    )
+    assert error["code"] == -32602
+    assert mcp_client.call_tool_structured("project.get", {"project_id": pid}) == original
+
+
+def test_project_move_and_name_use_same_mcp_owner(mcp_client, seeded_project):
+    pid = seeded_project["data"]["id"]
+    other = mcp_client.call_tool_structured(
+        "project.create", {"slug": "other-order", "name": "Other", "domain": "test"}
+    )["data"]["id"]
+    updated = mcp_client.call_tool_structured(
+        "project.update", {"project_id": pid, "patch": {"name": "  Renamed  "}}
+    )
+    assert updated["data"]["name"] == "Renamed"
+    moved = mcp_client.call_tool_structured(
+        "project.move", {"project_id": other, "placement": "before", "anchor_id": pid}
+    )
+    assert moved["data"]["id"] == other
+    assert [p["id"] for p in mcp_client.call_tool_structured("project.list", {})["items"]] == [
+        other,
+        pid,
+    ]
+    assert (
+        mcp_client.call_tool_error(
+            "project.move", {"project_id": pid, "placement": "top", "scope": "catalog"}
+        )["code"]
+        == -32007
+    )
+
+
 def test_project_update_preserves_workspace_binding(mcp_client: MCPClient) -> None:
     bootstrapped = mcp_client.call_tool_structured(
         "workspace.bootstrap",
@@ -81,7 +157,7 @@ def test_project_update_preserves_workspace_binding(mcp_client: MCPClient) -> No
 
 
 def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """schedule.remove mirrors REST DELETE by disabling the scheduled job."""
+    """MCP uses the same inert-draft, scoped-toggle and true-removal contract."""
     pid = seeded_project["data"]["id"]
     created = mcp_client.call_tool_structured(
         "schedule.set",
@@ -89,23 +165,52 @@ def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: d
             "project_id": pid,
             "kind": "weekly-review",
             "cron_expr": "15 3 * * *",
-            "enabled": True,
+            "enabled": False,
         },
     )
     job_id = created["data"]["id"]
 
     disabled = mcp_client.call_tool_structured(
-        "schedule.toggle", {"job_id": job_id, "enabled": False}
+        "schedule.toggle", {"project_id": pid, "job_id": job_id, "enabled": False}
     )
     assert disabled["data"]["enabled"] is False
 
-    reenabled = mcp_client.call_tool_structured(
-        "schedule.toggle", {"job_id": job_id, "enabled": True}
+    invalid = mcp_client.call_tool_error(
+        "schedule.toggle", {"project_id": pid, "job_id": job_id, "enabled": True}
     )
-    assert reenabled["data"]["enabled"] is True
+    assert invalid["code"] == -32602
+    assert mcp_client.call_tool_structured("schedule.runs", {"project_id": pid})["items"] == []
 
-    removed = mcp_client.call_tool_structured("schedule.remove", {"job_id": job_id})
-    assert removed["data"]["enabled"] is False
+    for operation in ("schedule.toggle", "schedule.remove"):
+        arguments = {"project_id": pid + 1, "job_id": job_id}
+        if operation == "schedule.toggle":
+            arguments["enabled"] = False
+        assert mcp_client.call_tool_error(operation, arguments)["code"] == -32004
+    removed = mcp_client.call_tool_structured(
+        "schedule.remove", {"project_id": pid, "job_id": job_id}
+    )
+    assert removed["data"] == {"project_id": pid, "job_id": job_id, "removed": True}
+
+
+def test_schedule_goal_and_native_choice_survive_mcp_storage(mcp_client, seeded_project, mcp_app):
+    from sqlmodel import Session
+
+    from stackos.db.models import ScheduledJob
+
+    execution = {"host_key": "codex"}
+    result = mcp_client.call_tool_structured(
+        "schedule.set",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "kind": "main-goal",
+            "goal": "Read project context",
+            "cron_expr": "0 9 * * *",
+            "execution_json": execution,
+        },
+    )
+    with Session(mcp_app.state.engine) as session:
+        assert session.get(ScheduledJob, result["data"]["id"]).execution_json == execution
+        assert session.get(ScheduledJob, result["data"]["id"]).goal == "Read project context"
 
 
 def test_project_create_duplicate_slug_returns_conflict(

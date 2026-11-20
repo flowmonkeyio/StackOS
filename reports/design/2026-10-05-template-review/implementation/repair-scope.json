@@ -1,0 +1,8 @@
+{
+  "status": "passed",
+  "repair_paths": [
+    "website/app/pages/library/workflows/[slug].vue",
+    "website/app/pages/library/integrations/[slug].vue"
+  ],
+  "change": "Only four scoped CSS lines added to prior candidate; removing them reproduces both prior file hashes."
+}

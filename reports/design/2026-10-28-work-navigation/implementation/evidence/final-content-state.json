@@ -1,0 +1,115 @@
+{
+  "project_id": 1,
+  "tracker_rev": 35,
+  "task": {
+    "id": 5,
+    "key": "improve-work",
+    "title": "Improve the Work view",
+    "goal": "Make work easy to inspect while agents own execution.",
+    "description": "Inspect work in columns; agents manage task status.",
+    "status": "in-progress",
+    "lane_key": "done",
+    "updated_at": "2026-10-28T23:16:55.717090",
+    "input_count": 1,
+    "input_ids": [
+      "51946da3-17a9-4602-bb67-1bf607f2dc26"
+    ],
+    "source_json": {
+      "template_key": "engineering.tracked-delivery"
+    }
+  },
+  "tickets": [
+    {
+      "key": "requirements",
+      "status": "complete",
+      "lane_key": "done",
+      "run_plan_id": null,
+      "run_plan_step_id": null,
+      "run_id": null,
+      "dependency_keys": []
+    },
+    {
+      "key": "navigation",
+      "status": "complete",
+      "lane_key": "done",
+      "run_plan_id": null,
+      "run_plan_step_id": null,
+      "run_id": null,
+      "dependency_keys": [
+        "requirements"
+      ]
+    },
+    {
+      "key": "board",
+      "status": "in-progress",
+      "lane_key": "implementation",
+      "run_plan_id": null,
+      "run_plan_step_id": null,
+      "run_id": null,
+      "dependency_keys": [
+        "navigation"
+      ]
+    },
+    {
+      "key": "dialog",
+      "status": "complete",
+      "lane_key": "done",
+      "run_plan_id": null,
+      "run_plan_step_id": null,
+      "run_id": null,
+      "dependency_keys": [
+        "navigation"
+      ]
+    },
+    {
+      "key": "verify-board",
+      "status": "not-started",
+      "lane_key": "implementation",
+      "run_plan_id": null,
+      "run_plan_step_id": null,
+      "run_id": null,
+      "dependency_keys": [
+        "board"
+      ]
+    },
+    {
+      "key": "verify-details",
+      "status": "not-started",
+      "lane_key": "implementation",
+      "run_plan_id": null,
+      "run_plan_step_id": null,
+      "run_id": null,
+      "dependency_keys": [
+        "dialog"
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ticket_key": "navigation",
+      "depends_on_ticket_key": "requirements"
+    },
+    {
+      "ticket_key": "board",
+      "depends_on_ticket_key": "navigation"
+    },
+    {
+      "ticket_key": "dialog",
+      "depends_on_ticket_key": "navigation"
+    },
+    {
+      "ticket_key": "verify-board",
+      "depends_on_ticket_key": "board"
+    },
+    {
+      "ticket_key": "verify-details",
+      "depends_on_ticket_key": "dialog"
+    }
+  ],
+  "status_fixture": {
+    "key": "not-started-0",
+    "status": "in-progress"
+  },
+  "command": "snapshot",
+  "database": "/private/tmp/stackos-work-723/data/stackos.db"
+}

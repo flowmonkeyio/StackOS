@@ -12,7 +12,7 @@ its host. StackOS does not grant that filesystem capability. StackOS resolves
 project scope, validates explicit inputs, executes daemon-side operations, and
 records audit.
 
-StackOS has two execution paths because agents do two different kinds of work:
+Workflow and direct action execution use two forms:
 
 1. **Workflow work**: multi-step, stateful, repeatable work that should be
    planned, granted, recorded, and reviewed.
@@ -85,6 +85,98 @@ See [engineering delegation](./agent-presets.md#engineering-delegation-and-accep
 for ownership, concurrency, model-selection and evidence rules. These are plugin
 operating contracts, not a second scheduler inside StackOS core.
 
+Plans, listed paths, design and proof are fallible evidence of the original
+operator outcome. Each assigned agent investigates obstacles and takes the
+smallest proportionate action within existing authority and role to restore
+progress, resolving necessary omissions and routine setup, tooling or integration
+gaps without routine main-agent relay. Verify and record what changed, why,
+affected consumers and proof. Delivery may change in-scope implementation/proof;
+independent review executes relevant checks and may prepare or repair its
+verification environment, but routes product fixes to delivery without editing
+product/acceptance tests or weakening criteria. Explicit exclusions, new or
+unavailable authority, actual ownership conflicts, materially different outcomes
+or compromised review independence stop affected work for reconciliation;
+continue unaffected work. Reject drift and duplicate owners; unrelated debt
+remains nonblocking followup. Lifecycle and action authority do not change.
+
+For an independently prepared task, the planner can instead call
+`tracker.startDelivery` after creating self-contained tickets and dependencies.
+Backlog is unscheduled. Todo alone grants no execution authority: preparation
+and an explicitly enabled automatic handoff are required. Validate fresh saved
+placement before queue metadata changes the projection; preserve valid workflow
+first handoffs and invocation history. Stopped work needs explicit authorized
+recovery and rehandoff with sessions, receipts, attempts and repair allowance
+intact. Each project has an independent persisted task limit (default 3,
+range 1..32), shared with its managed setup requests through the existing owner.
+Setup has no tracker Todo requirement. No aggregate global project-task cap is
+added. Lowering a limit affects future admissions only; admitted/running work
+continues unchanged even above the limit, with truthful counts and no automatic
+stop, abort, cancellation, restart or eviction. Other projects are unaffected.
+Host child/reviewer slots and the terminal-managed default of three active
+ticket assignments are separate constraints. Directory and callback retirement
+fences remain enforced.
+The planner supplies the project directory and task choices, merged by role with
+`TaskTracker.config_json.delivery` defaults into one effective task snapshot.
+Fresh Codex admission selects exact project agent source refs. The bounded source
+service resolves identity, instructions and supported native settings once;
+missing, ambiguous or unadopted sources reject before queueing. Other hosts retain
+inline contracts. Source model/effort wins over task and project fallback choices;
+remaining absent values inherit the host without guessing its effective effort.
+An explicit null clears a fallback, not a value owned by the source. Main-agent
+setup and scheduled launches separately resolve `delivery.main_agent` through
+the existing main-preference owner. Both paths use the shared host capabilities
+for validation and native arguments. Admitted task/request settings and resumed
+native sessions stay frozen after defaults or source edits. See the
+[selection contract](task-tracker.md#automated-task-delivery).
+Native settings cannot expand execution authority.
+StackOS passes the frozen contract to the harness and follows the
+generic dependency traversal. Source changes and repairs create separate scoped
+commits for independent exact-commit review; observation work may cite unchanged
+HEAD and non-Git work needs no commit. Ordinary review permits up to three scoped
+automatic repair passes in the same native delivery/review sessions, each on a
+separate descendant commit. Preserve consumed repair allowance across requeue;
+blocked required proof, execution failure, candidate mismatch or rejection after
+the third repair stops the same task with evidence. Workflow handoff uses a
+running step as entry context, then traverses all remaining task work. Mirrors execute their frozen contracts
+once after accepted descendants, using selected declared roles. Explicit task
+assignments win over frozen step assignments, then uniquely applicable declared
+roles; ambiguity requires selection. RunPlanRepository alone records their
+lifecycle. Assigned agents execute integration, review, audit and closeout gates;
+main retains scope admission and final claims and observes without lifecycle
+writes. Results use the actual launcher schema; the current closed envelope is
+status/summary/outputs/followups, with outputs a JSON-encoded object string.
+Only explicit success advances. Defaults use local-admin REST-only
+`tracker.configureDelivery`. Reviewed instruction adoption is explicit per
+project. After independent source/local approval, explicitly authorized
+instruction-only saved-default adoption may occur during a running task;
+queued/running snapshots stay frozen. Installed application/runtime replacement is separately
+authorized and main-owned, coordinated with the active runtime owner. Workflow/default
+activation explicitly included in the current outcome must finish there rather than
+being deferred until closure. Source changes never refresh active
+or historical snapshots. Explicit
+rehandoff after a completed/stopped job resolves current defaults and preserves
+ticket sessions, receipts and repair allowance. Jobs do not resume after daemon restart. The shared
+host capability owner selects review mode; Gemini and Hermes use normal native
+sessions with review-only instructions and no enforced read-only isolation.
+Native read-only controls remain where supported. See
+[task handoff](task-tracker.md#automated-task-delivery).
+
+On supported automatic execution, assigned verifiers/reviewers use the bounded
+[correction method](task-tracker.md#agent-owned-automatic-corrections) to merge
+scoped feedback into existing owning tickets, preserve failed findings/outputs
+and full session/attempt history, requeue affected children and reopen the
+earliest affected bound gate. They finish checks and quiesce other affected work
+before `tracker.reopen` as their final mutation, then immediately return `repair`.
+They do not wait for their own termination before that call. StackOS validates
+the native return and rescans persisted dependencies, preserving superseded
+observations without accepting the reset gate. Fresh feedback outranks old
+approval; corrected source requires a separate descendant commit and exact
+independent review in original sessions with consumed allowance intact. This
+permits no self-acceptance, claim/record or dispatch. Terminal-managed routing
+stays with main; unsupported/no-progress repair and actual execution errors stop.
+New source guidance does not activate unsupported frozen/live jobs; reviewed
+manual per-project adoption and fresh snapshot proof remain separate work.
+
 Local agent installation is outside the StackOS daemon boundary. StackOS
 describes generic presets and workflow role requirements, but the host/project
 decides whether those become `.codex` agents, markdown-frontmatter agents,
@@ -93,9 +185,11 @@ recommended StackOS operation directly, the agent should inspect and invoke it
 through the scoped toolbox.
 
 For Codex-style hosts, inspect `.codex/config.toml` and existing
-`.codex/agents/*.toml` before creating or updating local agents. StackOS does
-not scan or register those files because repository filesystem access belongs
-to the host agent, not the daemon. The workflow and preset responses should
+`.codex/agents/*.toml` before creating or updating local agents. The explicit
+project-agent REST console can read/write bounded definitions under local-admin
+file authority; handoff reads explicitly selected sources in a bound workspace.
+Binding alone grants no general file access. StackOS never scans personal/global
+agents or silently registers replacements. The workflow and preset responses should
 tell the agent what roles are needed; the host-local format decides how those
 roles are materialized.
 
@@ -123,6 +217,11 @@ StackOS plugin/MCP mechanics. Hermes support is an explicit existing-profile
 connection that adds neutral MCP connectivity and the canonical StackOS
 mechanics skill only; it does not create a Hermes profile, choose its
 model/provider, or install agents, personality, or workflow behavior.
+Grok Build uses the same neutral connectivity boundary and a native mirror of
+the canonical mechanics skill. Its native `AGENTS.md` support loads existing
+root guidance; registration creates no parallel root instruction file. A named
+workflow setup can adapt the resolved presets into `.grok/agents/` using Grok's
+host-local format, with the same source provenance and project scope.
 
 Workflow infrastructure setup is not workflow execution. Select
 `setup_existing` from `workflowTemplate.authoringGuide`, resolve the effective
@@ -138,6 +237,70 @@ That skill teaches agents how to use StackOS MCP, operations, workflow
 templates, run plans, tracker tasks/tickets, dependencies, and evidence. The
 main agent decides whether to load it, but the workflow response makes the
 expectation visible.
+
+## Shared Pattern Recommendations
+
+Workspace/session guidance points to the installation-wide `pattern.list` and
+`pattern.get` operations in both bound and global sessions, including before
+project selection. The pointer is static: startup never fetches a catalog or
+article. When a current planning, design or adaptation question would benefit,
+search relevant text or freeform tags with a bounded limit. Read full Markdown
+only for selected IDs/keys with `pattern.get` (raw by default). An empty catalog
+or no match is normal; continue unrelated work.
+
+Assess a recommendation against current repository facts, intentional existing
+choices, and operator/project contracts. Preserve conflicting deliberate choices;
+use a compatible part or explain the mismatch in the existing plan/decision.
+Reference a selected entry's ID/key and revision there when useful. Preserve
+server-derived `source`/`source_label` as provenance; a StackOS badge gives no
+higher authority. Lookup grants no permission to install dependencies, scaffold,
+edit a repository or change setup. There is no automatic adoption or project copy.
+
+For separately authorized catalog authoring, put topics and technologies in
+freeform tags/body. Include applicability, examples, and a reference plus concrete
+usage instructions for every required library/technology. Editing a shipped entry
+is a local customization; ordinary agents never supply bundled ownership,
+shipped version/hash or baseline fields. Minimal server-owned bundle bookkeeping
+does not create an agent adoption/version-management flow.
+
+Engineering main-agent, planning and architecture source presets and local
+adaptations teach this method. Editing those sources changes future admissions;
+ongoing/frozen/resumed sessions keep their admitted instructions. Report source
+refs/revisions separately from fresh-session consumption and installed activation.
+
+## Internal Handoffs And Complete Deliverables
+
+Internal handoffs carry the decision facts needed for the next action. Keep
+disposition, actual outcome/scope, candidate or revision, decisive proof and
+material limits inline. A reference-only summary is insufficient: automatic
+delivery projects the final summary into `accepted_receipts.outcome` without
+the detailed outputs. Put detailed commands/results, criterion coverage and
+actionable scoped findings once in existing outputs or evidence.
+
+| Transition | Inline decision facts | Detail owner and targeted retrieval |
+| --- | --- | --- |
+| Setup -> adaptation/continuation | Scope/status, source-to-target roles, preserved/missing obligations, activation limits, next action | Existing setup receipt via `projectSetup.get(raw)` and selected source owners |
+| Main/current context -> specialist | Objective, current amendments, criteria, ownership/authority, attempt/candidate, prerequisite outcomes and gaps | Current ticket via `tracker.brief(raw)`; applicable workflow output via `runPlan.getStep(raw)` |
+| Delivery -> review/dependent | Disposition, changed behavior/scope, candidate, decisive proof, limitations | Ordinary receipt via `tracker.brief(raw)`; workflow outputs via `runPlan.getStep(raw)` |
+| Review -> repair/main | Verdict/candidate, actionable scoped findings, failed/unavailable proof, next action | Review outputs and evidence in the existing ticket receipt |
+| Repair/resume -> retained agent | Current feedback/delta, unresolved obligations, attempt/candidate, remaining repair allowance | Relevant prior receipts through their existing owners; retain sessions and frozen history |
+| Integration -> closeout/operator | Assembled result/candidate, combined proof, residual gaps, release authority | Existing integration/release outputs and declared artifact/resource owners |
+
+References identify owner, project, record/step and applicable candidate/revision.
+Read necessary missing, changed or contradictory detail; do not replay unchanged
+history. Workflow mirror tickets provide navigation, not the complete step
+result. Missing, stale or inaccessible refs require safe authorized inline
+facts where the contract permits, or an explicit gap. Reuse still requires actual
+consumption and a current covered basis as described below.
+
+Preserve required result fields and complete substantive deliverables, including
+articles, designs, reports, nested domain followups and adapted operating
+guidance. References can replace transport only where the schema permits and
+the receiver can retrieve the full content. Human updates explain outcomes,
+decisions and limits without replaying detailed proof. These rules add no
+protocol, store, phase, length limit or authority. Shared source changes require
+separate explicit project adaptation/adoption; they do not refresh frozen native
+sessions or prove installed activation.
 
 ## Canonical Project Guidance Consumption
 
@@ -165,6 +328,12 @@ affected change:
    review, or highest timestamp cannot establish approval. Missing, inaccessible,
    conflicting, retired, or ambiguous sources remain explicit gaps. Resolve
    only gaps material to current work.
+   Reuse complete content only after verifying its owner/ref and current revision
+   or digest, and only if the receiving agent has actually read it. A retained
+   artifact is a source to read, not evidence that a new agent consumed it.
+   Read changed or unknown applicable contracts fully; recover truncation through
+   targeted raw reads or bounded sections until complete. Resolve applicable roles
+   individually instead of repeatedly dumping unchanged all-role contracts.
 3. Pass each specialist the relevant subset, refs and revision/approval
    evidence, applicability, candidate identity, and unresolved gaps. Specialists
    verify assignment inputs and return the sources consumed with findings.
@@ -176,6 +345,8 @@ affected change:
    evidence as history and continue unaffected work. The receiving workflow
    resolves the same authoritative owners; a handoff does not authorize execution
    or freeze an old guide as current.
+   Preserve frozen native instructions/settings and report affected reconciliation
+   explicitly; reading a changed source does not activate it in a retained session.
 
 Apply guidance according to the work, not merely the role's domain label:
 
@@ -368,19 +539,23 @@ other intentionally retained blobs.
 
 ## Project Scope
 
-Normal agent sessions are scoped by the repository they are running from.
+Choose session intent before the first successful startup. A workspace session
+uses one protected directory or named-workspace binding. A global chat or
+recurring task names its project explicitly on each scoped call.
 
 ```text
 stackos mcp-bridge
--> detects git root/current root
+-> reads directory hints and their provenance
 -> builds a stable path fingerprint
 -> reads git remote when available
--> calls workspace.startSession
--> injects the resolved project_id into project-scoped tools
+-> resolves existing binding read-only during discovery
+-> agent calls workspace.startSession with known workspace or global intent
+-> injects a protected workspace project, or requires each global call's project_id
 ```
 
 The agent-facing bridge exposes only `workspace.startSession`,
-`workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. First-run
+`workspace.resolve`, browser lifecycle tools, `toolbox.describe`, and
+`toolbox.call` directly. First-run directory
 setup uses `workspace.startSession` to create or reuse one workspace binding.
 Ongoing operations use the same call only to confirm the workspace-bound
 project, then move to narrowly scoped `toolbox.describe` / `toolbox.call`
@@ -390,16 +565,25 @@ through `toolbox.call`. If a repo is already bound, the bridge injects
 repeating it. Agents should omit injected fields in toolbox calls unless an
 exact described schema says otherwise outside the bridge path. If a caller
 explicitly passes a different `project_id`, the bridge refuses the call. There
-is no global active project in the agent path; the workspace-bound project is
-the source of truth.
+is no global active project or last-used project fallback.
+
+For an unbound ambient directory, initialize/tools-list does not bootstrap or
+register a session. Discovery stays read-only until startup declares intent.
+`workspace.startSession(global_session=true)` starts globally without creating
+a project or directory binding, even if `auto_bootstrap` is true. An optional
+positive existing `project_id` validates the initial task selection; it does
+not establish a default. Every global scoped call still requires its own ID.
+Use a JSON boolean for `global_session`. Failed startup does not accept a mode;
+after success, repeated startup cannot switch between global and bound scope.
 
 Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
-session id where relevant. Calls that try to resolve or connect another
-workspace are refused by the bridge. If the bridge has no host-supplied
-workspace identity, caller-supplied directory/repo anchors are refused too;
-desktop/global sessions must bind by explicit `workspace_alias` or project
-identity.
+session id where relevant in workspace sessions. Bound setup/startup cannot
+switch projects, replace the alias, or create another named project. Repeated
+startup retains the accepted named alias. A read-only alias lookup can return
+another project without changing the session's bound ID. In global sessions,
+ambient launch hints are discarded after startup; agents must not invent
+cwd/repo anchors. Use explicit project IDs and deliberate named setup instead.
 
 These workspace hints are identifiers for StackOS project binding only. They
 help the daemon inject the correct `project_id` and reject cross-project calls.
@@ -409,39 +593,86 @@ about separately from StackOS permissions.
 
 ## Setup Path
 
+Ordinary goals activate the applicable configured method after the agent inspects
+project intent and current setup. Select from workflow outcomes/use boundaries,
+without asking users for workflow names. A harmless question needs no business
+run. For newly relevant methods, use `workflowTemplate.authoringGuide` and its
+`project_setup_method` within current setup authority. That owner supplies the
+shared setup/update prompt, bounded mode inputs, notices and question/result
+wording for both existing-session and managed entrypoints. Startup notices are
+advisory; they do not grant writes or prevent answering ordinary questions.
+
+Inspect and adopt valid legacy adaptations without inventing prior versions.
+For updates compare previous applied sources, current local choices and new
+effective sources. Preserve compatible choices and all applicable operating rules,
+including declared resilience/authority obligations. Bind role and source-obligation
+coverage to exact targets and checks through `projectSetup.report`; material loss
+prevents that workflow's success while independent work can finish. Prove actual
+loading separately from saved-source syntax and installed state.
+
+Ordinary Setup/Update completes `ready_to_use`; only explicit
+`infrastructure_only` stops after preparation without execution state. Follow the
+effective workflow's safe activation method through existing authorized owners.
+Reuse current covered completed delivery/review/closeout evidence before running
+only missing or invalidated harmless bounded native/configuration/behavior checks
+inside the owning setup/task. Record the project/source/default/native/environment
+basis and covered/missing claims. Do not automatically create a separate full
+verification task/workflow, tracker parent or review workflow solely for readiness.
+Existing parent independent review remains intact; standalone setup uses its method
+and genuine evidence. Aborted/incomplete/simulated/foreign-project evidence is not
+completed activation. Canonical saved defaults/readback and actual native consumption
+remain distinct required claims; task overrides and prepared files prove neither.
+Missing authority, safe method or required proof leaves the requested outcome
+unfinished. Setup cannot authorize unrelated finance, publication, communications
+or trading; defer per-run business inputs separately. See the
+[setup lifecycle](workflow-templates.md#agent-workflow-setup-lifecycle).
+
 Project and workspace are separate concepts. A project is the durable StackOS
 container for tasks, tickets, workflows, credentials refs, resources, run
 plans, communications, and audit. A workspace is the daemon-owned binding from
 the local repo/directory where the agent is running to one project.
 
-If a repository or directory is not bound yet, setup should be explicit and
-idempotent:
+For a chosen working folder, call `workspace.startSession({})`. Reliable
+directory identity creates or reuses the project and binding in the daemon DB;
+no setup files are written into the repo. The bridge then injects its project
+ID. A first `workspace.startSession({"workspace_alias":"acme"})` can instead
+reuse an existing named binding. Both forms protect that scope for the session.
 
-1. Call `workspace.startSession` from the current repo/directory. It creates or
-   reuses one project for that workspace root and stores the binding in the
-   daemon DB when reliable directory identity exists. It does not write files
-   into the repo. Desktop/global hosts with no cwd/git signal stay unbound and
-   receive `candidate_workspaces`/project-selection guidance instead.
-2. Read the returned setup state carefully: `workspace_bound` or
-   `project_scoped_tools_usable` means project-scoped tools can run. Missing
-   `framework` or `content_model_json` means the project profile is
-   under-described for adaptation, not that the workspace is unusable.
-3. Continue with project-scoped tools immediately; the bridge injects the
-   resolved `project_id`.
-4. Use `workspace.resolve` when the caller needs a read-only diagnostic before
-   setup.
-5. Use `toolbox.call` for `project.list`, `project.create`,
-   `workspace.bootstrap`, or `workspace.connect` only when the operator or user
-   intent intentionally chooses project identity. For desktop/global sessions
-   with no directory identity, use `workspace.connect` to reuse a selected
-   existing project or named `workspace_alias`; use `workspace.bootstrap` to
-   create a new named workspace from explicit `project_name`, `project_slug`,
-   or `workspace_alias`. Do not call `project.create` and assume the current
-   agent session moved; bind or verify the workspace with `workspace.bootstrap`
-   or `workspace.connect` before project-scoped work. If the current repo
-   fingerprint or alias is already bound to a different project,
-   `workspace.connect` rejects the move unless the caller passes
-   `rebind_existing=true`.
+For a known global chat, use one of these first calls:
+
+```javascript
+workspace.startSession({"global_session": true, "project_id": 42}) // Chosen existing project.
+workspace.startSession({"global_session": true}) // Discover projects before choosing.
+```
+
+Then use narrow discovery and explicit task targets. IDs below are examples;
+select them from current project metadata:
+
+```javascript
+toolbox.call({"tool_name": "project.list", "arguments": {}})
+toolbox.call({"tool_name": "workflowTemplate.list", "arguments": {"project_id": 42}})
+toolbox.call({"tool_name": "workflowTemplate.list", "arguments": {"project_id": 84}})
+toolbox.call({"tool_name": "workflowTemplate.list", "arguments": {"project_id": 42}})
+```
+
+For intentional named setup, call `workspace.connect` through the toolbox with
+the existing `project_id` and optional `workspace_alias`. To create a project,
+call `workspace.bootstrap` with explicit `project_name`, `project_slug`, or
+`workspace_alias`, then use the returned ID explicitly. These global setup
+calls, diagnostic `workspace.resolve`, and repeated selected startup never
+pin a project for later calls. No project binding is required for global work.
+
+An explicit ID on non-global startup of an unbound directory is rejected
+before project, binding, or session writes. Declare `global_session=true` for
+global intent, or establish the intended workspace binding. Normal folder
+startup without an ID retains automatic bootstrap. With no usable directory
+or alias at all, startup is effectively global; explicit global intent makes
+the agent's choice clear. A missing/invalid project ID never selects a fallback.
+
+Read `setup_state` carefully: `workspace_bound` identifies binding, while
+`project_scoped_tools_usable` can also be true for a selected global session
+without binding. Missing framework/content-model profile fields are adaptation
+hints, not blockers. Use `workspace.resolve` for read-only diagnostics.
 
 The bridge sends a path fingerprint by default:
 `path:<sha256(workspace_root)[:24]>`. The `workspace_root` is the directory the
@@ -449,17 +680,27 @@ host or operator supplied, not necessarily a Git repository root. If git is
 unavailable, this path identity is enough for a local directory. If git or a
 remote is added later, bootstrap can attach that metadata to the existing
 binding when the same root is seen. A moved non-git directory without a remote
-looks like a new workspace unless the agent intentionally reconnects or rebinds
-it.
+looks like a new workspace unless intentionally connected to the existing
+project during unbound setup. An established bound bridge cannot rebind itself.
 
-The bridge only creates path fingerprints for usable workspace roots. Host app
-process cwd is a hint, not proof of project context: explicit `--workspace-root`
-or `STACKOS_WORKSPACE_ROOT` values win, Claude Code's `CLAUDE_PROJECT_DIR` is
-preferred when present, and a global desktop host launched at `/` returns
-`needs_workspace_binding` instead of binding to a generic root project.
+The bridge only creates path fingerprints for usable roots; `/` is missing
+workspace context. Explicit `--workspace-root` or `STACKOS_WORKSPACE_ROOT`
+values express deliberate StackOS selection and cannot be downgraded to
+global, even after failed resolution. Existing valid bindings stay protected
+too. `CLAUDE_PROJECT_DIR` remains preferred over cwd, but both are ambient
+hints: global hosts can supply scratch directories through either. Do not infer
+intent from a host name or path pattern. Known ChatGPT “Choose project / This
+computer” and Claude “Local / No folder” intent uses global startup. If intent
+is unknown, clarify before calling startup.
 
-This keeps normal agents focused on the project attached to their workspace and
-still gives them a complete MCP-native path when no binding exists yet.
+For recurring tasks, save the numeric ID only after confirming the intended
+project's current metadata. Migration `0033_project_id_nonreuse` prevents
+future deleted IDs from being allocated to replacement projects. That guarantee
+applies to selections confirmed after migration. Pre-migration numeric-only
+references need explicit reselection/confirmation: migration cannot detect an
+already reused ID or recover unknown deleted maxima. A missing saved ID stops
+the task; names and last-used projects are never replacements. Source support
+and migration tests do not establish that an installed host has been upgraded.
 
 ## Toolbox Repair
 

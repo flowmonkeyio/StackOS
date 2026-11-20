@@ -6,12 +6,10 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
-from sqlmodel import SQLModel
 
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.crypto.seed import ensure_seed_file
-from stackos.db.connection import make_memory_engine
+from tests.helpers.sqlite_schema import make_test_memory_engine
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -23,20 +21,11 @@ def _crypto_seed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     yield seed_path
 
 
-def _emit_partial_indexes(engine: object) -> None:
-    statements = [
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_idempotency "
-        "ON idempotency_keys(project_id, tool_name, idempotency_key)",
-    ]
-    with engine.begin() as conn:  # type: ignore[attr-defined]
-        for s in statements:
-            conn.execute(text(s))
-
-
 @pytest.fixture
 def engine() -> Iterator[object]:
     """In-memory SQLite engine with the full schema."""
-    eng = make_memory_engine()
-    SQLModel.metadata.create_all(eng)
-    _emit_partial_indexes(eng)
-    yield eng
+    eng = make_test_memory_engine()
+    try:
+        yield eng
+    finally:
+        eng.dispose()

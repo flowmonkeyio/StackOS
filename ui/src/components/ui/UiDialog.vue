@@ -10,21 +10,20 @@
 -->
 <script lang="ts">
 let dialogIdSeed = 0;
-let dialogStackSeed = 0;
-const openDialogStack: number[] = [];
-let previousBodyOverflow: string | null = null;
-const DIALOG_Z_INDEX_BASE = 1000;
 </script>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import UiIcon from './UiIcon.vue';
 import UiIconButton from './UiIconButton.vue';
+import { closeOverlay, isTopOverlay, openOverlay, type OverlayEntry } from './overlayStack';
 
 export interface UiDialogProps {
   modelValue: boolean;
   title?: string;
   description?: string;
+  /** Accessible description supplied by content in a body slot. */
+  describedBy?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /** Hide the X. Use only when dismiss requires explicit user action. */
   hideClose?: boolean;
@@ -34,12 +33,19 @@ export interface UiDialogProps {
   noEscape?: boolean;
   /** Wider, scrollable body for forms. */
   scrollBody?: boolean;
+  /** Stable viewport-bounded frame for reading and editing detail content. */
+  layout?: 'default' | 'detail';
+  /** Optional bounded height for a detail flow; ordinary dialogs keep their size. */
+  detailHeight?: string;
 }
 
 const props = withDefaults(defineProps<UiDialogProps>(), {
   title: undefined,
   description: undefined,
+  describedBy: undefined,
   size: 'md',
+  layout: 'default',
+  detailHeight: undefined,
 });
 
 const emit = defineEmits<{
@@ -49,8 +55,10 @@ const emit = defineEmits<{
 
 const dialogId = ++dialogIdSeed;
 const dialogRef = ref<HTMLDivElement | null>(null);
-const previousFocus = ref<HTMLElement | null>(null);
-const stackIndex = ref<number | null>(null);
+const overlayRef = ref<HTMLDivElement | null>(null);
+const bodyRef = ref<HTMLDivElement | null>(null);
+let overlayEntry: OverlayEntry | null = null;
+let focusObserver: MutationObserver | null = null;
 
 function close() {
   emit('update:modelValue', false);
@@ -58,19 +66,15 @@ function close() {
 }
 
 function removeFromStack() {
-  if (stackIndex.value === null) return;
-  const idx = openDialogStack.indexOf(stackIndex.value);
-  if (idx >= 0) openDialogStack.splice(idx, 1);
-  stackIndex.value = null;
-  if (openDialogStack.length === 0) {
-    document.body.style.overflow = previousBodyOverflow ?? '';
-    previousBodyOverflow = null;
-  }
+  focusObserver?.disconnect();
+  focusObserver = null;
+  closeOverlay(overlayEntry);
+  overlayEntry = null;
 }
 
 function onKey(ev: KeyboardEvent) {
   if (!props.modelValue) return;
-  if (!isTopDialog.value) return;
+  if (!isTopOverlay(overlayEntry)) return;
   if (ev.key === 'Escape' && !props.noEscape) {
     ev.preventDefault();
     close();
@@ -84,44 +88,64 @@ function onKey(ev: KeyboardEvent) {
 function trapFocus(ev: KeyboardEvent) {
   const node = dialogRef.value;
   if (!node) return;
-  const focusables = node.querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-  );
-  if (!focusables.length) return;
+  const focusables = Array.from(node.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+  )).filter((element) => {
+    if (element.closest('[hidden], [inert]')) return false;
+    for (let parent = element.parentElement; parent && parent !== node; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement && !parent.open && !parent.querySelector('summary')?.contains(element)) return false;
+    }
+    return true;
+  });
+  if (!focusables.length) {
+    ev.preventDefault();
+    node.focus({ preventScroll: true });
+    return;
+  }
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
-  if (ev.shiftKey && document.activeElement === first) {
+  if (ev.shiftKey && (document.activeElement === first || !focusables.includes(document.activeElement as HTMLElement))) {
     last.focus();
     ev.preventDefault();
-  } else if (!ev.shiftKey && document.activeElement === last) {
+  } else if (!ev.shiftKey && (document.activeElement === last || !focusables.includes(document.activeElement as HTMLElement))) {
     first.focus();
     ev.preventDefault();
   }
 }
 
-function onDialogOpening() {
-  previousFocus.value = document.activeElement as HTMLElement;
-  stackIndex.value = ++dialogStackSeed;
-  openDialogStack.push(stackIndex.value);
-  if (openDialogStack.length === 1) {
-    previousBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+function retainFocus() {
+  if (!props.modelValue || !isTopOverlay(overlayEntry)) return;
+  const node = dialogRef.value;
+  const active = document.activeElement;
+  // Disabling the active action can send native focus to BODY. Keep the
+  // mounted frame as a safe target without enabling pending controls.
+  if (node && (!node.contains(active) || (active instanceof HTMLElement && active.matches(':disabled')))) {
+    node.focus({ preventScroll: true });
   }
+}
+
+function onDialogOpening() {
+  overlayEntry ??= openOverlay(() => dialogRef.value);
   window.addEventListener('keydown', onKey);
 }
 
 async function onDialogOpened() {
+  applyStackStyles();
   await nextTick();
-  const target = dialogRef.value?.querySelector<HTMLElement>('[data-autofocus]')
-    ?? dialogRef.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  if (!isTopOverlay(overlayEntry)) return;
+  const target = dialogRef.value?.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)')
+    ?? dialogRef.value?.querySelector<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+    ?? dialogRef.value;
   target?.focus();
+  if (dialogRef.value) {
+    focusObserver = new MutationObserver(retainFocus);
+    focusObserver.observe(dialogRef.value, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled'] });
+  }
 }
 
 function onDialogClosed() {
   removeFromStack();
   window.removeEventListener('keydown', onKey);
-  previousFocus.value?.focus?.();
-  previousFocus.value = null;
 }
 
 onBeforeUnmount(() => {
@@ -140,108 +164,157 @@ const titleId = computed(() => (props.title ? `ui-dialog-title-${dialogId}` : un
 const descriptionId = computed(() =>
   props.description ? `ui-dialog-desc-${dialogId}` : undefined
 );
-const isTopDialog = computed(
-  () => stackIndex.value !== null && openDialogStack.at(-1) === stackIndex.value
-);
-const overlayZIndex = computed(() =>
-  stackIndex.value === null ? undefined : DIALOG_Z_INDEX_BASE + stackIndex.value * 2
-);
-const dialogZIndex = computed(() =>
-  stackIndex.value === null ? undefined : DIALOG_Z_INDEX_BASE + stackIndex.value * 2 + 1
-);
+function applyStackStyles() {
+  if (!overlayEntry) return;
+  if (overlayRef.value) overlayRef.value.style.zIndex = String(overlayEntry.layer);
+  if (dialogRef.value) dialogRef.value.style.zIndex = String(overlayEntry.layer + 1);
+}
+
+function focusTitle() {
+  dialogRef.value?.querySelector<HTMLElement>('.ui-dialog__title')?.focus({ preventScroll: true });
+}
+defineExpose({ body: bodyRef, focusTitle });
 </script>
 
 <template>
-  <transition
-    enter-active-class="transition-opacity duration-base ease-enter"
-    enter-from-class="opacity-0"
-    leave-active-class="transition-opacity duration-fast ease-exit"
-    leave-to-class="opacity-0"
-  >
-    <div
-      v-if="modelValue"
-      class="ui-dialog__overlay fixed inset-0 z-overlay bg-bg-overlay backdrop-blur-[2px] flex items-center justify-center p-4"
-      :style="{ zIndex: overlayZIndex }"
-      @vue:before-mount="onDialogOpening"
-      @vue:mounted="onDialogOpened"
-      @vue:before-unmount="onDialogClosed"
-      @click.self="!staticBackdrop && close()"
+  <Teleport to="body">
+    <transition
+      enter-active-class="transition-opacity duration-base ease-enter"
+      enter-from-class="opacity-0"
+      leave-active-class="transition-opacity duration-fast ease-exit"
+      leave-to-class="opacity-0"
     >
-      <transition
-        enter-active-class="transition duration-base ease-enter"
-        enter-from-class="opacity-0 scale-[0.98]"
-        leave-active-class="transition duration-fast ease-exit"
-        leave-to-class="opacity-0 scale-[0.98]"
+      <div
+        v-if="modelValue"
+        ref="overlayRef"
+        class="ui-dialog__overlay fixed inset-0 z-overlay bg-bg-overlay backdrop-blur-[2px] flex items-center justify-center p-4"
+        @vue:before-mount="onDialogOpening"
+        @vue:mounted="onDialogOpened"
+        @vue:before-unmount="onDialogClosed"
+        @click.self="!staticBackdrop && close()"
       >
-        <div
-          v-if="modelValue"
-          ref="dialogRef"
-          role="dialog"
-          aria-modal="true"
-          :aria-labelledby="titleId"
-          :aria-describedby="descriptionId"
-          :style="{ zIndex: dialogZIndex }"
-          :class="[
-            'ui-dialog z-modal w-full rounded-xl border border-default bg-bg-surface shadow-xl flex flex-col max-h-[calc(100vh-2rem)]',
-            sizeClass,
-          ]"
+        <transition
+          enter-active-class="transition duration-base ease-enter"
+          enter-from-class="opacity-0 scale-[0.98]"
+          leave-active-class="transition duration-fast ease-exit"
+          leave-to-class="opacity-0 scale-[0.98]"
         >
-          <header
-            v-if="title || $slots.header || !hideClose"
-            class="ui-dialog__header flex items-start justify-between gap-3 px-5 py-4 border-b border-subtle"
-          >
-            <div class="min-w-0">
-              <slot name="header">
-                <h2
-                  v-if="title"
-                  :id="titleId"
-                  class="t-h2 text-fg-strong"
-                >
-                  {{ title }}
-                </h2>
-                <p
-                  v-if="description"
-                  :id="descriptionId"
-                  class="text-sm text-fg-muted mt-1"
-                >
-                  {{ description }}
-                </p>
-              </slot>
-            </div>
-            <UiIconButton
-              v-if="!hideClose"
-              data-autofocus
-              aria-label="Close dialog"
-              size="sm"
-              variant="ghost"
-              @click="close"
-            >
-              <UiIcon
-                name="close"
-                class="h-4 w-4"
-                aria-hidden="true"
-              />
-            </UiIconButton>
-          </header>
           <div
+            v-if="modelValue"
+            ref="dialogRef"
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            :aria-labelledby="titleId"
+            :aria-describedby="describedBy ?? descriptionId"
+            :style="layout === 'detail' && detailHeight ? { '--ui-dialog-detail-height': detailHeight } : undefined"
             :class="[
-              'ui-dialog__body px-5 py-4',
-              scrollBody && 'overflow-y-auto',
+              'ui-dialog z-modal w-full rounded-xl border border-default bg-bg-surface shadow-xl flex flex-col max-h-[calc(100vh-2rem)]',
+              sizeClass,
+              layout === 'detail' && 'ui-dialog--detail',
             ]"
           >
-            <slot />
+            <header
+              v-if="title || $slots.header || !hideClose"
+              class="ui-dialog__header flex items-start justify-between gap-3 px-5 py-4 border-b border-subtle"
+            >
+              <div class="min-w-0">
+                <slot name="header">
+                  <h2
+                    v-if="title"
+                    :id="titleId"
+                    class="ui-dialog__title t-h2 break-words text-fg-strong"
+                    tabindex="-1"
+                    :title="title"
+                  >
+                    {{ title }}
+                  </h2>
+                  <p
+                    v-if="description"
+                    :id="descriptionId"
+                    class="text-sm text-fg-muted mt-1 break-words"
+                  >
+                    {{ description }}
+                  </p>
+                </slot>
+              </div>
+              <UiIconButton
+                v-if="!hideClose"
+                data-autofocus
+                aria-label="Close dialog"
+                size="md"
+                class="shrink-0"
+                variant="ghost"
+                @click="close"
+              >
+                <UiIcon
+                  name="close"
+                  class="h-4 w-4"
+                  aria-hidden="true"
+                />
+              </UiIconButton>
+            </header>
+            <div
+              ref="bodyRef"
+              :class="[
+                'ui-dialog__body px-5 py-4',
+                scrollBody && 'overflow-y-auto',
+              ]"
+            >
+              <slot />
+            </div>
+            <footer
+              v-if="$slots.footer"
+              class="ui-dialog__footer flex items-center justify-end gap-2 px-5 py-3 border-t border-subtle bg-bg-surface-alt rounded-b-xl"
+            >
+              <slot
+                name="footer"
+                :close="close"
+              />
+            </footer>
           </div>
-          <footer
-            v-if="$slots.footer"
-            class="ui-dialog__footer flex items-center justify-end gap-2 px-5 py-3 border-t border-subtle bg-bg-surface-alt rounded-b-xl"
-          >
-            <slot
-              name="footer"
-              :close="close"
-            />
-          </footer>
-        </div>
-      </transition>
-    </div>
-  </transition>
+        </transition>
+      </div>
+    </transition>
+  </Teleport>
 </template>
+
+<style scoped>
+.ui-dialog--detail {
+  height: min(var(--ui-dialog-detail-height, 880px), calc(100dvh - 48px));
+  max-height: min(var(--ui-dialog-detail-height, 880px), calc(100dvh - 48px));
+  min-width: 0;
+  overflow: hidden;
+}
+.ui-dialog--detail .ui-dialog__header,
+.ui-dialog--detail .ui-dialog__footer {
+  flex: none;
+}
+.ui-dialog--detail .ui-dialog__header {
+  min-height: 5rem;
+}
+.ui-dialog--detail .ui-dialog__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.ui-dialog--detail .ui-dialog__header p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-dialog--detail .ui-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+}
+.ui-dialog--detail .ui-dialog__footer {
+  min-height: 3.5rem;
+  flex-wrap: wrap;
+}
+</style>

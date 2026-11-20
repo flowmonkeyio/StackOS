@@ -1,17 +1,92 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 
 import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import { defaultBoardFilters, normalizeBoardFilters, updateBoardFilter } from './boardFilters'
 
 import {
   buildFilteredTrackerSnapshot,
   buildTaskProgressRows,
+  projectBoardRows,
   groupTicketsByTask,
   mergeFocusedTrackerSnapshot,
   selectGraphVisibleTickets,
-  ticketMatchesControls,
 } from './viewModel'
 
 describe('task tracker view model', () => {
+  it('projects Board rank with repository tie ordering while leaving the Graph list newest-first', () => {
+    const tasks = [
+      makeTask({ id: 1, key: 'old', order_index: 0, created_at: '2026-11-01T00:00:00' }),
+      makeTask({ id: 2, key: 'new', order_index: 0, created_at: '2026-11-02T00:00:00Z' }),
+      makeTask({ id: 3, key: 'tie', order_index: 0, created_at: '2026-11-02T00:00:00Z' }),
+      makeTask({ id: 4, key: 'last', order_index: 7, created_at: '2026-11-03T00:00:00Z' }),
+    ]
+    const rows = buildTaskProgressRows(tasks, new Map(), emptyFilters())
+    expect(projectBoardRows(rows, defaultBoardFilters()).map(row => row.key)).toEqual(['tie', 'new', 'old', 'last'])
+    expect(rows.map(row => row.key)).toEqual(['last', 'tie', 'new', 'old'])
+  })
+
+  it.each([
+    ['past-day', ['today', 'day']],
+    ['past-week', ['today', 'day', 'over-day', 'week']],
+    ['past-month', ['today', 'day', 'over-day', 'week', 'over-week', 'month']],
+    ['all', ['today', 'day', 'over-day', 'week', 'over-week', 'month', 'old', 'unknown', 'invalid', 'future']],
+    ['none', []],
+  ])('uses actual Complete UTC timestamps for %s, inclusive of the rolling boundary', (completed, expected) => {
+    const dates = {
+      today: '2026-11-10T11:00:00', day: '2026-11-09T12:00:00Z',
+      'over-day': '2026-11-09T11:59:59.999Z', week: '2026-11-03T14:00:00+02:00',
+      'over-week': '2026-11-03T11:59:59.999Z', month: '2026-10-11T12:00:00Z',
+      old: '2026-10-11T11:59:59.999Z', unknown: null, invalid: 'invalid', future: '2026-11-10T12:00:01Z',
+    }
+    const tasks = Object.entries(dates).map(([key, completed_at], i) => makeTask({
+      id: i + 1, key, order_index: i, status: 'complete', completed_at,
+      // Do not accidentally filter on updated/created timestamps.
+      created_at: '2020-01-01T00:00:00Z', updated_at: '2030-01-01T00:00:00Z',
+    }))
+    tasks.push(makeTask({ key: 'reopened', status: 'in-progress', completed_at: dates.old, order_index: 50 }))
+    const rows = buildTaskProgressRows(tasks, new Map(), emptyFilters())
+    expect(projectBoardRows(rows, normalizeBoardFilters({ clauses: [], completed, hideEmptyColumns: false }), new Date('2026-11-10T12:00:00Z')).map(row => row.key)).toEqual([...expected, 'reopened'])
+  })
+
+  it('combines clauses against index summaries and full tickets, including negation and legacy restrictions', () => {
+    const task = makeTask({ source_json: { template_key: 'engineering.delivery' }, ticket_summary: {
+      total_count: 1, terminal_count: 0, in_progress_count: 0, blocked_count: 1,
+      status_counts: { failed: 1 }, assignees: ['Reviewer'], search_text: 'Needle evidence',
+    } })
+    const state = normalizeBoardFilters({ ...defaultBoardFilters(), clauses: [
+      { field: 'text', value: 'needle' }, ...defaultBoardFilters().clauses,
+      { field: 'priority', operator: 'is', values: ['p1'] }, { field: 'workflow', operator: 'is', value: 'engineering.delivery' },
+      { field: 'assignee', operator: 'is', value: 'Reviewer' }, { field: 'ticket-status', value: 'failed' }, { field: 'blocked' },
+    ] })
+    const rows = buildTaskProgressRows([task], new Map(), emptyFilters())
+    expect(projectBoardRows(rows, state)).toHaveLength(1)
+    expect(projectBoardRows(rows, updateBoardFilter(defaultBoardFilters(), { field: 'assignee', operator: 'is-not', value: 'Reviewer' }))).toEqual([])
+    expect(projectBoardRows(rows, updateBoardFilter(defaultBoardFilters(), { field: 'workflow', operator: 'is-not', value: 'engineering.delivery' }))).toEqual([])
+    expect(projectBoardRows(rows, updateBoardFilter(defaultBoardFilters(), { field: 'priority', operator: 'is-not', values: ['p1'] }))).toEqual([])
+    const ticket = makeTicket({ status: 'failed', assignee: 'Reviewer', title: 'Needle evidence' })
+    const blocked = makeTicket({ id: 2, key: 'blocked', status: 'in-progress', blocker_reason: 'Waiting' })
+    expect(projectBoardRows(buildTaskProgressRows([{ ...task, ticket_summary: null }], groupTicketsByTask([ticket, blocked]), emptyFilters()), state)).toHaveLength(1)
+  })
+
+  it('uses actual dependency titles in full snapshots without turning ready sibling work into a blocked task', () => {
+    const task = makeTask({ key: 'delivery' })
+    const waiting = makeTicket({ key: 'waiting', task_key: 'delivery', blocked_by: ['upstream'] })
+    const upstream = makeTicket({ key: 'upstream', task_key: 'other-task', title: 'Actual upstream title' })
+    const project = (tickets: TrackerTicket[]) => buildTaskProgressRows([task], groupTicketsByTask(tickets), emptyFilters())[0]!
+    expect(project([waiting, upstream]).blockedByTitles).toEqual(['Actual upstream title'])
+    expect(project([waiting, upstream, makeTicket({ key: 'ready', task_key: 'delivery' })]).blockedByTitles).toEqual([])
+    expect(buildTaskProgressRows([{ ...task, status: 'complete' }], groupTicketsByTask([waiting, upstream]), emptyFilters())[0]!.blockedByTitles).toEqual([])
+  })
+  it('filters board task status independently from child ticket status', () => {
+    const task = makeTask({ status: 'in-progress' })
+    const ticket = makeTicket({ status: 'complete' })
+    expect(buildTaskProgressRows([task], groupTicketsByTask([ticket]), {
+      ...emptyFilters(), status: 'complete',
+    })).toEqual([])
+  })
+
   it('groups tickets in display order and projects task progress', () => {
     const task = makeTask({ key: 'delivery', source_json: { run_plan_key: 'release' } })
     const blocked = makeTicket({
@@ -65,10 +140,11 @@ describe('task tracker view model', () => {
       status: 'not-started',
       created_at: '2026-07-12T12:00:00Z',
     })
+    const newestById = makeTask({ ...newer, id: 330, key: 'newest-by-id' })
 
-    const rows = buildTaskProgressRows([olderBlocked, newer], new Map(), emptyFilters())
+    const rows = buildTaskProgressRows([olderBlocked, newer, newestById], new Map(), emptyFilters())
 
-    expect(rows.map((row) => row.key)).toEqual(['newer', 'older-blocked'])
+    expect(rows.map((row) => row.key)).toEqual(['newest-by-id', 'newer', 'older-blocked'])
   })
 
   it('applies workflow, assignee, status, and search controls without component state', () => {
@@ -80,21 +156,21 @@ describe('task tracker view model', () => {
     })
 
     expect(
-      ticketMatchesControls(ticket, task, {
+      buildTaskProgressRows([task], groupTicketsByTask([ticket]), {
         search: 'connection FLOW',
         status: 'in-progress',
         workflow: 'engineering.delivery',
         assignee: 'codex',
       }),
-    ).toBe(true)
+    ).toHaveLength(1)
     expect(
-      ticketMatchesControls(ticket, task, {
+      buildTaskProgressRows([task], groupTicketsByTask([ticket]), {
         search: '',
         status: 'complete',
         workflow: 'engineering.delivery',
         assignee: 'codex',
       }),
-    ).toBe(false)
+    ).toHaveLength(0)
   })
 
   it('keeps task progress and filters truthful when only the task index is loaded', () => {
@@ -116,7 +192,8 @@ describe('task tracker view model', () => {
 
     const rows = buildTaskProgressRows([task], new Map(), {
       search: 'verification-ticket',
-      status: 'not-started',
+      status: 'all',
+      ticketStatus: 'not-started',
       workflow: '',
       assignee: 'codex',
     })
@@ -153,7 +230,7 @@ describe('task tracker view model', () => {
     )
     const staleMatches = buildTaskProgressRows([task], groupTicketsByTask([complete]), {
       ...emptyFilters(),
-      status: 'not-started',
+      ticketStatus: 'not-started',
     })
 
     expect(rows[0]).toMatchObject({ totalCount: 1, terminalCount: 1, percent: 100 })
@@ -253,6 +330,7 @@ function makeTask(overrides: Partial<TrackerTask> = {}): TrackerTask {
     goal: 'Ship safely',
     description: 'Tracked delivery',
     status: 'in-progress',
+    board_column: 'in-progress',
     priority_key: 'p1',
     lane_key: 'implementation',
     owner: null,

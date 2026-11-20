@@ -1,0 +1,1 @@
+import{e as a,o as l,f as r,k as s,r as t}from"./CHhb2Wy-.js";const o={},c={class:"article-table",role:"region","aria-label":"Scrollable table",tabindex:"0"};function n(e,_){return l(),r("div",c,[s("table",null,[t(e.$slots,"default")])])}const b=Object.assign(a(o,[["render",n]]),{__name:"ProseTable"});export{b as default};

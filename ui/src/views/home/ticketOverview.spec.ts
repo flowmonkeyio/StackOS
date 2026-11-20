@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 import { ticketStatuses, ticketWorkUrl } from './ticketOverview'
 
@@ -12,7 +14,7 @@ describe('ticket overview navigation', () => {
       'failed',
       'skipped',
     ])
-    expect(ticketWorkUrl(7, 'deferred')).toBe('/projects/7/tasks?view=tickets&status=deferred')
-    expect(ticketWorkUrl(7)).toBe('/projects/7/tasks?view=tickets')
+    expect(ticketWorkUrl(7, 'deferred')).toBe('/projects/7/tasks?work_entry=tickets%3Adeferred')
+    expect(ticketWorkUrl(7)).toBe('/projects/7/tasks')
   })
 })

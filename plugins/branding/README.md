@@ -38,6 +38,41 @@ candidate; the content-piece review log retains their refs. Recheck both before
 canonical updates or publication. Changed applicable guidance requires affected
 review even if the prose did not change; retain old receipts as history.
 
+The shared [natural writing method](references/natural-writing.md) guides source
+handling, drafting, and review. Preserve useful original wording and context
+through handoffs, distinguish endorsement from opinion or feedback, and read the
+whole piece before sentence polish. Check both experience claims and the
+usefulness of the explanation or proposed solution. Wording patterns are
+contextual signals for judgment, not bans or detector targets. Project voice,
+identity, examples, and approved positions stay with the selected Level 2
+foundation.
+
+The selected angle distinguishes original operator requirements and factual or
+disclosure constraints from agent-proposed presentation. Structure, example scope,
+and inline detail remain revisable against the reader task. A smaller example
+must retain the premises for its remaining claims. Inspect one costly repeated
+example, table, or diagram in the existing destination before expanding that form
+within draft checks; ordinary prose needs no extra render stage.
+
+Voice review starts with the original request, current approved foundation and
+endorsed examples, exact candidate, and necessary factual/disclosure constraints.
+The reviewer forms its own reader-task judgment before reading author rationale
+or prior verdicts, then reconciles the selected angle in the same review. Main
+acceptance integrates reading flow, necessary detail, review findings and relevant
+render evidence. Repair the earliest wrong decision while preserving sound work.
+Sequential handoffs carry actual rejection and repair decisions; publication alone
+does not endorse a writing exemplar. These are responsibilities within existing
+steps, not additional roles, stages, approvals, or word limits.
+
+The reference ships inside the plugin. When expanded guidance is needed and the
+host provides authorized file access, resolve
+`branding-plugin:references/natural-writing.md` from the effective preset or
+template's `origin_path` using `../references/natural-writing.md`. MCP access
+does not grant filesystem access. Consumers without it use the essential method
+kept inline and relevant excerpts supplied through authorized context. Report
+any material source gap without claiming to have read an inaccessible reference;
+the main agent carries available, relevant guidance into bounded handoffs.
+
 `branding.content-production` is the end-to-end content loop. It decides whether
 an operator interview is required, useful, or unnecessary, researches the
 facts across the right sources, pulls supporting artifacts, proposes angles,

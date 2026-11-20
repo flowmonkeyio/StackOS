@@ -31,6 +31,58 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
 
 
 @pytest.mark.parametrize(
+    "slug",
+    [
+        "agency",
+        "branding",
+        "communications",
+        "engineering",
+        "gtm",
+        "marketing",
+        "media-buying",
+        "seo",
+        "support",
+    ],
+)
+def test_domain_page_sections_match_packaged_capabilities(slug: str) -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / slug
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert manifest.ui is not None
+    sections = manifest.ui["page"]["sections"]
+    assert len(sections) == len(set(sections))
+    assert set(sections) <= {"workflows", "saved", "files"}
+    assert ("workflows" in sections) == bool(list((root / "workflows").glob("*.yaml")))
+    assert "saved" in sections
+    assert "files" in sections
+    for item in manifest.ui["nav"].get("items", []):
+        assert "route" not in item
+        assert item["to"]
+
+
+def test_finance_keeps_its_existing_console_owner() -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / "finance"
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert manifest.ui is not None
+    assert "page" not in manifest.ui
+    assert manifest.ui["nav"]["items"][0]["to"] == "finance"
+
+
+@pytest.mark.parametrize("slug", ["trackbooth", "shopify", "linear", "publishing"])
+def test_integration_packages_keep_capabilities_without_redundant_pages(slug: str) -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / slug
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert not manifest.ui
+    assert manifest.providers
+    assert manifest.actions
+    assert all(provider.auth_methods for provider in manifest.providers)
+    if slug == "publishing":
+        assert {resource.key for resource in manifest.resources} == {
+            "published-post",
+            "publish-target",
+        }
+
+
+@pytest.mark.parametrize(
     ("evidence_source", "enforcement"),
     [
         ("oauth_response", "local_required"),
@@ -245,8 +297,19 @@ def test_google_actions_use_interactive_oauth_and_declared_scopes() -> None:
     }
     for plugin in BUILTIN_PLUGIN_MANIFESTS:
         for action in plugin.actions:
-            if action.provider in expected_provider_scopes:
+            if action.provider == "google-search-console" and action.key in {
+                "search-console.sitemaps.submit",
+                "search-console.sitemaps.submit.batch",
+            }:
+                assert action.config["required_scopes"] == [
+                    "https://www.googleapis.com/auth/webmasters"
+                ]
+            elif action.provider in expected_provider_scopes:
                 assert action.config["required_scopes"] == expected_provider_scopes[action.provider]
+            elif action.provider == "google-indexing":
+                assert action.config["required_scopes"] == [
+                    "https://www.googleapis.com/auth/indexing"
+                ]
             elif action.provider == "google-workspace":
                 assert (
                     action.config["required_scopes"] == workspace_scopes[action.config["operation"]]
@@ -284,6 +347,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "trackbooth",
         "shopify",
         "linear",
+        "cfobooth",
         "publishing",
         "seo",
         "core",
@@ -291,9 +355,9 @@ def test_builtin_plugin_manifests_validate() -> None:
     ]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
         assert manifest.capabilities
-        # Finance is transport/workflow-only by design: its authoritative
-        # records live in the selected external finance backend, not StackOS.
-        if manifest.slug != "finance":
+        # Finance and CFOBooth compose external transport/workflows; they do
+        # not duplicate financial records as host resource schemas.
+        if manifest.slug not in {"finance", "cfobooth"}:
             assert manifest.resources
         assert manifest.model_dump(mode="json")["slug"] == manifest.slug
 
@@ -372,6 +436,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "client_id",
         "client_secret",
         "refresh_token",
+        "access_mode",
         "default_site_url",
     ]
     assert _auth_field_keys(seo_providers["google-analytics"], "oauth2_refresh_token") == [
@@ -387,6 +452,40 @@ def test_builtin_plugin_manifests_validate() -> None:
         "default_account_ref",
     ]
     seo_actions = {action.key: action for action in seo.actions}
+    assert [method.key for method in seo_providers["google-indexing"].auth_methods] == [
+        "service-account"
+    ]
+    assert seo_actions["indexing.url-notifications.publish"].risk_level == "destructive"
+    assert seo_actions["indexing.url-notifications.metadata.get"].risk_level == "read"
+    assert seo_actions["indexing.batch.publish"].risk_level == "destructive"
+    assert seo_actions["indexing.batch.metadata.get"].risk_level == "read"
+    for key in ("indexing.batch.publish", "indexing.batch.metadata.get"):
+        urls = seo_actions[key].input_schema["properties"]["urls"]
+        assert urls["minItems"] == 1 and urls["maxItems"] == 100
+    assert seo_actions["indexing.url-notifications.publish"].input_schema["properties"]["type"][
+        "enum"
+    ] == ["URL_UPDATED", "URL_DELETED"]
+    submit = seo_actions["search-console.sitemaps.submit"]
+    assert submit.risk_level == "write"
+    assert submit.config["required_scopes"] == ["https://www.googleapis.com/auth/webmasters"]
+    assert submit.input_schema["required"] == ["site_url", "sitemap_url"]
+    assert submit.input_schema["additionalProperties"] is False
+    read_batch = seo_actions["search-console.batch.read"]
+    write_batch = seo_actions["search-console.sitemaps.submit.batch"]
+    assert read_batch.risk_level == "read"
+    assert write_batch.risk_level == "write"
+    for action in (read_batch, write_batch):
+        requests = action.input_schema["properties"]["requests"]
+        assert (requests["minItems"], requests["maxItems"]) == (1, 1000)
+        assert action.input_schema["additionalProperties"] is False
+    union = read_batch.input_schema["properties"]["requests"]["items"]["oneOf"]
+    assert {item["properties"]["operation"]["const"] for item in union} == {
+        "sites.list",
+        "search_analytics.query",
+        "sitemaps.list",
+        "url.inspect",
+    }
+    assert all(item["additionalProperties"] is False for item in union)
     assert seo_actions["search-console.search-analytics.query"].config == {
         "schema_version": "stackos.action.v1",
         "connector": "google-search-console",
@@ -936,8 +1035,8 @@ def test_builtin_plugin_manifests_validate() -> None:
 def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
     finance = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "finance")
     assert finance.resources == []
-    assert {provider.key for provider in finance.providers} == {"stripe"}
-    stripe = finance.providers[0]
+    assert {provider.key for provider in finance.providers} == {"stripe", "quickbooks-online"}
+    stripe = next(provider for provider in finance.providers if provider.key == "stripe")
     assert stripe.auth_type == "api-key"
     assert [method.key for method in stripe.auth_methods] == ["api_key"]
     assert _auth_field_keys(stripe, "api_key") == ["api_key"]
@@ -945,7 +1044,7 @@ def test_finance_stripe_manifest_is_transport_only_and_complete() -> None:
     assert stripe.auth_methods[0].permission_verification.evidence_source == "unavailable"
     assert stripe.auth_methods[0].permission_verification.enforcement == "provider_enforced"
 
-    actions = {action.key: action for action in finance.actions}
+    actions = {action.key: action for action in finance.actions if action.provider == "stripe"}
     assert set(actions) == {
         "stripe.products.list",
         "stripe.products.retrieve",
@@ -1044,7 +1143,7 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         for provider in plugin.providers
     ]
 
-    assert len(providers) == 58
+    assert len(providers) == 62
     google_seo_providers = {
         "google-search-console",
         "google-analytics",
@@ -1057,8 +1156,21 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         assert setup.get("setup_note") or config.get("setup_note"), (
             f"{plugin_slug}:{provider.key} missing setup note"
         )
+        if provider.key == "cfobooth":
+            # No remote deployment or public setup URL exists. Native setup
+            # supplies an editable explicit URL; the public pin has no methods.
+            if config.get("enabled") is False:
+                assert provider.auth_methods == []
+            else:
+                assert [m.key for m in provider.auth_methods] == ["api_key"]
+                fields = {f.key: f for f in provider.auth_methods[0].fields}
+                assert fields["api_base_url"].placeholder == "https://cfobooth.com"
+                assert fields["api_base_url"].required and fields["api_key"].secret
+            continue
         expected_verified_at = (
-            "2026-09-22"
+            None
+            if provider.key in {"quickbooks-online", "google-indexing", "elevenlabs"}
+            else "2026-09-22"
             if plugin_slug == "communications" and provider.key == "telegram"
             else "2026-09-12"
             if plugin_slug == "utils" and provider.key == "aignc"
@@ -1080,9 +1192,11 @@ def test_all_builtin_providers_declare_self_service_setup_metadata() -> None:
         )
         assert setup.get("verified_at") == expected_verified_at
         if provider.auth_type not in {"none", "local"}:
-            assert setup.get("credential_label"), (
-                f"{plugin_slug}:{provider.key} missing credential label"
-            )
+            assert setup.get("credential_label") or (
+                provider.key == "quickbooks-online"
+                and [method.label for method in provider.auth_methods]
+                == ["Connect with QuickBooks", "OAuth2 access token"]
+            ), f"{plugin_slug}:{provider.key} missing credential label"
             assert any(
                 setup.get(key)
                 for key in (
@@ -2322,8 +2436,7 @@ def test_publishing_plugin_yaml_facade_validates() -> None:
     manifest = load_plugin_manifest_file(Path("plugins/publishing/plugin.yaml"))
 
     assert manifest.slug == "publishing"
-    assert manifest.ui is not None
-    assert manifest.ui["nav"]["section"] == "Publishing"
+    assert manifest.ui is None
     assert {provider.key for provider in manifest.providers} == {"wordpress", "ghost"}
     providers = {provider.key: provider for provider in manifest.providers}
     assert _auth_field_keys(providers["wordpress"]) == [

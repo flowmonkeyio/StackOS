@@ -2,25 +2,24 @@
   "key": "seo.website-analysis",
   "slug": "seo-website-analysis",
   "name": "Website SEO Analysis",
-  "description": "A source-ledgered site inventory, finding register, and prioritized roadmap that explains coverage and limitations without changing the website.",
+  "description": "A reviewed report with a list of pages checked, evidence for each finding, and recommended fixes in priority order. It explains missing data and coverage limits without changing the website.",
   "domain": "seo",
   "audience": "Website owners, SEO teams, and agencies diagnosing search visibility and measurement quality",
   "color": "#79dfff",
   "featured": true,
   "problem": "SEO audits become generic checklists or unsupported scores when the analyst does not map the actual site, reconcile public pages with first-party measurement, and distinguish measured facts from observations and inference.",
-  "outcome": "A source-ledgered site inventory, finding register, and prioritized roadmap that explains coverage and limitations without changing the website.",
+  "outcome": "A reviewed report with a list of pages checked, evidence for each finding, and recommended fixes in priority order. It explains missing data and coverage limits without changing the website.",
   "whyAi": "AI can traverse representative templates, reconcile public, first-party, and third-party evidence, and synthesize a practical agency-style roadmap while keeping claims traceable.",
   "operatorPath": [
-    "Provide the website, business goal, important markets or sections, and any scope exclusions.",
-    "Connect Search Console, Analytics, Tag Manager, or research providers when available; the public-site analysis remains usable without them.",
-    "Review the evidence classification, limitations, findings, and prioritized roadmap before assigning fixes."
+    "Example request: “Use Website SEO Analysis on [website URL]. Focus on our service pages and guides for UK small businesses. Check navigation, page content and indexing signals. Return findings with evidence, priorities and ways to verify a fix.”",
+    "Name the business goal, important sections, target markets and anything outside the review. Add a reporting period if you want search or analytics data included.",
+    "Connect available tools or supply approved exports. The agent can start from the public site and record the missing data. Review the findings before assigning fixes."
   ],
   "agentPath": [
-    "Establish the canonical host, audit boundary, business goal, markets, date window, and sampling plan.",
-    "Map public pages, navigation, robots and sitemap signals, representative templates, links, metadata, structured data, and rendered behavior.",
-    "Select the smallest useful connected evidence set, preserving durable action receipts and recording unavailable, skipped, or failed sources as explicit gaps.",
-    "Reconcile evidence, challenge unsupported claims, and prioritize actions by impact, confidence, effort, dependencies, and validation path.",
-    "Store a compact analysis index plus durable report, inventory, and finding-register artifacts."
+    "Confirm the website, business goal, sections to inspect and reporting period. Choose representative pages and record what is outside the review.",
+    "Inspect pages, navigation, links, metadata, robots rules and sitemaps. Add connected search or analytics data when available; otherwise work from the public site and record the gaps.",
+    "Have the findings independently reviewed, resolve unsupported claims, and prioritize fixes by likely value, confidence and effort. Include dependencies and a way to check each fix.",
+    "Save the report, list of inspected pages and supporting evidence so someone can check the conclusions and assign follow-up work."
   ],
   "progressSignals": [
     "Scope and sampling plan established",
@@ -52,16 +51,16 @@
   ],
   "setup": "available",
   "prerequisites": [
-    "A reachable website URL and the business purpose of the analysis",
-    "Optional target markets, priority sections, exclusions, and performance date window",
-    "Optional connected Search Console, GA4, GTM, Firecrawl, Ahrefs, DataForSEO, or Serper sources"
+    "A reachable website URL and the business problem you want the analysis to help with",
+    "If relevant, priority pages or sections, target markets and anything the agent must leave outside the review",
+    "Optional Search Console, analytics or research access, approved exports and a reporting period; public pages can support a useful analysis when those sources are unavailable"
   ],
   "proof": [
-    "Source ledger with used, unavailable, skipped, and failed sources",
-    "Public site inventory and representative-template coverage",
-    "Typed evidence index and independently reviewed SEO finding register",
-    "Prioritized roadmap with validation paths",
-    "Durable final report plus completeness-appropriate inventory, finding-register, and evidence artifacts"
+    "A list of inspected URLs and evidence sources, with inaccessible pages, missing data and sampling limits kept visible.",
+    "Each finding names the affected page, observed evidence, likely consequence, priority, proposed fix and a way to check the result.",
+    "Illustrative finding: a service index links to an old URL that returns 404. A current page covers the same service. Record both URLs and give the repair higher priority if that link is an important route to the service.",
+    "Proposed fix in that example: point the link to the current canonical URL. Verification: fetch the updated index, follow its link, and check that the destination returns 200 with the expected canonical.",
+    "An independently reviewed report and prioritized work list. The analysis ends there; changing the website is a separately authorized job."
   ],
   "whenToUse": [
     "A user asks to audit, map, analyze, or diagnose a website's SEO.",

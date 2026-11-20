@@ -1,0 +1,44 @@
+{
+  "recommendation": "approve",
+  "reviewer": "navigation_review",
+  "independence": "Read-only source/log review and focused tests; only this review report written. No implementation/test changes, browser, fixture, build, backend or tracker actions.",
+  "ticket": "work-persistent-detail-modal",
+  "ticket_id": 14749,
+  "project_id": 1,
+  "run_plan_id": 724,
+  "run_id": 718,
+  "step_id": 7594,
+  "attempt": "D3",
+  "contract_revision": 2,
+  "candidate_sha256": "facaba3f908ed954f3b8c3d8eef96887346d19947563e1f5eebb99ba7661d804",
+  "scope": "Two-file UiDialog recursion repair after actual full-gate failure. Reuse unaffected D2/D1 and accepted M1 evidence.",
+  "freshness": "All 22 candidate file hashes and the sorted aggregate hash independently match. Only UiDialog.vue and UiDialog.spec.ts differ from D2. ConnectionsView.accounts.spec.ts and its connectionsViewTestSupport.ts helper are byte-identical to the previous accepted snapshot.",
+  "findings": [],
+  "closed_regression": {
+    "trigger": "Existing Connections detach confirmation rendered with the shared Teleport-stub test helper.",
+    "before": "Reactive overlayEntry was read by render-derived layer styles and mutated by vnode opening/closing hooks, allowing repeated render/register/remove cycles.",
+    "now": "A plain OverlayEntry lifetime uses the existing UiSidePanel pattern. Mounted DOM refs receive stack layers synchronously before deferred focus. Rendering no longer depends on registration state.",
+    "why": "Removes the feedback loop under the actual consumer without weakening or replacing its test, Teleport stub, confirmation behavior or shared stack contract.",
+    "red_evidence": "Inspected /Users/sergeyrura/.local/share/tpf/tee/20261028_185113_pnpm.log: the actual existing consumer failed with Maximum recursive updates exceeded in UiDialog. The added small primitive stub test was already green before repair and is compatibility coverage, not the red proof."
+  },
+  "coverage": {
+    "ownership_cleanup": "Pass. overlayStack remains the sole registration/layer/scroll/focus owner. Open/close/unmount retain idempotent registration cleanup and keyboard listener cleanup; no new owner or watcher introduced.",
+    "layer_and_focus_timing": "Pass. applyStackStyles runs synchronously after mounted refs exist. Deferred autofocus still checks top-overlay ownership. Body portal, persistent detail preset and shared close control remain intact.",
+    "active_consumers": "Pass. The unchanged Connections account tests pass alongside real-portal UiDialog/UiSidePanel mixed-stack cases, Work persistent-frame routes and ActionCalls confirmations.",
+    "prior_contract": "Pass by unchanged source and reused accepted evidence for D2 feedback/labels, D1 retained-state/close/backdrop behavior and M1 map navigation."
+  },
+  "independent_checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/views/ConnectionsView.accounts.spec.ts src/components/ui/UiDialog.spec.ts src/components/ui/UiSidePanel.spec.ts src/views/TaskTrackerView.spec.ts src/views/ActionCallsView.spec.ts src/no-watch-ui.spec.ts",
+      "result": "PASS, exit0, no recursive-update errors. Same six-file scope as the candidate's 53-test receipt. Existing route-record mount warnings remain nonfatal."
+    },
+    {
+      "check": "Candidate individual/aggregate hashes and unchanged actual consumer/helper",
+      "result": "PASS"
+    }
+  ],
+  "remaining_integration_proof": [
+    "Root must rerun mandatory full signoff on the integrated D3 candidate and finish current browser/design evidence. This focused approval does not waive the previously failed gate."
+  ],
+  "next_disposition": "Main may accept D3 and resume integrated signoff."
+}

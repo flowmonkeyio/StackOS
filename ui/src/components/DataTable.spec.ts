@@ -71,13 +71,16 @@ describe('DataTable', () => {
 
   it('marks the active row for master/detail layouts', () => {
     const w = mount(DataTable, {
-      props: { items: rows, columns: columns as never, interactive: true, selectedId: 2 },
+      props: { items: rows, columns: columns as never, interactive: true, selectedId: 2, selection: new Set([2]) },
     })
     const tbodyRows = w.findAll('tbody tr')
     expect(tbodyRows[1].attributes('aria-current')).toBe('true')
     expect(tbodyRows[1].classes()).toContain('bg-accent-subtle')
 
     const mobileCards = w.findAll('article')
+    expect(mobileCards[1].attributes('role')).toBe('button')
+    expect(mobileCards[1].attributes('aria-selected')).toBeUndefined()
+    expect((mobileCards[1].get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true)
     expect(mobileCards[1].attributes('aria-current')).toBe('true')
     expect(mobileCards[1].classes()).toContain('bg-accent-subtle')
   })

@@ -1,0 +1,107 @@
+{
+  "app_submission_id": "f0003c77-5049-4808-a868-857ff7d66dc4",
+  "config_sha256": "0a35446a99c0e9a4e0c3dd38f83df8e8631b950cf0beb70d24cde77ebec9f38b",
+  "connector_version": "0.2.4",
+  "dmg_submission_id": "a572d250-e57c-42fd-9a70-8c6bfdb30c20",
+  "final_dmg_sha256": "2b53fb4c796e7310cfcccab3d39264e8604d5be33794cc2431ced6f5ac49905a",
+  "finished_at": "2026-10-07T02:06:42.290443+00:00",
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "host_version": "2.1.35",
+  "local_activation": false,
+  "phase": "finish",
+  "started_at": "2026-10-07T02:06:28.783809+00:00",
+  "status": "signed_notarized_packaging_complete",
+  "steps": [
+    {
+      "command": [
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+        "info",
+        "a572d250-e57c-42fd-9a70-8c6bfdb30c20",
+        "--keychain-profile",
+        "stackos-notary",
+        "--output-format",
+        "json"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T02:06:29.465352+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-finish-1-00-dmg-notary-info.log",
+      "log_sha256": "28b4dccd9355bd1dc4bfabc840dcc2e72b4a650734da816bea5a98a7055ea879",
+      "name": "dmg-notary-info",
+      "started_at": "2026-10-07T02:06:29.050134+00:00"
+    },
+    {
+      "command": [
+        "xcrun",
+        "stapler",
+        "staple",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T02:06:29.784880+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-finish-1-01-dmg-staple.log",
+      "log_sha256": "d8733d552e7c854bbf9edf43fe05ad54e8bf3794897df0e2de86cdaae7ae54d1",
+      "name": "dmg-staple",
+      "started_at": "2026-10-07T02:06:29.466070+00:00"
+    },
+    {
+      "command": [
+        "xcrun",
+        "stapler",
+        "validate",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T02:06:30.173305+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-finish-1-02-dmg-staple-validate.log",
+      "log_sha256": "7fb82318fd97490caf822416e890badb52a082f12ef8302c8f8a9f9f16ae860e",
+      "name": "dmg-staple-validate",
+      "started_at": "2026-10-07T02:06:29.987370+00:00"
+    },
+    {
+      "command": [
+        "spctl",
+        "--assess",
+        "--type",
+        "open",
+        "--context",
+        "context:primary-signature",
+        "--verbose=2",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T02:06:30.559920+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-finish-1-03-dmg-gatekeeper.log",
+      "log_sha256": "9a3319f8d6f7f4323d2376773162a7c69866029cb0120b68ba15a75a66a2246c",
+      "name": "dmg-gatekeeper",
+      "started_at": "2026-10-07T02:06:30.173889+00:00"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/refresh-notarized-update-metadata.cjs",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/latest-mac.yml"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T02:06:41.197026+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-finish-1-04-refresh-update-metadata.log",
+      "log_sha256": "15fd6b64c1fd7a4c9b76a0913766bb388e877cb57a9004335c9a9a69cf58f600",
+      "name": "refresh-update-metadata",
+      "started_at": "2026-10-07T02:06:30.560433+00:00"
+    },
+    {
+      "command": [
+        "node",
+        "-e",
+        "const {createLatestDmgAliases}=require(\"./scripts/release-artifacts.cjs\"); console.log(JSON.stringify(createLatestDmgAliases([process.argv[1]])));",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T02:06:42.028239+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-finish-1-05-stable-dmg-alias.log",
+      "log_sha256": "7e66b80b4e2e1183fdc2747ca0e1fae5ad711cf77e48bc7e8e994c28bee79942",
+      "name": "stable-dmg-alias",
+      "started_at": "2026-10-07T02:06:41.197691+00:00"
+    }
+  ]
+}

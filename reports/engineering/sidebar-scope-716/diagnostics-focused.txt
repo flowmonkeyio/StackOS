@@ -1,0 +1,15 @@
+
+ RUN  v2.1.9 ui
+
+ ✓ src/views/plugins/viewModel.spec.ts (3 tests) 2ms
+ ✓ src/design/status.spec.ts (8 tests) 2ms
+ ✓ src/views/plugins/useIntegrationAvailability.spec.ts (6 tests) 3ms
+ ✓ src/stores/attention.spec.ts (4 tests) 4ms
+ ✓ src/views/plugins/IntegrationAvailability.spec.ts (10 tests) 23ms
+ ✓ src/views/PluginsView.spec.ts (3 tests) 198ms
+ ✓ src/views/plugins/PluginDirectoryCard.spec.ts (2 tests) 18ms
+
+ Test Files  7 passed (7)
+      Tests  36 passed (36)
+   Start at  22:14:42
+   Duration  1.36s (transform 511ms, setup 47ms, collect 1.21s, tests 249ms, environment 437ms, prepare 188ms)

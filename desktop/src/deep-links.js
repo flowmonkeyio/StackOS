@@ -43,7 +43,7 @@ function parseStackosDeepLink(candidate) {
   }
 
   const path = taskKey
-    ? `/projects/${projectId}/tasks?task=${encodeURIComponent(taskKey)}`
+    ? `/projects/${projectId}/tasks?view=graph&task=${encodeURIComponent(taskKey)}`
     : `/projects/${projectId}/tasks`;
   return {
     projectId,

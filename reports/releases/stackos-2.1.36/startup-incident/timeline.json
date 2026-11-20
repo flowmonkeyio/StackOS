@@ -1,0 +1,9 @@
+{
+  "source": "/Users/sergeyrura/.local/state/stackos/daemon.log",
+  "events": [
+    "{\"event\": \"daemon.shutdown.clean\", \"level\": \"info\", \"timestamp\": \"2026-10-10T06:06:36.148851Z\"}",
+    "{\"host\": \"127.0.0.1\", \"port\": 5180, \"version\": \"2.1.36\", \"milestone\": \"M10\", \"data_dir\": \"/Users/sergeyrura/.local/share/stackos\", \"state_dir\": \"/Users/sergeyrura/.local/state/stackos\", \"event\": \"daemon.started\", \"level\": \"info\", \"timestamp\": \"2026-10-10T06:07:01.917708Z\"}",
+    "{\"event\": \"daemon.shutdown.clean\", \"level\": \"info\", \"timestamp\": \"2026-10-10T06:11:18.915414Z\"}",
+    "{\"host\": \"127.0.0.1\", \"port\": 5180, \"version\": \"2.1.36\", \"milestone\": \"M10\", \"data_dir\": \"/Users/sergeyrura/.local/share/stackos\", \"state_dir\": \"/Users/sergeyrura/.local/state/stackos\", \"event\": \"daemon.started\", \"level\": \"info\", \"timestamp\": \"2026-10-10T06:11:29.193552Z\"}"
+  ]
+}

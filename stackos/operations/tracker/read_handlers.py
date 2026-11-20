@@ -7,12 +7,18 @@ from starlette.concurrency import run_in_threadpool
 from stackos.mcp.context import MCPContext
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.tracker.schemas import (
+    TrackerActiveTasksAllInput,
+    TrackerActiveTasksInput,
+    TrackerAgentStatsAllInput,
+    TrackerAgentStatsInput,
     TrackerChangedInput,
     TrackerGetInput,
     TrackerHistoryInput,
     TrackerNextInput,
     TrackerProjectInput,
     TrackerSearchInput,
+    TrackerTaskActivityInput,
+    TrackerTaskResultsInput,
     TrackerTicketCountsAllInput,
     TrackerTicketCountsInput,
     TrackerTicketInput,
@@ -23,6 +29,7 @@ from stackos.repositories.tracker import (
     TrackerChangedOut,
     TrackerHistoryOut,
     TrackerNextOut,
+    TrackerNotificationChangesOut,
     TrackerRepository,
     TrackerSearchOut,
     TrackerSnapshotOut,
@@ -30,6 +37,80 @@ from stackos.repositories.tracker import (
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
+from stackos.repositories.tracker.inspection_schema import TaskActivityOut, TaskResultsOut
+from stackos.repositories.tracker.schema import ActiveTasksOut, TrackerAgentStatsOut
+
+
+async def tracker_active_tasks(
+    inp: TrackerActiveTasksInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> ActiveTasksOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).active_tasks,
+        project_id=inp.project_id,
+        limit=inp.limit,
+        after_id=inp.after_id,
+    )
+
+
+async def tracker_active_tasks_all(
+    inp: TrackerActiveTasksAllInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> ActiveTasksOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).active_tasks,
+        limit=inp.limit,
+        after_id=inp.after_id,
+    )
+
+
+async def tracker_task_activity(
+    inp: TrackerTaskActivityInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TaskActivityOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).task_activity,
+        project_id=inp.project_id,
+        task_key=inp.task_key,
+        limit=inp.limit,
+        cursor=inp.cursor,
+    )
+
+
+async def tracker_task_results(
+    inp: TrackerTaskResultsInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TaskResultsOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).task_results,
+        project_id=inp.project_id,
+        task_key=inp.task_key,
+        source_kind=inp.source_kind,
+        limit=inp.limit,
+        cursor=inp.cursor,
+    )
+
+
+async def tracker_agent_stats(
+    inp: TrackerAgentStatsInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TrackerAgentStatsOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).agent_stats,
+        project_id=inp.project_id,
+        group_by=inp.group_by,
+        start_date=inp.start_date,
+        end_date=inp.end_date,
+        timezone=inp.timezone,
+    )
+
+
+async def tracker_agent_stats_all(
+    inp: TrackerAgentStatsAllInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TrackerAgentStatsOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).agent_stats_all,
+        is_active=inp.is_active,
+        group_by=inp.group_by,
+        start_date=inp.start_date,
+        end_date=inp.end_date,
+        timezone=inp.timezone,
+    )
 
 
 async def tracker_status(
@@ -78,6 +159,8 @@ async def tracker_get(
         assignee=inp.assignee,
         include_graph=inp.include_graph,
         task_index_only=inp.task_index_only,
+        projection=inp.projection,
+        metric_demand=inp.metric_demand,
     )
 
 
@@ -162,11 +245,12 @@ async def tracker_changed(
     inp: TrackerChangedInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerChangedOut:
+) -> TrackerChangedOut | TrackerNotificationChangesOut:
     return TrackerRepository(ctx.session).changed(
         project_id=inp.project_id,
         since_rev=inp.since_rev,
         limit=inp.limit,
+        projection=inp.projection,
     )
 
 

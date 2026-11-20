@@ -9,10 +9,16 @@ inherit them without explicit threading.
 from __future__ import annotations
 
 import contextvars
+import fcntl
+import json
 import logging
+import os
+import stat
 import sys
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -27,6 +33,70 @@ _LOG_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 _LOG_FILE_BACKUPS = 5
 
 _configured = False
+
+
+def _open_private_log(path: Path) -> int:
+    fd = os.open(
+        path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600
+    )
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+            raise OSError("Log target must be a private regular file.")
+        os.fchmod(fd, 0o600)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def append_json_log(log_path: Path, event: dict[str, Any]) -> None:
+    """Persist one pre-sanitized event with the shared 10 MiB / five-backup policy.
+
+    Bridge processes cannot share the daemon's open RotatingFileHandler safely.
+    A short interprocess lock serializes rotation and append; reopen each time
+    so another process's rollover cannot strand writes in an old inode. Raise
+    failures to the caller rather than logging raw exceptions or losing them.
+    """
+    data = (json.dumps(event, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
+    if len(data) > _LOG_FILE_BYTES:
+        raise ValueError("Log event exceeds the retention bound.")
+    log_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    lock_fd = _open_private_log(log_path.with_name(log_path.name + ".lock"))
+    try:
+        deadline = time.monotonic() + 0.25
+        while True:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Log lock unavailable.") from None
+                time.sleep(0.01)
+        fd = _open_private_log(log_path)
+        try:
+            if os.fstat(fd).st_size + len(data) > _LOG_FILE_BYTES:
+                for index in range(_LOG_FILE_BACKUPS, 0, -1):
+                    source = log_path if index == 1 else Path(f"{log_path}.{index - 1}")
+                    if source.exists() or source.is_symlink():
+                        source.replace(Path(f"{log_path}.{index}"))
+                os.close(fd)
+                fd = -1
+                fd = _open_private_log(log_path)
+            with os.fdopen(fd, "ab", closefd=False) as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(fd)
+        finally:
+            if fd >= 0:
+                os.close(fd)
+        directory_fd = os.open(log_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        os.close(lock_fd)
 
 
 def _inject_contextvars(

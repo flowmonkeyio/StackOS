@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -112,6 +114,49 @@ describe('costs store', () => {
     expect(store.history.length).toBe(12)
   })
 
+  it.each(['cost', 'budgets'] as const)('keeps sibling errors independent when %s completes last', async last => {
+    const slow = deferred<void>()
+    globalThis.fetch = vi.fn(async input => {
+      const isCost = String(input).includes('/cost?')
+      if (isCost === (last === 'cost')) { await slow.promise; return Response.json(isCost ? ZERO_COST : []) }
+      return Response.json({ detail: 'Sibling read unavailable' }, { status: 503 })
+    }) as typeof fetch
+    const store = useCostsStore()
+    const pending = last === 'cost' ? store.refreshCost(1) : store.refreshBudgets(1)
+    await (last === 'cost' ? store.refreshBudgets(1) : store.refreshCost(1))
+    expect(store.error).toContain('Sibling read unavailable')
+    expect(store.loading).toBe(true)
+    slow.resolve(); await pending
+    expect(store.error).toContain('Sibling read unavailable')
+    globalThis.fetch = vi.fn(async () => Response.json(last === 'cost' ? ZERO_COST : [])) as typeof fetch
+    await (last === 'cost' ? store.refreshCost(1) : store.refreshBudgets(1))
+    expect(store.error).toContain('Sibling read unavailable')
+    expect(store.loading).toBe(false)
+  })
+
+  it('reports all and partial failed history months while retaining accepted values for failed months', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-13T00:00:00Z'))
+    try {
+      const store = useCostsStore()
+      globalThis.fetch = vi.fn(async input => {
+        const ym = new URL(String(input), 'http://localhost').searchParams.get('month')!
+        return Response.json({ ...ZERO_COST, period_start: `${ym}-01T00:00:00Z`, total_usd: 7 })
+      }) as typeof fetch
+      await store.refreshHistory(1, 2)
+      globalThis.fetch = vi.fn(async input => String(input).includes('month=2026-11')
+        ? Response.json({ detail: 'November unavailable' }, { status: 503 })
+        : Response.json({ ...ZERO_COST, period_start: '2026-10-01T00:00:00Z', total_usd: 8 })) as typeof fetch
+      await store.refreshHistory(1, 2)
+      expect(store.history.map(row => row.total_usd)).toEqual([8, 7])
+      expect(store.historyErrors['2026-11']).toContain('November unavailable')
+      globalThis.fetch = vi.fn(async () => Response.json({ detail: 'History unavailable' }, { status: 503 })) as typeof fetch
+      await store.refreshHistory(2, 2)
+      expect(store.history).toEqual([])
+      expect(Object.keys(store.historyErrors)).toEqual(['2026-11', '2026-10'])
+      expect(store.error).toContain('History unavailable')
+    } finally { vi.useRealTimers() }
+  })
+
   it('keeps cost data scoped to the newest project request', async () => {
     const projectOne = deferred<void>()
     globalThis.fetch = vi.fn(async (input) => {
@@ -131,6 +176,64 @@ describe('costs store', () => {
 
     expect(store.currentProjectId).toBe(2)
     expect(store.cost?.total_usd).toBe(2)
+  })
+
+  it('clears incompatible months and ignores obsolete same-key pending and scope-exit results', async () => {
+    globalThis.fetch = vi.fn(async () => Response.json(ZERO_COST)) as typeof fetch
+    const store = useCostsStore()
+    await store.refreshCost(1, '2026-05')
+    const late = deferred<void>()
+    globalThis.fetch = vi.fn(async () => { await late.promise; return Response.json(ZERO_COST) }) as typeof fetch
+    const old = store.refreshCost(1, '2026-06')
+    expect(store.cost).toBeNull()
+    globalThis.fetch = vi.fn(async () => Response.json({ ...ZERO_COST, total_usd: 8 })) as typeof fetch
+    await store.refreshCost(1, '2026-07')
+    expect(store.costLoading).toBe(false)
+    late.resolve(); await old
+    expect(store.cost?.total_usd).toBe(8)
+    expect(store.month).toBe('2026-07')
+    const history = deferred<void>()
+    globalThis.fetch = vi.fn(async () => { await history.promise; return Response.json(ZERO_COST) }) as typeof fetch
+    const pending = store.refreshHistory(1, 2)
+    store.reset()
+    history.resolve(); await pending
+    expect(store.history).toEqual([])
+    expect(store.currentProjectId).toBeNull()
+    expect(store.loading).toBe(false)
+  })
+
+  it('establishes empty history only from a complete read and retires it on range changes or denial', async () => {
+    const store = useCostsStore()
+    let count = 0
+    globalThis.fetch = vi.fn(async input => {
+      const month = new URL(String(input), 'http://localhost').searchParams.get('month')!
+      const row = { ...ZERO_COST, period_start: `${month}-01T00:00:00Z` }
+      return ++count === 1 ? Response.json(row) : Response.json({ detail: 'Partial history' }, { status: 503 })
+    }) as typeof fetch
+    await store.refreshHistory(1, 2)
+    expect(store.historyEmpty).toBe(false)
+    globalThis.fetch = vi.fn(async input => {
+      const month = new URL(String(input), 'http://localhost').searchParams.get('month')!
+      return Response.json({ ...ZERO_COST, period_start: `${month}-01T00:00:00Z` })
+    }) as typeof fetch
+    await store.refreshHistory(1, 2)
+    expect(store.historyEmpty).toBe(true)
+    globalThis.fetch = vi.fn(async () => Response.json({ detail: 'Temporary' }, { status: 503 })) as typeof fetch
+    await store.refreshHistory(1, 2)
+    expect(store.historyEmpty).toBe(true)
+    const changedRange = store.refreshHistory(1, 3)
+    expect(store.historyEmpty).toBe(false)
+    await changedRange
+    globalThis.fetch = vi.fn(async input => {
+      const month = new URL(String(input), 'http://localhost').searchParams.get('month')!
+      return Response.json({ ...ZERO_COST, period_start: `${month}-01T00:00:00Z` })
+    }) as typeof fetch
+    await store.refreshHistory(1, 3)
+    expect(store.historyEmpty).toBe(true)
+    globalThis.fetch = vi.fn(async () => Response.json({ detail: 'Denied' }, { status: 403 })) as typeof fetch
+    await store.refreshHistory(1, 3)
+    expect(store.historyEmpty).toBe(false)
+    expect(store.history).toEqual([])
   })
 })
 

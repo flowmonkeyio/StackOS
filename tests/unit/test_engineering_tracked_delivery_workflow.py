@@ -70,13 +70,13 @@ def _impact_map() -> dict:
     }
 
 
-def test_tracked_delivery_v040_keeps_one_key_and_twelve_steps() -> None:
+def test_tracked_delivery_keeps_one_key_and_eleven_steps() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.4.0"
+    assert workflow["version"] == "0.8.7"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",
@@ -85,7 +85,6 @@ def test_tracked_delivery_v040_keeps_one_key_and_twelve_steps() -> None:
         "design-tests",
         "plan-tickets",
         "review-design",
-        "deliver-tickets",
         "verify-delivery",
         "review-delivery",
         "audit-tracker",
@@ -111,11 +110,38 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
     policies = {item["key"]: item["description"] for item in workflow["policies"]}
 
     assert "agents still decide" in policies["agent_decides_strategy"].lower()
-    assert "project pattern" in policies["scope_drift_control"].lower() or (
-        "planned ownership" in policies["scope_drift_control"].lower()
-    )
+    scope = policies["scope_drift_control"]
+    assert "fallible evidence of the original operator outcome" in scope
+    assert "without routine main-agent relay" in scope
+    for boundary in ("Explicit exclusions", "unavailable authority", "actual ownership conflicts"):
+        assert boundary in scope
+    assert "The agreed plan is the delivery contract" not in policies["orchestrator_feedback_gate"]
+    steps = {step["id"]: " ".join(step["instructions"]) for step in workflow["steps"]}
+    assert "Distinguish known paths" in steps["plan-tickets"]
+    assert "necessary omitted checks" in steps["verify-delivery"]
+    assert "without routine main relay" in steps["review-delivery"]
     assert "for repository-bound delivery" in policies["release_candidate_lock"].lower()
     assert "when evidence suggests" in policies["finding_lifecycle"].lower()
+    assert "all remaining dependency-ready task work" in policies["main_agent_accountability"]
+    acceptance = policies["delegated_ticket_acceptance"]
+    for requirement in (
+        "three automatic repair passes per ticket",
+        "initial delivery plus three repairs",
+        "same native delivery/review sessions",
+        "Persist repair_count across explicit requeue; never reset it",
+        "When repair_count is absent, historical repair_pass_used=true counts as one pass",
+        "rejection after the third repair",
+    ):
+        assert requirement in acceptance
+    verify = next(step for step in workflow["steps"] if step["id"] == "verify-delivery")
+    assert verify["depends_on"] == ["review-design"]
+    assert "every attached implementation child has current independent acceptance" in str(verify)
+    assert "attach implementation children to verify-delivery" in steps["plan-tickets"]
+    assert "terminal children block review-delivery" in steps["plan-tickets"]
+    assert "Do not make children block their own verify-delivery mirror" in steps["plan-tickets"]
+    assert "tracker.startDelivery" in steps["plan-tickets"]
+    assert "delivery_summary" not in {output["key"] for output in workflow["outputs"]}
+    assert "deliver-tickets" not in str(workflow)
 
     scope_required = set(_output(workflow, "scope_summary")["schema"]["required"])
     assert {
@@ -135,10 +161,6 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
     impact_schema = _output(workflow, "impact_map")["schema"]
     assert {"ownership", "scope_deltas"} <= set(impact_schema["required"])
     assert "root_cause_analysis" not in impact_schema["required"]
-
-    delivery_required = set(_output(workflow, "delivery_summary")["schema"]["required"])
-    assert "release_candidate" not in delivery_required
-    assert "tdd_receipts" not in delivery_required
 
     review_required = set(_output(workflow, "review_summary")["schema"]["required"])
     assert "pattern_audits" not in review_required

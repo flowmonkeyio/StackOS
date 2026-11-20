@@ -15,12 +15,175 @@ from sqlmodel import Session, col, select
 
 from stackos.auth_providers import AuthRepository
 from stackos.auth_providers.repository.utils import credential_ref as new_credential_ref
-from stackos.db.models import AuthProvider, Credential, ProjectCredential
+from stackos.db.models import AuthProvider, Credential, CredentialAccount, ProjectCredential
 from stackos.repositories.base import Envelope
 from stackos.repositories.projects import (
     IntegrationCredentialOut,
     IntegrationCredentialRepository,
 )
+
+
+def install_cfobooth_contract(session: Session, monkeypatch: Any) -> dict[str, Any]:
+    """r8 native declaration only; real manifest expansion and Account custody.
+
+    This fixed public declaration is not native transport/identity validation
+    proof. s12 replays the lifecycle with the accepted connector package.
+    """
+    # project_probe_config resolves this exact declaration's module before it
+    # applies config_schema. Supply only that native seam on the locked host;
+    # no host persistence, API, encryption or permission behavior is mocked.
+    import sys
+    from types import ModuleType
+
+    from stackos_connectors import ConnectorClient, ConnectorRegistry, get_default_client
+
+    from stackos.plugins.manifest import ProviderManifest
+
+    boundary_module = ModuleType("stackos_connectors.connectors.cfobooth.probe")
+
+    def unexpected_probe(**_kwargs):
+        raise AssertionError("Tests must explicitly supply the native probe outcome")
+
+    boundary_module.probe = unexpected_probe
+    monkeypatch.setitem(
+        sys.modules,
+        "stackos_connectors.connectors.cfobooth.probe",
+        boundary_module,
+    )
+
+    declaration = {
+        "connector": "cfobooth",
+        "name": "CFOBooth",
+        "auth_type": "api_key",
+        "probe_implementation": "stackos_connectors.connectors.cfobooth.probe:probe",
+        "auth_methods": [
+            {
+                "key": "api_key",
+                "fields_schema": {
+                    "type": "object",
+                    "required": ["api_key"],
+                    "properties": {"api_key": {"type": "string", "minLength": 1}},
+                    "additionalProperties": False,
+                },
+                "config_schema": {
+                    "type": "object",
+                    "required": ["api_base_url"],
+                    "properties": {
+                        "api_base_url": {"type": "string", "minLength": 1},
+                        "organization_id": {"type": "string", "format": "uuid"},
+                    },
+                    "additionalProperties": False,
+                },
+                "payload_format": "json",
+                "evidence_source": "provider_probe",
+                "description": (
+                    "Resolved CFOBooth API key with explicit endpoint and organization binding."
+                ),
+                "setup": {
+                    "auth_type": "api_key",
+                    "interactive": False,
+                    "description": (
+                        "Create an API key in your CFOBooth organization and provide it through "
+                        "the host Account credential owner. Configure your own endpoint; "
+                        "no remote deployment has been verified."
+                    ),
+                    "fields": [
+                        {
+                            "key": "api_key",
+                            "label": "API key",
+                            "secret": True,
+                            "required": True,
+                            "type": "password",
+                        },
+                        {
+                            "key": "api_base_url",
+                            "label": "API base URL",
+                            "required": True,
+                            "placeholder": "https://cfobooth.com",
+                            "description": (
+                                "Editable example only. Use your owned local HTTP loopback "
+                                "or remote HTTPS endpoint."
+                            ),
+                            "type": "text",
+                            "secret": False,
+                        },
+                    ],
+                    "label": "CFOBooth API key",
+                },
+            }
+        ],
+    }
+    native = ConnectorClient(
+        registry=ConnectorRegistry(
+            connector_metadata={
+                **get_default_client().registry.connector_metadata,
+                "cfobooth": declaration,
+            }
+        )
+    )
+    monkeypatch.setattr("stackos_connectors.get_default_client", lambda: native)
+    monkeypatch.setattr("stackos.plugins.manifest.get_default_client", lambda: native)
+    expanded = ProviderManifest.model_validate(
+        {
+            "key": "cfobooth",
+            "name": "CFOBooth",
+            "auth_catalog_ref": "cfobooth",
+        }
+    )
+    session.add(
+        AuthProvider(
+            key=expanded.key,
+            name=expanded.name,
+            auth_type=expanded.auth_type,
+            config_json={
+                "auth_methods": [m.model_dump(mode="json") for m in expanded.auth_methods]
+            },
+        )
+    )
+    session.commit()
+    return declaration
+
+
+def store_test_account_with_identity(
+    session: Session,
+    *,
+    project_id: int,
+    provider_key: str,
+    auth_method_key: str,
+    display_name: str,
+    fields: dict[str, str],
+    provider_account_id: str,
+) -> str:
+    """Store a real encrypted credential with an already acquired test identity.
+
+    Consumer tests begin after provider account discovery. Probe tests exercise
+    ``AuthRepository.test`` separately; action execution still resolves this
+    credential, project attachment and account through the real repositories.
+    """
+    credential_ref = (
+        AuthRepository(session)
+        .store_credential(
+            provider_key=provider_key,
+            auth_method_key=auth_method_key,
+            display_name=display_name,
+            fields=fields,
+            attach_project_id=project_id,
+        )
+        .data.credential_ref
+    )
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == credential_ref)
+    ).one()
+    assert credential.id is not None
+    session.add(
+        CredentialAccount(
+            credential_id=credential.id,
+            provider_account_id=provider_account_id,
+            display_name=display_name,
+        )
+    )
+    session.commit()
+    return credential_ref
 
 
 def seed_test_account(

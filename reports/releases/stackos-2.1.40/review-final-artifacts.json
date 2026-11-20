@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-10-28 17:24:45 UTC",
+  "reviewer": "/root/reviewer",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "assignment_attempt_id": "release-1",
+  "scope": "Final signed artifacts and installed lifecycle; publication readiness for exact accepted bytes.",
+  "verdict": "pass_to_publish",
+  "required_repairs": [],
+  "release": "2.1.40",
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "feature_commit": "9f005c0bdffbecf9f455c194732984290237626d",
+  "approved_source_candidate": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "payload": {
+    "name": "stackos",
+    "version": "2.1.40",
+    "buildId": "20261028T164835Z",
+    "builtAt": "2026-10-28T16:48:35Z"
+  },
+  "artifacts": {
+    "stackos-2.1.40-mac-arm64.zip": {
+      "bytes": 490264828,
+      "sha256": "9ea39558a289badc6e30e34e9f58b57ef3ca91609caee90631a54d0567b68551"
+    },
+    "stackos-2.1.40-mac-arm64.dmg": {
+      "bytes": 485528254,
+      "sha256": "9212fc6bb2138469cc6997bbf69b5e58887175799575d0ce5e6c8e6d88ac1778"
+    },
+    "stackos-2.1.40-mac-arm64.zip.blockmap": {
+      "bytes": 505375,
+      "sha256": "b4113ac3b685d3c14e41ad8281cd0b0f3b36d23e58508bb23b634247b54e8998"
+    },
+    "stackos-2.1.40-mac-arm64.dmg.blockmap": {
+      "bytes": 504492,
+      "sha256": "46c70949c904f346f57ad2194787af9ecffd27d96d8b95bfa1e89263fedf3f11"
+    },
+    "stackos-latest-mac-arm64.dmg": {
+      "bytes": 485528254,
+      "sha256": "9212fc6bb2138469cc6997bbf69b5e58887175799575d0ce5e6c8e6d88ac1778"
+    },
+    "latest-mac.yml": {
+      "bytes": 513,
+      "sha256": "81628f8811491baa78e628447f64a8d848f6ced578a502bef91ade7432b04dad"
+    }
+  },
+  "artifact_checks": {
+    "all_six_files_match_root_manifest": true,
+    "feed_version": "2.1.40",
+    "feed_zip_and_dmg_sha512_and_sizes_match": true,
+    "primary_feed_zip_entry_matches": true,
+    "stable_dmg_alias_identical": true,
+    "signed_zip_unchanged_from_prior_acceptance": true,
+    "dmg_signature": "valid strict signature; expected Developer ID Application SERGEY RURA (TSHN26FR48)",
+    "dmg_gatekeeper": "accepted; source=Notarized Developer ID",
+    "dmg_staple": "valid",
+    "dmg_contained_app": "Mounted read-only without launching; deep/strict codesign, execute Gatekeeper and staple validation pass.",
+    "mounted_app_source_identity": {
+      "tracked_source_files": 533,
+      "tracked_hash_map_sha256": "cbe33fb2742aa664ae61c8e3eb808ce84ecd509f1b76384c3b13ed8732f21b4b",
+      "asar_sha256": "b6115adb1ece903cf89615400923f6d93b5ed20179cb5bb97348b30febd9c07e",
+      "version": "2.1.40",
+      "buildId": "20261028T164835Z",
+      "matches_prior_package_and_zip_review": true
+    },
+    "read_only_mount_detached": true
+  },
+  "independent_artifact_commands": [
+    {
+      "label": "dmg_codesign",
+      "cmd": "TPF_LLM_TOOL=codex tpf codesign --verify --strict --verbose=2 '/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg'",
+      "chunk_id": "3bc9e1",
+      "wall_time_seconds": 0.680976208,
+      "exit_code": 0,
+      "original_token_count": 60,
+      "output": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg: valid on disk\n/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg: satisfies its Designated Requirement\n"
+    },
+    {
+      "label": "dmg_gatekeeper",
+      "cmd": "TPF_LLM_TOOL=codex tpf spctl --assess --type open --context context:primary-signature --verbose=4 '/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg'",
+      "chunk_id": "0ae8d3",
+      "wall_time_seconds": 0.872429167,
+      "exit_code": 0,
+      "original_token_count": 34,
+      "output": "/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg: accepted\nsource=Notarized Developer ID\n"
+    },
+    {
+      "label": "dmg_staple",
+      "cmd": "TPF_LLM_TOOL=codex tpf xcrun stapler validate '/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg'",
+      "chunk_id": "1ee3d8",
+      "wall_time_seconds": 0.093835666,
+      "exit_code": 0,
+      "original_token_count": 34,
+      "output": "Processing: /private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg\nThe validate action worked!\n"
+    },
+    {
+      "label": "dmg_identity",
+      "cmd": "TPF_LLM_TOOL=codex tpf codesign --display --verbose=4 '/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg'",
+      "chunk_id": "4c4d66",
+      "wall_time_seconds": 0.00000625,
+      "exit_code": 0,
+      "original_token_count": 239,
+      "output": "Executable=/private/tmp/stackos-release-20261028/release-tree/desktop/dist/stackos-2.1.40-mac-arm64.dmg\nIdentifier=stackos-2.1.40-mac-arm64\nFormat=disk image\nCodeDirectory v=20200 size=312 flags=0x0(none) hashes=1+6 location=embedded\nHash type=sha256 size=32\nCandidateCDHash sha256=623294a12c734db6d61896046815871f5b0f3963\nCandidateCDHashFull sha256=623294a12c734db6d61896046815871f5b0f3963a63376ea73399f0a24c5cda0\nHash choices=sha256\nCMSDigest=623294a12c734db6d61896046815871f5b0f3963a63376ea73399f0a24c5cda0\nCMSDigestType=2\nPage size=none\nCDHash=623294a12c734db6d61896046815871f5b0f3963\nSignature size=8973\nAuthority=Developer ID Application: SERGEY RURA (TSHN26FR48)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Oct 28, 2026 at 10:05:53 AM\nNotarization Ticket=stapled\nInfo.plist=not bound\nTeamIdentifier=TSHN26FR48\nSealed Resources=none\nInternal requirements count=1 size=184\nTotal signatures=1\nChosen signature=1\n"
+    },
+    {
+      "label": "dmg_app_codesign",
+      "cmd": "TPF_LLM_TOOL=codex tpf codesign --verify --deep --strict --verbose=2 '/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app'",
+      "chunk_id": "52ffc3",
+      "wall_time_seconds": 0.000004875,
+      "original_token_count": 672,
+      "output": "--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--prepared:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--validated:/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app/Contents/Frameworks/StackOS Helper.app\n/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app: valid on disk\n/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app: satisfies its Designated Requirement\n",
+      "exit_code": 0
+    },
+    {
+      "label": "dmg_app_gatekeeper",
+      "cmd": "TPF_LLM_TOOL=codex tpf spctl --assess --type execute --verbose=4 '/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app'",
+      "chunk_id": "01b472",
+      "wall_time_seconds": 0.000003208,
+      "original_token_count": 28,
+      "output": "/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app: accepted\nsource=Notarized Developer ID\n",
+      "exit_code": 0
+    },
+    {
+      "label": "dmg_app_staple",
+      "cmd": "TPF_LLM_TOOL=codex tpf xcrun stapler validate '/private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app'",
+      "chunk_id": "e14a3e",
+      "wall_time_seconds": 0.126936916,
+      "exit_code": 0,
+      "original_token_count": 28,
+      "output": "Processing: /private/tmp/stackos-release-20261028/reviewer-dmg-mount/StackOS.app\nThe validate action worked!\n"
+    }
+  ],
+  "installed_lifecycle": {
+    "disposition": "pass",
+    "evidence": "/tmp/stackos-release-20261028/installed-lifecycle.json",
+    "observed_update": "Signed installed2.1.39 downloaded the accepted490264828-byte ZIP and installed/relaunched2.1.40.",
+    "binding": "Installed app version, payload buildId20261028T164835Z, prepared installKey and daemon health agree with accepted build.",
+    "doctor": {
+      "passed": 27,
+      "failed": 0
+    },
+    "launchd": "Loaded/running with actual /Applications/StackOS.app packaged Python program.",
+    "repair_and_restart": "Both exit0; restart log confirms launchd unload then successful reload.",
+    "normal_ui": "After normal open, actual native accessibility observation records exactly one AXWebArea and rendered StackOS/Home/Attention/Work/Activity/APP/Overview/Accounts/Backups labels.",
+    "normal_ui_evidence": "installed-ui-observed.json and installed-ui-observed.log; capture_installed.py inspected and asserts actual observation.",
+    "cleanup": "One normal app process; temporary8765 and9238 listeners closed; production HTTPS update config restored.",
+    "preservation": {
+      "project_and_credential_identities": true,
+      "account_links_and_project_attachments": true,
+      "encrypted_record_ids": true,
+      "seed_unchanged": true,
+      "auth_token_unchanged": true,
+      "backup_policy_unchanged": true,
+      "backup_key_exclusions_unchanged": true
+    },
+    "negative_feed": {
+      "disposition": "Expected real404 observed; isolated synthetic DB/seed/token preserved.",
+      "screenshot": "User-provided badfeed-native-user.png inspected.",
+      "known_existing_limitation": "Dialog title is readable but body includes verbose upstream HTTP details/stack trace; this release does not claim to fix that existing behavior.",
+      "normal_app_restored": true
+    }
+  },
+  "historical_diagnostics": [
+    "Sandboxed app trust commands initially failed due to verification environment restrictions; read-only system-security-access checks passed and are recorded in review-app-zip.json.",
+    "Initial normal-UI AppleScript exit0 produced no AXWebArea evidence and was not accepted. Later concrete native accessibility output closes that gap.",
+    "Native screenshot capture lacked OS permission; no successful capture is claimed. Installed renderer observation uses actual accessibility evidence; bad-feed screenshot provenance is the user-provided image."
+  ],
+  "reused_review_receipts": [
+    "review-package-content.json",
+    "review-app-zip.json",
+    "release-review-version.json",
+    "../2026-10-28-streamlined-backups/evidence/review/independent-review.json"
+  ],
+  "evidence_hashes": {
+    "artifacts.json": "4630cf9907f059f22db43f05621313e92fb7a38d533f2f3a769358e00b2049c3",
+    "installed-lifecycle.json": "2c1021938309b92aee9cf32cb509c675b5f1dd5594282381e7c77bd5c0a7332d",
+    "installed-ui-observed.json": "5f78035dc2fcd79794ba3cf7f522dcc8518ce11555746f8324f0324d45a10d42",
+    "installed-ui-observed.log": "df184ca15fe8ff056566ee4ecf48c543a2024a7c2648d72ed00274fa52ccce37",
+    "installed-final-doctor.log": "54a9838048ed33877c42dfa172d5e85c3117090f874e73628aa6ca8d6bdc7bca",
+    "installed-repair.json": "64a1a2e08677610b910f6bb350b60772ae2795d3da4f2eeebec224c41bfba387",
+    "installed-restart.json": "86bf4577b94da95aa01de5e90cc66e2d8676c21d9b6cd12ebf02c45e9364bd56",
+    "installed-restart.log": "42c413b7e349bcbf04a198a544e6a7af6fc71317528be4cbe82079aec13a36c5",
+    "state-preservation-final.json": "2fd9aa22e5a6efaa71f96ce9a3452aafd3d1c2e958df651451d2245fd6fcd922",
+    "badfeed-check.json": "4ad94aba5237ee50c0a833ae10faaa6982db383cfd8360f6b959c573f0af5ebf",
+    "badfeed-after.json": "a6d0a2df2b956c0eb1576bdf267f62bb3c586007051ab4cf089a4cf1fdfa7d60",
+    "badfeed-native-user.png": "8afb805d5179a40cc3fa0d243fdd31bd5ae7194198860521639f6cabe57d7ef2"
+  },
+  "evidence_base": "/tmp/stackos-release-20261028",
+  "independence": {
+    "built_or_installed_candidate": false,
+    "published": false,
+    "source_or_runtime_edits": false,
+    "reviewer_actions": "Read-only artifact hashing/trust checks; readonly DMG mount then detach; inspect root lifecycle receipts and actual screenshot; scoped review receipt writes."
+  },
+  "authority_and_next_step": "Operator has authorized release. Root may publish exactly these artifacts and switch the stable channel using its authorized publication path. This is a pre-publication pass, not a claim that hosting is already current.",
+  "final_acceptance_obligation": "Verify versioned ZIP/DMG/blockmaps and stable alias/feed over public HTTPS against these hashes and metadata; preserve resulting durable receipts before final closeout."
+}

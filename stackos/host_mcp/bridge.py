@@ -85,7 +85,50 @@ def resolve_bridge_command(
 
 
 def command_matches(expected: Sequence[str], actual: Sequence[str]) -> bool:
-    return list(actual) == list(expected)
+    """Compare recognized bridge settings without changing launcher ownership.
+
+    Omitted settings mean the bridge's canonical defaults, not the inspecting
+    process's environment. Runtime, workspace and launcher identities stay exact.
+    Unknown or malformed options only match by literal equality.
+    """
+    if list(actual) == list(expected):
+        return True
+    expected_context = _bridge_context(expected)
+    return expected_context is not None and expected_context == _bridge_context(actual)
+
+
+def _bridge_context(command: Sequence[str]) -> tuple[list[str], dict[str, str | None]] | None:
+    from stackos.config import Settings, _default_data_dir, _default_state_dir
+
+    if not is_stackos_bridge_command(command) or "mcp-bridge" not in command:
+        return None
+    bridge_index = command.index("mcp-bridge")
+    context: dict[str, str | None] = {
+        "--host": Settings.model_fields["host"].default,
+        "--port": str(Settings.model_fields["port"].default),
+        "--data-dir": str(_default_data_dir()),
+        "--state-dir": str(_default_state_dir()),
+        "--runtime": None,
+        "--workspace-root": None,
+    }
+    seen: set[str] = set()
+    arguments = iter(command[bridge_index + 1 :])
+    for argument in arguments:
+        option, separator, value = argument.partition("=")
+        if option not in context or option in seen:
+            return None
+        seen.add(option)
+        if not separator:
+            value = next(arguments, "")
+        if not value or value.startswith("--"):
+            return None
+        if option == "--port":
+            try:
+                value = str(int(value))
+            except ValueError:
+                return None
+        context[option] = value
+    return list(command[: bridge_index + 1]), context
 
 
 def command_line_mentions(expected: Sequence[str], line: str) -> bool:
@@ -96,9 +139,16 @@ def command_line_mentions(expected: Sequence[str], line: str) -> bool:
     wanted = list(expected)
     if not wanted:
         return False
-    for index in range(0, len(tokens) - len(wanted) + 1):
-        if tokens[index : index + len(wanted)] == wanted:
-            return True
+    for index, token in enumerate(tokens):
+        if token != wanted[0]:
+            continue
+        # Native list rows can append status columns. Never trim a trailing
+        # option: doing so would hide a custom setting or malformed command.
+        for end in range(len(tokens), index, -1):
+            if any(part.startswith("--") for part in tokens[end:]):
+                break
+            if command_matches(wanted, tokens[index:end]):
+                return True
     return False
 
 

@@ -12,6 +12,8 @@ PAYLOAD_DIR="${STACKOS_DESKTOP_PAYLOAD_DIR:-${DESKTOP_DIR}/payload/stackos}"
 RUNTIME_ROOT="${TDLIB_RUNTIME_ROOT:-${PAYLOAD_DIR}/telegram-tdlib-runtime}"
 BUILD_PARENT="${TDLIB_BUILD_PARENT:-${DESKTOP_DIR}/payload-build/telegram-tdlib}"
 TDLIB_LIBRARY_PATH="${TDLIB_LIBRARY_PATH:-}"
+TDLIB_INPUT_VARIANT="${TDLIB_INPUT_VARIANT:-${TDLIB_LIBRARY_PATH:+original}}"
+TDLIB_INPUT_VARIANT="${TDLIB_INPUT_VARIANT:-npm-prebuilt-0.1008067.0}"
 CMAKE_BIN="${CMAKE:-cmake}"
 PYTHON_BIN="${TDLIB_PYTHON:-python3}"
 OPENSSL_ROOT="${TDLIB_OPENSSL_ROOT:-}"
@@ -21,6 +23,30 @@ TDLIB_SOURCE_ARCHIVE_SHA256="5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274ce
 TDLIB_VERSION="1.8.67"
 TDLIB_EXPECTED_LIBRARY_SHA256="c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af"
 TDLIB_BUILD_MANIFEST_VERSION="1"
+SOURCE_VERIFICATION="inherited-proof-artifact"
+
+case "${TDLIB_INPUT_VARIANT}" in
+  original) ;;
+  npm-prebuilt-0.1008067.0)
+    TDLIB_EXPECTED_LIBRARY_SHA256="67ea9d6f0494ca88c57b97f4d779977b764465773ef137d10099c8c75f555303"
+    SOURCE_VERIFICATION="registry-integrity-pinned"
+    ;;
+  stackos-2.1.38-packaged-local)
+    if [[ "${STACKOS_UNSIGNED_DEV:-}" != "1" || -z "${TDLIB_LIBRARY_PATH}" || -n "${STACKOS_UPDATE_URL:-}" ]]; then
+      echo "Packaged TDLib reuse requires an explicit library, STACKOS_UNSIGNED_DEV=1, and no update URL." >&2
+      exit 1
+    fi
+    for release_flag in "${STACKOS_REQUIRE_SIGNING:-}" "${STACKOS_REQUIRE_UPDATE_URL:-}"; do
+      case "${release_flag}" in
+        ""|0|false|FALSE|False|no|NO|off|OFF) ;;
+        *) echo "Packaged TDLib reuse is unavailable for release builds." >&2; exit 1 ;;
+      esac
+    done
+    TDLIB_EXPECTED_LIBRARY_SHA256="25959b20294cd194a77a3f392718b518fc1c0ff12ed8eaf8c555845146da3739"
+    SOURCE_VERIFICATION="inherited-packaged-artifact"
+    ;;
+  *) echo "Unknown TDLIB_INPUT_VARIANT." >&2; exit 1 ;;
+esac
 
 if [[ -z "${RUNTIME_ROOT}" || "${RUNTIME_ROOT}" == "/" ]]; then
   echo "TDLIB_RUNTIME_ROOT must name one managed runtime directory." >&2
@@ -36,6 +62,10 @@ for command in lipo otool shasum; do
     exit 1
   fi
 done
+
+if [[ "${TDLIB_INPUT_VARIANT}" == "npm-prebuilt-0.1008067.0" && -z "${TDLIB_LIBRARY_PATH}" ]]; then
+  TDLIB_LIBRARY_PATH="$("${PYTHON_BIN}" "${SCRIPT_DIR}/fetch-tdlib-input.py")"
+fi
 
 STAGE_ROOT="${RUNTIME_ROOT}.staging.$$"
 cleanup() {
@@ -55,6 +85,12 @@ if [[ -n "${TDLIB_LIBRARY_PATH}" ]]; then
   fi
   TDJSON_BUILT_PATH="${TDLIB_LIBRARY_PATH}"
   BUILD_MODE="verified-prebuilt"
+  if [[ "${TDLIB_INPUT_VARIANT}" != "original" ]]; then
+    BUILD_MODE="verified-packaged-local"
+  fi
+  if [[ "${TDLIB_INPUT_VARIANT}" == "npm-prebuilt-0.1008067.0" ]]; then
+    BUILD_MODE="verified-registry-prebuilt"
+  fi
 else
   if ! command -v "${CMAKE_BIN}" >/dev/null 2>&1; then
     echo "CMake is required; set CMAKE to an explicit CMake executable." >&2
@@ -98,9 +134,17 @@ else
     exit 1
   fi
   BUILD_MODE="pinned-source"
+  SOURCE_VERIFICATION="source-archive-verified"
 fi
 
-if [[ "$(lipo -archs "${TDJSON_BUILT_PATH}")" != "arm64" ]]; then
+cp "${TDJSON_BUILT_PATH}" "${STAGE_ROOT}/lib/libtdjson.dylib"
+TDJSON_INPUT_SHA256="$(shasum -a 256 "${STAGE_ROOT}/lib/libtdjson.dylib" | awk '{print $1}')"
+if [[ "${TDJSON_INPUT_SHA256}" != "${TDLIB_EXPECTED_LIBRARY_SHA256}" ]]; then
+  echo "TDLib library did not match the pinned input artifact digest." >&2
+  exit 1
+fi
+
+if [[ "$(lipo -archs "${STAGE_ROOT}/lib/libtdjson.dylib")" != "arm64" ]]; then
   echo "TDLib library must be arm64-only." >&2
   exit 1
 fi
@@ -110,18 +154,21 @@ while IFS= read -r dependency; do
   if [[ "${dependency}" == "@rpath/libtdjson.${TDLIB_VERSION}.dylib" ]]; then
     continue
   fi
+  if [[ "${TDLIB_INPUT_VARIANT}" == "npm-prebuilt-0.1008067.0" && "${dependency}" == "@rpath/libtdjson.dylib" ]]; then
+    continue
+  fi
   if [[ "${dependency}" != /usr/lib/* && "${dependency}" != /System/Library/* ]]; then
     echo "TDLib library has a non-system runtime dependency: ${dependency}" >&2
     exit 1
   fi
-done < <(otool -L "${TDJSON_BUILT_PATH}" | tail -n +2)
+done < <(otool -L "${STAGE_ROOT}/lib/libtdjson.dylib" | tail -n +2)
 
-cp "${TDJSON_BUILT_PATH}" "${STAGE_ROOT}/lib/libtdjson.dylib"
-TDJSON_SHA256="$(shasum -a 256 "${STAGE_ROOT}/lib/libtdjson.dylib" | awk '{print $1}')"
-if [[ "${TDJSON_SHA256}" != "${TDLIB_EXPECTED_LIBRARY_SHA256}" ]]; then
-  echo "TDLib library did not match the pinned proof artifact digest." >&2
-  exit 1
+if [[ "${TDLIB_INPUT_VARIANT}" != "original" ]]; then
+  # Re-seal only the verified staged copy. Never modify the supplied artifact.
+  codesign --force --sign - --timestamp=none "${STAGE_ROOT}/lib/libtdjson.dylib"
+  codesign --verify --strict "${STAGE_ROOT}/lib/libtdjson.dylib"
 fi
+TDJSON_SHA256="$(shasum -a 256 "${STAGE_ROOT}/lib/libtdjson.dylib" | awk '{print $1}')"
 cat > "${STAGE_ROOT}/manifest.json" <<JSON
 {
   "runtime": "telegram-tdlib",
@@ -138,6 +185,9 @@ cat > "${STAGE_ROOT}/manifest.json" <<JSON
   "build": {
     "manifest_version": ${TDLIB_BUILD_MANIFEST_VERSION},
     "mode": "${BUILD_MODE}",
+    "input_variant": "${TDLIB_INPUT_VARIANT}",
+    "input_sha256": "${TDJSON_INPUT_SHA256}",
+    "source_verification": "${SOURCE_VERIFICATION}",
     "dependency_policy": "system-only",
     "source_archive_sha256": "${TDLIB_SOURCE_ARCHIVE_SHA256}"
   },
@@ -147,6 +197,31 @@ cat > "${STAGE_ROOT}/manifest.json" <<JSON
   }
 }
 JSON
+
+if [[ "${TDLIB_INPUT_VARIANT}" == "npm-prebuilt-0.1008067.0" ]]; then
+  "${PYTHON_BIN}" - "${STAGE_ROOT}/manifest.json" "${SCRIPT_DIR}" <<'PY'
+import json
+from pathlib import Path
+import sys
+sys.path.insert(0, sys.argv[2])
+import importlib.util
+spec = importlib.util.spec_from_file_location("tdlib_input", Path(sys.argv[2]) / "fetch-tdlib-input.py")
+inputs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(inputs)
+path = Path(sys.argv[1])
+manifest = json.loads(path.read_text())
+del manifest["source"]["archive_sha256"]
+del manifest["build"]["source_archive_sha256"]
+manifest["build"].update({
+    "package": "@prebuilt-tdlib/darwin-arm64",
+    "package_version": "0.1008067.0",
+    "package_url": inputs.URL,
+    "package_integrity": inputs.INTEGRITY,
+    "package_sha256": inputs.ARCHIVE_SHA256,
+})
+path.write_text(json.dumps(manifest, indent=2) + "\n")
+PY
+fi
 
 "${PYTHON_BIN}" - "${STAGE_ROOT}/lib/libtdjson.dylib" "${TDLIB_VERSION}" <<'PY'
 import ctypes

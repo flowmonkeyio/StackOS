@@ -1,0 +1,83 @@
+{
+  "attempt": "restart605-a1-design-review",
+  "contract_revision": "r5-restart",
+  "project_id": 1,
+  "run_plan_id": 605,
+  "run_id": 599,
+  "step_key": "verify-delivery",
+  "reviewer": "/root/global_readiness_review",
+  "independence": "Read-only independent design review; no implementation, tests, lifecycle actions or durable writes.",
+  "candidate": {
+    "path": "/private/tmp/stackos-restart605-fix",
+    "base_commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+    "worktree_status": "clean at inspection before implementation"
+  },
+  "disposition": "approve_with_bounded_watchdog_refinement",
+  "operator_source": "Main assignment: installed 2.1.36 restart reported failure; daemon became healthy 26 seconds after prior shutdown, CLI exited 1 at its 20-second readiness limit with null signal; later Doctor passed. Main owns exact live incident evidence.",
+  "sources_consumed": [
+    "Current operator-provided replacement AGENTS.md",
+    ".codex/agents/sdlc-delivery-reviewer.toml complete; source preset v0.3.1, workflow v0.4.0",
+    "docs/product-direction.md Product Thesis, Product Contract, lifecycle priority and Product Principles",
+    "docs/README.md affected-layer routing",
+    "docs/agent-operating-model.md canonical guidance consumption",
+    "docs/release-signoff.md lifecycle and desktop release obligations",
+    "docs/upgrade.md affected restart/prepared-install guidance",
+    "desktop/src/service.js and its main.js call sites",
+    "desktop/scripts/test-service-upgrade.cjs existing harness",
+    "stackos/cli/daemon_commands.py restart/start ownership and phases",
+    "stackos/cli/launchd.py bounded launchctl/bootout/bootstrap owners",
+    "stackos/cli/daemon_processes.py readiness/termination/process-discovery owners"
+  ],
+  "context_check": "Native workspace.resolve confirmed existing project 1 directory binding; no setup or bootstrap performed. Run/step/revision scope supplied by main assignment; no lifecycle or tracker mutation.",
+  "findings": [
+    {
+      "id": "RESTART-D01",
+      "severity": "required design clarification",
+      "evidence": "restart() performs launchd._launchd_bootout(wait_timeout=T), optional _terminate_daemon_processes(timeout=T), then _wait_for_daemon(timeout=T) sequentially. _launchctl has its own 10-second timeout; unload polling can overshoot its deadline by one such call, and bootstrap may fall back to legacy load.",
+      "impact": "A watchdog sized only as T+10 or 2*T+10 can terminate valid restart progress before the CLI's own bounded phases finish.",
+      "required_refinement": "Allow three readiness-sized phases plus conservative launchctl/process overhead in the desktop restart watchdog. A simple 3*T+120-second outer guard is reasonable here; document it as a guard with margin, not an exact global upper bound for arbitrary process discovery. Start has one readiness-sized phase plus process overhead. Do not change CLI phase semantics or add another readiness framework."
+    }
+  ],
+  "acceptance_review": [
+    {
+      "criterion": "Fix the observed 26-second readiness failure",
+      "disposition": "design adequate",
+      "requirement": "One named desktop readiness default of 60 seconds used by startDaemon, restartDaemon, ensureDaemonReady and the restart calls inside installOrRepair and repairPreparedInstall. Existing install-command 240/180-second budgets and status probe limits are separate operations and should not be reduced to 60."
+    },
+    {
+      "criterion": "Preserve explicit CLI and service caller timeout semantics",
+      "disposition": "required",
+      "requirement": "Do not change Python CLI default/options or silently replace explicit numeric/options timeouts on direct service calls. Desktop 60 seconds is a per-readiness-phase default, not the total install/restart deadline."
+    },
+    {
+      "criterion": "Preserve truthful failure handling and one restart",
+      "disposition": "design adequate",
+      "requirement": "Keep immediate failure on genuine nonzero child exit; do not upgrade failed restart to success because a later health probe sees another process. One install/repair attempt invokes one restart; bootstrap failure, port blocker and readiness timeout remain failures."
+    },
+    {
+      "criterion": "Reproduce the actual regression in the existing harness",
+      "disposition": "required candidate proof",
+      "requirement": "Exercise actual installOrRepair/prepareInstalledVersion with mock child/timer behavior representing health at 26 seconds. Old 20-second deadline must fail, new default must succeed without a second restart. Prove readiness and prepared-marker update; prove Doctor in forced/runDoctor=true flow. Preserve existing automatic prepare runDoctor=false policy. Verify the next current-install startup skips a full repeated install."
+    },
+    {
+      "criterion": "Watchdog and negative-path proof",
+      "disposition": "required candidate proof",
+      "requirement": "Verify a CLI consuming legitimate sequential stop/start phases is not killed by the outer guard. Verify explicit short timeout, never-ready, bootstrap/nonzero failure and port blocker do not produce a prepared marker or successful readiness. Reuse CLI regressions for unchanged ownership/restoration behavior rather than reimplementing it in JS."
+    },
+    {
+      "criterion": "Minimal ownership and scope",
+      "disposition": "pass",
+      "requirement": "Keep repair in canonical desktop service.js, focused existing test harness and affected lifecycle docs. No fallback owner, registry, new mode, new CLI abstraction, or unconditional Doctor behavior is needed."
+    }
+  ],
+  "executed_checks": [
+    "Read-only static path and timeout review against the clean isolated commit",
+    "Native existing workspace binding check",
+    "No tests or real restart were run during this design review"
+  ],
+  "limitations": [
+    "This is approval to implement the scoped design, not approval of a candidate or release.",
+    "Candidate review and focused proof remain required. Changed lifecycle behavior also needs the existing installed-app/Doctor/repair signoff at the applicable authorized stage; source mocks do not establish installed recovery."
+  ],
+  "next_disposition": "Main may accept the watchdog refinement and dispatch the bounded implementation."
+}

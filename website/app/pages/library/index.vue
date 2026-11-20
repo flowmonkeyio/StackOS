@@ -35,7 +35,7 @@ function articleSlug(stem: string) {
           <p class="library-kicker"><span class="status-dot" /> The work behind the product</p>
           <h1>See how AI work <em>actually gets done.</em></h1>
           <p class="library-hero__lede">
-            Explore complete workflows, the specialist agents inside them, and practical guides for connecting AI to the tools your team already uses.
+            Find a practical guide, connect a tool, or choose a workflow for your next task. Each workflow also shows the specialist agents and orchestration behind the work.
           </p>
         </div>
         <div class="library-hero__visual" aria-label="Library contents">
@@ -50,14 +50,14 @@ function articleSlug(stem: string) {
     <section class="library-map" aria-labelledby="library-map-title">
       <div class="shell library-map__grid">
         <div class="library-map__intro">
-          <p class="eyebrow">The system in one minute</p>
-          <h2 id="library-map-title">Three parts. <em>One complete job.</em></h2>
-          <p>A request becomes a visible workflow. Focused agents own bounded responsibilities. The orchestrator chooses the next step, gates feedback, and checks the job against its accepted outcome.</p>
+          <p class="eyebrow">Choose a starting point</p>
+          <h2 id="library-map-title">What do you want <em>to do next?</em></h2>
+          <p>Use a guide to learn the method, an integration page to connect a tool, or a workflow to see what a task needs and produces.</p>
         </div>
         <div class="library-map__links">
-          <NuxtLink to="/library/workflows"><span>01 / Workflow</span><strong>The contract and state for the work.</strong><small>Explore {{ catalog.workflows.length }} complete workflows →</small></NuxtLink>
-          <NuxtLink to="/library/agents"><span>02 / Agents</span><strong>Bounded responsibilities inside the job.</strong><small>Meet {{ catalog.agents.length }} focused agents →</small></NuxtLink>
-          <NuxtLink to="/library/orchestrators"><span>03 / Orchestration</span><strong>The reasoning that advances and protects the plan.</strong><small>See every coordinator →</small></NuxtLink>
+          <NuxtLink to="/library/articles/use-codex-claude-gemini-with-existing-tools/"><span>01 / Learn</span><strong>Use your existing AI client.</strong><small>Follow the client setup guide →</small></NuxtLink>
+          <NuxtLink to="/library/integrations/google-search-console/"><span>02 / Connect</span><strong>Read your site's search performance.</strong><small>Set up Search Console →</small></NuxtLink>
+          <NuxtLink to="/library/workflows/"><span>03 / Start</span><strong>Choose a workflow for your task.</strong><small>Compare the inputs and outputs →</small></NuxtLink>
         </div>
       </div>
     </section>
@@ -106,7 +106,7 @@ function articleSlug(stem: string) {
       <div class="shell">
         <div class="library-section__heading">
           <div><p class="eyebrow">From the work</p><h2>Practice, evidence, and direct answers.</h2></div>
-          <div><p>Each guide starts with the answer, then shows the decisions, evidence, failures, and practical methods behind it.</p><NuxtLink to="/library/articles">Read all articles →</NuxtLink></div>
+          <div><p>Read setup guides, worked methods, and accounts of the decisions and checks behind agent work.</p><NuxtLink to="/library/articles">Read all articles →</NuxtLink></div>
         </div>
         <div class="article-grid">
           <ArticleCard

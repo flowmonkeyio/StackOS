@@ -1,0 +1,129 @@
+{
+  "status": "pass",
+  "recommendation": "Host candidate revision 2 may proceed to signed/notarized desktop packaging. Final packaged artifact and publication checks remain separate.",
+  "reviewer": "day1_deploy_review",
+  "independent": true,
+  "implementation_involvement": "none; isolated temporary reviewer probe only",
+  "run_plan_id": 572,
+  "execution_id": 567,
+  "step": "fix-review",
+  "tracker_ticket": "workflow-572-fix-review",
+  "attempt": 1,
+  "contract_revision": 1,
+  "candidate_revision": 2,
+  "reviewed_at": "2026-10-06T17:56:15.369438+00:00",
+  "candidate_manifest": "/private/tmp/stackos-gsc-hotfix-20261006/evidence/host-candidate-v2.json",
+  "candidate_manifest_sha256": "acda1c40a91128ce26617440d9d9f34f1d21b799677bbe27316532e8b823cf62",
+  "verified_files": [
+    {
+      "path": "stackos/auth_providers/repository/credentials.py",
+      "sha256": "c62108fbd63b419142ebdab0f2f33efaf1dee56722f94bf83ccbb918f1d61d00"
+    },
+    {
+      "path": "stackos/auth_providers/repository/resolution.py",
+      "sha256": "3b222d938acdfdded5404bf6755350eab14563406bfefb8fb23c3aad277a3d83"
+    },
+    {
+      "path": "plugins/seo/plugin.yaml",
+      "sha256": "ab4449eafe1592fb1e5f488e2888f1ffaf1b1014b13814107b4d845133df4eba"
+    },
+    {
+      "path": "tests/integration/test_repositories/test_search_console_scope_lifecycle.py",
+      "sha256": "3653643130ace219a6fdcaec8a1116c14dc33de05d51b40a01574e55f7117d92"
+    },
+    {
+      "path": "tests/unit/test_auth_catalog_normalization.py",
+      "sha256": "cc2f06328ef8fca1609fb3da16c1188babc8337cfe2056264984675bf95e58b4"
+    }
+  ],
+  "published_dependency": {
+    "version": "0.2.1",
+    "wheel_sha256": "37a0f9ccced5043f7a480257c7d28704795c161cd9d75ae9e664c444d5ba4ac8",
+    "reviewed_installed_files": [
+      {
+        "path": "stackos_connectors/auth.py",
+        "sha256": "d544a39bd4c837c4014dd5bebe30d09deda36b87b48eb928743f21e2a89c9d90"
+      },
+      {
+        "path": "stackos_connectors/connectors/google_search_console/auth.py",
+        "sha256": "04bcc25f7f3f6bdcc98a115e1ccf37b92a7bb0f2427db73157d3e0893274e32d"
+      },
+      {
+        "path": "stackos_connectors/connectors/google_search_console/catalog.json",
+        "sha256": "5f50a4a743716f368fd32bbcf1eec1bcdb9826738354e5509e8773bc9e239121"
+      },
+      {
+        "path": "stackos_connectors/connectors/google_search_console/docs/auth.md",
+        "sha256": "78f22136225bf085731bb1fc0dc33a3d3cf47433becdd0b22630fec5f97d7ebb"
+      }
+    ],
+    "host_version": "2.1.34"
+  },
+  "checks": [
+    {
+      "check": "Final five frozen file hashes before/after focused checks",
+      "result": "pass"
+    },
+    {
+      "check": "Default readonly does not request write scopes or accept write actions, including broader cached/provider-returned grants",
+      "result": "pass"
+    },
+    {
+      "check": "Selected-scope ceiling precedes renewal for all four GSC methods and uses only canonical package contract scopes and compatibility",
+      "result": "pass"
+    },
+    {
+      "check": "Saved sitemap_write survives expiration renewal and recovers a still-valid readonly token minted by 2.1.33",
+      "result": "pass"
+    },
+    {
+      "check": "Provider returned narrower scope remains authoritative; requested-scope metadata prevents repeated renewal attempts",
+      "result": "pass"
+    },
+    {
+      "check": "Scope edit invalidates prior token/grant evidence, unchanged rename preserves it, interactive edit requires consent",
+      "result": "pass"
+    },
+    {
+      "check": "Full webmasters scope satisfies GSC reads only; other provider exact-scope checks preserved",
+      "result": "pass"
+    },
+    {
+      "check": "Generic host custody/renewal/CAS enforcement remains sole lifecycle owner; connector owns provider scope/mode facts; targeted GSC ceiling follows main adjudication",
+      "result": "pass"
+    },
+    {
+      "check": "Independent focused tests against published 0.2.1 wheel, without connector source PYTHONPATH",
+      "command": ".venv/bin/python -m pytest tests/integration/test_repositories/test_search_console_scope_lifecycle.py tests/integration/test_repositories/test_google_service_accounts.py tests/unit/test_auth_catalog_normalization.py -q",
+      "result": "86 passed in 22.52s"
+    },
+    {
+      "check": "Published wheel runtime/catalog/docs hashes match reviewed package; pyproject and uv.lock pin 0.2.1",
+      "result": "pass"
+    }
+  ],
+  "findings": [
+    {
+      "id": "GSC-MODE-001",
+      "severity": "P1",
+      "status": "resolved in candidate revision 2",
+      "original_evidence": "Independent synthetic default-readonly Account plus provider-returned webmasters grant could resolve WRITE; expected ConflictError did not occur.",
+      "repro": "/private/tmp/stackos_gsc_review_probe.py",
+      "repair": "Host enforces selected canonical GSC scope ceiling before renewal; broader returned/cached grants cannot override readonly; all four methods and cached/expired cases covered.",
+      "adjudication": "Main selected host-only policy gate using package scope facts to preserve optional grants for other providers."
+    }
+  ],
+  "residual_limits": [
+    "Desktop payload must bind these host files and reviewed connector bytes; signing/notarization/publication are not covered by this source review.",
+    "No full suite, local install/restart, or live Google sitemap action performed, per operator scope.",
+    "Operator activation and authorized live sitemap retry remain necessary to verify production recovery."
+  ],
+  "sources": [
+    ".codex/agents/sdlc-delivery-reviewer.toml v0.3.1",
+    "docs/product-direction.md",
+    "docs/auth-providers.md",
+    "docs/release-signoff.md",
+    "Native runPlan.get 572 constraint_revision 1",
+    "Main adjudication of GSC-MODE-001"
+  ]
+}

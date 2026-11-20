@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from stackos_connectors import CallOptions, ConnectorClient
-from stackos_connectors.catalog import load_registry
+from stackos_connectors import CallOptions
 from stackos_connectors.shared.base import IntegrationCallResult
 
 from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
@@ -18,6 +17,40 @@ from stackos.config import Settings
 from stackos.integrations._rate_limit import get_bucket
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
+
+LEGACY_MEDIA_CONNECTORS = frozenset(
+    {
+        "openai-images",
+        "google-gemini-image",
+        "ideogram",
+        "byteplus-seedream",
+        "reve",
+        "xai-imagine",
+        "aignc",
+        "alibaba-wan",
+        "google-veo",
+        "byteplus-seedance",
+        "kling-video",
+    }
+)
+
+
+def legacy_media_file_items(
+    connector_key: str, operation: str, output: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Decode the finite pre-custody media receipts beside their producer owner."""
+    if connector_key not in LEGACY_MEDIA_CONNECTORS or operation not in {
+        "image.generate",
+        "image.edit",
+        "image.remix",
+        "video.generate",
+    }:
+        return []
+    data = output.get("data")
+    return [
+        output,
+        *[item for item in (data if isinstance(data, list) else []) if isinstance(item, dict)],
+    ]
 
 
 async def execute_media_native(
@@ -41,13 +74,10 @@ async def execute_media_native(
         return value
 
     prepared = {key: plain(value) for key, value in data.items() if value is not None}
-    package_directory = connector.replace("-", "_")
     asset_root = (request.asset_dir or Settings().generated_assets_dir).resolve()
     output_dir = asset_root / output_subdir
-    client = ConnectorClient(registry=load_registry(f"connectors/{package_directory}/catalog.json"))
     bridge = PackageActionConnector(
         connector,
-        client=client,
         options=CallOptions(
             http=http,
             rate_limiter=get_bucket(project_id=request.project_id, kind=output_subdir, qps=qps),
@@ -194,7 +224,9 @@ def register_generated_media_artifacts(
         }
         if metadata_builder is not None:
             metadata.update(metadata_builder(item))
-        artifact = repository.create(
+        artifact = repository.create_generated_file(
+            asset_root=asset_dir,
+            path=path,
             project_id=request.project_id,
             plugin_slug="utils",
             kind=kind,

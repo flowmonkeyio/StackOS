@@ -1,5 +1,10 @@
 # StackOS Desktop Screen Redesign
 
+Historical screen exploration. The current shipped navigation and source-backed
+destinations are defined in [the page layout map](./ui-page-layout-map.md).
+Earlier Attention, Activity, global workflow/data and diagnostic routes below
+are superseded; do not restore them from these sketches.
+
 Status: implementation contract for the reopened desktop redesign delivery.
 
 This document goes below navigation and visual tokens. It defines the job,
@@ -32,7 +37,7 @@ Open StackOS
   -> understand the outcome
   -> expand evidence/audit only when needed
 
-Setup
+Project configuration
   -> exact missing prerequisite
   -> Connections / Automation / Spend / Plugins at the relevant section
   -> complete local-admin action
@@ -73,7 +78,7 @@ surface. Activity is the result and evidence surface.
 ### Connect-a-tool flow
 
 ```text
-Setup or Attention identifies a missing service
+Home or Attention identifies a missing service
   -> Connections opens on Services
   -> person chooses the service and account/auth method
   -> person enters credentials into the local daemon
@@ -249,25 +254,16 @@ transitions. Audit is visible, but outcomes are obscured.
 
 Grouping must retain failures, side-effect identifiers, and retry guidance.
 
-## Setup `/projects/:id/setup`
+## Configuration ownership
 
-**User question:** “Can connected agents use this project safely, and what is
-the next setup step?”
+The sidebar's Configure group opens Connections, Automation, Spend, and Plugins
+directly. Project Home summarizes connections and workflows. App Overview owns
+runtime and agent-host status; Plugins owns integration availability. Attention
+links account repair to the existing Account owner. There is no project Setup
+dashboard or route alias.
 
-**Current failure:** A numeric score and “ready” coexist with a vague “Fix.”
-Available action counts look like requirements even when providers are optional.
-
-**Target composition:**
-
-1. State: Ready, Ready with optional setup, Needs setup, or runtime unavailable.
-2. Ordered checklist by human goal: runtime/binding; agent clients; services
-   required by selected work; automation/spend guardrails; optional capability.
-3. Every partial/failed check explains impact and has one exact repair route.
-4. Optional setup is visually separate from blockers.
-5. Technical runtime/project inventory is a disclosure.
-
-Avoid a synthetic percentage unless each weighted component has stable,
-user-explainable meaning.
+The separated App footer provides Overview, Accounts, and Backups (`/setup`).
+Backups shows installation-wide coverage and settings even with no projects.
 
 ## Connections `/projects/:id/connections`
 
@@ -289,7 +285,7 @@ connectivity, and diagnostics are peer tabs rather than one setup journey.
    destinations/handoffs, and inbound connectivity.
 5. Diagnostics is a technical disclosure, not a peer primary tab.
 6. Query `section` lands users on services, messaging, connectivity, or
-   diagnostics from Setup/Attention.
+   diagnostics from Attention or configuration links.
 
 ## Accounts `/accounts`
 

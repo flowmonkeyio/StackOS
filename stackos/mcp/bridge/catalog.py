@@ -37,6 +37,11 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
                         "type": "integer",
                         "description": "Run id used to refresh run-plan grants.",
                     },
+                    "project_id": {
+                        "type": "integer",
+                        "description": "Explicit project for global run-scoped discovery.",
+                    },
+                    "run_plan_id": {"type": "integer"},
                     "include_schemas": {
                         "type": "boolean",
                         "description": (
@@ -108,6 +113,7 @@ def _bridge_filter_tool_list_response(
     *,
     scoped_project_id: int | None = None,
     injected_fields: set[str] | frozenset[str] | None = None,
+    global_session: bool = False,
 ) -> str:
     """Filter daemon ``tools/list`` down to the agent-facing bridge surface."""
     try:
@@ -132,7 +138,10 @@ def _bridge_filter_tool_list_response(
     injected = set(injected_fields or ())
     if scoped_project_id is not None:
         injected.add("project_id")
-    filtered = [_bridge_agent_tool_schema(tool, injected_fields=injected) for tool in filtered]
+    filtered = [
+        _bridge_agent_tool_schema(tool, injected_fields=injected, global_session=global_session)
+        for tool in filtered
+    ]
     filtered.extend(_bridge_toolbox_specs())
     result["tools"] = filtered
     return json.dumps(envelope, default=str)
@@ -142,8 +151,18 @@ def _bridge_agent_tool_schema(
     tool: dict[str, Any],
     *,
     injected_fields: set[str],
+    global_session: bool = False,
 ) -> dict[str, Any]:
     clone = _bridge_relax_injected_schema(tool, injected_fields=injected_fields)
+    if global_session:
+        from .constants import _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES
+
+        schema = clone.get("inputSchema", {})
+        if (
+            "project_id" in schema.get("properties", {})
+            and clone.get("name") not in _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES
+        ):
+            schema["required"] = sorted(set(schema.get("required", [])) | {"project_id"})
     if clone.get("name") == "integration.list":
         schema = clone.get("inputSchema")
         properties = schema.get("properties") if isinstance(schema, dict) else None

@@ -1,0 +1,3 @@
+Error: No Keychain password item found for profile: stackos-notary
+
+Run 'notarytool store-credentials' to create another credential profile.

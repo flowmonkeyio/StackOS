@@ -1,0 +1,165 @@
+{
+  "scope": "ui",
+  "prepared_at": "2026-10-28T15:22:32.456386+00:00",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "integrated_candidate_sha256": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "ui_attempt_id": "ui-2",
+  "ui_contract_revision": 4,
+  "visual_design_revision": 3,
+  "technical_design_revision": 2,
+  "ui_repair_revision": 2,
+  "ui_candidate_id": "sha256:7aa28032f098fc13280d12fabb40de22e7e63a54c7042b5223a91bda47166bfe",
+  "source_to_durable_mapping": [
+    {
+      "file": "ui-candidate-ui2-repair2.json",
+      "source": "/tmp/stackos-workflow-718/ui-candidate-ui2-repair2.json",
+      "sha256": "5c52c194e0e8e72889fa4e860891384d94b55ae16e8546896a580005ad12bd71",
+      "bytes": 14926,
+      "disposition": "final UI ui-2 contract4 visualdesign3 technicaldesign2 repair2 candidate"
+    },
+    {
+      "file": "ui-ui2-repair1-red.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-red.json",
+      "sha256": "206b5796d49e6e77e7d70ef5ea58c3b8a96e765ce1dedd97b1a7ecde1d31f667",
+      "bytes": 402,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-red.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-red.log",
+      "sha256": "abe5c2674b3f79bfea3ba801d985ebea77ad998749c5d837ea19c03ddc9951a1",
+      "bytes": 4389,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-green.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-green.json",
+      "sha256": "71d32e3b3e60e0140eb9ec0cdb6463e084c7692d3e77b1e69a071634cc16dc34",
+      "bytes": 404,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-green.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-green.log",
+      "sha256": "4e1a97075a268348e6bab8c2e60901c3cad2031b389fa0ce185ec66a31d3fd6e",
+      "bytes": 368,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-focused-final.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-focused-final.json",
+      "sha256": "802708380d634c2ddafd380019a10a132405d223e1216ca3bdc8a2b86e8eb0ad",
+      "bytes": 614,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-focused-final.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-focused-final.log",
+      "sha256": "7c2ff1e4b881dce73832ca32083a641b1e8216f5a178be188be15341addd62a3",
+      "bytes": 647,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-typecheck.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-typecheck.json",
+      "sha256": "2963cf8165c6f2efc9e404b53ac9e9380f71c1602a0eab0f1fd97b7c14effc2f",
+      "bytes": 302,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-typecheck.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-typecheck.log",
+      "sha256": "f622fd540ab37d931c3ab525b5f77db0a6be09e66e6fc976ad7cc6d42d2c39c6",
+      "bytes": 90,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-lint-final.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-lint-final.json",
+      "sha256": "9d760ada0df727a5b141bd5145ffce8d2257e8861e7db8f0dc41e64258022f5e",
+      "bytes": 590,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-lint-final.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-lint-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-diff-check.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-diff-check.json",
+      "sha256": "1e2d973c76d107e0425454b1d7cd0cf48e85229c1e011489f428a92029cc561a",
+      "bytes": 766,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair1-diff-check.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair1-diff-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "disposition": "repair1 historical focused/red-green receipt; preserved context"
+    },
+    {
+      "file": "ui-ui2-repair2-panel.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair2-panel.json",
+      "sha256": "6fe4722934954e1515a05797073b2ba42cbe1f974667d0b2a64827f6f44ddffb",
+      "bytes": 356,
+      "disposition": "final repair2 focused check"
+    },
+    {
+      "file": "ui-ui2-repair2-panel.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair2-panel.log",
+      "sha256": "8d637801aeb59d20b4dd58cdd4feb2233fa96f5e76e4e80a8641a163e5ef4d21",
+      "bytes": 307,
+      "disposition": "final repair2 focused check"
+    },
+    {
+      "file": "ui-ui2-repair2-typecheck.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair2-typecheck.json",
+      "sha256": "c276553a4768d63479a3d4c62c8e275e40ad2e1175fc7d708bd060fe874aa717",
+      "bytes": 302,
+      "disposition": "final repair2 focused check"
+    },
+    {
+      "file": "ui-ui2-repair2-typecheck.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair2-typecheck.log",
+      "sha256": "f622fd540ab37d931c3ab525b5f77db0a6be09e66e6fc976ad7cc6d42d2c39c6",
+      "bytes": 90,
+      "disposition": "final repair2 focused check"
+    },
+    {
+      "file": "ui-ui2-repair2-lint.json",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair2-lint.json",
+      "sha256": "97036088cb0af2d33563b98c98df8e0eb8a14086e6f771cec5a869a4eb4ade91",
+      "bytes": 421,
+      "disposition": "final repair2 focused check"
+    },
+    {
+      "file": "ui-ui2-repair2-lint.txt",
+      "source": "/tmp/stackos-workflow-718/ui-ui2-repair2-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "disposition": "final repair2 focused check"
+    }
+  ],
+  "safety": "Allowlisted text/JSON/PNG and three text-only harness copies. No fixture trees, native keys, ciphertext, archives, database, seed, token or cache files. No tests rerun or source/workflow writes.",
+  "freshness": "Integrated candidate matched all27 source hashes and89 bundle hashes at evidence preparation. Artifact timestamps and their original candidate scopes are preserved; copying does not imply rerunning.",
+  "overall_acceptance_owner": "root",
+  "proof_scope": {
+    "repair1_historical_red": {
+      "passed": 45,
+      "failed": 4
+    },
+    "repair1_green": 49,
+    "repair1_focused": 83,
+    "repair2_panel_passed": 46,
+    "repair2_typecheck": "passed",
+    "repair2_lint": "passed",
+    "current_full_ui_gate": "../integration/option3-ui-signoff.txt",
+    "current_full_ui_tests_passed": 752
+  }
+}

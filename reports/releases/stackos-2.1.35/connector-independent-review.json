@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "reviewer": "/root/day1_deploy_review",
+  "assignment_attempt": "attempt 1",
+  "contract_revision": 2,
+  "workflow_context": {
+    "authority": "Root is sole lifecycle, scope, acceptance and publication owner. This receipt is bounded review evidence; no native state changed.",
+    "native_run_step": {
+      "run_id": 574,
+      "execution_id": 568,
+      "step": "integrate"
+    }
+  },
+  "disposition": "pass",
+  "candidate": {
+    "worktree": "/private/tmp/stackos-release-2135-20261006/connectors",
+    "baseline_commit": "6f9cbaa66588354ef956d5fe260b94a6baa7f844",
+    "commit": "d8883b926c340229b18fb53e9001d58c83055303",
+    "version": "0.2.3",
+    "clean": true,
+    "wheel_sha256": "750fd5216da623d5337678329817e669beaf6f01b0272fc3cbb366d8d9da6164",
+    "sdist_sha256": "3e8438fe52b9acdf766ea118476db42ecefc38f8cb04ea87c10fa32ee44d6d2d",
+    "candidate_receipt_sha256": "785725761e9892860cf5a70bec1f9685ba95768ef6bbff682c1127df336d67e7",
+    "patch_sha256": "4e36b332237b4778966e0a12ab36962c394a4911749c0e04cea70cad361f5ef3"
+  },
+  "scope": "Restore existing Google Indexing service-account JWT acquisition through canonical package metadata and supported-provider set; preserve 0.2.2 QuickBooks and GSC behavior. Package publish gate only.",
+  "independence": {
+    "implementation_involvement": false,
+    "production_or_acceptance_test_edits": false,
+    "reviewer_writes": [
+      "connector-evidence/independent-review.json"
+    ]
+  },
+  "sources": [
+    "AGENTS.md",
+    "docs/product-direction.md",
+    "docs/README.md",
+    "docs/auth-providers.md",
+    "docs/release-signoff.md",
+    ".codex/agents/sdlc-delivery-reviewer.toml",
+    "Full 11-file diff between baseline and candidate",
+    "connector-evidence/candidate-receipt.json",
+    "connector-evidence/hashes.json",
+    "connector-evidence/red-full.log",
+    "connector-evidence/green.log",
+    "connector-evidence/full-suite.log",
+    "connector-evidence/installed-wheel-smoke.json",
+    "connector-evidence/build.log",
+    "connector-evidence/ruff.log"
+  ],
+  "acceptance": [
+    {
+      "id": "canonical-auth",
+      "result": "pass",
+      "evidence": "Indexing catalog now declares fixed JWT flow, token endpoint, indexing scope, Bearer requirement, service-account method protocol and noninteractive OAuth setup. No new protocol engine; existing get_auth_contract/request_token own acquisition."
+    },
+    {
+      "id": "supported-google-provider",
+      "result": "pass",
+      "evidence": "Only google-indexing is added to existing shared supported-provider frozenset. Existing key validation, signing and Workspace-only delegation restrictions remain unchanged."
+    },
+    {
+      "id": "scope-evidence-and-boundaries",
+      "result": "pass",
+      "evidence": "oauth_response is declared. Focused tests and installed smoke preserve omitted response scope as unknown, require Bearer and positive expiry, reject present-empty scopes and invalid responses; docs separate requested scope, provider grants, API/site access, action execution and consumer custody/refresh."
+    },
+    {
+      "id": "indexing-runtime",
+      "result": "pass",
+      "evidence": "Worker red 7 failures/60 pass demonstrates omitted contract; final focused 67 pass. Installed-wheel injected HTTP edge checks fixed endpoint, JWT grant, indexing scope, no delegated sub, token parsing, caller-owned transport."
+    },
+    {
+      "id": "preserve-gsc-and-quickbooks",
+      "result": "pass",
+      "evidence": "QuickBooks package subtree unchanged. GSC executable sources/catalog and shared auth.py unchanged; only stale Indexing limitation sentence replaced in GSC docs. Independent isolated wheel probe verifies all 4 declared GSC methods for readonly and sitemap_write scopes. Installed-wheel smoke retains QuickBooks exact-read scenarios."
+    },
+    {
+      "id": "packaging-version",
+      "result": "pass",
+      "evidence": "Version is 0.2.3. Wheel CRC passes; all 436 package files match both candidate source and installed wheel environment byte for byte, with no source files missing. Candidate patch equals git diff exactly; checkout clean."
+    },
+    {
+      "id": "ownership",
+      "result": "pass",
+      "evidence": "Provider protocol/catalog and Google allowlist remain package-owned; no host files or new host protocol copy in candidate. Existing actions/probes continue to accept resolved access_token; resource policy/storage/audit remain consumer responsibilities."
+    }
+  ],
+  "assertion_ownership": {
+    "contract_discovery_and_fixed_provider_facts": "StackOSConnectors catalog + existing shared auth contract owner",
+    "jwt_validation_signing_and_exchange": "Existing StackOSConnectors shared Google/auth implementation, unchanged",
+    "scope_response_evidence": "Existing request_token response parser; omission is not an asserted provider grant",
+    "token_custody_refresh_permission_audit": "Host/consumer, outside this connector-only candidate",
+    "provider_resource_access_and_indexing_outcomes": "Google API and website permissions; not proven by offline tests or token acquisition",
+    "review_and_release_acceptance": "Independent reviewer recommendation; main agent adjudicates and publishes"
+  },
+  "checks": {
+    "independently_executed": [
+      {
+        "check": "Frozen commit and working tree",
+        "result": "exact expected commit; clean"
+      },
+      {
+        "check": "Candidate diff and stored patch",
+        "result": "Full bounded diff inspected; stored patch equals git diff exactly"
+      },
+      {
+        "check": "Evidence hash manifest",
+        "result": "All 13 listed evidence/artifact hashes match"
+      },
+      {
+        "check": "Wheel CRC and source/installed contents",
+        "result": "436 package files; zero source mismatches, zero installed mismatches, no missing source files, valid CRC"
+      },
+      {
+        "check": "Installed-wheel contract check",
+        "result": "Python -I -B outside checkout; version0.2.3, Indexing supported-provider/JWT/scope/Bearer contract and 8 GSC method/mode combinations pass"
+      }
+    ],
+    "reused_worker_proof": [
+      {
+        "check": "Focused auth red/green",
+        "result": "7 failed / 60 passed before fix; 67 passed after fix"
+      },
+      {
+        "check": "Installed-wheel injected-edge smoke",
+        "result": "Passed; 17 protocol providers, 37 methods; indexing_jwt and quickbooks_exact_reads covered; all package origins in wheel environment and live sockets blocked"
+      },
+      {
+        "check": "Final complete suite already finished by worker",
+        "result": "1403 passed in 51.08s; reused, not rerun"
+      },
+      {
+        "check": "Ruff",
+        "result": "All checks passed"
+      },
+      {
+        "check": "Build",
+        "result": "Wheel and sdist built successfully"
+      }
+    ],
+    "superseded_or_repaired_evidence": [
+      "Earlier regressions.log contains 1 obsolete metadata assertion failure/401 pass. Candidate updates the assertion to the new Indexing protocol; final suite passes.",
+      "Reviewer's first read-only probe used unsupported guessed GSC method aliases, producing OAuthTokenError. Corrected to all four catalog-declared method names; final probe passes. No production change."
+    ]
+  },
+  "findings": [],
+  "freshness": "Checks bound to exact frozen commit, artifact hashes and current clean worktree on 2026-10-06.",
+  "residual_limits": [
+    "Offline package proof does not establish enabled Google API, real account/site permissions, public provider behavior or actual indexing.",
+    "Host integration, final desktop artifact, signing/notarization and publication remain separate root-owned gates.",
+    "No source suite was rerun by reviewer; fresh worker receipts were reused."
+  ],
+  "next_disposition": "Root may accept this connector candidate for 0.2.3 publication and continue host integration/release."
+}

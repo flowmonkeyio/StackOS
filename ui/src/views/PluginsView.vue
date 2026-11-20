@@ -4,15 +4,12 @@ import { storeToRefs } from 'pinia'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
-  UiBadge,
   UiButton,
   UiCallout,
   UiCard,
   UiEmptyState,
   UiFilterBar,
   UiPageShell,
-  UiPanel,
-  UiSectionHeader,
   UiSegmentedControl,
   UiSelect,
   UiSkeleton,
@@ -30,21 +27,30 @@ import {
   filterAndSortProviders,
   type CatalogSort,
 } from './plugins/viewModel'
+import { useIntegrationAvailability } from './plugins/useIntegrationAvailability'
+import { usePluginEnablement } from './plugins/usePluginEnablement'
 
 type CatalogView = 'plugins' | 'providers'
 
 const catalogStore = useStackOsCatalogStore()
-const { plugins, providers, actions, capabilities, loading, error } = storeToRefs(catalogStore)
+const {
+  plugins, providers, actions, capabilities,
+  catalogLoading: loading, catalogError: error, catalogLoaded,
+} = storeToRefs(catalogStore)
 
 const { projectId } = useProjectRouteScope()
-const operationsHref = computed(() => `/projects/${projectId.value}/operations`)
+const connectionsHref = computed(() => `/projects/${projectId.value}/connections?section=services`)
+const inventory = useIntegrationAvailability()
+const { items: integrations, loading: availabilityLoading, error: availabilityError } = inventory
 const search = ref('')
 const view = ref<CatalogView>('plugins')
 const sort = ref<CatalogSort>('name')
+const servicePluginSlug = ref<string | null>(null)
+let pluginListContext: { projectId: number; search: string; sort: CatalogSort } | null = null
 
 const viewOptions = [
   { key: 'plugins', label: 'Plugins' },
-  { key: 'providers', label: 'Providers' },
+  { key: 'providers', label: 'Services' },
 ]
 const sortOptions = [
   { value: 'name', label: 'Name' },
@@ -52,30 +58,71 @@ const sortOptions = [
 ]
 
 const pluginItems = computed(() =>
-  buildPluginDirectory(plugins.value, providers.value, actions.value, capabilities.value),
+  buildPluginDirectory(plugins.value, providers.value, actions.value, capabilities.value, integrations.value),
 )
 const providerItems = computed(() => buildProviderDirectory(pluginItems.value))
 const visiblePlugins = computed(() =>
   filterAndSortPlugins(pluginItems.value, search.value, sort.value),
 )
 const visibleProviders = computed(() =>
-  filterAndSortProviders(providerItems.value, search.value, sort.value),
+  filterAndSortProviders(
+    providerItems.value.filter((item) => !servicePluginSlug.value || item.plugin.slug === servicePluginSlug.value),
+    search.value,
+    sort.value,
+  ),
 )
+const activeFilters = computed(() => servicePluginSlug.value ? [{
+  key: 'plugin',
+  label: 'Plugin',
+  value: pluginItems.value.find((item) => item.plugin.slug === servicePluginSlug.value)?.plugin.name ?? servicePluginSlug.value,
+}] : [])
 const resultCount = computed(() =>
   view.value === 'plugins' ? visiblePlugins.value.length : visibleProviders.value.length,
 )
 
 function setView(value: string | number): void {
-  if (value === 'plugins' || value === 'providers') view.value = value
+  if (value === 'plugins' || value === 'providers') {
+    if (value === 'plugins' && pluginListContext) {
+      if (pluginListContext.projectId === projectId.value) {
+        search.value = pluginListContext.search
+        sort.value = pluginListContext.sort
+      }
+      pluginListContext = null
+    }
+    view.value = value
+    servicePluginSlug.value = null
+  }
 }
 
 function setSort(value: string | number | null): void {
   if (value === 'name' || value === 'actions') sort.value = value
 }
 
-useProjectScopedLoader({
+function showProviders(pluginSlug: string): void {
+  pluginListContext = { projectId: projectId.value, search: search.value, sort: sort.value }
+  view.value = 'providers'
+  servicePluginSlug.value = pluginSlug
+  search.value = ''
+}
+
+function clearFilters(): void {
+  servicePluginSlug.value = null
+  search.value = ''
+}
+
+const enablement = usePluginEnablement(projectId, {
+  enable: catalogStore.enablePlugin,
+  refresh: (id) => {
+    const freshPlugins = catalogStore.refreshPlugins(id, { silent: true, force: true })
+    return Promise.all([freshPlugins, catalogStore.refresh(id), inventory.refresh(id)])
+  },
+})
+const { pendingSlug, error: enableError, message: enableMessage } = enablement
+
+const { refresh } = useProjectScopedLoader({
   projectId,
-  load: ({ projectId }) => catalogStore.refresh(projectId),
+  load: ({ projectId }) => Promise.all([catalogStore.refresh(projectId), inventory.refresh(projectId)]),
+  onScopeExit: inventory.reset,
 })
 </script>
 
@@ -84,46 +131,67 @@ useProjectScopedLoader({
     <ProjectPageHeader
       :project-id="projectId"
       title="Plugins"
-      description="Capability packs and providers available to this project. Search by tool, action, or type of work."
+      description="Plugins and services available to this project."
       :breadcrumbs="[{ label: 'Plugins' }]"
-    />
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading || availabilityLoading"
+          @click="refresh"
+        >
+          Refresh
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
-    <UiCallout v-if="error" tone="danger">
+    <UiButton
+      v-if="view === 'providers'"
+      variant="link"
+      size="sm"
+      icon-left="chevron-left"
+      class="self-start"
+      @click="setView('plugins')"
+    >
+      Back to plugins
+    </UiButton>
+
+    <UiCallout
+      v-if="error"
+      tone="danger"
+    >
       {{ error }}
     </UiCallout>
 
-    <UiPanel
-      v-if="!loading && !error"
-      class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+    <UiCallout
+      v-if="enableError"
+      tone="danger"
+      role="alert"
     >
-      <div>
-        <p class="t-overline text-fg-subtle">Project catalog</p>
-        <p class="mt-1 text-sm text-fg-muted">
-          Plugins organize the work. Providers connect the tools agents can use when a plan reaches
-          an approved action.
-        </p>
-      </div>
-      <dl class="flex flex-wrap gap-x-6 gap-y-2 text-xs text-fg-muted sm:justify-end">
-        <div>
-          <dd class="text-lg font-semibold tabular-nums text-fg-strong">{{ plugins.length }}</dd>
-          <dt>plugins</dt>
-        </div>
-        <div>
-          <dd class="text-lg font-semibold tabular-nums text-fg-strong">{{ providers.length }}</dd>
-          <dt>providers</dt>
-        </div>
-        <div>
-          <dd class="text-lg font-semibold tabular-nums text-fg-strong">{{ actions.length }}</dd>
-          <dt>actions</dt>
-        </div>
-      </dl>
-    </UiPanel>
+      {{ enableError }}
+    </UiCallout>
+    <UiCallout
+      v-if="enableMessage"
+      tone="success"
+      role="status"
+    >
+      {{ enableMessage }}
+    </UiCallout>
+
+    <UiCallout v-if="availabilityError" tone="warning">
+      Availability unavailable. The catalog is still available; refresh to retry the integration check.
+    </UiCallout>
 
     <UiFilterBar
-      v-if="!loading && !error && plugins.length"
+      v-if="catalogLoaded && plugins.length"
       v-model:search="search"
-      search-placeholder="Search plugins, providers, capabilities, or actions…"
+      search-placeholder="Search plugins or services"
       aria-label="Plugin catalog filters"
+      :active="activeFilters"
+      @remove="servicePluginSlug = null"
+      @clear-all="clearFilters"
     >
       <UiSegmentedControl
         :model-value="view"
@@ -144,73 +212,85 @@ useProjectScopedLoader({
     </UiFilterBar>
 
     <div
-      v-if="loading"
-      class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+      v-if="loading && !catalogLoaded"
+      class="grid grid-cols-1 gap-4 lg:grid-cols-2"
       aria-label="Loading plugins"
     >
-      <UiCard v-for="n in 6" :key="n">
-        <UiSkeleton shape="line" :lines="4" />
+      <UiCard
+        v-for="n in 6"
+        :key="n"
+      >
+        <UiSkeleton
+          shape="line"
+          :lines="4"
+        />
       </UiCard>
     </div>
 
-    <template v-else-if="!error">
+    <template v-else-if="catalogLoaded">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <p class="text-xs text-fg-muted">
           <strong class="text-fg-strong">{{ resultCount }}</strong>
-          {{ view === 'plugins' ? 'plugins' : 'providers' }} found
-          <template v-if="search.trim()"> for “{{ search.trim() }}”</template>
+          {{ view === 'plugins' ? 'plugins' : 'services' }}
+          <template v-if="search.trim()">
+            for “{{ search.trim() }}”
+          </template>
         </p>
-        <UiButton v-if="search.trim()" variant="link" size="sm" @click="search = ''">
+        <UiButton
+          v-if="search.trim()"
+          variant="link"
+          size="sm"
+          @click="search = ''"
+        >
           Clear search
         </UiButton>
       </div>
 
       <div
         v-if="view === 'plugins' && visiblePlugins.length"
-        class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+        class="grid grid-cols-1 gap-4 lg:grid-cols-2"
       >
-        <PluginDirectoryCard v-for="item in visiblePlugins" :key="item.plugin.slug" :item="item" />
+        <PluginDirectoryCard
+          v-for="item in visiblePlugins"
+          :key="item.plugin.slug"
+          :item="item"
+          :project-id="projectId"
+          :availability-loading="availabilityLoading"
+          :availability-error="availabilityError"
+          :enabling="pendingSlug === item.plugin.slug"
+          :enable-disabled="pendingSlug !== null || loading"
+          @enable="enablement.enable(item.plugin.slug, item.plugin.name)"
+          :connections-href="connectionsHref"
+          @show-providers="showProviders(item.plugin.slug)"
+        />
       </div>
 
       <div
         v-else-if="view === 'providers' && visibleProviders.length"
-        class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+        class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2"
       >
         <ProviderDirectoryCard
           v-for="item in visibleProviders"
           :key="`${item.provider.plugin_slug}.${item.provider.key}`"
           :item="item"
+          :availability-loading="availabilityLoading"
+          :connections-href="connectionsHref"
         />
       </div>
 
       <UiEmptyState
         v-else
-        :title="search.trim() ? 'No matching catalog items' : 'No plugins installed'"
+        :title="search.trim() || servicePluginSlug ? 'No matching catalog items' : view === 'providers' ? 'No services available' : 'No plugins installed'"
         :description="
-          search.trim()
-            ? 'Try a provider name, action, capability, or type of work.'
-            : 'Installed plugins appear here after the local catalog is synchronized.'
+          search.trim() || servicePluginSlug
+            ? 'Try a service name, action, capability, or type of work.'
+            : view === 'providers'
+              ? 'The installed plugins do not supply any services.'
+              : 'Installed plugins appear here after the local catalog is synchronized.'
         "
         :icon="search.trim() ? 'search' : 'puzzle'"
         framed
       />
     </template>
-
-    <UiCard v-if="!loading && !error" section>
-      <UiSectionHeader
-        title="Action contracts"
-        description="Full provider actions are inspected in Operations so the plugin catalog stays scan-friendly."
-        as="h3"
-      >
-        <template #actions>
-          <UiBadge>{{ actions.length }}</UiBadge>
-          <UiButton size="sm" :href="operationsHref"> Open Operations </UiButton>
-        </template>
-      </UiSectionHeader>
-      <p class="text-sm text-fg-muted">
-        {{ actions.length }} action contracts are available across {{ plugins.length }} installed
-        plugins. Use Operations for schema detail, credential readiness, and entrypoint visibility.
-      </p>
-    </UiCard>
   </UiPageShell>
 </template>

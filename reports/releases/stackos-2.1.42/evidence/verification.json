@@ -1,0 +1,106 @@
+{
+  "source_candidate": "44a65ff13cbda1f107f1abb66acdeeaa528be511bd236c2aea6a7dc1f03d78bf",
+  "source_commit": "58fec8c5ee2739eb6fe678d70cf30de465339d01",
+  "python": {
+    "passed": 5479,
+    "receipt": {
+      "command": [
+        "make",
+        "UV=/private/tmp/stackos-dependency-update-20261028/uv-cache/archive-v0/XxQ8vYhYnwO4UdiLVAKY4/bin/uv",
+        "signoff"
+      ],
+      "cwd": "/private/tmp/stackos-dependency-update-20261028/integration-tree",
+      "started_at": "2026-10-29T05:08:00.545129+00:00",
+      "finished_at": "2026-10-29T05:10:26.658793+00:00",
+      "elapsed_seconds": 146.112,
+      "exit_code": 0,
+      "outcome": "passed",
+      "log": "/private/tmp/stackos-dependency-update-20261028/integrated-signoff.log"
+    },
+    "reuse_reason": "Subsequent changes were UI accessibility/test repairs and four version metadata fields; Python source and dependency behavior unchanged."
+  },
+  "ui": {
+    "unit_passed": 802,
+    "e2e_passed": 23,
+    "e2e_skipped": 0,
+    "units_receipt": {
+      "label": "integration-ui-repair-r5-units-final",
+      "command": [
+        "pnpm",
+        "--dir",
+        "ui",
+        "test"
+      ],
+      "cwd": "/private/tmp/stackos-dependency-update-20261028/integration-tree",
+      "started_at": "2026-10-29T05:32:38.241Z",
+      "finished_at": "2026-10-29T05:32:48.818Z",
+      "duration_seconds": 10.577,
+      "exit_code": 0,
+      "signal": null,
+      "log": "/private/tmp/stackos-dependency-update-20261028/javascript-evidence/integration-ui-repair-r5-units-final.log",
+      "node": "v22.23.1"
+    },
+    "e2e_receipt": {
+      "label": "integration-ui-repair-r5-e2e-final",
+      "command": [
+        "pnpm",
+        "--dir",
+        "ui",
+        "e2e"
+      ],
+      "cwd": "/private/tmp/stackos-dependency-update-20261028/integration-tree",
+      "started_at": "2026-10-29T05:32:40.063Z",
+      "finished_at": "2026-10-29T05:33:35.890Z",
+      "duration_seconds": 55.827,
+      "exit_code": 0,
+      "signal": null,
+      "log": "/private/tmp/stackos-dependency-update-20261028/javascript-evidence/integration-ui-repair-r5-e2e-final.log",
+      "node": "v22.23.1"
+    },
+    "type_receipt": {
+      "label": "integration-ui-repair-r5-types-final",
+      "command": [
+        "pnpm",
+        "--dir",
+        "ui",
+        "type-check"
+      ],
+      "cwd": "/private/tmp/stackos-dependency-update-20261028/integration-tree",
+      "started_at": "2026-10-29T05:32:38.241Z",
+      "finished_at": "2026-10-29T05:32:44.501Z",
+      "duration_seconds": 6.26,
+      "exit_code": 0,
+      "signal": null,
+      "log": "/private/tmp/stackos-dependency-update-20261028/javascript-evidence/integration-ui-repair-r5-types-final.log",
+      "node": "v22.23.1"
+    }
+  },
+  "website": {
+    "e2e_passed": 53,
+    "intentional_viewport_skips": 3,
+    "generated_routes": 607,
+    "seo_routes": 196
+  },
+  "version_alignment": {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "pytest",
+      "tests/unit/test_version_alignment.py",
+      "-n0",
+      "-q"
+    ],
+    "cwd": "/private/tmp/stackos-dependency-update-20261028/integration-tree",
+    "started_at": "2026-10-29T05:42:36.050643+00:00",
+    "finished_at": "2026-10-29T05:42:39.407516+00:00",
+    "elapsed_seconds": 3.357,
+    "exit_code": 0,
+    "outcome": "passed",
+    "log": "/private/tmp/stackos-dependency-update-20261028/release-version-alignment.log"
+  },
+  "agent_contracts": {
+    "unchanged_operation_descriptions": 230,
+    "unchanged_openapi_paths": 73
+  },
+  "other_checks": "Ruff/format/mypy, frozen strict installs, UI/website lint/types/build, websiteSEO, desktop contracts, native gstack/Bun proof and Work browser smoke passed. Independent receipts retain scoped proof and historical failures."
+}

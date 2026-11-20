@@ -107,7 +107,8 @@
     "Campaign Creative Director",
     "Campaign Media Producer",
     "Campaign Landing Page Builder",
-    "Campaign Visual Signoff Reviewer"
+    "Campaign Visual Signoff Reviewer",
+    "Branding Voice Reviewer"
   ],
   "agentRefs": [
     {
@@ -134,6 +135,11 @@
       "key": "marketing.campaign.visual-signoff-reviewer",
       "slug": "marketing-campaign-visual-signoff-reviewer",
       "name": "Campaign Visual Signoff Reviewer"
+    },
+    {
+      "key": "branding.voice-reviewer",
+      "slug": "branding-voice-reviewer",
+      "name": "Branding Voice Reviewer"
     }
   ],
   "integrations": [

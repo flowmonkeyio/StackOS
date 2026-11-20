@@ -1,0 +1,33 @@
+{
+  "assignment": "workflow-572-fix-review",
+  "run_plan_id": 572,
+  "execution_id": 567,
+  "attempt": 1,
+  "contract_revision": 1,
+  "status": "candidate-ready-for-independent-review",
+  "evidence_sha256": {
+    "package-candidate.json": "bb7f50dd2c4aa057fb9516b8fe66c51e8a1a569a1071c0f525f54167c9c10dd1",
+    "host-candidate.json": "e8198b7f182b5d66b1183a9362688983a8debe0c4d3be0f53663558d6d7c2e69",
+    "package-red.log": "11a62b58f93d68661651bc883b1e5a9498e9487c1dfeb7d5add8f5b988199907",
+    "host-red.log": "96e5f702eb2b2cabe7c55b76bd95c8bd2d7996bbbd90dfb949cddd7a4c1a6915",
+    "package-green.log": "61dd399280e3494eb01164f290438928c21adb386c2cd904a5772e4f9cedb8b1",
+    "host-green.log": "3b2f0893b346aad18afa7a4446c588fd2695229a5b112b9e02e135f68434291d",
+    "host-green-v2.log": "fe6238c5b3d95a863037167871910c8b8ab3b4fa6a608bc689c733bab6012a2d",
+    "host-oauth-compatibility.log": "e0ad512bc6edb808e8223969ce65b200e64f85774d2298a4645db6656792431a"
+  },
+  "checks": {
+    "package_auth_slice": "67 passed",
+    "host_scope_service_account_and_catalog_slice": "81 passed",
+    "host_existing_oauth_compatibility_slice": "6 passed,35 deselected",
+    "ruff_changed_python": "passed",
+    "git_diff_check": "passed"
+  },
+  "initial_failures": {
+    "package_red": "6 failed; absent write selection/catalog/helper reproduced; one parameter initially used nonexistent oauth2_token and was corrected to the actual access/refresh method names before green",
+    "host_red": "2 failed,1passed; access_mode not in installed baseline fields",
+    "host_first_green": "76 passed,1expected catalog field-digest failure because restoredaccess_mode is additive; fixed test to verify the newfield explicitly and preserve digest comparison for every oldfield"
+  },
+  "source_freeze": "No source edits after candidate manifests; version/lock/changelog remain root-owned",
+  "provider_actions": "none; all tests use synthetic data and mocked HTTP",
+  "remaining": "Independent review and root release integration"
+}

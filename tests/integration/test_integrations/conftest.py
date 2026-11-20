@@ -15,12 +15,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session
 
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.crypto.seed import ensure_seed_file
-from stackos.db.connection import make_memory_engine
-from stackos.integrations._rate_limit import reset_buckets
+from tests.helpers.integration_clock import IntegrationClock
+from tests.helpers.sqlite_schema import make_test_memory_engine
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -34,39 +34,19 @@ def _crypto_seed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limit_buckets() -> Iterator[None]:
-    """Drop every token bucket before each test (state is process-level)."""
-    reset_buckets()
-    yield
-    reset_buckets()
-
-
-@pytest.fixture(autouse=True)
-def _fast_backoff(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Replace ``asyncio.sleep`` inside the integration retry loop with a no-op.
-
-    The base class' exponential backoff is 0.5s → 1s → 2s → 4s; with
-    real sleeps a 4-retry test runs ~7.5s which blows the 35s budget
-    fast. We're not testing wall-clock semantics — tests assert that
-    the loop *runs the right number of HTTP calls* — so the sleeps are
-    safe to no-op.
-    """
-    import asyncio as asyncio_module
-
-    async def _zero_sleep(_seconds: float) -> None:
-        return None
-
-    monkeypatch.setattr(asyncio_module, "sleep", _zero_sleep)
-    yield
+def _fast_backoff(integration_clock: IntegrationClock) -> None:
+    """Use virtual waits for mocked provider transports, retaining real scheduling."""
 
 
 @pytest.fixture
 def session() -> Iterator[Session]:
     """Yield a fresh SQLModel ``Session`` bound to an in-memory engine."""
-    engine = make_memory_engine()
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as s:
-        yield s
+    engine = make_test_memory_engine()
+    try:
+        with Session(engine) as s:
+            yield s
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture

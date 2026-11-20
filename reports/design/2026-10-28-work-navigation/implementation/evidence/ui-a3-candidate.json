@@ -1,0 +1,57 @@
+{
+  "ticket": "work-board-ui",
+  "ticket_id": 14730,
+  "attempt": "a3",
+  "contract_revision": 1,
+  "plan_id": 723,
+  "run_id": 717,
+  "base": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b",
+  "candidate_sha256": "3ba6875f19055f02b0e0c31c822ad9ae65659174aee8261aa2519a14d6fc8811",
+  "files": {
+    "docs/ui-component-inventory.md": "41971ebbdce9df3f4e5bba230a220c1e9834db76ca88d09ecfb9d05bacf49bf3",
+    "ui/src/lib/task-tracker/liveEvents.spec.ts": "53e34ab9e36766253732fd884d9b4c8da1356c1b779aa3fdd6f15d5129a81a46",
+    "ui/src/lib/task-tracker/liveEvents.ts": "61775094d2c628f4952776e48d5b8f97c52dbda0fdd891832b7bb08d3cbcca88",
+    "ui/src/views/HomeConsoleView.spec.ts": "45baebb7a99cce24871aef3068a62b3db3e1d340f308eaffd9b60141e4ef0844",
+    "ui/src/views/HomeConsoleView.vue": "9b6eb2a981f1fb6e5df2da553dc7f2d650e186461b5ad298c36fb475eafaaf96",
+    "ui/src/views/HomeView.spec.ts": "bd10543dce92feabb607a1f9c30c1af7333b6e119977dd21522527892c66e2fb",
+    "ui/src/views/TaskTrackerView.spec.ts": "bb5fa6ad161503a61620c77be332557016dd7b4cd0f69c4d534c3c9512cf1b57",
+    "ui/src/views/TaskTrackerView.vue": "21d22268d2dfbd8994d5ed261eff1eddc437f81e6bb9861b54acd50f296c65ef",
+    "ui/src/views/home/HomeProjectsSection.vue": "c5dd79599128a566a3c72a5ba669c0c6e9812e7777bfda2e83b8b3553b817f5b",
+    "ui/src/views/home/ticketOverview.spec.ts": "4ccd73fc55b6ac3bc321c956c7af496e5bf6500f0aa6f0206ffa39f077bdd690",
+    "ui/src/views/home/ticketOverview.ts": "0ff2c0598b293147ca77c1f5d09512a17cc71a2426a8ff181b7cf82d0bb642c6",
+    "ui/src/views/task-tracker/TaskTrackerCommandPanel.vue": "1600406a8ce4e650910d39a84b76fa1b3e9abd9074e5e32b5f1afaa3073a3ef3",
+    "ui/src/views/task-tracker/TrackerBoardPanel.spec.ts": "0e8f745399a714cfb0ad9675406184da987314d4e664db0e0ab4e2b06c2795ac",
+    "ui/src/views/task-tracker/TrackerBoardPanel.vue": "1985cc81f929e91ddcc451b919a40958092fabd7c91215e308bf2c9e9105ab85",
+    "ui/src/views/task-tracker/TrackerGraphPanel.spec.ts": "3663b970506a29ad78a3ef2ed966aea35bbdb5c8088ceacba6abd9f7a6ad09a2",
+    "ui/src/views/task-tracker/TrackerGraphPanel.vue": "cfe084e9a521c966dda8037966fa5f79191bcb901e34afd14fc280389bf50e1a",
+    "ui/src/views/task-tracker/TrackerStoriesPanel.vue": "deleted",
+    "ui/src/views/task-tracker/TrackerTaskDetailDialog.vue": "9f997403d5d79c634058683629cce368bc285d74d79f0981fc6a6cfd4c571972",
+    "ui/src/views/task-tracker/TrackerTicketDetailPanel.vue": "2e6b0814cb72e8f9db5be0d5504a4f84a779c8ae1678d4131b3320c20c3c2290",
+    "ui/src/views/task-tracker/TrackerTicketTable.vue": "deleted",
+    "ui/src/views/task-tracker/useTrackerGraphSession.ts": "7704dd1e4f445e9b208d52bc08a6f7748574ffbc69b82f0545b843be235ac63a",
+    "ui/src/views/task-tracker/useTrackerLiveUpdates.ts": "3bdefd7ec5784c1b9a32a2f8943fe385f3a5c6a7797a1772dfe78f02d31539b6",
+    "ui/src/views/task-tracker/viewModel.spec.ts": "eebae8e2aac042a6a6918b25d291e7944e83c9d02486cb1eae1c2b4dadb27764",
+    "ui/src/views/task-tracker/viewModel.ts": "f41177cf63f8c25d47c61a6cadd19d55bc4bb2d7ceddf9a11c1aad00d76a10b3",
+    "ui/src/views/task-tracker/viewTypes.ts": "aeb84bea64c85fe1b2bdb379992b54a2338e99a56626496dd1ae16e0b895cdd7"
+  },
+  "checks": {
+    "targeted_tests": "41 passed in10files; final graph/route repair9 passed",
+    "typecheck": "passed after a2",
+    "diff_check": "passed",
+    "eslint": "0 errors;4 existing graph-spec multiple-component warnings",
+    "a2_tests": "13 passed (11 route +2 dialog), including real dialog count/focus and project-scoped map memory",
+    "a3_tests": "12 route tests passed including deleted remembered-task regression"
+  },
+  "remaining_integration": [
+    "Editor/save journey ticketC",
+    "Main browser and Product Design visual QA",
+    "Full signoff"
+  ],
+  "adjudicated_repairs": [
+    "Fit all small graph nodes on initial entry, preserve viewport on refresh",
+    "Bounded inline toolbar filter widths",
+    "Cold map shows Choose a task; remembered valid project task retained; explicit URL wins",
+    "Exactly one task/ticket dialog active; explicit Back to task; real modal focus regression",
+    "Clear invalid remembered map key from sessionStorage so Board-to-Map cannot resurrect a deleted task"
+  ]
+}

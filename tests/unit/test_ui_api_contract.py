@@ -8,13 +8,61 @@ import runpy
 from pathlib import Path
 
 import pytest
+from pydantic.json_schema import models_json_schema
 
 from stackos.actions.repository.durable import DurableActionItemOut, DurableActionJobOut
 from stackos.config import Settings
+from stackos.mcp.tools.projects import (
+    ProjectDeleteConfirmation,
+    ProjectDeleteInput,
+    ScheduleRunsInput,
+    ScheduleSetInput,
+)
 from stackos.operations.actions.schemas import (
     ActionCallDurableItemsOut,
     ActionCallResumeInput,
     ActionCallRetryInput,
+)
+from stackos.operations.finance import (
+    FinanceCommitInput,
+    FinanceContentOut,
+    FinanceEditIntent,
+    FinanceMoneyInput,
+    FinanceMoneyOut,
+    FinanceProjectionOut,
+    FinanceQueryInput,
+    FinanceRecordOut,
+    FinanceStatusInput,
+)
+from stackos.operations.project_setup import ProjectFileOwnershipInput, ProjectFileOwnershipResult
+from stackos.operations.registry import build_operation_registry
+from stackos.operations.tracker.schemas import (
+    TrackerAgentStatsAllInput,
+    TrackerAgentStatsInput,
+    TrackerGetInput,
+    TrackerTaskActivityInput,
+    TrackerTaskResultsInput,
+)
+from stackos.project_cleanup import ProjectCleanupResult
+from stackos.repositories.projects import ScheduledJobOut, ScheduledRunOut, ScheduleRemovalOut
+from stackos.repositories.tracker.inspection_schema import (
+    TaskActivityItem,
+    TaskActivityOut,
+    TaskResultAssociation,
+    TaskResultItem,
+    TaskResultsOut,
+)
+from stackos.repositories.tracker.schema import (
+    AgentStatsCoverageOut,
+    AgentStatsDayOut,
+    AgentStatsFieldCoverageOut,
+    AgentStatsMetricsOut,
+    AgentStatsRowOut,
+    AgentStatsUsageOut,
+    TrackerAgentStatsOut,
+    TrackerSnapshotOut,
+    TrackerTaskOut,
+    TrackerTicketOut,
 )
 from stackos.server import create_app
 
@@ -63,13 +111,158 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
     schemas = json.loads(target.read_text())["components"]["schemas"]
     generated = API_TS.read_text()
     for model in (
+        ProjectDeleteConfirmation,
+        ProjectDeleteInput,
+        ProjectCleanupResult,
+        ProjectFileOwnershipInput,
+        ProjectFileOwnershipResult,
         ActionCallDurableItemsOut,
         DurableActionJobOut,
         DurableActionItemOut,
         ActionCallResumeInput,
         ActionCallRetryInput,
+        TrackerAgentStatsInput,
+        TrackerAgentStatsAllInput,
+        TrackerAgentStatsOut,
+        TrackerGetInput,
+        TrackerTaskActivityInput,
+        TrackerTaskResultsInput,
+        TaskActivityItem,
+        TaskActivityOut,
+        TaskResultAssociation,
+        TaskResultItem,
+        TaskResultsOut,
+        TrackerSnapshotOut,
+        TrackerTaskOut,
+        TrackerTicketOut,
+        AgentStatsMetricsOut,
+        AgentStatsUsageOut,
+        AgentStatsCoverageOut,
+        AgentStatsDayOut,
+        AgentStatsFieldCoverageOut,
+        AgentStatsRowOut,
+        FinanceStatusInput,
+        FinanceQueryInput,
+        FinanceEditIntent,
+        FinanceCommitInput,
+        FinanceProjectionOut,
+        FinanceContentOut,
+        FinanceMoneyInput,
+        FinanceMoneyOut,
+        FinanceRecordOut,
+        ScheduleSetInput,
+        ScheduleRunsInput,
+        ScheduledRunOut,
+        ScheduleRemovalOut,
+        ScheduledJobOut,
     ):
         assert schemas[model.__name__]["properties"].keys() == model.model_fields.keys()
         assert f"Schema{model.__name__}" in generated
     for reference in re.findall(r'"\$ref": "#/components/schemas/([^\"]+)"', target.read_text()):
         assert reference in schemas
+    for name in ("TrackerTaskOut", "TrackerTicketOut"):
+        assert schemas[name]["properties"]["agent_stats"]["anyOf"] == [
+            {"$ref": "#/components/schemas/AgentStatsMetricsOut"},
+            {"type": "null"},
+        ]
+
+    # Compare complete schemas from the actual registry models and their proper
+    # input/output modes, including every referenced content and envelope schema.
+    # Field-name/substr checks alone missed the Pattern generator omission.
+    patterns = {
+        spec.name: spec
+        for spec in build_operation_registry().by_surface("rest")
+        if spec.name.startswith("pattern.")
+    }
+    assert set(patterns) == {"pattern.list", "pattern.get", "pattern.upsert", "pattern.delete"}
+    contracts = [
+        (model, mode)
+        for spec in patterns.values()
+        for model, mode in (
+            (spec.input_model, "validation"),
+            (spec.output_model, "serialization"),
+        )
+    ]
+    roots, expected = models_json_schema(contracts, ref_template="#/components/schemas/{model}")
+    for root in roots.values():
+        assert root["$ref"].rsplit("/", 1)[-1] in schemas
+    for name, schema in expected["$defs"].items():
+        assert schemas[name] == schema
+        alias = re.sub(r"[^a-zA-Z0-9]", "", name)
+        assert f"export type Schema{alias} =" in generated
+
+    summary = schemas["PatternSummary"]
+    assert {"id", "pattern_ref", "revision", "etag", "created_at", "updated_at"} <= set(
+        summary["required"]
+    )
+    assert {"source", "source_label"} <= summary["properties"].keys()
+    assert "body" not in summary["properties"]
+    assert "body" in schemas["PatternDetail"]["required"]
+    assert schemas["PatternPage"]["properties"]["items"]["items"] == {
+        "$ref": "#/components/schemas/PatternSummary"
+    }
+    assert {"items", "next_cursor", "total_estimate", "catalog_total"} <= schemas["PatternPage"][
+        "properties"
+    ].keys()
+    for operation in ("pattern.upsert", "pattern.delete"):
+        ref = roots[(patterns[operation].output_model, "serialization")]["$ref"]
+        envelope = schemas[ref.rsplit("/", 1)[-1]]
+        assert envelope["properties"]["data"] == {"$ref": "#/components/schemas/PatternSummary"}
+    assert (
+        not {"source", "source_label", "bundle_key", "shipped_hash"}
+        & schemas["PatternUpsertInput"]["properties"].keys()
+    )
+
+
+def test_finance_precision_history_native_schema_and_generated_types() -> None:
+    money = FinanceMoneyInput.model_json_schema()
+    assert set(money["properties"]) == {"minor", "currency", "exponent"}
+    exponent = next(
+        option
+        for option in money["properties"]["exponent"]["anyOf"]
+        if option.get("type") == "integer"
+    )
+    assert exponent["minimum"] == 0 and exponent["maximum"] == 6
+    assert money["required"] == ["minor", "currency"]
+    record = FinanceRecordOut.model_json_schema()
+    assert record["properties"]["lineage"]["items"] == {"type": "string"}
+    assert record["properties"]["correction_history"]["items"]["$ref"].endswith(
+        "/FinanceCorrectionHistoryItemOut"
+    )
+    assert "correction_history" not in record["required"]
+    history = record["$defs"]["FinanceCorrectionHistoryItemOut"]
+    expected = {
+        "correction_ref",
+        "status",
+        "superseded_ref",
+        "replacement_ref",
+        "reason",
+        "actor",
+        "at",
+        "decision_ref",
+        "evidence_refs",
+        "source_refs",
+    }
+    assert set(history["properties"]) == set(history["required"]) == expected
+    for key in ("actor", "at", "decision_ref"):
+        assert {option["type"] for option in history["properties"][key]["anyOf"]} == {
+            "string",
+            "null",
+        }
+    for key in ("evidence_refs", "source_refs"):
+        assert history["properties"][key]["items"] == {"type": "string"}
+    generated = API_TS.read_text()
+    for name in (
+        "FinanceMoneyInput",
+        "FinanceMoneyOut",
+        "FinanceCorrectionHistoryItemOut",
+        "FinanceRecordOut",
+    ):
+        assert f"Schema{name}" in generated
+    assert "lineage: string[];" in generated
+    assert "exponent?: number | null;" in generated
+    assert "actor: string | null;" in generated
+    assert (
+        'correction_history?: components["schemas"]["FinanceCorrectionHistoryItemOut"][];'
+        in generated
+    )

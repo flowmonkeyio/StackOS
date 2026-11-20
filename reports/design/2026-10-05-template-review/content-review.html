@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StackOS content design concepts in page context</title>
+<style>body{margin:0;background:#f3f1ea;color:#090b10;font:17px/1.6 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:40px 24px 80px}h1{line-height:1.15;font-size:38px}h2{margin-top:42px}p{max-width:76ch}a{color:#2444b8}img{width:100%;height:auto;display:block;margin:16px 0 40px;border:1px solid #d1d0c8}table{width:100%;border-collapse:collapse;font-size:15px}td,th{text-align:left;vertical-align:top;border-bottom:1px solid #ccc;padding:16px}.meta{font-size:14px;color:#555}figure{margin:0}</style>
+<main><p class="meta">October 5, 2026 · Current scope · StackOS browser and built-in ImageGen</p>
+<h1>Content design inside the existing StackOS page</h1>
+<p>Improve how the content reads and scans while retaining the current header, navigation, hero, palette and type. The three current concepts show the same article within its existing page, with changes confined to the warm-paper content area.</p>
+<p>The main opportunities are paragraph rhythm, useful emphasis, readable tables and lighter grouping of lists. The earlier whole-page concepts are superseded. No production files were changed.</p>
+<p><a href="screenshots/article-context.png">Current page screenshot</a> · <a href="content-prompts-final.json">Exact prompt set</a> · <a href="content-audit.json">Structured scope and findings</a></p>
+<h2>Current concepts</h2><p>Options follow the order of the latest three images displayed in chat.</p>
+<figure><h3>Option 1</h3><a href="content-concepts/01-calm-reading.png">Open original</a><img src="content-concepts/01-calm-reading.png" alt="Option 1: article content redesigned within the existing StackOS page"></figure>
+<figure><h3>Option 2</h3><a href="content-concepts/02-case-ledger.png">Open original</a><img src="content-concepts/02-case-ledger.png" alt="Option 2: article content redesigned within the existing StackOS page"></figure>
+<figure><h3>Option 3</h3><a href="content-concepts/03-annotated-evidence.png">Open original</a><img src="content-concepts/03-annotated-evidence.png" alt="Option 3: article content redesigned within the existing StackOS page"></figure>
+<h2>Apply the selected treatment across content templates</h2>
+<table><thead><tr><th>Content</th><th>Change</th></tr></thead><tbody><tr><td>Article prose</td><td>Improve paragraph spacing, comfortable reading measure and heading scale; reserve callout emphasis for the specific point.</td></tr>
+<tr><td>Article evidence tables</td><td>Improve column widths, cell padding, row separators and top alignment; consider grouped evidence rows for long text.</td></tr>
+<tr><td>Workflow operator and agent content</td><td>Keep the existing sequence and comparison, with clearer numbered steps and lighter grouping.</td></tr>
+<tr><td>Workflow prerequisites and proof</td><td>Improve list indentation and distinguish illustrative examples from verification details without rewriting claims.</td></tr>
+<tr><td>Integration facts and actions</td><td>Use consistent label/value alignment and compact existing action rows with read/write labels.</td></tr>
+<tr><td>Agent and orchestrator contract content</td><td>Use clearer hierarchy and lighter lists for responsibilities, boundaries, handoff inputs and outputs.</td></tr></tbody></table>
+<h2>Preserve during implementation</h2><p>Keep the approved wording and factual limits, current URLs and metadata, useful links and server-rendered content. The article remains owned by Markdown; workflow and role content remains owned by existing contracts. These images guide presentation; generated text differences are not proposed copy edits.</p>
+<p>Implementation follows selection through the existing engineering workflow, including responsive tables/lists, keyboard access, measured contrast and source-content checks. This review does not establish ranking or conversion gains.</p>
+<p class="meta">Tracker: website-template-design-review-20261005. Current source screenshot captured through StackOS browser at 1440 × 1800. The broader audit includes eight public pages, plus mobile article, workflow and catalog openings.</p>
+</main></html>

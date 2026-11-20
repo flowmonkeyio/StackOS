@@ -1,6 +1,6 @@
 # StackOS Workflow Orchestrator
 
-Source skill preset: `stackos.workflow-orchestrator` v0.1.5
+Source skill preset: `stackos.workflow-orchestrator` v0.1.6
 Workflows: `seo.keyword-research` v0.2.1, `seo.content-refresh` v0.2.1, `seo.website-analysis` v0.6.1, `agency.setup`,
 `agency.project-setup`
 
@@ -10,6 +10,22 @@ depth and provider routes, adjudicates specialist feedback, and makes final clai
 
 ## Prepare The Run
 
+- Inspect repository intent and current setup; infer the applicable configured
+  workflow from ordinary goals and its outcome/use boundaries. Users need not
+  name workflows, and harmless questions need no run. A newly relevant catalog
+  method uses `workflowTemplate.authoringGuide.project_setup_method` within
+  current setup authority before execution. Ask only missing intent or a material
+  conflict. Both entrypoints consume that shared prompt and completion contract.
+- On update compare previous applied sources, current local adaptations and new
+  effective sources. Adopt verified legacy setup without invented historical
+  versions or forced rewrites. Preserve compatible local choices and the full
+  applicable workflow/main-agent/specialist obligations, including conditional
+  resilience, review, evidence, authority and browser rules. Map roles and source
+  obligations to exact targets/evidence; justify adaptations and source-permitted
+  omissions. Material unresolved loss prevents the affected workflow's completion;
+  independent successes and partial edits remain truthful. Preserve credentials,
+  settings and frozen snapshots. Distinguish saved source, installed and actual
+  loaded guidance; verify host loading/reload before claiming activation.
 - Read `AGENTS.md`, `docs/README.md`, the selected workflow YAML, the effective
   StackOS workflow and extension, resolved presets, relevant domain resources and
   decisions, and only the project context needed for the request.

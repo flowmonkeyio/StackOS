@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Body, Depends, Query, status
@@ -136,12 +136,13 @@ async def list_auth_providers(
 @router.get("/auth/accounts", response_model=AuthStatusOut)
 async def list_accounts(
     provider_key: str | None = Query(default=None),
+    summary_only: bool = Query(default=False),
     session: Session = Depends(get_session),
 ) -> AuthStatusOut:
     """Return the sanitized global Account inventory."""
     payload = await _dispatch_auth_operation(
         "account.list",
-        {"provider_key": provider_key},
+        {"provider_key": provider_key, "summary_only": summary_only},
         session=session,
     )
     return AuthStatusOut.model_validate(payload)
@@ -154,12 +155,13 @@ async def list_accounts(
 async def list_project_connections(
     project_id: int,
     provider_key: str | None = Query(default=None),
+    summary_only: bool = Query(default=False),
     session: Session = Depends(get_session),
 ) -> AuthStatusOut:
     """Return Accounts explicitly attached to one project."""
     payload = await _dispatch_auth_operation(
         "connection.list",
-        {"project_id": project_id, "provider_key": provider_key},
+        {"project_id": project_id, "provider_key": provider_key, "summary_only": summary_only},
         session=session,
     )
     return AuthStatusOut.model_validate(payload)
@@ -313,6 +315,9 @@ async def auth_oauth_callback(
     state_value: str | None = Query(default=None, alias="state", max_length=512),
     code: str | None = Query(default=None, max_length=4096),
     provider_error: str | None = Query(default=None, alias="error", max_length=200),
+    realm_ids: list[Annotated[str, Field(max_length=32)]] | None = Query(
+        default=None, alias="realmId", max_length=2
+    ),
     _error_description: str | None = Query(
         default=None,
         alias="error_description",
@@ -330,6 +335,7 @@ async def auth_oauth_callback(
                 state=state_value,
                 code=code,
                 provider_error=provider_error,
+                realm_ids=realm_ids,
                 settings=settings,
             )
         except RepositoryError:

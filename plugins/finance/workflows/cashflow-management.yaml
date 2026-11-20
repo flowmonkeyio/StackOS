@@ -1,8 +1,8 @@
 schema_version: stackos.workflow-template.v1
 key: finance.cashflow-management
 name: Finance Cashflow Management
-version: 0.3.2
-description: Prepare a dated exactly thirteen-week cashflow forecast in the selected external backend from bounded external and optional read-only Stripe evidence, without moving money or storing forecast contents in StackOS.
+version: 0.3.3
+description: Prepare a dated exactly thirteen-week cashflow forecast in the selected project-local backend from bounded external and optional read-only Stripe evidence, without moving money or storing forecast contents in StackOS.
 domain: finance
 owner:
   team: StackOS
@@ -12,11 +12,11 @@ experience:
   why_ai: "An agent can assemble a bounded forecast packet and make uncertainty explicit, while the operator remains responsible for assumptions, liquidity choices, and money movement."
   operator_path:
     - "Request an updated forecast as of a date; the agent resolves accounts, commitments, weekly start convention and cashflow rules from the workspace."
-    - "Review assumptions, uncertainty, and exceptions in the selected external backend."
+    - "Review assumptions, uncertainty, and exceptions in the selected project-local backend."
     - "Use the packet to decide later operational actions; this workflow itself never moves money or commits a payment."
   agent_path:
     - "Read only selected external records and optional safe Stripe balance/invoice/payment evidence."
-    - "Build a dated sequence of exactly thirteen weekly external forecast entries, preserving assumptions and uncertainty in the external backend."
+    - "Build a dated sequence of exactly thirteen weekly external forecast entries, preserving assumptions and uncertainty in the project-local backend."
     - "Record only safe references in StackOS; deliver supported forecasts with named assumptions and gaps, or an incomplete packet when opening cash is unknown."
   progress_signals: ["Scope validated", "Evidence collected", "Thirteen-week packet prepared", "Uncertainty reviewed", "Handoff recorded"]
   recovery:
@@ -36,7 +36,7 @@ public:
   audience: "Solo entrepreneurs preparing a rolling external cashflow view without delegating money movement"
   setup: mixed
   prerequisites:
-    - "An external workspace with account/source register and forecast as-of date; defaults are resolved during preflight"
+    - "Project Finance files with an account/source register and forecast as-of date; defaults are resolved during preflight"
     - "Safe external source refs; optional restricted Stripe read access when selected"
   proof:
     - "External dated thirteen-week forecast ref and assumptions/uncertainty refs"
@@ -60,7 +60,7 @@ agent_requirements:
 skill_requirements:
   - skill_ref: stackos:stackos
     requirement: required
-    purpose: Operate grants and optional provider reads while retaining forecast data only in the selected external backend.
+    purpose: Operate grants and optional provider reads while retaining forecast data only in the selected project-local backend.
     applies_to_steps: [preflight, collect-evidence, prepare-thirteen-week-forecast, review-and-handoff]
 skill_preset_requirements:
   - skill_preset_ref: stackos.finance.department-orchestrator
@@ -81,10 +81,10 @@ inputs:
     default: local-json
     schema: {type: string, const: local-json}
   - key: workspace_ref
-    name: External Workspace Ref
+    name: Project Finance Source Ref
     type: string
     required: true
-    description: One selected business financial master, usable from a standalone business directory or agency root. Agency/project setup is optional; descriptive associations never grant cross-project access. Follow the backend contract's business/project scope guidance.
+    description: The owning StackOS project's opaque Finance source identity, derived automatically from its permanent project ID. Each project has separate managed files; descriptive associations never grant cross-project access.
     schema: {type: string, minLength: 1}
   - key: recording_mode
     name: Recording Mode
@@ -102,7 +102,7 @@ inputs:
     name: Operator Policy Ref
     type: string
     required: false
-    description: Optional override of the durable external workspace policy; the agent resolves it during preflight.
+    description: Optional override of the durable project Finance files policy; the agent resolves it during preflight.
     schema: {type: string, minLength: 1}
   - key: trigger_kind
     name: Trigger Kind
@@ -189,7 +189,7 @@ policies:
     description: For local-json, finance.json is the sole authoritative local financial record, including mutable setup. Packet refs resolve to record_id in that document; approved proposals also bind an immutable version/digest, not separate editable files. FINANCE.md is guidance/navigation; CSV is import/export, never a second master. Original evidence stays immutable; provider state stays provider-owned and JSON stores dated observations. Follow the packaged local workspace contract.
   - key: external-backend-is-authoritative
     kind: boundary
-    description: The selected external backend owns forecast assumptions, dated entries, source records, and business decisions; StackOS stores only safe refs and action audit.
+    description: The selected project-local backend owns forecast assumptions, dated entries, source records, and business decisions; StackOS stores only safe refs and action audit.
   - key: exactly-thirteen-dated-weeks
     kind: integrity
     description: The external forecast must contain exactly thirteen consecutive dated weekly entries from week_1_start, using forecast_as_of and forecast_horizon_weeks=13; StackOS output carries only safe refs/status, never forecast contents.
@@ -226,13 +226,13 @@ steps:
       - "Evidence is available by safe external/provider ref or recorded as a bounded gap."
   - id: prepare-thirteen-week-forecast
     title: Prepare External Thirteen-Week Forecast
-    purpose: Write exactly thirteen dated weekly forecast entries, assumptions, uncertainty, and exceptions only in the selected external backend.
+    purpose: Write exactly thirteen dated weekly forecast entries, assumptions, uncertainty, and exceptions only in the selected project-local backend.
     depends_on: [collect-evidence]
     policy_refs: [external-backend-is-authoritative, exactly-thirteen-dated-weeks, base-and-downside-scenarios, no-money-movement]
     output_refs: [cashflow_summary]
     instructions:
       - "Never put weekly forecast contents, financial amounts, payment instructions, or source content into workflow, tracker, resource, artifact, or free-form audit narrative; treat the executor's bounded sanitized provider-action envelope as non-authoritative transport evidence."
-      - "Prepare both base and downside scenarios in the selected external backend and return only their safe refs and lifecycle state."
+      - "Prepare both base and downside scenarios in the selected project-local backend and return only their safe refs and lifecycle state."
       - "Produce a source snapshot covering opening bank cash, available/pending Stripe balances, receivables with timing/confidence, operating commitments, payroll/owner compensation and tax-reserve sources. Pending Stripe funds are not bank cash; an invoice, its payment and the resulting payout must not be counted as three inflows."
       - "For each of 13 dated weeks and each base/downside scenario, calculate opening cash + operating inflows - operating outflows - actual tax payments = closing cash. Show earmarked tax reserve and free cash separately; reserving money is not an expense or a second cash outflow. Carry each closing balance to the next opening balance."
       - "Propose evidence-supported timing and downside assumptions with confidence and reason; never fabricate known amounts. Unknown opening cash or materially missing commitments produces forecast-incomplete, preserving supported components and the missing-input list."

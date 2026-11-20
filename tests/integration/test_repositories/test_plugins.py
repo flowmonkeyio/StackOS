@@ -7,6 +7,7 @@ import weakref
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import event
 from sqlmodel import Session, select
 
 from stackos import action_availability
@@ -16,8 +17,80 @@ from stackos.db.models import Action, Provider
 from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.repositories import plugins as plugin_repository_module
 from stackos.repositories.base import NotFoundError
-from stackos.repositories.plugins import PluginRepository
+from stackos.repositories.plugins import ActionSummaryOut, PluginRepository
 from stackos.repositories.projects import IntegrationBudgetRepository
+
+pytestmark = pytest.mark.fresh_catalog
+
+
+@pytest.mark.parametrize(
+    "reader, table",
+    [
+        ("list_capabilities", "capabilities"),
+        ("list_providers", "providers"),
+    ],
+)
+def test_metadata_lists_do_not_repeat_parent_manifest_per_row(
+    session: Session, project_id: int, reader: str, table: str
+) -> None:
+    repo = PluginRepository(session)
+    repo.sync_builtin_plugins()
+    statements: list[str] = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        rows = getattr(repo, reader)(project_id=project_id)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert len(rows) > 25
+    reads = [statement for statement in statements if f"FROM {table} " in statement]
+    assert reads
+    assert all("plugins.manifest_json" not in statement for statement in reads)
+
+
+def test_action_summaries_preserve_live_metadata_without_loading_schemas(
+    session: Session, project_id: int
+) -> None:
+    repo = PluginRepository(session)
+    detailed = repo.list_actions(project_id=project_id)
+    assert len(detailed) > 25
+    schema_fields = {"input_schema_json", "output_schema_json", "config_json"}
+    expected = [row.model_dump(exclude=schema_fields) for row in detailed]
+    statements: list[str] = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    session.expire_all()
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        summaries = repo.list_action_summaries(project_id=project_id)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert [row.model_dump() for row in summaries] == expected
+    assert all(type(row) is ActionSummaryOut for row in summaries)
+    action_reads = [stmt for stmt in statements if "FROM actions " in stmt]
+    assert action_reads
+    assert all(
+        "input_schema_json" not in stmt and "output_schema_json" not in stmt
+        for stmt in action_reads
+    )
+    assert any(not row.exposure.visible_by_default for row in summaries)
+
+    repo.enable(project_id=project_id, plugin_slug="utils")
+    repo.disable(project_id=project_id, plugin_slug="utils")
+    assert not any(
+        row.plugin_slug == "utils" for row in repo.list_action_summaries(project_id=project_id)
+    )
+    repo.enable(project_id=project_id, plugin_slug="utils")
+    assert any(
+        row.plugin_slug == "utils" for row in repo.list_action_summaries(project_id=project_id)
+    )
 
 
 def test_builtin_plugins_sync_and_list(session: Session) -> None:
@@ -38,6 +111,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "trackbooth",
         "shopify",
         "linear",
+        "cfobooth",
         "publishing",
         "seo",
         "core",
@@ -55,13 +129,16 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     assert media.manifest_json["ui"]["nav"]["section"] == "Media Buying"
     trackbooth = repo.get_plugin("trackbooth")
     assert trackbooth.name == "Trackbooth"
-    assert trackbooth.manifest_json["ui"]["nav"]["section"] == "Trackbooth"
+    assert trackbooth.manifest_json["ui"] is None
     assert trackbooth.manifest_json["config"]["default_api_base_url"] == (
         "https://apis.trackbooth.com"
     )
+    shopify = repo.get_plugin("shopify")
+    assert shopify.name == "Shopify"
+    assert shopify.manifest_json["ui"] is None
     linear = repo.get_plugin("linear")
     assert linear.name == "Linear"
-    assert linear.manifest_json["ui"]["nav"]["section"] == "Linear"
+    assert linear.manifest_json["ui"] is None
     assert linear.manifest_json["providers"][0]["auth_type"] == "oauth-or-api-key"
     linear_methods = linear.manifest_json["providers"][0]["auth_methods"]
     assert [method["key"] for method in linear_methods] == [
@@ -72,7 +149,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     assert len(linear.manifest_json["actions"]) == 34
     publishing = repo.get_plugin("publishing")
     assert publishing.name == "Publishing"
-    assert publishing.manifest_json["ui"]["nav"]["section"] == "Publishing"
+    assert publishing.manifest_json["ui"] is None
     communications = repo.get_plugin("communications")
     assert communications.name == "Communications"
     assert communications.manifest_json["ui"]["nav"]["section"] == "Communications"
@@ -89,8 +166,11 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
 
     finance = repo.catalog(plugin_slug="finance").plugins[0]
     assert finance.plugin.slug == "finance"
-    assert finance.plugin.manifest_json["ui"] is None
-    assert {provider.key for provider in finance.providers} == {"stripe"}
+    assert finance.plugin.manifest_json["ui"]["nav"]["label"] == "Finance"
+    assert finance.plugin.manifest_json["ui"]["nav"]["items"] == [
+        {"label": "Finance", "to": "finance"}
+    ]
+    assert {provider.key for provider in finance.providers} == {"quickbooks-online", "stripe"}
     assert {action.key for action in finance.actions} >= {
         "stripe.customers.create",
         "stripe.invoices.create",
@@ -98,6 +178,24 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "stripe.balance.retrieve",
     }
     assert finance.resources == []
+
+
+def test_project_config_read_and_enable_preserve_unrelated_keys(
+    session: Session, project_id: int
+) -> None:
+    repo = PluginRepository(session)
+    assert repo.get_project_config(project_id=project_id, plugin_slug="engineering") == {}
+    repo.enable(
+        project_id=project_id, plugin_slug="engineering", config_json={"unrelated": {"keep": True}}
+    )
+    delivery = {"review_agent": {"name": "reviewer", "instructions": "Review"}}
+    repo.enable(
+        project_id=project_id, plugin_slug="engineering", config_json={"delivery": delivery}
+    )
+    expected = {"unrelated": {"keep": True}, "delivery": delivery}
+    assert repo.get_project_config(project_id=project_id, plugin_slug="engineering") == expected
+    repo.enable(project_id=project_id, plugin_slug="engineering")
+    assert repo.get_project_config(project_id=project_id, plugin_slug="engineering") == expected
 
 
 def test_project_enable_disable_plugin(session: Session, project_id: int) -> None:

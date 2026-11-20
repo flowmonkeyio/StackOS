@@ -7,6 +7,7 @@ from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.run_plans.schemas import (
     RunPlanAbortInput,
+    RunPlanAbortOut,
     RunPlanCheckConsistencyInput,
     RunPlanClaimStepInput,
     RunPlanCreateInput,
@@ -211,14 +212,22 @@ async def run_plan_abort(
     inp: RunPlanAbortInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> WriteEnvelope[RunPlanOut]:
-    env = RunPlanRepository(ctx.session).abort(
+) -> WriteEnvelope[RunPlanAbortOut]:
+    from stackos.task_delivery import abort_run_plan
+
+    env, cancellation = abort_run_plan(
+        ctx.session,
         run_plan_id=inp.run_plan_id,
         project_id=inp.project_id,
         reason=inp.reason,
         actor=inp.actor,
+        scheduler=ctx.extras.get("scheduler"),
     )
-    return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
+    return WriteEnvelope[RunPlanAbortOut](
+        data=RunPlanAbortOut(**env.data.model_dump(), cancellation=cancellation),
+        run_id=env.run_id,
+        project_id=env.project_id,
+    )
 
 
 async def run_plan_claim_step(

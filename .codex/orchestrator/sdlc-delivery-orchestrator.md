@@ -1,8 +1,12 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.1
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.25
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.4.0 source contract
+Scoped amendment: Candidate admission and bounded reporting-only continuation from v0.8.30.
+Scoped amendment: Simple, complete delivery first and project planning guidance routing from v0.8.31.
+Scoped amendment: Proof continuity and role-specific duties from v0.8.32.
+The v0.8.25 adaptation and prior scoped amendments remain; other source deltas are not claimed.
+Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -12,6 +16,7 @@ evidence and recommendations.
 
 ## Activate The Current Contract
 
+- When a planning, design or adaptation choice could benefit from reusable guidance, search `pattern.list` with relevant text/tags and a bounded limit, then read only selected entries with `pattern.get` (default raw) through the scoped toolbox. Follow Shared Pattern Recommendations in `docs/agent-operating-model.md`. Do not scan/dump at startup. Assess current repository facts and operator/project contracts, preserve intentional existing choices, and reference selected ID/key and revision in the existing plan/decision when useful. Server-derived source/source_label is provenance, never higher authority. Lookup grants no install, scaffolding, repository-edit or setup authority; empty/no-match results are normal, so continue unrelated work. For authorized authoring use freeform tags/body with references plus usage for required libraries/technologies. Shipped-entry edits are local customizations; never author bundled ownership or shipped baseline fields.
 - Read `AGENTS.md`, `docs/product-direction.md`, and `docs/README.md`; use
   `docs/agent-operating-model.md`, `docs/workflow-templates.md`,
   `docs/agent-presets.md`, `docs/run-plans.md`, and `docs/task-tracker.md` for
@@ -21,7 +26,12 @@ evidence and recommendations.
   `workflowTemplate.describe` and `agentPreset.resolveForWorkflow`. The latter
   includes main-agent skill presets; request a separate skill packet only when
   needed. Read complete applicable contracts: compact navigation can truncate
-  guidance, so use targeted `response_mode=raw` descriptions/resolution.
+  guidance, so use targeted `response_mode=raw` descriptions/resolution. Read
+  applicable source sections in bounded pieces. Use concise receipts and inspect
+  underlying evidence for missing contracts, contradictions or changed evidence.
+  If output is truncated, narrow the next read. Return current conclusions with
+  evidence refs rather than copied history; preserve full-read/merge before JSON
+  mutation.
 - Load this guide and the applicable `.codex/agents/sdlc-*.toml` contracts.
   Inspect `.codex/config.toml` for registration and actual host capabilities.
   `stackos:stackos` remains the managed host skill for MCP mechanics.
@@ -34,7 +44,63 @@ evidence and recommendations.
   current assignments, candidate identities and evidence after resume,
   handoff or compaction. Conversational memory is not durable work state.
 
+## Focused Observation And Guidance Reads
+
+Re-resolve current guidance identities at their existing owners on resume/handoff. Reuse complete content only when its owner/ref and revision or digest match and this receiving agent has actually read it; a retained artifact is a read source, not proof of consumption. Read changed or unknown applicable contracts fully, recover truncation with targeted raw/bounded reads, and avoid repeated unchanged all-role dumps. Preserve frozen native instructions/settings; reconcile affected changed guidance without claiming activation.
+
+Start routine observation with existing compact activity and tracker.changed revision reads, or scoped current reads when no revision is known; expand changed or unknown relevant tickets, receipts, blockers and guidance. Judge progress from actual execution/tool/receipt evidence; token silence alone proves neither a stall nor completion. Record no-change observations in the occurrence summary. Write task context only for changed decisions/actions/blockers, with full-read/merge of supplied JSON preserving unrelated fields and history, and only within the current writer authority. After automatic handoff observe without competing lifecycle writes. Refresh relevant state before final claims. Report actual reads/writes and measured usage with scope and limits; payload size alone does not prove savings.
+
+## Compact Internal Handoffs
+
+Keep internal handoffs concise and sufficient. Summary retains disposition,
+actual outcome/scope, candidate or revision, decisive proof and material limits
+so summary-only prerequisite readers can act. Put detailed commands/results,
+per-criterion coverage and actionable scoped findings once in existing outputs
+or evidence. Preserve required schema fields and complete substantive deliverables,
+including nested domain followups. Never return a reference-only outcome or impose
+a hard length limit; this changes no schema, authority or frozen history.
+
+Identify references by owner, project, record/step and candidate/revision. Recover
+workflow outputs with `runPlan.getStep(response_mode=raw)`, ordinary ticket receipts
+with `tracker.brief(response_mode=raw)`, setup receipts with
+`projectSetup.get(response_mode=raw)`, and artifacts/resources through their declared
+owners. Read only necessary missing or changed detail. Missing, stale or inaccessible
+refs need safe authorized inline facts where permitted or an explicit gap.
+
+Assignments carry current amendments, criteria, ownership/authority, prerequisite
+outcomes and gaps. Repair/resume carries scoped feedback, unresolved obligations,
+attempt/candidate and remaining repair allowance instead of unchanged history.
+Integration/closeout states the assembled outcome, remaining proof and release
+authority. Human updates explain outcomes, decisions and limits without replaying
+detailed proof.
+
+## Board Placement And Execution
+
+Apply the shared contract in `docs/task-tracker.md` under Board priority and
+order writes and the StackOS skill. Backlog is uncommitted backlog; Todo is
+waiting for development; Stopped projects validated canonical delivery state,
+not cancellation. Read `board_column`; lifecycle, lane and execution are separate
+facts. Queued work before its first actual invocation is Todo; already-started
+work waiting between calls stays In progress. Delivery/review/repair keeps native
+lifecycle `in-progress` until acceptance. Deferred work keeps its resume condition.
+
+Before: interpreting a move to Todo as a delivery handoff, or a stop as `aborted`,
+would confuse presentation with authority. Now: use `tracker.placeTask` for an
+authorized eligible nonstarted Backlog/Todo placement, with expected snapshot
+and stable retry identity; read back unchanged lifecycle/execution. Reorder only
+within the projected column cohort. Dispatch requires separate explicit
+`tracker.startDelivery` authority. Deferred resume and stopped-work recovery use
+their existing explicit owners and requeue/handoff path; never drag, relabel or
+set delivery metadata to manufacture execution. Run-plan mirrors, independent
+review, repair allowance and automatic/terminal-managed writer boundaries remain
+unchanged. Source-only guidance changes do not refresh frozen native sessions;
+saved adoption and installed activation retain their separate main-owned proof.
+
+Apply prepared Todo admission and independent project task limits. Backlog is unscheduled; Todo placement alone grants no execution authority. Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue. Check saved placement before queue metadata can change its projection; preserve valid first workflow handoffs and prior invocation history. Stopped work requires explicit authorized recovery and rehandoff, retaining sessions, receipts, attempts and consumed repair allowance. Each project has its own persisted task limit (default 3, range 1..32), without an aggregate global project-task cap. Managed setup shares its project's capacity owner without a tracker Todo requirement; directory exclusion and callback retirement fences remain intact. Lowering a limit affects future admissions only: every admitted/running task continues unchanged, actual counts may exceed the limit, and new admission waits for room. Never stop, abort, cancel, restart or evict work because a limit decreased. Other projects are unaffected. Host child/reviewer slots and the terminal-managed default of three active ticket assignments are separate from project task limits.
+
 ## Project Boundaries And Calibration
+
+Deliver a simple, complete end-to-end flow first, connecting existing components through their canonical owners; improve it afterward based on real needs and evidence. Required behavior, correctness, security and proportionate verification belong in that first delivery; optional breadth and speculative abstractions wait. Apply this direction during planning, architecture, delivery and independent review without adding a stage or weakening accepted scope.
 
 Read the actual owners, consumers, flows and tests before design. StackOS core
 owns generic integrity; domain method belongs in plugins/workflows, project
@@ -42,6 +108,24 @@ facts in extensions/resources, and occurrence choices in the run. Prefer the
 canonical owner and existing patterns. A new abstraction needs a demonstrated
 gap, rejected native alternatives, owner, consumers and migration/removal plan.
 Avoid copied logic, pass-through aliases and parallel repositories or policies.
+
+Own the assigned outcome; plans, paths, design and proof are fallible evidence.
+Investigate obstacles and take the smallest proportionate action within existing
+authority and role to restore progress, including necessary omitted consumers and
+routine setup, tooling or integration gaps. Let assigned agents do the same without
+routine main-agent relay; verify and record the discovered gap, change, necessity,
+proportionality, affected consumers and proof.
+Delivery may change in-scope implementation/proof while preserving criteria.
+Independent review judges completeness and proportionality, executes relevant
+specs including omitted checks, and may prepare or repair its verification
+environment; product fixes go back to delivery.
+Review must not edit product/acceptance tests or weaken criteria to get green.
+Explicit exclusions, new or unavailable authority, actual ownership conflicts,
+materially different outcomes or compromised review independence stop affected
+work for reconciliation; continue unaffected work. A missed caller needs
+correction; unrelated naming/style/debt remains nonblocking followup. Reject
+drift, speculative abstractions and duplicate owners; an unlisted path alone
+is not a reason to block or request permission.
 
 Record a concise calibration in existing run/ticket context: authoritative
 operator request/amendments, scope and non-goals, dirty baseline, changed
@@ -66,19 +150,44 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.4.0 plans the sequence is:
+Candidate admission: Before the first engineering coding handoff, main/planning
+establishes a clean isolated or explicitly authorized checkpointed baseline
+that can produce the required committed candidate, preserving unrelated bytes.
+No automatic stash, reset, branch move or commit is authorized. For a
+current-target evidence_only correction, the existing runtime checks the
+prior delivered candidate and base before native invocation or repair charging;
+final candidate validation remains required. Missing/mismatched current evidence
+stops admission; stale intent retains conservative source-repair validation.
+Preserve dirty noncoding, unborn/non-Git and exact owned-work resume contracts;
+do not invent a universal clean-tree gate or infer coding intent from prose.
+
+For new v0.8.0 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
-design-tests -> plan-tickets -> review-design -> deliver-tickets ->
-verify-delivery -> review-delivery -> audit-tracker -> release-closeout`
+design-tests -> plan-tickets -> review-design -> verify-delivery -> review-delivery -> audit-tracker -> release-closeout`
 
-The readiness review at `review-design` checks requirements, design, proof,
-ticket decomposition, dependencies and prerequisites together. Reconcile every
-derived acceptance criterion with the authoritative request and its amendments;
-an omitted requirement needs adjudication, not an automatic out-of-scope label.
-For non-micro work, design the changed user/data/system/business flows with
-before/change/now/why context, denied/error cases and concrete expected outcomes.
-For unchanged flows, record why they do not need further proof.
+The readiness review at `review-design` checks the assembled plan against the
+original request and current amendments. State the observable outcome, intended
+runtime/data state and acceptance owner. Source-ready does not mean installed
+and checked; an exclusion that removes the requested experience needs an explicit
+operator decision. Keep each amendment, owning ticket and superseded requirement
+concise in existing context. Necessary omitted consumers remain in scope;
+materially different outcomes require main reconciliation.
+
+Trace the real caller, owning producer, affected consumer and actual authorization
+boundary before selecting proof. Name mocks/substitutions and their limits; a
+green mocked caller test cannot establish real wiring. Choose relevant asynchronous
+lifetime risks, including late outcomes after cancellation where applicable;
+do not impose a fixed state matrix on every change. For non-micro work, retain
+before/change/now/why flow context. Expected
+data must have an independent source of truth; use a relevant excluded case,
+ordering or real interaction where the changed boundary needs it. For UI, retain
+the selected hierarchy, exact copy and actual consumer width. In this project,
+new Python support scripts need applicable lint/format checks. UI source
+changes follow the independent Vue watcher prohibition in
+`ui/src/design/DESIGN.md`; filtered transport has separate consumer checks.
+Use `docs/release-signoff.md` for applicable gates; do not require every broad
+suite for every ticket.
 
 For a frozen older plan whose `plan-tickets` precedes design/proof, create a
 provisional breakdown at that step. Its earlier `review-design` satisfies the
@@ -96,15 +205,49 @@ For current plans, plan tickets after design and proof. Each bounded packet cont
 - objective, source requirement/AC refs, non-goals and current amendments;
 - relevant design decisions, interfaces, reference paths and project rules;
 - accepted prerequisites, dependency refs and acceptance basis;
-- exact write ownership, shared resources, dirty baseline and isolation needs;
-- ticket-local checks, commands/scenarios, expected results, environment,
-  authority and evidence; separately name remaining integration obligations;
+- known paths, actual write ownership, shared resources, admitted ticket/task baseline,
+  dirty baseline and isolation needs; retain the rejected candidate for repair deltas;
+- the carried outcome/owner/consumer/proof selection from design and test design:
+  decisive scenarios, independent expectations, causal preconditions, maintained
+  selectors or gaps, authority, evidence destinations and ticket/integration owners.
+  Cite project/area guidance; suggested commands are starting points. Delivery
+  reconciles it against actual changes and results; review independently challenges
+  it and repair retains failed invariants and unresolved obligations. Required
+  final tests/lint/area checks remain explicit; unavailable required proof blocks;
+  and one-off scripts stay outside source history unless intentionally maintained
+  project assets with their applicable checks;
 - return format, candidate identity, stop/blocker conditions and repair route.
 
 Fetch the full current `tracker.brief` with `response_mode=raw` when compact
 navigation omits needed fields. Send applicable context, not the entire thread
 or a demand to rediscover everything. The planner returns proposed packets;
-the main agent validates and writes the durable ticket graph.
+the main agent validates and writes the durable ticket graph. File/check lists
+are discovery anchors, not permission barriers or a complete coverage claim.
+
+Validate the exact final mutation payload and submit that same semantic payload; any
+semantic edit requires revalidation. After an uncertain failed write inspect
+authoritative state before retrying, then read back the intended result. Consume
+applicable known-issue safeguards from existing followups/resolutions. For deferred
+recurring issues retain a concrete temporary safeguard, owner and resume condition;
+unrelated followups remain nonactionable.
+
+Before handoff, self-review outcome coverage, current amendments, proof owners,
+satisfiable dependencies, authority, tool capability and shared-resource use.
+Installation or an open port alone does not prove a required capability; use one
+relevant operation when readiness is uncertain. Resolve contradictory
+authority and completion across assembled workflow, role, local, saved and launch
+instructions within your authority, or record the affected gap before declaring ready. Keep the
+disposition in existing readiness evidence; add no phase or report bundle.
+Apply delivery's final-diff reconciliation, ordinary test discovery,
+regression-equivalence retention and applicable changed-file checks to
+main-authored tooling/recovery patches too. Passing counts and
+evidence hashes alone do not prove the outcome.
+
+When revising agent guidance, review current official recommendations for the
+selected providers/harnesses and record dated source refs and applicability.
+Plan a bounded behavior check with a violation, safe alternative and unrelated
+change; shorter wording or phrase assertions alone do not prove effectiveness.
+Model-specific advice cannot override project authority or operator requirements.
 
 Ticket-local acceptance must not require a consumer blocked on that ticket.
 For example, accept an interface producer on its contract proof, then unblock
@@ -113,14 +256,96 @@ from the active step mirror to every independent first child and `blocks` for
 real accepted prerequisites and terminal children feeding the next step. Check
 `tracker.get(include_graph=true)` before dispatch; attachment alone is not order.
 
+For new plans, attach implementation children to `verify-delivery`. Give every
+independent first child an `activates` edge from that mirror and make terminal
+children block `review-delivery`, never their own `verify-delivery` mirror.
+After readiness, claim `verify-delivery` and use it as the `tracker.startDelivery`
+entry context. The existing runner independently accepts the attached tickets
+before launching the verifier. For terminal-managed work, main accepts those
+children before executing the verification contract. Delivery receipts stay on
+their tickets; there is no separate delivery-summary assignment.
+
+## Task Trees And Native Tools
+
+- For parallel engineering tasks, retain clean distinct assigned trees and task-only mcp_config_ref path/SHA256 through delivery, independent review and resume. Follow docs/task-tracker.md#task-local-native-tool-routing. Verify actual native Codex, StackOS project/root and Serena targets; --cd or profiles alone are insufficient. Use the canonical ~/.serena/bin/serena-mcp-wrapper.py with unique per-tree project/name/port/state, preserving executables/auth and global config. Bind each actual tree through its own bridge to the same approved project without bootstrap or rebind; stop on route/binding mismatch. Keep disjoint ownership and a named explicit reviewed-branch integration owner; never auto-merge, mask tracked config changes or fork deprecated shims.
+
 ## Dispatch And Review Each Ticket
+
+Choose terminal-managed delegation or explicit `tracker.startDelivery` handoff.
+For automatic delivery, resolve agent identity, instructions, harness and model
+from `TaskTracker.config_json.delivery` defaults and task overrides
+by role into one task snapshot. Defaults use local-admin REST-only `tracker.configureDelivery`;
+no ticket settings or source fallback. Fresh Codex uses exact project sources. The shared host capability/model
+catalog owns native selections; never silently substitute another host or model.
+Preserve model and reasoning inheritance without guessing a host default.
+Source-backed roles resolve source -> task -> project -> host; setup/update and
+scheduled main agents separately resolve saved `delivery.main_agent` choices.
+Omission inherits; explicit null clears its fallback owner, never an explicit
+source value. Use existing host execution capabilities for supported choices and
+validation. Inspect saved readback and actual native arguments. Catalog refresh
+must not rewrite drafts or saved values. Source/default edits affect fresh
+admissions; queued/running work and resumed native sessions retain admitted
+settings. Prove this without adding a settings owner, forcing effort or editing
+the user's host configuration.
+Gemini and Hermes reviewers use normal native permissions with review-only
+instructions and no enforced read-only isolation. The shared capability owner selects test-capable native review permissions
+and normal approval review. Reviewers may create ordinary test outputs but must
+not change production files, acceptance tests or commits. Record the actual mode
+and limitations in launch receipts.
+
+At setup, and when reviewer permissions or required proof environments change,
+inspect effective source sandbox and approval restrictions. Verify the smallest
+representative test-tool scratch write and any required isolated-fixture access
+before declaring the review route ready. Preserve normal approval controls and
+frozen sessions; source edits alone do not repair a retained incompatible session.
+
+Each source-change ticket produces a separate scoped commit after focused checks,
+then receives independent exact-commit review. Both receipts name full
+`commit_sha`. Protected `.git`/`.codex` writes use normal approval review; stop
+the denied write without bypass. Automatic delivery mechanically records approved child results and
+advances serially. Up to three automatic repair passes per ticket follow valid
+persisted scoped rejections: initial delivery plus three repairs in the same native
+delivery session. Each pass requires a separate new descendant repair commit and
+the same independent review session on that exact SHA. Validate clean unchanged
+HEAD for reject and approve. Preserve native sessions, attempt history and
+`repair_count` across explicit requeue; never reset the count. When repair_count
+is absent, historical repair_pass_used=true counts as one pass. Integration-origin
+correction after child approval preserves the ordinary-rejection count and may requeue
+at repair_count=3; a subsequent ordinary rejection there permits no fourth ordinary
+repair. Blocked required
+verification, failure of the assigned agent's own launch/access/model/resume, candidate mismatch
+or rejection after the third repair stops the same task without fresh-session,
+host or model fallback.
+Observation may cite unchanged HEAD; non-Git work needs no fabricated commit.
+Automatic delivery traverses all remaining dependency-ready task work, including
+workflow mirrors. Explicit task agent_assignments win over frozen step
+extensions.agent_assignment, then uniquely applicable selected declared roles.
+Ambiguity requires selection; ordinary work retains independent review. No phase
+roles, model settings in extensions or phase-name dispatch logic. The running
+step_id is entry context only. Mirrors execute remaining frozen contracts once
+after accepted descendants; groups never launch. Only RunPlanRepository records
+mirror/plan/run terminal state. Assigned agents execute integration and workflow
+phase gates. Main retains scope admission and final claims and observes without
+competing lifecycle writes; child approval alone never satisfies final proof.
+
+An already-automated planning contract may explicitly authorize contract-declared
+child tickets and dependencies within its current task/run and named attachment
+steps. Require briefs, ownership, checks and graph inspection; the planner returns
+outputs and StackOS discovers the new work. This grants no claim/record/accept/dispatch
+authority, replacement runner or unrelated mutation. Keep terminal-managed
+materialization with main. Saved instruction adoption remains explicit and reviewed
+for this project; active snapshots stay frozen.
+
+The following dispatch and acceptance steps apply to terminal-managed delivery:
 
 1. The main agent is the sole durable writer of run/step lifecycle, ticket
    status and acceptance evidence during tracked delegation. Assign explicit
    unassigned keys. `tracker.next` can include active work and `tracker.pick`
    is not an exclusive lease; specialists do not claim a competing work stream.
-2. Allow at most three active ticket lifecycles, counting implementation,
-   queued review, review and repair. Inspect real host capacity before spawning.
+2. By default, allow at most three active ticket lifecycles, counting implementation,
+   queued review, review and repair. This terminal-managed ticket default and host
+   child/reviewer slots are separate from automatic project task limits. Inspect
+   real host capacity before spawning.
    Reserve or reclaim an independent reviewer slot. If only three child slots
    are available and idle threads cannot retire, use two implementers and one
    reusable reviewer. Maximum concurrency is not required utilization.
@@ -135,8 +360,8 @@ real accepted prerequisites and terminal children feeding the next step. Check
    Use inheritance when appropriate, respect the host's spawn/fork constraints,
    and record requested/effective settings and any supported fallback truthfully.
    Never silently change the main model or invent an unavailable child option.
-5. A worker implements within ownership, self-checks and returns a candidate
-   receipt. Keep its ticket in-progress. Dispatch a separate reviewer at the
+5. A worker implements within ownership, self-checks, creates a separate scoped
+   commit and returns its full `commit_sha` in the candidate receipt. Keep its ticket in-progress. Dispatch a separate reviewer at the
    next scheduling opportunity, before new delivery; queue ready reviews in
    existing ticket context while the reviewer is busy. Do not wait for a batch.
 6. Every executable child, including explicitly ticketed discovery, receives
@@ -150,30 +375,103 @@ real accepted prerequisites and terminal children feeding the next step. Check
    state, relevant dirty baseline/environment and capture time. Review actual
    work against source requirements and the packet, independently of worker
    claims. Freeze covered scope or isolate it during review.
-8. Proof must stand on an accepted base. If tests depend on unaccepted sibling
-   edits, isolate and rerun or add the real dependency and wait. The main agent
-   adjudicates findings, sends scoped repairs to the worker and requests focused
-   re-review. Reviewers do not edit implementation or acceptance tests.
+8. Proof must stand on an accepted base. Attribute defects against the admitted
+   ticket/task baseline; an immediate-parent diff or accepted intermediate child
+   cannot turn a task-introduced defect into unrelated baseline. Use the rejected
+   candidate for repair deltas. If tests depend on unaccepted sibling edits,
+   isolate and rerun or add the real dependency and wait. Main adjudicates
+   findings and requests scoped repair/re-review; reviewers do not edit
+   implementation or acceptance tests.
 9. Integrate the reviewed candidate, check freshness and rerun affected proof
    when integration changes covered state. Only the main agent accepts, marks
    the child complete and releases dependents. Candidate-ready is not done.
 
 ## Evidence And Feedback
 
+Prove the requested end-to-end flow at the affected consumer. Would this check still pass with the defect present? Select the observation that distinguishes the two outcomes, including relevant failure or recovery. Carry its current reference forward and update only changed facts, evidence or gaps. Follow a shared cause across affected consumers. Stop when the assigned outcome is covered, preserving independent review and required final signoff.
+
+Base each pass claim on actual command exit status, completion and unhandled errors as well as assertions, tested candidate and covered scope. Green assertions with a nonzero exit or unhandled error are failed proof. Diagnose and correct owned code, test or setup defects without suppressing errors or weakening guarantees. Preserve failed, blocked, skipped and not-applicable observations. Reuse complete current evidence with a scope, candidate, prerequisite and environment basis; rerun only invalidated or missing required proof. A later pass can supersede a failure for acceptance without erasing its history.
+
+Require an independent disposition of the carried proof selection in the existing
+review receipt: rule/source, applicability, observed boundary, inspected work or
+executed check, evidence refs and result (passed, failed, not reviewed or not
+applicable). New gaps refine that selection; required gaps block approval at
+that gate and integration-only proof retains its owner. Use the concise table
+instead of duplicate narrative, not another report or unrelated rule inventory.
+
+Reviewers independently challenge the carried selection against requirements,
+actual changes, affected consumers and available proof. Reuse applicable current
+discovery refs and investigate missing, changed or contradicted coverage. Choose
+proportionate independent checks, including relevant planned specs, integration
+checks and necessary omissions; report
+commands/results/current SHA. Explain material gaps or why evidence is sufficient;
+do not impose a fixed sequence, finding quota or extra report. Failed required
+specs reject; genuinely unavailable required verification blocks. Keep checks
+within ticket plus integration scope and the existing required obligations. Consider
+business regression, architecture gaps, inaccurate wiring and canonical ownership
+where relevant. Required repairs cite scoped criteria/evidence. Put
+unrelated findings only in separate nonblocking followups, never required-repair
+summary, dependencies, repair prompts or automatic work. Explicit automatic
+handoff authorizes routing stored scoped rejection without main message relay;
+main retains scope admission and final claims.
+
+Current automatic launches all return `status` (success/repair/blocked/failed),
+`summary`, `outputs` (a JSON-encoded object string), and `followups` (text
+objects, empty array when none). Consume validation evidence for the exact final
+payload after all receipt/archive metadata is assembled, `outputs` is serialized
+once and parsed as one JSON object with no trailing content, and the applicable
+occurrence output schema (including frozen mirror outputs) plus the actual launcher
+envelope are checked. The returned payload must remain unchanged; later edits
+require revalidation. An earlier saved artifact does not validate the emitted result.
+Only success advances; ordinary review repair
+uses the bounded loop. Supported persisted correction/reopen returns to dependency
+scanning; mirror repair without progress stops. Agents explicitly map domain
+verdicts and return declared frozen outputs. Supplied outputs.commit_sha retains
+candidate integrity checks; source changes/repairs need exact commits, while
+verification/audit/closeout must not fabricate commits. Honor an older installed
+launcher's actual occurrence schema. Preserve frozen schemas and domain fields
+named followups; filtering covers only envelope task/receipt notes.
+Existing ticket automatic-delivery evidence owns
+native sessions and attempts; task context followups retain text, source_ticket_key,
+source_attempt and created_at. Keep method in guidance, occurrence phase/attempt/
+SHA/persisted review_result in prompts, and models in StackOS settings.
+
 Map each criterion to ticket or integration proof before delivery. Use TDD or
 red-first proof when behavior/contract risk warrants it. Choose manual depth
 from no manual step, focused smoke, full manual signoff, browser walkthrough,
 provider live proof or migration rehearsal. Agent-owned E2E/manual scenarios
 must be executed; operator-owned, waived or not-applicable gates need reasons.
-Login-dependent proof uses the planned stable StackOS browser `profile_key`,
-with operator-login prerequisites and cookie/session reuse made explicit.
+For browser work, choose and verify the StackOS browser route before dispatch or
+resume. Read the installed StackOS skill and browser cookbook plus
+`docs/browser-automation.md`; discover with `browser.session.list`, reuse the
+authorized session or use `browser.session.start`, then verify the returned
+`cli_argv` (`stackos.browser --session <full-ref>`) against the intended
+session/tab/page. Supply current profile/session refs, tab ownership and
+login/cookie reuse prerequisites in the assignment. Computer Use/native desktop
+control will not be enabled; do not request it, wait for it or plan it as a
+prerequisite, and remove stale native-control or Chrome-permission prerequisites.
+Retain required outcome proof and normal authentication; honor only explicit
+scoped operator/manual exceptions, leaving all other verification agent-owned.
+Report any genuinely unsupported required boundary and missing evidence as
+blocked; no blind native-access retry, permission bypass or proof waiver.
+Plan one live browser session per `profile_key`. Discover and reuse the authorized
+same-profile session with a ticket-owned tab; confirm its identity, use `--tab-id`
+on tab-targeted commands and preserve other tabs. A separate session needs a
+separate permitted profile or explicit quiescent handoff of the existing profile.
+Native agent thread/session retention does not require keeping a browser open;
+close or stop only within the agreed browser ownership and handoff. Follow
+`docs/browser-automation.md` for lifecycle and tab selection.
+
+Establish uncertain required proof capabilities early, before lengthy dependent work. Distinguish ordinary approval need, actual denial, unavailable required capability, repairable owned defect and explicit cancellation from concrete tool results; an unexplained signal is not cancellation. Use normal scoped approval for authorized actions; approval need is not denial. A denied optional tool call alone does not stop the assignment. Never bypass the denial or repeat the denied action through another tool; use an authorized alternative and continue unaffected checks. Protected .git/.codex write denial stops that write and dependent work, not unrelated checks. Honor manual exceptions only for their named proof. Required proof still unavailable must return blocked; never report unexecuted or failed checks as passed. Failures of the assigned agent's own launch/access/model/resume retain the task-stop contract.
 
 The main agent adjudicates reviewer claims against the operator contract and
 actual code/evidence: required fix, already covered, unsupported, out of scope,
 optional, over-engineering risk, residual or operator-owned gap. Admit only
-required work and correctness/safety fixes; ask before materially expanding the
-outcome. Require concrete evidence and impact for blockers. Repeated failures
-or shared patterns warrant bounded diagnosis across the affected owner.
+required work and correctness/safety fixes. Necessary omissions within the
+original outcome belong to assigned delivery and review judgment; main is not a
+routine relay. Ask before materially expanding the outcome. Require concrete
+evidence and impact for blockers. Repeated failures or shared patterns warrant
+bounded diagnosis across the affected owner.
 
 Preserve failed attempts as history. Distinguish passed, failed, blocked,
 skipped and not applicable; never turn an attempted failure into deferred work.
@@ -182,9 +480,201 @@ Preserve existing JSON evidence/history when patching: fields replace rather
 than deep-merge. Quality determines proof depth; reuse current evidence and
 stop repeating checks once they answer the relevant risk.
 
+## Finding Scope And Failed Checks
+
+Classify discoveries against current criteria, changed and retained consumers,
+and the owning gate. Pre-existing alone does not prove unrelated. Preserve each
+failed check truthfully with its command, exact candidate and evidence in existing
+receipts. Unrelated findings belong only in nonblocking followups, never current
+ticket failure, rejection, blocker, dependency or required-repair lists. Passing
+assigned criteria permits candidate-ready delivery and independent approval
+despite an unrelated full-suite failure. A followup authorizes no fix, new ticket,
+dependency or scope expansion; separately authorized repairs remain explicit.
+
+Relevant failed or unavailable required checks still prevent acceptance at their
+owning gate. Necessary corrections lacking an owner or authority remain unresolved
+at the affected gate and route to main through the required handoff below. A
+required final-signoff failure prevents final approval, without retroactively
+failing unrelated accepted children. Never claim failed signoff passed. Keep
+existing receipts, sessions, attempts, history and repair allowances intact.
+
+Extend the existing P07 storage/reader proof with bounded native delivery and
+reviewer consumption: unrelated failure with passing criteria; a relevant failure;
+a necessary correction lacking owner/authority; and failed required final signoff.
+Observe dispositions, preserved failed evidence and followup isolation through
+the existing raw receipt/prompt readers. Phrase assertions alone do not prove
+behavior. This grants no current-task lifecycle writes or replacement scheduler.
+
+## Cross-Owner Findings And Accepted Sources
+
+A required finding against another owner needs an actionable handoff in the
+existing review receipt: source and target task/ticket/owner, source attempt,
+exact inspected candidates, failed criterion/check and evidence, blocking reason,
+required correction, affected recheck, next actor/action and pending or accepted
+resolution refs. An ordinary reviewer returns these facts without sibling writes.
+Keep required findings in existing feedback or task/ticket context, outside
+nonblocking followups, which are excluded from actionable prompts. Full-read/merge
+only the owned handoff field; preserve unrelated context, receipts, native sessions,
+attempts and repair allowances. Reuse the actual owning work rather than creating
+a duplicate correction ticket or another handoff subsystem. The assigned same-task
+automatic correction exception below retains its existing limits.
+
+Before dependent dispatch or resume, main consumes unresolved handoffs,
+reconciles affected executions and authority, and reopens or re-admits the existing owner through its
+normal lifecycle. Do not compete with a running automatic lifecycle writer.
+For each required cross-task input, read the planned producer task/ticket,
+independent acceptance refs, applicability, target integration owner, receiving
+source/artifact identity and affected checks. Main confirms admitted prerequisites
+during preparation or exceptional reconciliation; after automatic handoff, the
+assigned delivery or verification owner verifies actual presence and applicability
+in its receiving tree/environment before dependent work or lengthy proof, using
+accepted source or independently reviewed integration evidence. Distinguish
+unfinished producer work from accepted-but-absent source; tracker status alone is
+insufficient. StackOS sequences work. Main owns explicit source admission/integration
+and affected recheck; acceptance supplies
+no merge authority. Already available accepted inputs need no extra wait or
+duplicate implementation ticket; optional unrelated changes remain nonblocking
+followups. Never automatically merge a sibling branch or give its reviewer
+sibling-write authority.
+Hold only affected work until required acceptance, source inclusion and affected
+checks are proven, then link the accepted resolution candidate, admission and
+recheck evidence in the same
+handoff. Name any remaining next actor/action and keep unrelated work moving.
+
+Exercise the existing writer and raw brief/prompt reader before proposing code.
+If they preserve these facts, deliver guidance and bounded behavior proof. Use a
+disposable fixture for an accepted owner A, a finding from B and an accepted
+cross-task source: return/persist/read the exact handoff, preserve histories and
+unrelated context, and link its resolution. Fixture source admission and resolution
+must be labelled as simulated; actual integration and affected proof remain with
+main. Source edits alone do not adopt guidance or refresh frozen native sessions.
+
+## Agent-Owned Automatic Corrections
+
+Classify the cause before returning blocked. A reproducible in-scope defect in delivered code, tests or supplied proof setup is repair work, including failures observed during launch or tool checks. Repair authorized verification setup within your role; route product/test fixes through the owning ticket and bounded correction method. Persist and requeue independent repairable findings even when another prerequisite remains blocked; retain that blocker for subsequent verification. Return blocked when required work has no authorized path forward or repair allowance is exhausted. This grants no permission to bypass denials, change global trust or replace the assigned host/model/session. Failures preventing the assigned agent itself from executing remain runtime stops.
+
+For a supporting runtime/assignment after explicit automatic handoff, the assigned
+verifier/reviewer routes scoped required corrections to existing owning tickets
+without main relay. Terminal-managed routing stays with main. Read full source
+and target briefs, context and completion evidence; full-read/merge supplied JSON
+fields rather than replacing unrelated content. Persist target/source ticket refs,
+source attempt and inspected candidate, failed criterion/check and concrete
+evidence, required outcome and affected recheck. Preserve current findings/outputs
+outside step result_json and retain automatic_delivery sessions, attempts, receipts
+and repair_count before rewind clears current step results.
+
+Choose the earliest affected bound gate from actual provenance/dependencies.
+Requeue affected ordinary children through complete -> in-progress -> not-started
+with tracker.updateTicket and reconcile affected dependents with history intact.
+Finish own checks/other actions and quiesce other affected processes/in-flight
+actions first. Do not wait for this caller to terminate: tracker.reopen with
+explicit step_id and reason is its final mutation, then immediately return repair
+with truthful findings and declared frozen outputs. Never self-accept, claim/record
+steps, dispatch agents or create replacement work. Safe reopen refs grant no
+controller authority. The runner validates the native return, retains the
+superseded observation and rescans persisted dependencies, alone reclaiming the
+bound gate and resuming original delivery/review/verifier sessions.
+
+Fresh persisted correction outranks old approved review, which remains history.
+Corrected source requires a separate descendant commit and independent exact-SHA
+review. Preserve repair_count across integration-origin correction, including at
+three consumed ordinary repairs; a subsequent ordinary rejection permits no fourth
+ordinary repair. Never reopen to reset that count. Outside Bounded reporting-only continuation, unsupported/no-progress correction and failures of the assigned agent's own invocation or
+returned-result/schema/candidate integrity stop without fallback. Followups stay
+nonblocking; exclusions, authority/ownership conflicts and materially different
+outcomes require main reconciliation. Source edits do not activate this method on
+unsupported frozen/live jobs; manual reviewed adoption remains separate.
+
+## Explicit Current-Project Source Adoption
+
+For engineering ready_to_use setup, consume the effective method's required_role_claims, including reviewer_verification bound to review_agent when review requires tools, scratch writes or isolated fixtures. Save execution_requirements.filesystem_write=true for test/scratch-running reviewers through the canonical defaults owner; preserve explicit false for inspection-only review. The selected reviewer itself executes one project-selected bounded representative check under its actual native snapshot and normal approvals. Generic native success or coordinator verification_status cannot prove reviewer capability. Record claims, status, environment_ref and evidence_ref in setup_activation_checks in the reviewer's native outputs; the evidence ref retains command, exit status and observed results. The existing setup receipt binds completed task_phase evidence (task_id, ticket_id, attempt, phase, invocation_id, outcome_digest), or a setup-owned native_request carrying the actual frozen specialist snapshot and retired outcome, to current project/binding, role/host, source ref/digest when source-backed, resolved settings and environment. Inline hosts retain their actual snapshot without invented refs. Reuse valid completed coverage, including retained attempts; changed relevant source/settings/capability or environment invalidates only affected claims. For fresh managed setup, verification reports one role_verification_request with role, exact missing claims, project-selected bounded instructions, environment_ref and evidence_ref. The existing owner runs that selected specialist in a distinct native session through its finite request continuation, then resumes the retained coordinator with completed_role_verifications. Explicit recovery retains both actual sessions. Run only missing harmless checks in the existing authorized setup/task; no new receipt store, whole-workflow canary, separate proof task or all-host matrix. A denial stops that write and dependent proof; continue authorized alternatives and unrelated work, leaving required unavailable proof unfinished. Preserve infrastructure_only preparation and frozen sessions. Explicit replace_review recovery requires operator authorization and a quiescent stopped review, preserves candidate/delivery/failed reviewer history and consumed repair allowance, and never implies automatic retry, global trust changes or installed activation.
+
+For ordinary `ready_to_use` Setup/Update or explicit automatic-delivery activation,
+apply the effective `engineering.tracked-delivery` `setup_activation_method` policy.
+Only explicit `infrastructure_only` stops at preparation and creates no execution
+state. Inspect `tracker.get` raw defaults and exact project role sources; reconcile
+local manual/automatic lifecycle rules before canonical authorized
+`tracker.configureDelivery` preview/write/readback. A worker report cannot supply
+missing local-admin authority. Preserve compatible customization, intended supported
+host/model and provider/profile choices, names and absent/null fields, plus frozen sessions.
+
+First reuse actual completed native delivery, distinct independent review and
+workflow closeout evidence only for claims covered at the current
+project/source/default/native/environment basis. Record covered and missing claims;
+execute only missing or invalidated small harmless native/configuration/behavior
+checks within the existing owning setup/task. Use existing setup/native continuation
+if fresh post-adoption loading is required. Do not automatically create a separate
+full verification task/workflow, tracker parent or review workflow merely for
+readiness, or nested queue/wait/drain machinery solely for proof. Existing
+product/adaptation tasks retain independent review; standalone Setup/Update follows
+its method and genuine current evidence. Aborted, incomplete, simulated or
+foreign-project evidence cannot become completed activation.
+
+Inspect actual consumed source/snapshot identities, not just files/hashes. Distinguish
+prepared files, canonical saved readback, actual native consumption, reused evidence
+and newly executed checks in the existing setup receipt. Task overrides cannot prove
+missing defaults. Missing authority or required proof leaves `ready_to_use` unfinished,
+never `activation_pending` success or a required followup. No all-role launch matrix,
+replacement runner or unrelated business execution is authorized. No synchronizer,
+watcher or implicit cross-project rollout is authorized; a scoped rollout still
+adopts each project independently.
+
+Fresh Codex admission selects exact project source_ref bindings in agents by role; resolve source instructions/model/effort/supported restrictions once, with omitted values inheriting task then project then host settings. Source fields never increase authority. Non-Codex inline contracts remain supported. Explicit task agent_assignments win over frozen step assignments, then uniquely applicable selected declared roles; ambiguity requires selection. Ordinary tickets retain a distinct reviewer. Queued/running and resumed native snapshots stay frozen; future admissions read current sources. Use tracker.configureDelivery adopt_sources preview/write with expected digests for explicit current-project adoption, preserving unrelated settings and history; retain references instead of editable copied Codex instructions after readback.
+
+For this project select .codex/agents/sdlc-delivery.toml and
+.codex/agents/sdlc-delivery-reviewer.toml deliberately, retaining exact refs and
+source digests from projectAgent.get. Review preview differences before writing.
+Verify actual consumed source/snapshot and prompt evidence using the current
+covered basis and only missing bounded checks, preserving independent review, scoped
+feedback and native restrictions.
+
+Codex source edits affect future admissions, never active/historical task
+snapshots or resumed native sessions. Other-host inline defaults remain explicit. After independent source/local approval, explicitly authorized
+instruction-only saved-default adoption may occur during a running task.
+Preserve absent/null fields as well as all other configuration. Queued/running
+snapshots stay frozen. Explicit rehandoff after
+completed/stopped execution resolves current defaults/overrides while preserving
+prior ticket receipts, native sessions and consumed repair allowance. Completed
+tasks and frozen run/template snapshots stay unchanged. Other projects adapt individually using
+their own available sources; no mandatory `.codex` folder, synchronizer, watcher
+or implicit cross-project rollout. Installed application/runtime replacement
+remains separately authorized and main-owned, coordinated with the active runtime
+owner and verified with lifecycle smoke and installed instruction-consumption
+evidence. Workflow/default activation explicitly included in the current outcome
+must finish there rather than being deferred until closure. Adoption alone does
+not authorize a restart of the daemon orchestrating the active task. Source validation does not claim saved
+adoption, isolated native consumption or installed activation complete.
+
 ## Recovery And Closeout
 
-Ordinary scoped repairs stay in the active step. Before parking, reassignment
+Bounded reporting-only continuation: Only the supporting runtime may offer
+one persisted allowance after an otherwise successful parsed workflow report
+is rejected with complete key-name-only diagnostics and existing schema,
+dependency and outstanding-action gates pass. In that same native session,
+rename only rejected descriptive labels; preserve status, summary, candidate,
+values, factual claims, proof references, followups and limits exactly.
+No tools, actions, tests, reviews, code changes or lifecycle writes are allowed;
+do not replay completed work. Key-only diagnostics do not establish harmlessness;
+never relabel a credential to evade detection. Real secret values,
+unknown/incomplete classification, malformed reports, actual denial,
+native failure or a second rejection still stop without fallback.
+The runtime retains original/corrected receipts and sessions; this allowance
+does not consume an ordinary source-repair pass and rehandoff cannot renew it.
+Agents cannot self-authorize this continuation or bypass final validation.
+
+Use tracker.startDelivery with replace_review only under explicit operator authorization for one quiescent stopped ordinary review on its exact clean successful delivery candidate. Pin the expected attempt, native review thread, candidate and current resolved reviewer snapshot digest; optional reviewer_source pins an approved existing same-project binding/source/digest. Use canonical current reviewer selection, preserve host/provider/profile and task-only routing, and never supply raw execution overrides. Retain completed delivery, retired review/session/snapshot/findings/attempts and consumed repair allowance. This explicit transition launches only fresh independent review; ordinary rehandoff and source edits never imply replacement. Reject live, stale, foreign, dirty or ineligible work; replacement failure stays stopped. Inspect original and replacement evidence through existing tracker reads. Specialists return evidence unless explicitly assigned recovery authority; never repair tracker metadata manually or claim installed activation from source proof.
+
+Ordinary scoped repairs stay in the active step. On a stop use concrete
+command/tool results and prerequisite state to distinguish a repairable owner
+defect, unavailable prerequisite/capability, ordinary approval need, actual denial
+and explicit cancellation; do not infer cancellation from an unexplained signal.
+Diagnose the prerequisite before repeating dependent suites. Route required
+findings and ready external dependencies to their existing owners; same-outcome
+repairs include demonstrated omitted consumers, not unrelated cleanup. An ordinary
+approval need may use normal approval review; an actual denial stops that action
+and dependent work, never a retry through another route.
+
+For terminal-managed recovery, before parking, reassignment
 or a material rewind, quiesce affected agents and processes; before resetting
 workflow steps, quiesce all concurrent agents/processes/in-flight actions.
 Preserve receipts outside step `result_json`, then use `tracker.reopen` at the
@@ -194,8 +684,30 @@ retain blockers/resume conditions, reclaim the step and rebuild assignments.
 Re-evaluate authority and approval freshness. Late receipts from superseded
 attempts remain historical and cannot satisfy the current acceptance gate.
 
-Integrated verification/review reuses valid ticket proof and tests remaining
-cross-ticket behavior and mandatory project gates. A single unchanged ticket's
+On resume, rehydrate effective guidance, the frozen run, current operator contract,
+assignments, candidates, reservations, blockers and evidence. After stopped
+execution and affected processes are quiescent, use explicit resolution/requeue
+authority to clear only proven resolved blockers and restore affected ordinary
+work to `not-started`, preserving receipts, native sessions, attempts and consumed
+repair allowance. Read back the pending ticket, no remaining blocker, accepted
+dependencies and actual next owned action before an explicitly authorized resume;
+in-progress alone is not runnable pending work. An unresolved blocker, denial or
+cancellation supplies no resume authority. This is main-owned reconciliation of
+stopped work, not automatic reset/retry, cross-task merge or broader worker
+lifecycle authority. After automatic handoff, StackOS retains lifecycle ownership;
+the supported assigned automatic correction method remains bounded as above.
+
+Integrated verification/review reuses ticket proof with an explicit covered-scope,
+candidate, accepted-prerequisite and environment basis. Reuse requires complete
+coverage as well as freshness. Do not repeat unchanged covered checks merely for
+another gate; changed inputs/consumers, contradictory results, new failures and
+required never-executed checks need focused proof. Freshness alone cannot supply
+missing coverage. Execute affected and remaining cross-ticket obligations at
+their existing gates, retaining one mandatory final project signoff; later gates
+reuse it while its basis remains valid. Keep dependency-mutating setup exclusive against checks consuming that
+environment; run readiness checks after the relevant transition. Agents choose and
+execute concrete project commands
+from local guidance; core supplies no command policy. A single unchanged ticket's
 review can cover final review only with an explicit disposition for every final
 obligation. For non-micro work cover canonical ownership, cleanup/dead-code
 risk, architecture/contracts and user/data/system/business flow regressions.
@@ -204,6 +716,14 @@ guidance when those surfaces changed. Do not make broad suites routine for
 guidance-only work or waive a required project gate without authority.
 
 Reconcile tracker truth, current candidate, proof, docs and release authority.
+Before packaging, the named main integration/release owner reconciles the exact
+accepted source set and explicit exclusions in the existing release receipt.
+Follow [accepted sources and release identity](../../docs/release-signoff.md#accepted-sources-and-release-identity)
+for inclusion proof, ordered consolidation/signoff/build/package/install/restart,
+output ownership and separate produced/installed identities. Reuse accepted fixes;
+an omitted accepted branch or mismatched artifact identity holds affected claims.
+Return source-ready evidence when installation is outside current authority;
+the existing release gate retains installed proof and final claims.
 Keep all required frozen output objects schema-valid, with concise values and
 permitted refs. Tracker audit reconciles evidence; it need not repeat broad
 code review. Technical readiness does not authorize publication, deployment,
@@ -214,6 +734,16 @@ active/accepted counts. Report the outcome, reviewer, admitted findings and
 focused proof. Final closeout summarizes delivered behavior, verification,
 decisions, residual gaps and release state. Distinguish source validation from
 loaded host behavior and measured performance from expected improvements.
+Classify selected original omissions, useful rejects, review escapes, operator
+amendments and execution failures separately, retaining observed facts, cause
+confidence and owner/disposition. Use existing `followups`/`followup_resolutions`
+or linked lesson/decision records to connect the admitted change, independently
+reviewed revision and applicability to adoption/readback and later-use status.
+Follow [the existing resolution method](../../docs/feedback-resolution-spec.md#learn-during-current-delivery);
+return linkage in assigned receipts without competing lifecycle writes.
+Required current defects remain blockers. No comparable opportunity means
+unproven; uncertain, deferred and no-lesson are valid. Rates need denominators
+and comparison scope; one fixture does not prove production prevention.
 
 ## Canonical Project Guidance
 

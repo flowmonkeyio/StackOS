@@ -1,292 +1,276 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ProjectPageHeader } from '@/components/domain'
-import ProviderMark from '@/components/domain/ProviderMark.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
-import {
-  UiButton,
-  UiCallout,
-  UiCard,
-  UiIcon,
-  UiPageShell,
-  UiSectionHeader,
-  UiSkeleton,
-} from '@/components/ui'
-import type { TrackerStatus } from '@/lib/task-tracker/types'
+import { UiButton, UiCard, UiPageShell, UiSkeleton } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { usePolling } from '@/composables/usePolling'
-import { formatAbsoluteDateTime } from '@/lib/stackos/time'
-import { connectionNeedsAttention, connectionStatusKey } from './connections/credentialPresentation'
-import { providerLabel } from './connections/formatters'
-import TicketStatusChart from './home/TicketStatusChart.vue'
-import { useTicketCounts } from './home/useTicketCounts'
+import { useProjectsStore } from '@/stores/projects'
+import ActiveTaskList from './home/ActiveTaskList.vue'
+import DeliveryCapacityControl from './home/DeliveryCapacityControl.vue'
+import HomeConnectionsSection from './home/HomeConnectionsSection.vue'
+import AgentActivitySection from './home/AgentActivitySection.vue'
+import { useAgentStats } from './home/useAgentStats'
 import { useProjectOverview } from './home/useProjectOverview'
-import { ticketWorkUrl } from './home/ticketOverview'
+import { useProjectSetup } from './project-setup/useProjectSetup'
+import ProjectSetupLaunchDialog from './project-setup/ProjectSetupLaunchDialog.vue'
 
 const { projectId } = useProjectRouteScope()
 const router = useRouter()
-const base = computed(() => `/projects/${projectId.value}`)
+const setup = useProjectSetup(projectId, { retainReminder: true })
+const { state: setupState, error: setupError, writing: setupWriting, actionLabel, reminder, reminderUpdateCount } = setup
+const launchOpen = ref(false)
+function openSetup(): void {
+  if (setup.opensLaunch.value && !setupError.value) launchOpen.value = true
+  else void router.push(`/projects/${projectId.value}/setup`)
+}
+function viewSetup(): void {
+  launchOpen.value = false
+  void router.push(`/projects/${projectId.value}/setup`)
+}
+const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
+const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
 const overview = useProjectOverview(projectId)
-const { project, accounts, workflows, task, loading, errors } = overview
-const description = computed(() => project.value?.domain || 'Current project work')
-const tickets = useTicketCounts(projectId)
-const { summary, loading: countsLoading, error: countsError } = tickets
-const { running, refresh } = usePolling(
-  async () => {
-    await Promise.all([overview.load(), tickets.load()])
-  },
-  { intervalMs: 30_000 },
-)
-function inspectStatus(status: TrackerStatus): void {
-  void router.push(ticketWorkUrl(projectId.value, status))
+const { project, accounts, loading, connectionsLoaded, errors } = overview
+const projects = useProjectsStore()
+const currentProject = computed(() => projects.getById(projectId.value) ?? project.value)
+const projectName = computed(() => projects.isProjectDeleted(projectId.value) ? 'Project unavailable'
+  : currentProject.value?.name)
+const description = computed(() => currentProject.value?.domain || 'Current project work')
+const agents = useAgentStats(projectId)
+onMounted(() => { void agents.load() })
+const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
+usePolling(overview.load, { intervalMs: 30_000 })
+const refreshing = ref(false)
+async function refreshAll(): Promise<void> {
+  refreshing.value = true
+  try {
+    await Promise.all([overview.load(true), setup.refresh(), agents.load(), activeTasks.value?.refresh(), capacityControl.value?.refresh()])
+  } finally { refreshing.value = false }
 }
 </script>
 
 <template>
-  <UiPageShell>
+  <UiPageShell class="home-console">
     <ProjectPageHeader
+      class="home-project-header"
       :project-id="projectId"
-      :title="project?.name"
+      :title="projectName"
       :description="description"
     >
       <template #actions>
-        <UiButton
-          variant="secondary"
-          size="sm"
-          icon-left="refresh"
-          :loading="running"
-          @click="refresh"
-        >
-          Refresh
-        </UiButton>
+        <div class="home-header-actions">
+          <div class="home-setup-action">
+            <UiButton
+              v-if="setupState?.eligible"
+              size="sm"
+              :disabled="setupWriting"
+              @click="openSetup"
+            >
+              {{ actionLabel }}<span
+                v-if="setupState.update_count"
+                class="text-fg-muted"
+                :aria-label="`${setupState.update_count} workflow updates available`"
+              > · {{ setupState.update_count }}</span>
+            </UiButton>
+          </div>
+          <div class="home-capacity-action">
+            <DeliveryCapacityControl
+              :key="projectId"
+              ref="capacityControl"
+              :project-id="projectId"
+            />
+          </div>
+          <UiButton
+            class="home-refresh-action"
+            variant="secondary"
+            size="sm"
+            icon-left="refresh"
+            :loading="refreshing"
+            @click="refreshAll"
+          >
+            Refresh
+          </UiButton>
+        </div>
       </template>
     </ProjectPageHeader>
-    <div class="grid items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(16rem,3fr)]">
+    <div class="home-setup-slot">
       <UiCard
-        section
-        aria-label="Tickets by status"
+        v-if="!setupState && !reminder && !setupError"
+        aria-label="Loading project setup"
+        aria-busy="true"
+        class="home-setup-placeholder"
       >
-        <UiSectionHeader
-          title="Tickets by status"
-          :description="summary ? `Current snapshot · ${summary.total_count} ${summary.total_count === 1 ? 'ticket' : 'tickets'}` : 'Current ticket status for this project'"
-        >
-          <template #actions>
+        <UiSkeleton
+          :height="16"
+          width="12rem"
+        />
+        <UiSkeleton
+          :height="12"
+          width="16rem"
+          class="mt-2 max-w-full"
+        />
+      </UiCard>
+      <UiCard
+        v-if="reminder"
+        aria-label="Project setup reminder"
+      >
+        <div class="home-setup-reminder-body flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h2 class="t-h3">
+              {{ reminder === 'setup' ? 'Set up this project' : 'Workflow updates available' }}
+            </h2>
+            <p class="mt-1 text-fg-muted">
+              {{ reminder === 'setup' ? 'Let your agent prepare the workflows you need.' : `${reminderUpdateCount} workflows have new setup guidance.` }}
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
             <UiButton
-              :href="ticketWorkUrl(projectId)"
               variant="ghost"
               size="sm"
-              icon-right="arrow-right"
-              @click.prevent="router.push(ticketWorkUrl(projectId))"
+              :loading="setupWriting"
+              @click="setup.dismiss(reminder)"
             >
-              View all tickets
+              Don't show again
             </UiButton>
-          </template>
-        </UiSectionHeader>
-        <UiCallout
-          v-if="countsError"
-          tone="warning"
-          class="mt-3"
-        >
-          {{ countsError }}<span v-if="summary"> Previously loaded counts are shown.</span>
-        </UiCallout>
-        <UiSkeleton
-          v-if="countsLoading && !summary"
-          shape="block"
-          height="8rem"
-          class="mt-3"
-        />
-        <TicketStatusChart
-          v-else-if="summary"
-          :counts="summary.ticket_counts"
-          :total="summary.total_count"
-          class="mt-4"
-          @select="inspectStatus"
-        />
-        <p
-          v-if="summary"
-          class="mt-3 border-t border-subtle pt-3 text-2xs text-fg-subtle"
-        >
-          Updated {{ formatAbsoluteDateTime(summary.as_of) }}
-        </p>
+            <UiButton
+              variant="primary"
+              size="sm"
+              :disabled="setupWriting"
+              @click="openSetup"
+            >
+              {{ reminder === 'setup' ? 'Set up project' : 'Review updates' }}
+            </UiButton>
+          </div>
+        </div>
       </UiCard>
-      <div class="space-y-4">
-        <UiCard
-          section
-          aria-label="Project connections"
+      <div
+        v-if="setupError || setupState?.folder_status === 'unavailable'"
+        role="status"
+        class="flex flex-wrap items-center gap-2 text-xs text-fg-muted"
+      >
+        <span>{{ setupError || 'The project folder is unavailable. Setup history is retained. Restore access to the folder, then check again.' }}</span>
+        <UiButton
+          size="sm"
+          :loading="setup.running.value"
+          @click="setup.refresh"
         >
-          <UiSectionHeader title="Project connections" />
-          <UiCallout
-            v-if="errors.connections"
-            tone="warning"
-            class="mt-3"
-          >
-            {{ errors.connections }}
-          </UiCallout>
-          <UiSkeleton
-            v-if="loading"
-            shape="block"
-            height="6rem"
-            class="mt-3"
-          />
-          <ul
-            v-else-if="accounts.length"
-            class="mt-3 divide-y divide-border-subtle"
-          >
-            <li
-              v-for="account in accounts"
-              :key="account.credential_ref"
-              class="flex min-w-0 items-center gap-2 py-2"
-            >
-              <ProviderMark
-                :provider-key="account.provider_key"
-                :name="providerLabel(account.provider_key)"
-                size="xs"
-              />
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm text-fg-strong">
-                  {{ providerLabel(account.provider_key) }}
-                </p>
-                <p
-                  class="truncate text-2xs text-fg-muted"
-                  :title="account.display_name"
-                >
-                  {{ account.display_name }}
-                </p>
-              </div>
-              <StatusBadge
-                kind="connection"
-                :status="connectionStatusKey(account)"
-                :label="
-                  connectionNeedsAttention(account) && account.last_test?.ok === false
-                    ? 'Test failed'
-                    : undefined
-                "
-                :tone="account.last_test?.ok === false ? 'danger' : undefined"
-              />
-            </li>
-          </ul>
-          <p
-            v-else-if="!errors.connections"
-            class="my-4 text-xs text-fg-muted"
-          >
-            No Accounts are attached to this project.
-          </p>
-          <UiButton
-            :href="`${base}/connections?section=services`"
-            variant="ghost"
-            size="sm"
-            icon-right="chevron-right"
-            class="mt-3"
-            @click.prevent="router.push(`${base}/connections?section=services`)"
-          >
-            Manage connections
-          </UiButton>
-        </UiCard>
-        <UiCard
-          section
-          aria-label="Configured workflows"
-        >
-          <UiSectionHeader title="Configured workflows" />
-          <UiCallout
-            v-if="errors.workflows"
-            tone="warning"
-            class="mt-3"
-          >
-            {{ errors.workflows }}
-          </UiCallout>
-          <UiSkeleton
-            v-if="loading"
-            shape="block"
-            height="4rem"
-            class="mt-3"
-          />
-          <ul
-            v-else-if="workflows.length"
-            class="mt-2 space-y-1"
-          >
-            <li
-              v-for="workflow in workflows"
-              :key="workflow.key"
-            >
-              <RouterLink
-                v-slot="{ href, navigate }"
-                :to="`${base}/workflow-templates${workflow.pluginSlug ? `?plugin_slug=${encodeURIComponent(workflow.pluginSlug)}` : ''}`"
-                custom
-              >
-                <UiButton
-                  :href="href"
-                  variant="ghost"
-                  size="sm"
-                  icon-left="list"
-                  :title="workflow.key"
-                  @click="navigate"
-                >
-                  {{ workflow.name }}
-                </UiButton>
-              </RouterLink>
-            </li>
-          </ul>
-          <p
-            v-else-if="!errors.workflows"
-            class="my-4 text-xs text-fg-muted"
-          >
-            No enabled project workflow configuration is recorded.
-          </p>
-          <UiButton
-            :href="`${base}/workflow-templates`"
-            variant="ghost"
-            size="sm"
-            icon-right="arrow-right"
-            class="mt-3"
-            @click.prevent="router.push(`${base}/workflow-templates`)"
-          >
-            View workflow library
-          </UiButton>
-        </UiCard>
+          Check again
+        </UiButton>
       </div>
     </div>
-    <div
-      class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-default bg-bg-surface px-4 py-3"
-      aria-label="Tracked work"
-    >
-      <span class="flex items-center gap-2 text-xs text-fg-muted"><UiIcon
-        name="list"
-        :size="16"
-      />Tracked work</span>
-      <UiCallout
-        v-if="errors.work"
-        tone="warning"
-      >
-        {{ errors.work }}
-      </UiCallout>
-      <template v-else-if="task">
-        <span class="text-sm text-fg-strong">{{ task.title }}</span><StatusBadge
-          kind="tracker"
-          :status="task.status"
-        /><span class="text-xs text-fg-subtle">Recorded {{ formatAbsoluteDateTime(task.updated_at) }}</span><UiButton
-          :href="`${base}/tasks?task=${encodeURIComponent(task.key)}`"
-          variant="ghost"
-          size="sm"
-          icon-right="arrow-right"
-          @click.prevent="router.push(`${base}/tasks?task=${encodeURIComponent(task.key)}`)"
-        >
-          Open Work
-        </UiButton>
-      </template>
-      <span
-        v-else-if="!loading"
-        class="text-xs text-fg-muted"
-      >No tracked work yet. Work starts in your connected AI tool.</span>
-      <UiButton
-        :href="`${base}/tasks`"
-        variant="ghost"
-        size="sm"
-        class="ml-auto"
-        @click.prevent="router.push(`${base}/tasks`)"
-      >
-        View Work
-      </UiButton>
-    </div>
+    <ActiveTaskList
+      :key="projectId"
+      ref="activeTasks"
+      :project-id="projectId"
+    />
+    <AgentActivitySection
+      :summary="agentSummary"
+      :loading="agentsLoading"
+      :error="agentsError"
+      :filters="agentFilters"
+      @filters="agents.setFilters"
+    />
+    <HomeConnectionsSection
+      :accounts="accounts"
+      :loading="loading"
+      :loaded="connectionsLoaded"
+      :error="errors.connections"
+      :project-id="projectId"
+    />
+    <ProjectSetupLaunchDialog
+      v-if="launchOpen && setupState"
+      :state="setupState"
+      :pending="setupWriting"
+      :error="setupError"
+      :start="setup.start"
+      @close="launchOpen = false"
+      @started="viewSetup"
+    />
   </UiPageShell>
 </template>
+
+<style scoped>
+.home-console {
+  container: home-console / inline-size;
+}
+.home-header-actions {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  align-items: center;
+  justify-content: end;
+  gap: 0.5rem;
+}
+.home-setup-action {
+  grid-area: 1 / 1;
+  min-block-size: 1.75rem;
+}
+.home-capacity-action {
+  grid-area: 1 / 2;
+}
+.home-refresh-action {
+  grid-area: 1 / 3;
+}
+/* Keep the existing reminder region above supervision stable even when its
+   first read is slow or there is no applicable reminder. */
+.home-setup-slot,
+.home-setup-placeholder {
+  box-sizing: border-box;
+  min-height: 5rem;
+}
+@container home-console (min-width: 40rem) {
+  /* Keep the title/description track unchanged when setup becomes eligible. */
+  .home-header-actions {
+    min-inline-size: 27rem;
+  }
+}
+/* Query Home's available width, including the App sidebar/content padding. */
+@container home-console (max-width: 40rem) {
+  .home-project-header :deep(.ui-page-header__layout) {
+    flex-direction: column;
+  }
+  .home-project-header :deep(.ui-page-header__actions),
+  .home-header-actions {
+    width: 100%;
+  }
+  .home-setup-reminder-body {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .home-setup-slot,
+  .home-setup-placeholder {
+    min-height: 7.5rem;
+  }
+}
+@container home-console (max-width: 26rem) {
+  .home-header-actions {
+    grid-template-columns: repeat(2, max-content);
+  }
+  .home-refresh-action {
+    grid-area: 2 / 2;
+  }
+  .home-setup-slot,
+  .home-setup-placeholder {
+    min-height: 10rem;
+  }
+}
+@container home-console (max-width: 20rem) {
+  .home-setup-slot,
+  .home-setup-placeholder {
+    min-height: 11rem;
+  }
+  .home-setup-reminder-body > div:last-child {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .home-header-actions {
+    grid-template-columns: max-content;
+  }
+  .home-capacity-action {
+    grid-area: 2 / 1;
+  }
+  .home-refresh-action {
+    grid-area: 3 / 1;
+  }
+}
+</style>

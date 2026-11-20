@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import pytest
 from sqlmodel import Session, select
 
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import Credential, CredentialAccount, ProviderObjectReference
 from stackos.repositories.base import ConflictError, NotFoundError
+from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from tests.integration.account_test_support import seed_test_account
 
@@ -188,3 +190,42 @@ def test_provider_object_refs_use_the_shared_project_attachment_boundary(
         assert "not attached" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("provider ref unexpectedly bypassed Account attachment")
+
+
+@pytest.mark.parametrize(
+    "mismatch", [None, "project", "account", "provider", "missing", "detached"]
+)
+def test_output_reference_preservation_requires_a_registered_owned_reference(
+    session: Session,
+    project_id: int,
+    mismatch: str | None,
+) -> None:
+    credential = _credential(
+        session, project_id=project_id, ref="cred_output_ref", account_id="portal-1"
+    )
+    repo = ProviderObjectReferenceRepository(session, project_id=project_id)
+    ref = repo.upsert(credential=credential, object_type="contact", provider_object_id="123")
+    row = session.exec(
+        select(ProviderObjectReference).where(ProviderObjectReference.safe_ref == ref)
+    ).one()
+    if mismatch == "project":
+        other = (
+            ProjectRepository(session)
+            .create(slug="other-ref-project", name="Other", domain="other.test", locale="en-US")
+            .data
+        )
+        assert other.id is not None
+        row.project_id = other.id
+    elif mismatch == "account":
+        row.provider_account_id = "portal-other"
+    elif mismatch == "provider":
+        row.provider_key = "stripe"
+    elif mismatch == "missing":
+        ref = "provider-object:unregistered-US-reference"
+    elif mismatch == "detached":
+        AuthRepository(session).detach_account(
+            project_id=project_id, credential_ref=credential.credential_ref
+        )
+    session.flush()
+    assert repo.is_owned_ref(credential=credential, value=ref) is (mismatch is None)
+    assert not repo.is_owned_ref(credential=credential, value=f"prefix {ref}")

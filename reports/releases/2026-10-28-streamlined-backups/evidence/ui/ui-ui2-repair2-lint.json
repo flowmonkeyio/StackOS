@@ -1,0 +1,17 @@
+{
+  "command": [
+    "pnpm",
+    "--dir",
+    "ui",
+    "exec",
+    "eslint",
+    "--max-warnings",
+    "0",
+    "src/components/backups/BackupPanel.vue",
+    "src/components/backups/BackupPanel.spec.ts"
+  ],
+  "started_at": "2026-10-28T15:03:18.783113+00:00",
+  "exit_code": 0,
+  "log": "/tmp/stackos-workflow-718/ui-ui2-repair2-lint.log",
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

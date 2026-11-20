@@ -1,0 +1,493 @@
+{
+  "app": {
+    "entry_count": 21219,
+    "manifest": "/private/tmp/stackos-global605-release-build/release-app-file-hashes.json",
+    "manifest_sha256": "13067369cf49c1bf501442b750801367f8bd2fc098ee852251903dc30c8e0fa2",
+    "path": "/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app"
+  },
+  "artifacts": {
+    "builder-debug.yml": {
+      "bytes": 909,
+      "path": "/private/tmp/stackos-global605-release/desktop/dist/builder-debug.yml",
+      "sha256": "df4c5edfed76dcb06b88366321c8733493507e8a54052dbff45717390fd172c2"
+    },
+    "latest-mac.yml": {
+      "bytes": 513,
+      "path": "/private/tmp/stackos-global605-release/desktop/dist/latest-mac.yml",
+      "sha256": "01eba8d5b17e50f102aef5e7cec6dc5cbb24800876d61d0b3547bc85cb5e75ff"
+    },
+    "stackos-2.1.36-mac-arm64.dmg": {
+      "bytes": 489828933,
+      "path": "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg",
+      "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750"
+    },
+    "stackos-2.1.36-mac-arm64.dmg.blockmap": {
+      "bytes": 505123,
+      "path": "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg.blockmap",
+      "sha256": "b2284dea59b93b561f1e9a732da64c5b5ee8ce25be030b0562025a950a723e58"
+    },
+    "stackos-2.1.36-mac-arm64.zip": {
+      "bytes": 494210680,
+      "path": "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.zip",
+      "sha256": "5d12b02a65b99aaeba09c9108aaa3faea0f3c60bb8c65bd7e2c3a9302702d913"
+    },
+    "stackos-2.1.36-mac-arm64.zip.blockmap": {
+      "bytes": 513232,
+      "path": "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.zip.blockmap",
+      "sha256": "fd552545b1b0958f3539f4dc0b78219a62d538093f1e5d64f436160eb62d6082"
+    },
+    "stackos-latest-mac-arm64.dmg": {
+      "bytes": 489828933,
+      "path": "/private/tmp/stackos-global605-release/desktop/dist/stackos-latest-mac-arm64.dmg",
+      "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750"
+    }
+  },
+  "attempt": "release-build-605-a1",
+  "boundaries": {
+    "app_launched": false,
+    "apple_notary_submission": true,
+    "installed_or_restarted": false,
+    "public_artifacts_uploaded_or_published": false,
+    "tracked_source_changed": false
+  },
+  "build": {
+    "argv": [
+      "pnpm",
+      "--dir",
+      "/private/tmp/stackos-global605-release/desktop",
+      "run",
+      "dist:mac:release"
+    ],
+    "attempt": "release-build-605-a1",
+    "build_id": "global605-2.1.36-54b9c1dc913b",
+    "commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+    "contract_revision": "r4",
+    "cwd": "/private/tmp/stackos-global605-release/desktop",
+    "environment_overrides": {
+      "APPLE_KEYCHAIN_PROFILE": "stackos-notary",
+      "BUN_INSTALL": "/private/tmp/stackos-global605-release-build/bun",
+      "BUN_INSTALL_CACHE_DIR": "/private/tmp/stackos-global605-package/bun-cache",
+      "COREPACK_DEFAULT_TO_LATEST": "0",
+      "COREPACK_HOME": "/private/tmp/stackos-global605-package/corepack",
+      "CSC_NAME": "SERGEY RURA (TSHN26FR48)",
+      "ELECTRON_BUILDER_CACHE": "/private/tmp/stackos-global605-package/electron-builder-cache",
+      "ELECTRON_CACHE": "/private/tmp/stackos-global605-package/electron-cache",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "STACKOS_DESKTOP_BUILD_ID": "global605-2.1.36-54b9c1dc913b",
+      "STACKOS_UPDATE_URL": "https://stackos.flowmonkey.io/StackOS/",
+      "TDLIB_LIBRARY_PATH": "/private/tmp/stackos-global605-activation/inputs/libtdjson.1.8.67.dylib",
+      "TMPDIR": "/private/tmp/stackos-global605-release-build/tmp",
+      "UV_CACHE_DIR": "/private/tmp/stackos-global605-package/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/private/tmp/stackos-global605-package/python-bin",
+      "UV_PYTHON_INSTALL_DIR": "/private/tmp/stackos-global605-package/python",
+      "XDG_CACHE_HOME": "/private/tmp/stackos-global605-release-build/cache",
+      "XDG_CONFIG_HOME": "/private/tmp/stackos-global605-release-build/config",
+      "XDG_DATA_HOME": "/private/tmp/stackos-global605-release-build/data",
+      "npm_config_cache": "/private/tmp/stackos-global605-package/npm-cache"
+    },
+    "exit_code": 0,
+    "finished_at": "2026-10-10T00:41:07.087388+00:00",
+    "log": "/private/tmp/stackos-global605-release-build/logs/release-build-a1.log",
+    "log_sha256": "53a0c09c1ef6bfc179def2840909d7a0ea1bc8c9a584c8fba3cb552df7ac46c8",
+    "source_before": "/private/tmp/stackos-global605-release-build/release-source-before.json",
+    "source_before_sha256": "87bd7f4cabf20198c76866716935b1fbef5880af6d5b5ddb9b9dec1e06af1393",
+    "started_at": "2026-10-10T00:07:31.337322+00:00",
+    "tdlib_input_sha256": "c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af",
+    "version": "2.1.36"
+  },
+  "build_id": "global605-2.1.36-54b9c1dc913b",
+  "canonical_verifiers": {
+    "browser_cli_smoke_count": 2,
+    "cli_smoke_count": 2,
+    "dmg_notary_accepted": true,
+    "tdlib_abi_smoke": true
+  },
+  "checks": {
+    "app-gatekeeper": {
+      "argv": [
+        "spctl",
+        "--assess",
+        "--type",
+        "execute",
+        "--verbose",
+        "/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-app-gatekeeper.log",
+      "log_sha256": "0f4e6e4f7928bc16053fa0bc6d8af5016b1f306973b0be87e2bb9479683704bd",
+      "output": "/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app: accepted\nsource=Notarized Developer ID\n"
+    },
+    "app-signature": {
+      "argv": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-app-signature.log",
+      "log_sha256": "733a372e7c69d6a83ea94c0ab55ffe5c6c7f338091f062410fd021af4e7cd613",
+      "output": "--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app: valid on disk\n/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app: satisfies its Designated Requirement\n"
+    },
+    "app-signing-identity": {
+      "argv": [
+        "codesign",
+        "--display",
+        "--verbose=4",
+        "/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-app-signing-identity.log",
+      "log_sha256": "1db64cf667efcc760e29284787a45e8f9dc37a0b28d52f782811c970172aad21",
+      "output": "Executable=/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/MacOS/StackOS\nIdentifier=io.stackos.desktop\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20500 size=638 flags=0x10000(runtime) hashes=9+7 location=embedded\nVersionPlatform=1\nVersionMin=786432\nVersionSDK=1703936\nHash type=sha256 size=32\nCandidateCDHash sha256=b04cf72ef38434af2b60e675e1e1c308a6235dee\nCandidateCDHashFull sha256=b04cf72ef38434af2b60e675e1e1c308a6235deee0a8780fb776ecdcfdaf15ee\nHash choices=sha256\nCMSDigest=b04cf72ef38434af2b60e675e1e1c308a6235deee0a8780fb776ecdcfdaf15ee\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x1\nPage size=4096\nCDHash=b04cf72ef38434af2b60e675e1e1c308a6235dee\nSignature size=8973\nAuthority=Developer ID Application: SERGEY RURA (TSHN26FR48)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Oct 9, 2026 at 5:15:28\u202fPM\nNotarization Ticket=stapled\nInfo.plist entries=33\nTeamIdentifier=TSHN26FR48\nRuntime Version=26.0.0\nSealed Resources version=2 rules=13 files=20947\nInternal requirements count=1 size=180\n"
+    },
+    "app-staple": {
+      "argv": [
+        "xcrun",
+        "stapler",
+        "validate",
+        "/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-app-staple.log",
+      "log_sha256": "97e7b26669a6d37fc9d6f5937581705216abd4d662a07e8c5702d13c0d5c61c8",
+      "output": "Processing: /private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app\nThe validate action worked!\n"
+    },
+    "dmg-gatekeeper": {
+      "argv": [
+        "spctl",
+        "--assess",
+        "--type",
+        "open",
+        "--context",
+        "context:primary-signature",
+        "--verbose",
+        "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-dmg-gatekeeper.log",
+      "log_sha256": "d08b4934e4e74eb5aa94a5dc8d832bfad3bbfb54bc3fea70184327bf16a86192",
+      "output": "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg: accepted\nsource=Notarized Developer ID\n"
+    },
+    "dmg-signature": {
+      "argv": [
+        "codesign",
+        "--verify",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-dmg-signature.log",
+      "log_sha256": "3235af3e4a022b90151bf356c2f3719f8cd6ecdb8f6d8f8f10ca80db612a7fbb",
+      "output": "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg: valid on disk\n/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg: satisfies its Designated Requirement\n"
+    },
+    "dmg-signing-identity": {
+      "argv": [
+        "codesign",
+        "--display",
+        "--verbose=4",
+        "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-dmg-signing-identity.log",
+      "log_sha256": "f0ad512c703afdde6b5717b5763e20b3536a0e5a9f4a6f6e7f81f6dba1454d59",
+      "output": "Executable=/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg\nIdentifier=stackos-2.1.36-mac-arm64\nFormat=disk image\nCodeDirectory v=20200 size=312 flags=0x0(none) hashes=1+6 location=embedded\nHash type=sha256 size=32\nCandidateCDHash sha256=faa02975a00190c766953320522615ef592e0d96\nCandidateCDHashFull sha256=faa02975a00190c766953320522615ef592e0d9687ec6e403670b660cf287d27\nHash choices=sha256\nCMSDigest=faa02975a00190c766953320522615ef592e0d9687ec6e403670b660cf287d27\nCMSDigestType=2\nPage size=none\nCDHash=faa02975a00190c766953320522615ef592e0d96\nSignature size=8973\nAuthority=Developer ID Application: SERGEY RURA (TSHN26FR48)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Oct 9, 2026 at 5:28:27\u202fPM\nNotarization Ticket=stapled\nInfo.plist=not bound\nTeamIdentifier=TSHN26FR48\nSealed Resources=none\nInternal requirements count=1 size=184\n"
+    },
+    "dmg-staple": {
+      "argv": [
+        "xcrun",
+        "stapler",
+        "validate",
+        "/private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-dmg-staple.log",
+      "log_sha256": "bc4f52d0c2b04aad3857e9d56bf16216b7b22a707fbb08cbf0b4e626e911b6a9",
+      "output": "Processing: /private/tmp/stackos-global605-release/desktop/dist/stackos-2.1.36-mac-arm64.dmg\nThe validate action worked!\n"
+    },
+    "final-cli-version": {
+      "argv": [
+        "/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/bin/stackos",
+        "--version"
+      ],
+      "cwd": "/private/tmp/stackos-global605-release-build",
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-global605-release-build/logs/verify-final-cli-version.log",
+      "log_sha256": "584fa36b26b9d68443301a8ed2923357421679fe4de10b05caee853daa23c1f3",
+      "output": "stackos 2.1.36 (M10)\n"
+    }
+  },
+  "commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+  "contract_revision": "r4",
+  "created_at": "2026-10-10T00:41:35.416764+00:00",
+  "environment": {
+    "mac_version": "15.6.1",
+    "machine": "arm64",
+    "node_version": "v22.23.1",
+    "payload_python": "3.12.12 (canonical build log)",
+    "platform": "macOS-15.6.1-arm64-arm-64bit-Mach-O",
+    "pnpm_version": "10.28.0 (frozen preparation)",
+    "uv_version": "uv 0.9.28 (0e1351e40 2026-01-29)"
+  },
+  "failures": [],
+  "next_disposition": "Independent artifact review; main agent owns release delivery/publication decisions.",
+  "notarization_status_evidence": [
+    {
+      "data": {
+        "checked_at": "2026-10-10T00:20:40.345892+00:00",
+        "command": [
+          "xcrun",
+          "notarytool",
+          "history",
+          "--keychain-profile",
+          "stackos-notary",
+          "--output-format",
+          "json"
+        ],
+        "exit_code": 0,
+        "submissions_since_build_start": [
+          {
+            "createdDate": "2026-10-10T00:16:07.304Z",
+            "id": "f0c7afe3-b83b-48b1-bb1e-eb920aa68870",
+            "name": "StackOS.zip",
+            "status": "In Progress"
+          }
+        ]
+      },
+      "path": "/private/tmp/stackos-global605-release-build/logs/notary-status-a1.json",
+      "sha256": "cefcf1598897ddfc36ecfb2d04025307f31df99705386a4bb0468f0cf5b12206"
+    },
+    {
+      "data": {
+        "checked_at": "2026-10-10T00:25:21.610476+00:00",
+        "exit_code": 0,
+        "submission": {
+          "createdDate": "2026-10-10T00:16:07.304Z",
+          "id": "f0c7afe3-b83b-48b1-bb1e-eb920aa68870",
+          "name": "StackOS.zip",
+          "status": "In Progress"
+        }
+      },
+      "path": "/private/tmp/stackos-global605-release-build/logs/notary-status-a2.json",
+      "sha256": "3de3da36a0a8dc7f3f3b09fdd1c43304dfed0c27e7e0de2eaa6f1977bc379405"
+    },
+    {
+      "data": {
+        "checked_at": "2026-10-10T00:33:29.729117+00:00",
+        "exit_code": 0,
+        "submissions": [
+          {
+            "createdDate": "2026-10-10T00:29:03.542Z",
+            "id": "a5796936-39e4-419c-99d4-3a0927a64275",
+            "name": "stackos-2.1.36-mac-arm64.dmg",
+            "status": "In Progress"
+          },
+          {
+            "createdDate": "2026-10-10T00:16:07.304Z",
+            "id": "f0c7afe3-b83b-48b1-bb1e-eb920aa68870",
+            "name": "StackOS.zip",
+            "status": "Accepted"
+          }
+        ]
+      },
+      "path": "/private/tmp/stackos-global605-release-build/logs/notary-status-a3.json",
+      "sha256": "be5a4759677ee0d361a7d557b1c81d05d0734c4fcccf2d6a0d78f36bf8edbf6b"
+    },
+    {
+      "data": {
+        "checked_at": "2026-10-10T00:38:33.467894+00:00",
+        "exit_code": 0,
+        "submission": {
+          "createdDate": "2026-10-10T00:29:03.542Z",
+          "id": "a5796936-39e4-419c-99d4-3a0927a64275",
+          "name": "stackos-2.1.36-mac-arm64.dmg",
+          "status": "In Progress"
+        }
+      },
+      "path": "/private/tmp/stackos-global605-release-build/logs/notary-status-a4.json",
+      "sha256": "a675f583ab3d4e4e07f735ef70fa1b7e63f4c0ac2ee2d87aa643075e29f09755"
+    }
+  ],
+  "payload_proof": {
+    "final_app": {
+      "build_info": {
+        "buildId": "global605-2.1.36-54b9c1dc913b",
+        "builtAt": "2026-10-10T00:09:28Z",
+        "name": "stackos",
+        "version": "2.1.36"
+      },
+      "path": "/private/tmp/stackos-global605-release/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos",
+      "runtime_hashes": {
+        "stackos/__init__.py": "c463913bdab50e7723a3a29fb237fc7f60e29f48be06c521ec29f15eae8c29a1",
+        "stackos/artifacts/redaction.py": "579dc3feef1b1ab0677720a073730e92b02c69636a6ec0536a2e71588a837096",
+        "stackos/cli/daemon_commands.py": "2fe703388a7333f8046315701c851b78c46278f887ed356e7d273a08118c48d0",
+        "stackos/db/migrations/versions/0033_project_id_nonreuse.py": "3277182917b428c3d95c6826eab345f833f6b42ae1fba1e6ddd70343e8453b62",
+        "stackos/db/model_core.py": "296019c028b0376508b1fdd7a8d0a0bf6f95e384fd111084ae0c14c0d5db59ca",
+        "stackos/mcp/bridge/catalog.py": "0cc1f9e551e36570881abaae2ffb4bff2009840e6f29545a3959c4bf19252ef6",
+        "stackos/mcp/bridge/proxy.py": "e4f31f04743517c5cc0e8a0dab81233336a06fdae76f11f864227889b9c0f467",
+        "stackos/mcp/bridge/toolbox.py": "cd1084109d754a1a6314f602cee1304fb002865fa211e1a0f02e0b0a7ba93f02",
+        "stackos/mcp/bridge/workspace.py": "eda8efb55f79c08fbea80c5b1245c1bf907277031c92fe1cbeda9c487b7d6e42",
+        "stackos/mcp/tools/workspaces.py": "64dd9bb4d0a54b28dee77a92cdbe23f67fa82ab597861ea6069003a45da31915",
+        "stackos/operations/project_bootstrap.py": "2bfd53a669164763f90f65c4bc854845ce01c1b93d17571e7383207aca9b0a50",
+        "stackos/operations/responses.py": "27ad7442bf5e236d90a7a0affdfe59b761bf678488bed7b1112c99c259b8965e",
+        "stackos/repositories/workspaces.py": "1d0f75e3c1cfe1429efd83b260076dce85d378896c0070952e6068bb40e971eb"
+      },
+      "skill_hashes": {
+        "stackos/_assets/plugins/stackos/skills/stackos/SKILL.md": "961679a7a020d106c538b7633b6c139a752ce21c296aa3bac337a2c1b90a1ec5",
+        "stackos/_assets/skills/stackos/SKILL.md": "961679a7a020d106c538b7633b6c139a752ce21c296aa3bac337a2c1b90a1ec5"
+      },
+      "tdlib_manifest": {
+        "build": {
+          "dependency_policy": "system-only",
+          "manifest_version": 1,
+          "mode": "verified-prebuilt",
+          "source_archive_sha256": "5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9"
+        },
+        "library": {
+          "path": "lib/libtdjson.dylib",
+          "sha256": "420e71baa48691d945ad8dd699dfefc3b7976d702e55f78ac0d440e405cfa2f6"
+        },
+        "platform": {
+          "arch": "arm64",
+          "os": "darwin"
+        },
+        "runtime": "telegram-tdlib",
+        "source": {
+          "archive_sha256": "5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9",
+          "commit": "d1085f9cebc5a62379991ae1652673954f229c1f",
+          "repository": "https://github.com/tdlib/td.git"
+        },
+        "tdlib_version": "1.8.67"
+      },
+      "ui_match_count": 89
+    },
+    "staged": {
+      "build_info": {
+        "buildId": "global605-2.1.36-54b9c1dc913b",
+        "builtAt": "2026-10-10T00:09:28Z",
+        "name": "stackos",
+        "version": "2.1.36"
+      },
+      "path": "/private/tmp/stackos-global605-release/desktop/payload/stackos",
+      "runtime_hashes": {
+        "stackos/__init__.py": "c463913bdab50e7723a3a29fb237fc7f60e29f48be06c521ec29f15eae8c29a1",
+        "stackos/artifacts/redaction.py": "579dc3feef1b1ab0677720a073730e92b02c69636a6ec0536a2e71588a837096",
+        "stackos/cli/daemon_commands.py": "2fe703388a7333f8046315701c851b78c46278f887ed356e7d273a08118c48d0",
+        "stackos/db/migrations/versions/0033_project_id_nonreuse.py": "3277182917b428c3d95c6826eab345f833f6b42ae1fba1e6ddd70343e8453b62",
+        "stackos/db/model_core.py": "296019c028b0376508b1fdd7a8d0a0bf6f95e384fd111084ae0c14c0d5db59ca",
+        "stackos/mcp/bridge/catalog.py": "0cc1f9e551e36570881abaae2ffb4bff2009840e6f29545a3959c4bf19252ef6",
+        "stackos/mcp/bridge/proxy.py": "e4f31f04743517c5cc0e8a0dab81233336a06fdae76f11f864227889b9c0f467",
+        "stackos/mcp/bridge/toolbox.py": "cd1084109d754a1a6314f602cee1304fb002865fa211e1a0f02e0b0a7ba93f02",
+        "stackos/mcp/bridge/workspace.py": "eda8efb55f79c08fbea80c5b1245c1bf907277031c92fe1cbeda9c487b7d6e42",
+        "stackos/mcp/tools/workspaces.py": "64dd9bb4d0a54b28dee77a92cdbe23f67fa82ab597861ea6069003a45da31915",
+        "stackos/operations/project_bootstrap.py": "2bfd53a669164763f90f65c4bc854845ce01c1b93d17571e7383207aca9b0a50",
+        "stackos/operations/responses.py": "27ad7442bf5e236d90a7a0affdfe59b761bf678488bed7b1112c99c259b8965e",
+        "stackos/repositories/workspaces.py": "1d0f75e3c1cfe1429efd83b260076dce85d378896c0070952e6068bb40e971eb"
+      },
+      "skill_hashes": {
+        "stackos/_assets/plugins/stackos/skills/stackos/SKILL.md": "961679a7a020d106c538b7633b6c139a752ce21c296aa3bac337a2c1b90a1ec5",
+        "stackos/_assets/skills/stackos/SKILL.md": "961679a7a020d106c538b7633b6c139a752ce21c296aa3bac337a2c1b90a1ec5"
+      },
+      "tdlib_manifest": {
+        "build": {
+          "dependency_policy": "system-only",
+          "manifest_version": 1,
+          "mode": "verified-prebuilt",
+          "source_archive_sha256": "5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9"
+        },
+        "library": {
+          "path": "lib/libtdjson.dylib",
+          "sha256": "c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af"
+        },
+        "platform": {
+          "arch": "arm64",
+          "os": "darwin"
+        },
+        "runtime": "telegram-tdlib",
+        "source": {
+          "archive_sha256": "5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9",
+          "commit": "d1085f9cebc5a62379991ae1652673954f229c1f",
+          "repository": "https://github.com/tdlib/td.git"
+        },
+        "tdlib_version": "1.8.67"
+      },
+      "ui_match_count": 89
+    }
+  },
+  "run_id": 599,
+  "run_plan_id": 605,
+  "source_preservation": {
+    "all_hashes_match": true,
+    "git_status": "",
+    "head": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+    "source_before": "/private/tmp/stackos-global605-release-build/release-source-before.json",
+    "source_before_sha256": "87bd7f4cabf20198c76866716935b1fbef5880af6d5b5ddb9b9dec1e06af1393",
+    "tracked_paths": 1845
+  },
+  "source_refs": {
+    "build_owner": "desktop/scripts/build-mac.mjs",
+    "canonical_build_command": "desktop/package.json dist:mac:release",
+    "main_authorization": "Final build authorization for pushed commit 54b9c1dc913b4da399a6aef8df279bad1c65d72c; native resource 1145",
+    "release_contract": "docs/desktop-distribution.md"
+  },
+  "stable_alias_matches_stapled_versioned_dmg": true,
+  "status": "candidate-ready-signed-notarized-release-build",
+  "step_key": "verify-delivery",
+  "ui": {
+    "file_count": 89,
+    "manifest": "/private/tmp/stackos-global605-release-build/release-ui-file-hashes.json",
+    "manifest_sha256": "04e48537da643baa845624e97c3cc5d62a2316e2d4abad125c21d4d240febc34"
+  },
+  "update_config": {
+    "updateUrl": "https://stackos.flowmonkey.io/StackOS/"
+  },
+  "update_metadata": {
+    "data": {
+      "files": [
+        {
+          "sha512": "hxztKwtKt+GtVq/RB/IEgG8qka2dNpgLjV2oFYzyvobMKnyn+4qy2Vze3+kIkU53ZEyx9dkbz8QgTa41wOpP7g==",
+          "size": 494210680,
+          "url": "stackos-2.1.36-mac-arm64.zip"
+        },
+        {
+          "sha512": "KI6xjtt0ZgVYh5XIQ2Km3UPs+X1PcSpgjh3YKJFzGeaQuGgDNc3T72z0ziZgC7Q89dTc9w/9noweTzGZo1066g==",
+          "size": 489828933,
+          "url": "stackos-2.1.36-mac-arm64.dmg"
+        }
+      ],
+      "path": "stackos-2.1.36-mac-arm64.zip",
+      "releaseDate": "2026-10-10T00:28:50.015Z",
+      "sha512": "hxztKwtKt+GtVq/RB/IEgG8qka2dNpgLjV2oFYzyvobMKnyn+4qy2Vze3+kIkU53ZEyx9dkbz8QgTa41wOpP7g==",
+      "version": "2.1.36"
+    },
+    "verified_files": [
+      {
+        "file": "stackos-2.1.36-mac-arm64.zip",
+        "sha512": "hxztKwtKt+GtVq/RB/IEgG8qka2dNpgLjV2oFYzyvobMKnyn+4qy2Vze3+kIkU53ZEyx9dkbz8QgTa41wOpP7g==",
+        "size": 494210680
+      },
+      {
+        "file": "stackos-2.1.36-mac-arm64.dmg",
+        "sha512": "KI6xjtt0ZgVYh5XIQ2Km3UPs+X1PcSpgjh3YKJFzGeaQuGgDNc3T72z0ziZgC7Q89dTc9w/9noweTzGZo1066g==",
+        "size": 489828933
+      }
+    ]
+  },
+  "version": "2.1.36",
+  "wheel": {
+    "bytes": 4266770,
+    "path": "/private/tmp/stackos-global605-release/desktop/payload-build/dist/stackos-2.1.36-py3-none-any.whl",
+    "sha256": "892d9c72cba6048b556a79782cc888d885cbb57c4df00440b12f7fbc4d9a2efb"
+  }
+}

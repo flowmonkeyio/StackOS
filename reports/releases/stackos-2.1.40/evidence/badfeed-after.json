@@ -1,0 +1,10 @@
+{
+  "phase": "after",
+  "synthetic": true,
+  "files": {
+    "data/stackos.db": "8eac5f31500e7287c30138e4804ac1e731ff33d5204c4d22527724f69adae89c",
+    "state/seed.bin": "6beb3c509ab1c276007699c80628991d09c0e614c83647ad8c633774104c41bf",
+    "state/auth.token": "66e4b152a47babbbccb3006765764a5bd76442309a9b1faf5dafdaaae3cb62f0"
+  },
+  "preserved": true
+}

@@ -2,7 +2,7 @@
 
 StackOS creates, reuses, discovers, and stops project browser sessions. Agents
 operate them from their terminal with the upstream
-[gstack browse CLI](https://github.com/garrytan/gstack/tree/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse):
+[gstack browse CLI](https://github.com/garrytan/gstack/tree/6c3cf1baac93a794d37065da8b95340e14305126/browse):
 
 ```sh
 stackos.browser --session browser-session:project-1:default:main goto https://example.com
@@ -19,6 +19,23 @@ session. Session discovery returns `cli_argv`, a ready command prefix:
 
 ## Client Flow
 
+Browser work uses StackOS lifecycle and the returned native CLI. Computer Use
+and native desktop control will not be enabled: do not request access, wait for
+it or plan it as a verification prerequisite. Retain the required outcome proof,
+normal app authentication and any explicitly scoped operator/manual exception.
+If the supported browser route cannot exercise a required boundary, identify the
+actual unsupported boundary and missing evidence as blocked. Computer Use absence
+alone is not a blocker, and it grants no waiver or permission bypass.
+
+Main chooses and verifies this route before dispatch or resume, passing current
+profile/session refs, ticket-tab ownership and login prerequisites. Remove stale
+Computer Use or native Chrome-permission prerequisites; do not retry native
+control. An explicit operator-owned drag-and-drop check transfers only that named
+check. Other required proof, including email-link -> browser -> desktop-return
+and normal app authentication when assigned, remains agent-owned. If a required
+boundary cannot be exercised, keep its precise missing evidence blocked rather
+than transfer the remaining verification to the operator.
+
 1. Use `browser.session.list` to discover project sessions. Select the intended
    session or call `browser.session.start` with stable `profile_key` and
    `session_key` values to create/reuse it.
@@ -27,7 +44,7 @@ session. Session discovery returns `cli_argv`, a ready command prefix:
 3. Read the [native browser cookbook](../plugins/stackos/skills/stackos/references/browser.md)
    shipped with the StackOS skill for interaction, screenshots, comparisons,
    batching, and diagnostics. Consult native `--help` or the bundled
-   [command reference](https://github.com/garrytan/gstack/blob/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse/sections/command-list.md)
+   [command reference](https://github.com/garrytan/gstack/blob/6c3cf1baac93a794d37065da8b95340e14305126/browse/sections/command-list.md)
    for syntax. StackOS does not maintain a second command vocabulary.
 
 Session lifecycle/discovery remains available through MCP, generic REST,
@@ -44,6 +61,18 @@ The browser opens visibly. For authenticated work, let the operator complete
 login/MFA in the selected profile, then keep reusing its `profile_key`. Different
 profiles have separate cookies and storage. One live process owns a profile;
 another session cannot use it concurrently.
+
+Plan one live session per `profile_key`. Discover and reuse the authorized
+same-profile session, assigning each ticket its own tab and preserving other
+tabs. A different `session_key` does not isolate the profile. A separate session
+needs a separate permitted profile or an explicit handoff after the current
+owner has finished its browser work and stopped the session. Do not replace a
+required authenticated profile with a throwaway profile.
+
+Retaining an agent's native thread/session for feedback is separate from browser
+lifecycle. It does not require leaving the browser open forever. Close only
+ticket-owned tabs; stop a shared session only within the agreed ownership and
+handoff, after other users' browser work is quiescent.
 
 For background work in an existing tab, read native `tabs`, confirm the target
 ID, and append upstream `--tab-id <id>` to each command:
@@ -86,6 +115,14 @@ Native commands can stop or restart the selected browser. Later StackOS session
 observations reconcile its state. `browser.session.stop` remains available for
 StackOS-managed shutdown and waits for observed process/state retirement.
 
+Respect denied actions without bypassing them through another tool. Use an
+authorized alternative and continue unaffected checks when an optional tool
+call is denied. A protected `.git`/`.codex` write denial stops that write and
+dependent work, not unrelated browser checks. If required proof remains
+unavailable, report it as blocked; never turn missing or failed proof into a
+pass. Native agent launch/access/model/resume failures retain their task-stop
+contract.
+
 ## Context And Discovery
 
 Selected start/status results retain `native_cli={executable,cwd,env}` for local
@@ -110,6 +147,10 @@ Discovery inspects owned native state and OS process identity after daemon
 restart. A live busy/unhealthy owner keeps its profile. Runtime repair preserves
 profile directories and session history.
 
+Upstream health reports browser liveness separately from active-tab
+responsiveness. A healthy browser with a busy or unresponsive tab remains a
+healthy session; it is not replaced and its profile ownership is unchanged.
+
 ## Install And Upgrade
 
 Normal StackOS install/repair installs the current-user command at
@@ -123,17 +164,25 @@ The desktop payload includes a relocatable `bin/stackos.browser`. Doctor checks
 launcher readiness and the installed upstream runtime. Restart host MCP sessions
 after upgrading to refresh the lifecycle-only tool catalog.
 
-The distribution pins gstack revision `71f6048e8ada25180e61438abc1d98cb151fe9a7`
-(version `1.84.1.0`), Bun `1.3.8`, and the upstream locked dependencies/browser
+The distribution pins gstack revision `6c3cf1baac93a794d37065da8b95340e14305126`
+(version `1.91.242.0`), Bun `1.4.4`, and the upstream locked dependencies/browser
 assets, retaining licenses and notices. It lives under `browser-runtime` in the
 desktop payload or daemon data directory.
 
-The macOS ARM64 installer prunes the Anthropic SDK development packages and
-ONNX's Linux/Windows binaries after compilation and sidebar asset preparation.
-Darwin ARM64 ONNX, Transformers, the security classifier, and sidebar assets
-remain. The runtime manifest includes a packaging revision so install/repair
+The macOS ARM64 installer uses the frozen production dependency set and prunes
+Claude Agent SDK development packages and ONNX's Linux/Windows binaries after
+compilation and sidebar asset preparation. The production Anthropic SDK, Darwin
+ARM64 ONNX, Transformers, the security classifier, and sidebar assets remain.
+The compiled CLI disables automatic loading of the caller's `.env` and
+`bunfig.toml`. The runtime manifest includes a packaging revision so install/repair
 rebuilds an older managed distribution instead of accepting its bulkier layout.
 Packaged app runtimes stay immutable and are refreshed by replacing the app.
+
+The upstream Playwright `1.62.1` lock and patch are retained, including Chromium
+`151.0.7922.34`. Upstream documents a remaining certificate-trust limitation for
+some certificate authorities in its
+[browser notes](https://github.com/garrytan/gstack/blob/6c3cf1baac93a794d37065da8b95340e14305126/BROWSER.md).
+This gstack/Bun update does not resolve that browser limitation.
 
 Persistent profiles retain their existing `browser-profiles/playwright-chromium`
 paths; the directory name preserves data and does not select the old driver.
@@ -155,3 +204,62 @@ shells. Verify native help, output, stdin, exit status, terminal behavior and
 signals. Set a synthetic cookie/localStorage marker and verify it survives native
 browser restart and StackOS daemon restart. Installed-app signoff also covers
 managed-launcher repair, doctor, and restart from `/Applications/StackOS.app`.
+
+### Measure StackOS shell layout
+
+Use a ticket-owned tab on a disposable **source Vite** instance with the actual App, sidebar, router and CSS. For Home, use a synthetic project with one visible task and recorded usage. Start from a different route in a fresh tab. Use the [native cookbook](../plugins/stackos/skills/stackos/references/browser.md) to set the viewport, run each page script with `eval`, press keys and capture the viewport. Save the measurements with the candidate and viewport.
+
+**Notification reachability.** At 1280×800 and 1024×768, save the top of a visible content landmark such as `.home-header-actions`. In the fixture tab, populate the real App queue:
+
+```js
+(async () => {
+  const { useToastsStore } = await import('/src/stores/toasts.ts')
+  const queue = useToastsStore()
+  queue.clear()
+  for (const n of [1, 2, 3]) {
+    queue.add('warning', 'Task needs attention', ('W'.repeat(115) + ' ').repeat(3),
+      0, { key: 'fixture-' + n, actionLabel: 'Open fixture ' + n,
+           onAction: () => { window.lastFixtureAction = n } })
+  }
+})()
+```
+
+Wait for all three `.ui-toast` entries and their entry animations. The top of the content landmark should stay within one CSS pixel of its baseline. Measure the rectangle of `ul[aria-label="Notifications"]`; its top and bottom must be inside the viewport. Focus that list, then use Tab to reach **Open fixture 3**. Verify its rectangle is inside the list and its center hits the focused control or its descendant using `document.elementFromPoint`. Press Enter and check `window.lastFixtureAction === 3`. This exercises the real toast queue, layout, scrolling and keyboard action. The [App callback cases](../ui/src/App.notifications.spec.ts) cover how desktop notices enter that queue.
+
+**Cold and retained project Home.** At 800×800 and 1280×800, hold only the selected project's `projectSetup.get` read. Use its synthetic project ID for `id` below. Install this fixture on the other route, then navigate to the project's Home using app links:
+
+```js
+(() => {
+  const id = 1, original = window.fetch
+  let release
+  window.setupGate = {
+    fail: false,
+    hold() { this.wait = new Promise(resolve => { release = resolve }) },
+    release() { release() },
+    restore() { release(); window.fetch = original }
+  }
+  window.setupGate.hold()
+  window.fetch = async (input, init) => {
+    if (String(input).endsWith('/api/v1/operations/projectSetup.get/call') &&
+        JSON.parse(init.body).arguments.project_id === id) {
+      await window.setupGate.wait
+      if (window.setupGate.fail) return Response.json({ detail: 'Fixture refresh failed' }, { status: 503 })
+      return Response.json({ project_id: id, eligible: true, status: 'updates_available',
+        folder_status: 'available', update_count: 3, current_attempt: null })
+    }
+    return original.call(window, input, init)
+  }
+})()
+```
+
+While setup is pending, wait for the first task and Agent activity data as well as `[aria-label="Loading project setup"]`. Use this read before and after `setupGate.release()` and the appearance of `[aria-label="Project setup reminder"]`:
+
+```js
+['.home-header-actions', '.home-setup-action', '.home-setup-slot',
+ '.active-task-row__link', '.agent-activity__heading'].map(selector => {
+  const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect()
+  return { selector, x, y, width, height }
+})
+```
+
+Check that the setup action fits in the header, the reminder fits its reserved slot, and the task and activity landmarks keep their positions. Record any movement in CSS pixels and inspect wrapping/overlap at the narrow width. For a retained entry, navigate away, call `setupGate.hold()`, then return via the app. The accepted reminder and task should already be visible. Repeat the measurement across release. Set `setupGate.fail = true` and click **Refresh**; confirm the setup error is visible alongside the retained content. Set it to false, click **Check again**, and verify recovery. Restore the original fetch with `setupGate.restore()` and close the owned tab. The [Home component cases](../ui/src/views/HomeConsoleView.spec.ts) exercise ordering and retained state; use the browser measurements for physical layout.

@@ -49,9 +49,12 @@ provided separately by the host agent runtime.
 
 Use this path when working from this repository:
 
-The pinned dependency `stackos-connectors==0.1.1` is installed from PyPI by
-`uv`. Its resolved distribution and hashes are recorded in `uv.lock`; a
-separate connectors checkout is not required.
+The pinned dependency `stackos-connectors==0.2.9` is installed by uv from accepted
+Git commit `32416f21d53771e25ec52e357260b081db1e9887` using `tool.uv.sources` and
+`uv.lock` while that version awaits separate PyPI publication. Keep both files
+together; a separate connectors checkout is not required. See
+[packaging dependencies](desktop-distribution.md#packaging-dependencies) for
+the frozen export and artifact identity requirements.
 
 ```bash
 make install
@@ -87,8 +90,8 @@ The Vite app proxies `/api` and `/mcp` to the daemon on port `5180`.
 
 ## Package Or Operator Setup
 
-Build the StackOS wheel and let the installer resolve its pinned connector
-dependency from PyPI:
+After the pinned connector version is published separately, build the StackOS
+wheel and let the installer resolve its dependency from PyPI:
 
 ```bash
 uv build --wheel --out-dir dist
@@ -99,6 +102,12 @@ Replace `VERSION` with the built StackOS version. The installed application does
 not require a source checkout. `stackos install` configures application state
 and assets after Python dependencies are installed; it does not install missing
 Python packages.
+
+The 2.1.45 host wheel declares `stackos-connectors==0.2.9` without embedding the
+uv source override. Until connector 0.2.9 is published, package-index-only
+installation of that wheel is unavailable. The desktop payload bundles the
+accepted connector through its frozen dependency export and does not have this
+runtime prerequisite. No publication is implied by building either artifact.
 
 Use this path when StackOS is installed as a Python package or pipx app:
 
@@ -151,12 +160,30 @@ does not store provider secrets and does not rotate `seed.bin` or `auth.token`
 on install or update. After install or repair, the desktop service consumes the
 same `stackos doctor --json` readiness envelope used by the CLI.
 
+When a source installation already exists, full install/repair prepares managed
+upgrade maintenance before changing migrations, shared assets or launchd. Restart
+then verifies the intended running target and doctor before continuing its selected
+deliveries. A skipped install doctor does not waive continuation postflight.
+For staged upgrades and the initial quiescent bootstrap from pre-handshake
+2.1.44, follow [managed upgrade ordering](upgrade.md#what-happens-during-upgrade).
+Registration-only repairs remain lightweight. Automatic continuation does not
+resume unrelated stopped or failed work.
+
 When the app version and packaged payload are already prepared, desktop launch
 still runs a lightweight MCP registration reconciliation before the UI becomes
 ready. This covers late host installs, reset MCP config, and drag-and-drop app
 replacement without reinstalling the full local runtime, and prevents the first
 status report from racing stale pre-repair state. Optional host absence remains
 advisory and does not block startup.
+
+Workflow automations are eligible only while the native StackOS process is
+running and the computer is awake. Minimized windows and closing the last
+macOS window keep the app running; **Quit StackOS**, a crash, connection loss,
+or suspend removes future workflow timers. A healthy background daemon or an
+open browser tab alone does not enable them. Opening the app, reconnecting,
+or resuming arms the next strictly future cron time; missed times are skipped.
+This admission rule does not stop workflows that already started, the runs
+reaper, or backup maintenance.
 
 The desktop home and project toolbars keep a visible **Getting started** action,
 and **Help → Getting Started** remains the menu fallback. Every entry opens
@@ -178,8 +205,16 @@ markers. All connection cards and Refresh are visible in both environments.
 Restart, Run doctor, and Install or repair remain native desktop controls;
 the browser shows them disabled with a desktop-only explanation.
 
+In **Overview → AI tool connections**, Codex, Claude Code and Grok Build can
+also show the signed-in plan, the percentage used in each reported quota
+window and its local reset time. Bars turn orange at 75% used and red at 95%.
+Returning to Overview within a minute reuses
+the last check. **Refresh** reads the native tools again. Gemini CLI currently
+shows **Quota unavailable**. Claude Desktop shows its MCP connection and Hermes shows its
+profile status. A missing quota reading does not affect the connection badge.
+
 This reports the canonical connection state for ChatGPT / Codex, Claude Code,
-Claude Desktop, Gemini CLI, and Hermes. **Repair needed** means a selected,
+Claude Desktop, Gemini CLI, Hermes, and Grok. **Repair needed** means a selected,
 StackOS-owned entry is stale and safely repairable. Unselected detected hosts
 are **Available**, arbitrary same-name entries are **Review required**, and
 absent optional hosts are **Not detected** and nonblocking. The Vue UI renders
@@ -192,6 +227,43 @@ compatibility candidate. The StackOS plugin is the forward ChatGPT/Codex
 distribution path and direct Codex registration keeps standalone and legacy app
 readiness; both use the same local bridge with `--runtime codex`.
 
+The optional [task delivery handoff](task-tracker.md#automated-task-delivery)
+uses this same host registry and CLI discovery. Execution capability, native
+model choices and review modes come from that registry; connection readiness
+does not prove execution or model access. Save project agent defaults in
+`TaskTracker.config_json.delivery` through the local-admin, REST-only
+`tracker.configureDelivery` operation. Task overrides merge by role and freeze
+at handoff. Fresh Codex roles require exact project-native source references;
+other hosts retain supported inline contracts. Saving defaults installs no agent.
+Gemini and Hermes reviewers use normal native permissions with review-only
+instructions; receipts do not claim enforced read-only isolation. Supported
+native review controls remain in use on other hosts. See the task handoff
+contract for setup examples.
+
+In the project console, **Setup → Agents** lists and edits actual Codex project
+files and explicitly adopts selected role references into delivery defaults.
+The existing Setup/Update launch dialog edits main-agent model, reasoning and
+supported provider/profile choices. Both forms use the shared `hostMcp.status`
+execution catalog; inherited and custom choices follow its capability flags.
+Saved selections remain visible when absent from the current catalog, and
+loading or retrying that catalog does not change the draft.
+Connection or installation status does not establish authentication, subscription,
+or model access. Source saves use digest-checked `projectAgent.update`; default
+adoption and main preferences use local-admin REST `tracker.configureDelivery`
+and saved readback. Main preferences also apply to fresh scheduled occurrences.
+Queued/running work, setup continuations and resumed native sessions retain
+their admitted settings. Editing or adopting choices starts no work.
+Generic agent presets remain a separate read-only catalog.
+
+Harness account switching is declared by the host's native account adapter.
+The local account inventory includes supported hosts before enrollment.
+Adopting the default account verifies the existing native sign-in in place.
+Adding another account starts first-party sign-in in an isolated profile, and
+the account holder completes that sign-in. An explicit selection becomes the
+desired account for managed native consumers. Each consumer establishes which
+account its own session actually uses. See
+[native harness account controls](operations.md#native-harness-account-controls).
+
 The host connection model has one brain:
 
 1. the shared bridge contract owns the local stdio command, runtime label,
@@ -202,6 +274,14 @@ The host connection model has one brain:
    blocking status, repairability, and next action;
 4. Doctor, CLI, desktop IPC, and Vue present that result without rebuilding
    host-specific policy.
+
+Registration checks compare the effective bridge context: omitted host, port,
+data and state settings agree with explicitly written canonical defaults.
+Equivalent registrations need no rewrite when Doctor and the daemon inherit
+different default environment variables. Launcher paths, runtime labels,
+workspace roots and custom settings must still match; foreign entries retain
+their existing ownership checks. Pending Claude Desktop restart markers use
+the same comparison, so equivalent defaults do not dismiss a required restart.
 
 The canonical states are:
 
@@ -307,18 +387,40 @@ database under `~/.local/share/stackos/` and daemon state under
 
 ## Backup
 
-Before serious upgrades or machine moves, export the minimal local state needed
-for operator-guided recovery:
+In the desktop app, open **Backups** in the App footer and choose **Enable
+backups**. Choose a backup folder, then save the recovery key using the native
+file dialog. StackOS enables automatic backups and creates the first encrypted
+archive. If that first backup fails, the setup remains in place; use **Back up
+now** to retry.
 
-```bash
-stackos backup --output ~/Desktop/stackos-backup.zip
-```
+An existing setup opens with its current key, destination, schedule, retention
+and enrolled folders intact. Opening the page does not change configuration.
+Use **Manage → Backup settings** to change the schedule or pause automatic
+backups, then save the changes. **Manage → Included data and history** shows
+coverage and previous backup details.
 
-The backup contains `stackos.db`, `seed.bin`, `auth.token`, and
-`manifest.json`, and is written with mode `0600`. Automated restore is not
-implemented yet. It does not include TDLib's Account-owned native database;
-Telegram user Accounts need a new sign-in after restoring only this archive on
-another machine. An in-place upgrade preserves the native database.
+Use **Export backup** and **Export key** to save your recovery materials, or
+**Manage → Open backup folder** to view the backup folder. Keep an archive and
+the recovery key somewhere accessible if this device is lost. Exporting a key
+for an older setup may ask you to select the original recovery key; it does not
+generate a replacement.
+
+**Restore backup** asks for the archive, recovery key, and a new output folder.
+It verifies recovery into that separate folder and leaves the live installation
+in place. Native setup, export and restore require the current desktop app.
+The browser console can inspect status, create a backup, and edit an existing
+schedule. See [backup and recovery](./backups.md) for advanced folder enrollment
+and local commands.
+
+Every new backup encrypts `stackos.db`, its matching `seed.bin`, `auth.token`,
+the manifest and every enrolled external folder. Files are private (`0600`).
+Automatic backups require explicit opt-in and start disabled. The Backups page
+and `stackos backups status` show coverage and the last success or failure.
+`stackos restore` verifies recovery into a fresh inert folder; it requires the
+separately stored private recovery key. It does not include TDLib's
+Account-owned native database; Telegram user Accounts need a new sign-in after
+archive-only recovery on another machine. An in-place upgrade preserves that
+native database. Existing plaintext ZIP backups remain plaintext.
 
 ## First Run In The UI
 
@@ -332,8 +434,9 @@ After the daemon is running, use the UI in this order:
    browser should not become a broad plugin-mutation console. Catalog mutation
    belongs in a deliberate admin path such as CLI, REST-admin, or an
    agent-owned setup operation that still writes the same project state.
-4. Open the project Setup page to review runtime, plugin, connection, template,
-   action, and run-plan readiness.
+4. Review runtime and agent-host status in App Overview. Project Home summarizes
+   connections and workflows; Plugins shows integration availability. Use
+   Configure to open Connections, Automation, Spend, or Plugins directly.
 5. Add connections for each provider account. A provider may allow multiple
    connections, for example multiple Meta ad accounts or several SMTP profiles.
 6. Review workflow templates available from enabled plugins.
@@ -347,6 +450,28 @@ plugin can define resources, templates, and actions; the agent still decides
 strategy and passes explicit inputs.
 
 ## Agent Setup From Any Repo
+
+Ordinary workflow Setup/Update targets `ready_to_use`; only an explicit
+`infrastructure_only` request stops after preparation without execution state.
+The [canonical setup method](workflow-templates.md#agent-workflow-setup-lifecycle)
+selects proof from the effective workflow/presets: canonical configuration/readback,
+actual native consumption, reuse of current covered completed evidence, then only
+missing or invalidated small harmless checks inside the owning setup/task. It does
+not automatically create a separate full verification task/workflow or tracker
+parent merely for readiness. Existing parent review remains independent; standalone
+setup follows its method and genuine evidence. Prepared files, task overrides,
+aborted/incomplete/simulated evidence and `activation_pending` cannot establish
+ready-to-use activation. Missing authority or safe proof stays explicit, while
+unrelated business actions remain outside setup authority.
+
+Host connection discovery and automated agent execution share the existing
+`stackos.host_mcp` registry. Host status includes an `agent_execution` capability
+and model catalog with dated sources. Installation and MCP connection are
+separate from credential presence and model access, which remain `not_checked`
+until independently established. A discovered CLI can still fail to run (for
+example, a broken Hermes shim). StackOS performs no account or credential setup
+as part of task delivery. See [task harness choices](task-tracker.md#automated-task-delivery)
+for native delivery/review limits and per-role model/provider selection.
 
 After install, agents can use the `stackos` plugin from a business or
 website repository without copying setup files into that repo.
@@ -367,21 +492,52 @@ the bridge attempts a loopback-only auto-start and logs to:
 ~/.local/state/stackos/mcp-bridge-autostart.log
 ```
 
+Sanitized bridge failures are also saved automatically to
+`~/.local/state/stackos/mcp-bridge.log` (10 MiB plus five rotated backups), even
+when the daemon is unavailable. A non-default state directory relocates both
+logs. Match the JSON-RPC error's `diagnostic_id` against the persistent log.
+Initialization and startup discovery default to a 15-second network inactivity
+timeout, adjustable with `STACKOS_BRIDGE_STARTUP_TIMEOUT_SECONDS` (positive,
+at most 300). Long-running tool response reads remain unlimited. See
+[bridge diagnostics](./bridge-failure-diagnostics.md) for retry boundaries,
+automatic persistence and lookup.
+
+For a stopped native delivery, use the
+[interruption diagnosis guidance](./task-tracker.md#diagnosing-interrupted-delivery)
+to distinguish cancellation, approval transport failure, denial, unavailable
+access and suspected sleep/wake. Reconcile uncertain writes through authoritative
+readback before retrying; retain source, running-process and installed evidence
+as separate observations.
+
 Project context is directory-first and host-dependent. StackOS does not require
 a Git checkout to identify a workspace. The bridge accepts an explicit
 `--workspace-root` argument or `STACKOS_WORKSPACE_ROOT` environment value,
 prefers Claude Code's `CLAUDE_PROJECT_DIR` when present, and only then falls
 back to process cwd. Git remote detection is optional metadata for an existing
-directory binding. Claude Desktop uses global app config and may launch a server
-without repo context; a process cwd of `/` is treated as missing workspace
-context, not as a StackOS project. In that case the agent must connect an
-explicit project/workspace instead of silently creating or reusing a generic
-root binding.
+directory binding. Only the explicit StackOS flag/environment value establishes
+deliberate workspace selection; `CLAUDE_PROJECT_DIR` and cwd are ambient hints.
+Global hosts can supply generated directories, so neither runtime nor path
+shape identifies a global chat. `/` is treated as missing workspace context.
 
-Agents should first bind the working repository to a StackOS project. After the
-binding exists, the bridge resolves and injects `project_id` from the current
-repo and refuses cross-project StackOS calls. This binding is not a filesystem
-permission grant and does not let StackOS inspect the repo. Use `action.run`
+For a chosen working folder, call `workspace.startSession` normally; it creates
+or reuses the binding and the bridge injects `project_id`. Existing bindings
+and explicit StackOS roots stay protected. For known global intent, such as
+ChatGPT “Choose project / This computer” or Claude “Local / No folder”, make
+the first successful call `workspace.startSession` with
+`{"global_session":true,"project_id":42}` using the chosen existing ID, or
+omit the ID to discover projects. If intent is unclear, clarify before startup.
+Unbound ambient initialize/tools-list is read-only and leaves that choice
+pending; normal folder startup without an ID retains automatic setup.
+
+Global startup creates no project or directory binding. Pass a positive
+existing `project_id` on every scoped call; for `toolbox.call`, it goes inside
+`arguments`. Include it on direct browser calls and run-aware
+`toolbox.describe` too. Returned setup/resolve IDs never become defaults.
+An explicit ID with omitted/false global intent on an unbound directory is
+rejected before writes. Use explicit global intent or bind the intended folder.
+See [setup examples](agent-operating-model.md#setup-path) for named creation
+and saved-ID adoption. This selection is not a filesystem permission grant.
+Use `action.run`
 for one explicit direct action; use workflow templates, run plans, and
 step-granted `action.execute` for multi-step work. Provider-specific actions
 should be added as plugin action contracts, not as one-off MCP tools.
@@ -502,9 +658,11 @@ Default paths:
 | Auth token | `~/.local/state/stackos/auth.token` |
 | Credential seed | `~/.local/state/stackos/seed.bin` |
 | Daemon log | `~/.local/state/stackos/daemon.log` |
+| Persistent bridge diagnostics | `~/.local/state/stackos/mcp-bridge.log` |
 | PID file | `~/.local/state/stackos/daemon.pid` |
 | Codex skill mirror | `~/.codex/skills/stackos/SKILL.md` |
 | Claude Code skill mirror | `~/.claude/skills/stackos/SKILL.md` |
+| Grok Build MCP config | `$GROK_HOME/config.toml`, default `~/.grok/config.toml` |
 | Codex plugin | `~/.codex/plugins/stackos` |
 | Codex plugin runtime cache | `~/.codex/plugins/cache/local-stackos/stackos/*` |
 | Plugin marketplace | `~/.agents/plugins/marketplace.json` |
@@ -561,6 +719,60 @@ same-name entries fail closed. Hosts installed after StackOS are picked up by
 rerunning `stackos install --mcp-only`, desktop Repair, or the next desktop
 launch.
 
+Grok uses the official [Grok Build CLI](https://docs.x.ai/build/overview).
+Connect or repair only Grok with:
+
+```bash
+stackos install --mcp-only --mcp-host grok
+```
+
+StackOS registers through `grok mcp add --scope user`. Uninstall removes the
+owned native user entry directly, so cleanup also works after Grok is removed
+or its CLI becomes incompatible. The TOML update preserves unrelated settings,
+comments, file permissions, and intentional config-file symlinks; changed or
+unowned entries are left untouched.
+It inspects the native user entry in `$GROK_HOME/config.toml` (default
+`~/.grok/config.toml`) and verifies the saved command after registration.
+The generated entry has this shape; the actual launcher is resolved from the
+current StackOS installation and retains non-default daemon context:
+
+```toml
+[mcp_servers.stackos]
+command = "/absolute/path/to/stackos"
+args = ["mcp-bridge", "--runtime", "grok"]
+enabled = true
+```
+
+Grok's CLI preserves unrelated settings and sibling servers, but may reformat
+TOML and remove comments. StackOS leaves unrelated same-name entries for review
+and does not read Grok authentication files. Native user configuration is the
+registration authority: imported Claude settings do not count as a Grok
+registration. A project `.grok/config.toml` can override the user server;
+`grok inspect` shows its origin. StackOS does not change those project files.
+
+Grok also reads `AGENTS.md` project instructions. Registration mirrors the
+canonical StackOS mechanics skill into `$GROK_HOME/skills/stackos/` (default
+`~/.grok/skills/stackos/`) using the same package-owned helper as Hermes.
+Installation records the skill's directory identity and managed file paths in
+`$GROK_HOME/skills/.stackos-ownership.json` before copying. That receipt sits
+outside the skill tree and survives partial installation or removal. Repair
+restores the canonical files, while cleanup removes recorded files even if they
+were modified, partially deleted, or the MCP entry and Grok executable are gone.
+Unlisted user files and sibling skills are preserved; the receipt is removed
+after its owned files are cleaned. Exact legacy mirrors and copies backed by an
+owned MCP entry can be adopted during repair or cleanup. A replaced directory,
+invalid ownership record, or unrelated unowned content is never claimed merely
+because it is named `stackos`.
+
+Grok setup does not generate root instructions,
+install workflow-specific agents globally, or copy provider credentials. Named
+workflow setup still resolves and adapts the existing presets into the host's
+project-local format. See Grok's official
+[MCP](https://docs.x.ai/build/features/mcp-servers),
+[settings](https://docs.x.ai/build/settings),
+[project rules](https://docs.x.ai/build/features/project-rules), and
+[skills](https://docs.x.ai/build/features/skills-plugins-marketplaces) contracts.
+
 Hermes is explicit and profile-scoped. StackOS never installs Hermes or creates
 a profile. Connect an existing named profile with:
 
@@ -590,11 +802,11 @@ Claude Desktop registration writes
 restarting Claude Desktop before the app sees the updated MCP server. Legacy
 `~/.claude/mcp.json` entries are cleaned only when they belong to StackOS; they
 are not the primary registration source. Claude Desktop does not provide a
-per-repository workspace root through that global config, so Desktop sessions
-without a real workspace hint return setup/connect guidance before project
-scoped tools can run. When StackOS or an operator chooses a default local
-workspace folder for a global desktop host, registration can pass that folder
-with `stackos mcp-bridge --workspace-root /path/to/workspace`.
+per-repository workspace root through that global config. Such a session can
+start globally and pass explicit project IDs for each task through the same
+connection. When an operator deliberately wants a protected local workspace,
+registration can pass `stackos mcp-bridge --workspace-root /path/to/workspace`.
+That root prevents global startup; it is not needed for global project access.
 
 After token rotation or package upgrades, restart the daemon:
 

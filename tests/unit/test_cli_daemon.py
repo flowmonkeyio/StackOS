@@ -12,12 +12,14 @@ from typer.testing import CliRunner
 import stackos.cli.daemon_commands as daemon_cli
 import stackos.cli.daemon_processes as daemon_processes
 import stackos.cli.launchd as launchd_cli
+import stackos.cli.upgrade_commands as upgrade_cli
 from stackos.cli import app
 from stackos.config import Settings
 
 
 @pytest.fixture
 def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Mock process lifecycle and its quiescent preparation prerequisite together."""
     home = tmp_path / "home"
     data = home / ".local" / "share" / "stackos"
     state = home / ".local" / "state" / "stackos"
@@ -27,6 +29,13 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("STACKOS_HOME", str(home))
     monkeypatch.setenv("STACKOS_DATA_DIR", str(data))
     monkeypatch.setenv("STACKOS_STATE_DIR", str(state))
+    # These unit cases exercise process/launchd recovery. Real preparation and
+    # source rejection belong to test_upgrade_callers, not the operator's port.
+    monkeypatch.setattr(
+        upgrade_cli,
+        "prepare_for_upgrade",
+        lambda _settings, _target, **_kwargs: {"status": "quiescent-bootstrap", "fenced": False},
+    )
     return home
 
 
@@ -183,6 +192,7 @@ def test_mcp_bridge_workspace_hints_prefers_claude_project_dir(
 
     assert hints["cwd"] == str(project_dir.resolve())
     assert hints["repo_fingerprint"].startswith("path:")
+    assert hints["deliberate_workspace_root"] is False
 
 
 def test_mcp_bridge_workspace_hints_prefers_explicit_workspace_root(
@@ -203,6 +213,7 @@ def test_mcp_bridge_workspace_hints_prefers_explicit_workspace_root(
     )
 
     assert hints["cwd"] == str(explicit_root.resolve())
+    assert hints["deliberate_workspace_root"] is True
 
 
 def test_mcp_bridge_workspace_hints_uses_env_workspace_root(
@@ -217,6 +228,7 @@ def test_mcp_bridge_workspace_hints_uses_env_workspace_root(
     hints = daemon_cli._mcp_bridge_workspace_hints(Path("/"))
 
     assert hints["cwd"] == str(project_dir.resolve())
+    assert hints["deliberate_workspace_root"] is True
 
 
 def test_launchd_bootout_waits_until_job_is_unloaded(

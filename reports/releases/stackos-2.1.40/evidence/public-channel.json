@@ -1,0 +1,25 @@
+{
+  "captured_at": "2026-10-28T17:34:45.446516+00:00",
+  "mode": "channel",
+  "passed": true,
+  "files": [
+    {
+      "local_name": "latest-mac.yml",
+      "remote_name": "latest-mac.yml",
+      "url": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml",
+      "status": 200,
+      "bytes": 513,
+      "sha256": "81628f8811491baa78e628447f64a8d848f6ced578a502bef91ade7432b04dad",
+      "matches": true
+    },
+    {
+      "local_name": "stackos-latest-mac-arm64.dmg",
+      "remote_name": "stackos-latest-mac-arm64.dmg",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg",
+      "status": 200,
+      "bytes": 485528254,
+      "sha256": "9212fc6bb2138469cc6997bbf69b5e58887175799575d0ce5e6c8e6d88ac1778",
+      "matches": true
+    }
+  ]
+}

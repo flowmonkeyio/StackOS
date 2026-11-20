@@ -1,0 +1,199 @@
+{
+  "attempt": "deploy-605-a1-feed-recheck",
+  "reviewer": "/root/global_readiness_review",
+  "contract_revision": "r4",
+  "project_id": 1,
+  "run_plan_id": 605,
+  "run_id": 599,
+  "scope": "Independent public HTTPS read-only prepromotion checksum proof; no alias promotion, upload, installation or restart",
+  "candidate_commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+  "version": "2.1.36",
+  "manifest": "/Users/sergeyrura/Bin/content-stack/desktop/dist/release-2.1.36/release-manifest.json",
+  "manifest_sha256": "8d1d245f697d9d9184d9e2987764d6f1823bde4eb7d62ecdc36767a611429d79",
+  "results": [
+    {
+      "remote_name": "stackos-2.1.36-mac-arm64.dmg",
+      "canonical_name": "stackos-2.1.36-mac-arm64.dmg",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.36-mac-arm64.dmg",
+      "expected": {
+        "name": "stackos-2.1.36-mac-arm64.dmg",
+        "bytes": 489828933,
+        "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750"
+      },
+      "started_at": "2026-10-10T00:58:23.992153+00:00",
+      "status": 200,
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.36-mac-arm64.dmg",
+      "headers": {
+        "Content-Length": "489828933",
+        "Content-Type": "application/x-apple-diskimage",
+        "ETag": "\"1d323245-6ac98d03-2b563c26ad97b329;;;\"",
+        "Last-Modified": "Sat, 10 Oct 2026 00:55:31 GMT"
+      },
+      "bytes": 489828933,
+      "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750",
+      "sha512": "KI6xjtt0ZgVYh5XIQ2Km3UPs+X1PcSpgjh3YKJFzGeaQuGgDNc3T72z0ziZgC7Q89dTc9w/9noweTzGZo1066g==",
+      "passed": true,
+      "completed_at": "2026-10-10T00:59:55.189478+00:00"
+    },
+    {
+      "remote_name": "stackos-2.1.36-mac-arm64.zip",
+      "canonical_name": "stackos-2.1.36-mac-arm64.zip",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.36-mac-arm64.zip",
+      "expected": {
+        "name": "stackos-2.1.36-mac-arm64.zip",
+        "bytes": 494210680,
+        "sha256": "5d12b02a65b99aaeba09c9108aaa3faea0f3c60bb8c65bd7e2c3a9302702d913"
+      },
+      "started_at": "2026-10-10T00:58:23.992586+00:00",
+      "status": 200,
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.36-mac-arm64.zip",
+      "headers": {
+        "Content-Length": "494210680",
+        "Content-Type": "application/zip",
+        "ETag": "\"1d750e78-6ac98d48-3f9da306fa9018a2;;;\"",
+        "Last-Modified": "Sat, 10 Oct 2026 00:56:40 GMT"
+      },
+      "bytes": 494210680,
+      "sha256": "5d12b02a65b99aaeba09c9108aaa3faea0f3c60bb8c65bd7e2c3a9302702d913",
+      "sha512": "hxztKwtKt+GtVq/RB/IEgG8qka2dNpgLjV2oFYzyvobMKnyn+4qy2Vze3+kIkU53ZEyx9dkbz8QgTa41wOpP7g==",
+      "passed": true,
+      "completed_at": "2026-10-10T00:59:54.150982+00:00"
+    },
+    {
+      "remote_name": "stackos-2.1.36-mac-arm64.dmg.blockmap",
+      "canonical_name": "stackos-2.1.36-mac-arm64.dmg.blockmap",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.36-mac-arm64.dmg.blockmap",
+      "expected": {
+        "name": "stackos-2.1.36-mac-arm64.dmg.blockmap",
+        "bytes": 505123,
+        "sha256": "b2284dea59b93b561f1e9a732da64c5b5ee8ce25be030b0562025a950a723e58"
+      },
+      "started_at": "2026-10-10T00:58:23.992847+00:00",
+      "status": 200,
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.36-mac-arm64.dmg.blockmap",
+      "headers": {
+        "Content-Length": "505123",
+        "Content-Type": "text/plain",
+        "ETag": "\"7b523-6ac98d48-34aade02c61d8726;;;\"",
+        "Last-Modified": "Sat, 10 Oct 2026 00:56:40 GMT"
+      },
+      "bytes": 505123,
+      "sha256": "b2284dea59b93b561f1e9a732da64c5b5ee8ce25be030b0562025a950a723e58",
+      "sha512": "Y8JfTJ63SfNMiy0FUBJFn1v3y05JNCIoGDbk6bJ9lnZKJcNnSSaTCQY+dr+PXJ5c+71SOw+7dL+bKSA+CYhQTg==",
+      "passed": true,
+      "completed_at": "2026-10-10T00:58:24.350326+00:00"
+    },
+    {
+      "remote_name": "stackos-2.1.36-mac-arm64.zip.blockmap",
+      "canonical_name": "stackos-2.1.36-mac-arm64.zip.blockmap",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.36-mac-arm64.zip.blockmap",
+      "expected": {
+        "name": "stackos-2.1.36-mac-arm64.zip.blockmap",
+        "bytes": 513232,
+        "sha256": "fd552545b1b0958f3539f4dc0b78219a62d538093f1e5d64f436160eb62d6082"
+      },
+      "started_at": "2026-10-10T00:58:24.350471+00:00",
+      "status": 200,
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.36-mac-arm64.zip.blockmap",
+      "headers": {
+        "Content-Length": "513232",
+        "Content-Type": "text/plain",
+        "ETag": "\"7d4d0-6ac98d49-d092fa65b5ad36c3;;;\"",
+        "Last-Modified": "Sat, 10 Oct 2026 00:56:41 GMT"
+      },
+      "bytes": 513232,
+      "sha256": "fd552545b1b0958f3539f4dc0b78219a62d538093f1e5d64f436160eb62d6082",
+      "sha512": "Y/yfKCswWk+wMNOjQ4llJsnutvP25AXPc1DDWbmygRttyzEc/Cy9LGZcxsvMc6Y2Ge3oNT5loBpbi+gSZE190w==",
+      "passed": true,
+      "completed_at": "2026-10-10T00:58:24.699213+00:00"
+    },
+    {
+      "remote_name": "stackos-latest-mac-arm64.2.1.36.pending.dmg",
+      "canonical_name": "stackos-latest-mac-arm64.dmg",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.2.1.36.pending.dmg",
+      "expected": {
+        "name": "stackos-latest-mac-arm64.dmg",
+        "bytes": 489828933,
+        "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750"
+      },
+      "started_at": "2026-10-10T00:58:24.699288+00:00",
+      "status": 200,
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.2.1.36.pending.dmg",
+      "headers": {
+        "Content-Length": "489828933",
+        "Content-Type": "application/x-apple-diskimage",
+        "ETag": "\"1d323245-6ac98d8b-fe8848d1f829a78;;;\"",
+        "Last-Modified": "Sat, 10 Oct 2026 00:57:47 GMT"
+      },
+      "bytes": 489828933,
+      "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750",
+      "sha512": "KI6xjtt0ZgVYh5XIQ2Km3UPs+X1PcSpgjh3YKJFzGeaQuGgDNc3T72z0ziZgC7Q89dTc9w/9noweTzGZo1066g==",
+      "passed": true,
+      "completed_at": "2026-10-10T00:59:09.044944+00:00"
+    },
+    {
+      "remote_name": "latest-mac-2.1.36.pending.yml",
+      "canonical_name": "latest-mac.yml",
+      "url": "https://stackos.flowmonkey.io/StackOS/latest-mac-2.1.36.pending.yml",
+      "expected": {
+        "name": "latest-mac.yml",
+        "bytes": 513,
+        "sha256": "01eba8d5b17e50f102aef5e7cec6dc5cbb24800876d61d0b3547bc85cb5e75ff"
+      },
+      "started_at": "2026-10-10T00:59:09.045139+00:00",
+      "status": 200,
+      "final_url": "https://stackos.flowmonkey.io/StackOS/latest-mac-2.1.36.pending.yml",
+      "headers": {
+        "Content-Length": "513",
+        "Content-Type": "text/plain",
+        "ETag": "\"201-6ac98d8b-1e86b06f60b73387;;;\"",
+        "Last-Modified": "Sat, 10 Oct 2026 00:57:47 GMT"
+      },
+      "bytes": 513,
+      "sha256": "01eba8d5b17e50f102aef5e7cec6dc5cbb24800876d61d0b3547bc85cb5e75ff",
+      "sha512": "JzgTMFlXHExSjM/SHfPLvG/JImHBYiPMLGJYl4ZNLYCcRB5GY2VsuOxGNCekZWkjOMCJy/eoJHfHD5iprMidtg==",
+      "passed": true,
+      "completed_at": "2026-10-10T01:00:28.352465+00:00",
+      "feed": {
+        "version": "2.1.36",
+        "files": [
+          {
+            "url": "stackos-2.1.36-mac-arm64.zip",
+            "sha512": "hxztKwtKt+GtVq/RB/IEgG8qka2dNpgLjV2oFYzyvobMKnyn+4qy2Vze3+kIkU53ZEyx9dkbz8QgTa41wOpP7g==",
+            "size": 494210680
+          },
+          {
+            "url": "stackos-2.1.36-mac-arm64.dmg",
+            "sha512": "KI6xjtt0ZgVYh5XIQ2Km3UPs+X1PcSpgjh3YKJFzGeaQuGgDNc3T72z0ziZgC7Q89dTc9w/9noweTzGZo1066g==",
+            "size": 489828933
+          }
+        ],
+        "path": "stackos-2.1.36-mac-arm64.zip",
+        "sha512": "hxztKwtKt+GtVq/RB/IEgG8qka2dNpgLjV2oFYzyvobMKnyn+4qy2Vze3+kIkU53ZEyx9dkbz8QgTa41wOpP7g==",
+        "releaseDate": "2026-10-10T00:28:50.015Z"
+      }
+    }
+  ],
+  "updater_metadata": {
+    "checks": [
+      {
+        "name": "stackos-2.1.36-mac-arm64.zip",
+        "passed": true
+      },
+      {
+        "name": "stackos-2.1.36-mac-arm64.dmg",
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "elapsed_seconds": 91.199,
+  "passed": true,
+  "completed_at": "2026-10-10T01:00:28.352481+00:00",
+  "prior_attempt": {
+    "path": "/tmp/stackos-global-planning-605/deploy-prepromotion-review-a1.json",
+    "sha256": "b0b38902f7b88155127d6026a0467bdc11bbd0c6b4cf9ca66f0042cd38e48c13",
+    "disposition": "Historical local verifier failure: YAML rejected bytearray after all HTTPS transfers and hashes completed. Five successful artifact proofs reused; only the 513-byte feed refetched and parsed as bytes."
+  },
+  "disposition": "approve_alias_promotion"
+}

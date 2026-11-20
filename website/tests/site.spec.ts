@@ -302,7 +302,7 @@ test('library exposes workflows, articles, cross-links, and production metadata'
 
   await expect(page.getByRole('heading', { level: 1 })).toContainText('See how AI work')
   await expect(page.getByRole('link', { name: /Engineering Tracked Delivery/ })).toBeVisible()
-  await expect(page.getByRole('heading', { level: 2, name: /Three parts.*One complete job/ })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'What do you want to do next?' })).toBeVisible()
 
   const canonical = page.locator('link[rel="canonical"]')
   await expect(canonical).toHaveAttribute('href', 'https://stackos.flowmonkey.io/library/')
@@ -441,13 +441,13 @@ test('text-only articles omit generated visuals in heroes and cards', async ({ p
 })
 
 test('article tables remain structured and contained at every viewport', async ({ page }) => {
-  await page.goto('/library/articles/ai-workflow-automation')
+  await page.goto('/library/articles/what-is-an-agentic-workflow/')
 
   const tableRegion = page.getByRole('region', { name: 'Scrollable table' })
   const table = tableRegion.locator('table')
   await expect(tableRegion).toBeVisible()
-  await expect(table.getByRole('columnheader')).toHaveCount(3)
-  await expect(table.getByRole('row')).toHaveCount(8)
+  await expect(table.getByRole('columnheader')).toHaveCount(4)
+  await expect(table.getByRole('row')).toHaveCount(4)
 
   const layout = await tableRegion.evaluate((region) => {
     const tableElement = region.querySelector('table')!
@@ -474,6 +474,28 @@ test('article tables remain structured and contained at every viewport', async (
 
   const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(pageOverflow).toBeLessThanOrEqual(1)
+})
+
+test('article evidence keeps each record and decision together without page overflow', async ({ page }) => {
+  await page.goto('/library/articles/how-to-do-keyword-research-for-ai-search/')
+  const rows = page.locator('dl.article-evidence-row')
+  await expect(rows).toHaveCount(4)
+  await expect(rows.first().locator('dt')).toContainText('Question origin')
+  await expect(rows.first().locator('dd')).toContainText('472 exact-new candidates')
+  await expect(rows.first().locator('dd')).toContainText('The query belonged to a documented problem-first research corpus.')
+  const layout = await rows.first().evaluate((row) => {
+    const label = row.querySelector('dt')!.getBoundingClientRect()
+    const explanation = row.querySelector('dd')!.getBoundingClientRect()
+    return { labelRight: label.right, labelBottom: label.bottom, explanationLeft: explanation.left, explanationTop: explanation.top }
+  })
+  if (test.info().project.name.startsWith('mobile')) {
+    expect(layout.explanationTop).toBeGreaterThan(layout.labelBottom)
+  } else {
+    expect(layout.explanationLeft).toBeGreaterThan(layout.labelRight)
+  }
+  const sourceLink = page.getByRole('link', { name: 'DataForSEO Google Ads endpoint' })
+  await expect(sourceLink).toHaveAttribute('href', 'https://docs.dataforseo.com/v3/keywords_data-google_ads-search_volume-live/')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
 })
 
 test('workflow maps remain readable, connected, and server-rendered when stage copy is long', async ({ page }) => {
@@ -723,7 +745,34 @@ test('Linear plugin URL permanently consolidates to its provider page', async ({
   )
 })
 
-test('integration detail uses a readable logo, compact actions, and a server-rendered route path', async ({ page }) => {
+test('integration action controls wait for hydration before accepting input', async ({ page }) => {
+  let releaseScripts!: () => void
+  const scriptsReady = new Promise<void>((resolve) => { releaseScripts = resolve })
+  await page.route('**/_nuxt/**', async (route) => {
+    if (route.request().resourceType() === 'script') await scriptsReady
+    await route.continue()
+  })
+
+  await page.goto('/library/integrations/hubspot/', { waitUntil: 'commit' })
+  const rows = page.locator('.integration-action-grid article')
+  const showMore = page.getByRole('button', { name: /Show 36 more/ })
+  const search = page.getByRole('searchbox', { name: 'Search HubSpot actions' })
+  try {
+    await expect(rows).toHaveCount(36)
+    await expect(search).toBeDisabled()
+    await expect(page.locator('.integration-action-tools__filters button').first()).toBeDisabled()
+    await expect(showMore).toBeDisabled()
+  } finally {
+    releaseScripts()
+  }
+
+  await expect(search).toBeEnabled()
+  await expect(showMore).toBeEnabled()
+  await showMore.click()
+  await expect(rows).toHaveCount(72)
+})
+
+test('integration detail uses a readable logo, complete action rows, and a server-rendered route path', async ({ page }) => {
   await page.goto('/library/integrations/ghost/')
 
   await expect(page.getByRole('heading', { level: 1, name: 'Ghost' })).toBeVisible()
@@ -739,17 +788,25 @@ test('integration detail uses a readable logo, compact actions, and a server-ren
   await expect(routeSteps.nth(2)).toContainText('Ghost')
   await expect(routeSteps.nth(3)).toContainText('Checked result')
 
-  if (!test.info().project.name.startsWith('mobile')) {
-    await page.goto('/library/integrations/trackbooth/')
-    const actionCards = page.locator('.integration-action-grid article')
-    await expect(actionCards).toHaveCount(36)
-    const firstThree = await actionCards.evaluateAll((cards) => cards.slice(0, 3).map((card) => {
-      const rect = card.getBoundingClientRect()
-      return { top: Math.round(rect.top), height: Math.round(rect.height) }
-    }))
-    expect(new Set(firstThree.map((card) => card.top)).size).toBe(1)
-    expect(Math.max(...firstThree.map((card) => card.height))).toBeLessThanOrEqual(180)
-  }
+  await page.goto('/library/integrations/trackbooth/')
+  const actionRows = page.locator('.integration-action-grid article')
+  await expect(actionRows).toHaveCount(36)
+  const firstThree = await actionRows.evaluateAll((rows) => rows.slice(0, 3).map((row) => {
+    const rect = row.getBoundingClientRect()
+    const description = row.querySelector('p')!
+    return { top: rect.top, bottom: rect.bottom, clientHeight: description.clientHeight, scrollHeight: description.scrollHeight }
+  }))
+  expect(firstThree[1]!.top).toBeGreaterThanOrEqual(firstThree[0]!.bottom)
+  expect(firstThree[2]!.top).toBeGreaterThanOrEqual(firstThree[1]!.bottom)
+  for (const row of firstThree) expect(row.scrollHeight - row.clientHeight).toBeLessThanOrEqual(1)
+  await page.getByRole('button', { name: /Show 36 more/ }).click()
+  await expect(actionRows).toHaveCount(72)
+  const search = page.getByRole('searchbox', { name: 'Search Trackbooth actions' })
+  await search.fill('no-such-action-555')
+  await expect(page.getByText('No actions match that search.')).toBeVisible()
+  await expect(actionRows).toHaveCount(0)
+  await search.clear()
+  await expect(actionRows).toHaveCount(36)
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)

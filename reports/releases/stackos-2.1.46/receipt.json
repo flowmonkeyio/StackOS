@@ -1,0 +1,77 @@
+{
+  "version": "2.1.46",
+  "status": "published",
+  "source_commit": "c939b60503fad584acbff27baf2b58b97b866c5b",
+  "accepted_runtime_commit": "deba55134ab6c3f14caa28d45e6bb6f62fbb3817",
+  "tag": "v2.1.46",
+  "build_id": "20261119T200906Z",
+  "built_at": "2026-11-19T20:11:40Z",
+  "project_id": 1,
+  "run_plan_id": 886,
+  "run_id": 874,
+  "authority": "Operator: Do that. Proceed to release. Don't forget to bump versions",
+  "public_base": "https://stackos.flowmonkey.io/StackOS/",
+  "action_call_ids": {"upload": 13220, "promote_alias": 13221, "promote_feed": 13222},
+  "notarization": {
+    "app_submission": "21dc1747-8b62-4af6-84c5-7d4891780328",
+    "dmg_submission": "7965d33f-27d8-41f9-bab2-18ee60bc3bc3",
+    "status": "Accepted",
+    "signing_team": "TSHN26FR48"
+  },
+  "artifacts": [
+    {
+      "name": "stackos-2.1.46-mac-arm64.zip",
+      "bytes": 551139577,
+      "sha256": "82441b9dc1a1d7793395b25e6eaf3ccfcb6b420f8b5bc16b86bd4f60b9ba7f78",
+      "sha512_base64": "/tmUTnoI3abDaoCjsKawxUYsj4r37x8BQCpLAl7/a5Ap209CHI7sdeHpzGGoi2VEDXY/BxXGB6UpfRxzROBqWw=="
+    },
+    {
+      "name": "stackos-2.1.46-mac-arm64.dmg",
+      "stable_alias": "stackos-latest-mac-arm64.dmg",
+      "bytes": 562458160,
+      "sha256": "505f2fde1aa2e5807b472b28f3aa6f881f60fc46591ed4939e560af1d439a896",
+      "sha512_base64": "ngYsPvOIo4Z87df2g4/18bETysZ0jyQNbv6wIzNDbwsWqM4BBAMjJKBFfI/I0boh1h5p2q0HsXNCr6Mbe+Fkhw=="
+    },
+    {
+      "name": "stackos-2.1.46-mac-arm64.zip.blockmap",
+      "bytes": 561259,
+      "sha256": "9ea2b443503de609f07284d0dd82cc309b939fdd94c56ec16f0c4e9b9a889e2a"
+    },
+    {
+      "name": "stackos-2.1.46-mac-arm64.dmg.blockmap",
+      "bytes": 586897,
+      "sha256": "40c2e602b9e3416505c172556b331bd1cb541a9f03592776bc136d4a8a48f77a"
+    },
+    {
+      "name": "latest-mac.yml",
+      "bytes": 513,
+      "sha256": "c55d1f147145f154502312fefabaa6269727efdb74fcee6fc87f625ac09f1737"
+    }
+  ],
+  "installed": {
+    "version": "2.1.46",
+    "build_id": "20261119T200906Z",
+    "native_update": "passed",
+    "health": "passed",
+    "doctor": "passed",
+    "launchd": "installed app path",
+    "normal_restart": "passed",
+    "upgrade_id": "upgrade-d2b5c7fbaf4545e1af039c5e5b9058f3",
+    "upgrade_status": "continued",
+    "fenced": false,
+    "recovery_required": false,
+    "checkpoint_count": 0,
+    "ui_sha256": "bef124ab954f2d2d4ed26b129b816fffd12a5d2df179bca1f797da33cebb8ec9"
+  },
+  "public_readback": {
+    "passed": true,
+    "checked_at_unix": 1795122784.155267,
+    "method": "Full HTTPS downloads and local SHA256 comparison; versioned objects verified before alias/feed promotions and left unchanged"
+  },
+  "independent_review": {
+    "reviewer": "/root/release_review",
+    "disposition": "pass",
+    "required_repairs": [],
+    "qualifications_ref": "verification.md#evidence-limits-and-retained-observations"
+  }
+}

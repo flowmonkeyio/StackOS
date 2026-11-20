@@ -174,6 +174,10 @@ function createUpdateController(options = {}) {
 
   const updater = createMacUpdater(updateUrl, options);
   updater.autoDownload = false;
+  // Every installation must first pass the shared maintenance owner.
+  updater.autoInstallOnAppQuit = false;
+  const prepareUpdate = options.prepareUpdate || require("./service").prepareUpdate;
+  let downloadedPaths = [];
   updater.logger = options.logger || loadUpdaterLogger();
 
   updater.on("checking-for-update", () => {
@@ -195,6 +199,7 @@ function createUpdateController(options = {}) {
   updater.on("update-downloaded", (info) => {
     state.status = "downloaded";
     state.updateInfo = info;
+    if (info.downloadedFile) downloadedPaths = [info.downloadedFile];
   });
   updater.on("error", (error) => {
     recordError(state, error);
@@ -234,7 +239,8 @@ function createUpdateController(options = {}) {
         };
       }
       try {
-        await updater.downloadUpdate();
+        const paths = await updater.downloadUpdate();
+        if (Array.isArray(paths) && paths.length) downloadedPaths = paths;
         return {
           ok: true,
           state
@@ -248,7 +254,7 @@ function createUpdateController(options = {}) {
         };
       }
     },
-    quitAndInstall: () => {
+    quitAndInstall: async () => {
       if (state.status !== "downloaded") {
         return {
           ok: false,
@@ -257,6 +263,17 @@ function createUpdateController(options = {}) {
         };
       }
       try {
+        state.status = "preparing";
+        const preparation = await prepareUpdate(downloadedPaths.find((file) => file.endsWith(".zip")));
+        state.maintenance = preparation.maintenance || null;
+        if (!preparation.ok) {
+          state.maintenanceFailure = { exitCode: preparation.exitCode, stderr: preparation.stderr };
+          state.status = "downloaded";
+          state.lastError = preparation.reason || "Managed upgrade preparation failed. Inspect maintenance.upgradeStatus before retrying.";
+          return { ok: false, reason: state.lastError, state };
+        }
+        state.lastError = null;
+        state.maintenanceFailure = null;
         updater.quitAndInstall();
         state.status = "installing";
         return {
@@ -265,6 +282,7 @@ function createUpdateController(options = {}) {
         };
       } catch (error) {
         recordError(state, error);
+        state.status = "downloaded";
         return {
           ok: false,
           reason: state.lastError,
