@@ -137,7 +137,7 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     assert "independent exact-commit review" in required
     assert "TaskTracker.config_json.delivery" in required
     assert "tracker.configureDelivery" in required
-    assert "Gemini and Hermes" in required and "normal native permissions" in required
+    assert "Antigravity and Hermes" in required and "normal native permissions" in required
     assert "executes remaining workflow gates through assigned agents" in required
     assert "waive required ticket independence because work is micro" in boundaries
     assert "did not implement" in policy["independence"]
