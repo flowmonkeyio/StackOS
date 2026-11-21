@@ -158,7 +158,12 @@ Repair the same intended target and retry `stackos restart`, or run
 `stackos finish-upgrade --upgrade-id <original-upgrade-id>` after it is healthy.
 Finish records the actual doctor
 command, exit status and output in a private uniquely named state-directory
-receipt and sends that ref with the current daemon generation/revision. Even
+receipt and sends that ref with the current daemon generation/revision. This
+postflight uses `doctor --json --installation`: optional host restart,
+update or foreign-entry review warnings retain their strict JSON diagnostics
+while the real process exit follows the canonical installation result. Failed
+owned repairs, invalid reports, required runtime failures and unhealthy targets
+still prevent continuation. Ordinary Doctor remains strict. Even
 `install --skip-doctor` cannot skip this required continuation doctor. A held
 checkpoint remains a required repair. A `partial` result releases the global
 fence for safe and unrelated work while keeping individual checkpoints held;

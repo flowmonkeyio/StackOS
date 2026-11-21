@@ -20,9 +20,50 @@ from stackos.host_mcp.result import HostMcpResult
 from stackos.host_mcp.service import (
     HostMcpDefinition,
     HostMcpPolicy,
+    host_installation_ok,
     normalize_result,
     repair_all,
 )
+
+
+@pytest.mark.parametrize(
+    ("status", "managed", "expected"),
+    [
+        ("registered_current", True, True),
+        ("restart_required", True, True),
+        ("registered_unmanaged", False, True),
+        ("unsupported_host_version", False, True),
+        ("absent", False, True),
+        ("registered_stale", True, False),
+        ("registered_unsafe", True, False),
+        ("registered_unsafe", False, False),
+        ("config_unreadable", False, False),
+        ("register_failed", True, False),
+        ("token_missing", False, False),
+    ],
+)
+def test_shared_host_installation_result_preserves_safety(status, managed, expected):
+    result = normalize_result(
+        HostMcpResult(
+            host_key="grok",
+            surface="fixture-native",
+            status=status,
+            message=status,
+            ok=False,
+            available=status != "absent",
+            selected=True,
+            managed=managed,
+        ),
+        HostMcpPolicy("grok", "Grok", "automatic"),
+    )
+    assert host_installation_ok(result) is expected
+    assert (
+        host_mcp_service.HostMcpAggregate(ok=result.ok, results=[result]).installation_ok
+        is expected
+    )
+    if status in {"restart_required", "registered_unmanaged", "unsupported_host_version"}:
+        assert result.blocking is True
+        assert result.ok is False
 
 
 def test_host_subprocess_preserves_explicit_service_environment(

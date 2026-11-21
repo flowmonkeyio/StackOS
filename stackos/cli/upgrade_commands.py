@@ -172,7 +172,7 @@ def prepare_for_upgrade(settings: Settings, target_identity: str, *, only_if_cha
 
 
 def run_target_doctor(settings: Settings) -> str:
-    command = [sys.executable, "-m", "stackos", "doctor", "--json"]
+    command = [sys.executable, "-m", "stackos", "doctor", "--json", "--installation"]
     env = {
         **os.environ,
         "STACKOS_HOST": settings.host,
@@ -207,11 +207,19 @@ def run_target_doctor(settings: Settings) -> str:
         doctor = json.loads(result.stdout)
     except ValueError:
         doctor = {}
+    installation = doctor.get("installation") if isinstance(doctor, dict) else None
     if (
         result.returncode != 0
         or not isinstance(doctor, dict)
-        or doctor.get("ok") is not True
-        or doctor.get("code") != 0
+        or not isinstance(doctor.get("checks"), dict)
+        or type(doctor.get("code")) is not int
+        or doctor["code"] < 0
+        or type(doctor.get("ok")) is not bool
+        or doctor["ok"] != (doctor["code"] == 0)
+        or not isinstance(installation, dict)
+        or installation.get("ok") is not True
+        or type(installation.get("code")) is not int
+        or installation["code"] != 0
     ):
         _fail(
             f"target doctor failed (exit {result.returncode}); continuation remains incomplete. "

@@ -43,3 +43,17 @@ it('discards a held old-account read after a successful selection and checks sna
   await store.load(true)
   expect(store.subscriptions.readings.codex).toBeNull()
 })
+
+it('keeps healthy selected siblings visible when a damaged profile has no resolved selection', async () => {
+  setActivePinia(createPinia())
+  vi.mocked(callOperation).mockReset()
+  const store = useHomeSubscriptions()
+  const checked_at = new Date().toISOString()
+  const reading = { plan: 'Selected Codex quota', meters: [{ scope: 'Weekly', remaining_percent: 37, resets_at: null }] }
+  const selections = { codex: { account_ref: 'codex-account', revision: 1 } }
+  const snapshot = { checked_at, readings: { codex: reading, grok: null }, selections }
+  vi.mocked(callOperation).mockResolvedValue(snapshot)
+  await store.accountChanged('codex', selections.codex)
+  await store.accountChanged('grok', { account_ref: 'damaged-grok-account', revision: 1 })
+  expect(store.subscriptions).toEqual({ checked_at, readings: snapshot.readings, loading: false, failed: false })
+})

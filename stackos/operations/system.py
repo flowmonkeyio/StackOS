@@ -132,15 +132,36 @@ async def host_subscriptions(
 
     readers = host_mcp_service.subscription_readers()
     accounts = host_mcp_service.host_accounts(ctx.extras["settings"].data_dir)
-    before = {key: accounts.resolve(key).desired for key in readers}
-    readings = await gather(*(to_thread(read, reader) for reader in readers.values()))
-    selections = {key: accounts.resolve(key).desired for key in readers}
+
+    async def read_host(
+        key: str, reader: Callable[[], dict | None]
+    ) -> tuple[HostSubscription | None, DesiredAccount | None]:
+        try:
+            before = accounts.resolve(key).desired
+            reading = await to_thread(read, reader)
+        except Exception:
+            # An unusable selected profile invalidates only this host. Do not
+            # read native defaults or invent an identity when resolution fails.
+            return None, None
+        return reading, before
+
+    results = await gather(*(read_host(key, reader) for key, reader in readers.items()))
+    readings: dict[str, HostSubscription | None] = {}
+    selections: dict[str, DesiredAccount] = {}
+    # A finished host can change while a sibling is still pending. Revalidate
+    # every selection after all readers finish, isolating resolution failures.
+    for key, (reading, before) in zip(readers, results, strict=True):
+        readings[key] = None
+        try:
+            selected = accounts.resolve(key).desired
+        except Exception:
+            continue
+        selections[key] = selected
+        readings[key] = reading if before == selected else None
+
     return HostSubscriptionsOut(
         checked_at=datetime.now(UTC),
-        readings={
-            key: reading if before[key] == selections[key] else None
-            for key, reading in zip(readers, readings, strict=True)
-        },
+        readings=readings,
         selections=selections,
     )
 
@@ -191,6 +212,11 @@ def operation_specs():
                 ),
             ),
             purpose="Display native plan and quota readings independently of MCP registration.",
+            returns=(
+                "Each unavailable or superseded host reading is null. selections contains "
+                "only successfully resolved current account identities and generations; "
+                "an unresolved selected profile has no selection entry or native fallback.",
+            ),
             response_policy=OperationResponsePolicy(
                 default_mode="raw",
                 allowed_modes=("raw",),

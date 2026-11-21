@@ -334,7 +334,7 @@ function parseMcpHostStatusPayload(result) {
   return null;
 }
 
-function readinessFromDoctor(result) {
+function readinessFromDoctor(result, { installation = false } = {}) {
   const parsed = result.parsed || parseDoctorPayload(result);
   if (!parsed) {
     return {
@@ -344,12 +344,29 @@ function readinessFromDoctor(result) {
       repair: "run `stackos doctor --json` from a terminal"
     };
   }
+  // The CLI owns install policy. A valid diagnosis may have a nonzero strict
+  // exit while its installation result succeeds; process failures cannot.
+  const diagnosis = installation && parsed.installation !== undefined ? parsed.installation : parsed;
+  const valid = diagnosis && typeof diagnosis.ok === "boolean" &&
+    Number.isInteger(diagnosis.code) && diagnosis.code >= 0 &&
+    diagnosis.ok === (diagnosis.code === 0) &&
+    parsed.ok === (parsed.code === 0) &&
+    result.exitCode === parsed.code && result.ok === parsed.ok && !result.signal;
+  if (!valid) {
+    return {
+      ok: false,
+      status: "doctor-invalid",
+      code: result.exitCode,
+      repair: "run `stackos doctor --json` from a terminal"
+    };
+  }
   const provider = parsed.info?.provider_readiness || null;
   return {
-    ok: parsed.ok,
-    status: parsed.ok ? "ready" : "needs-repair",
-    code: parsed.code,
+    ok: diagnosis.ok,
+    status: diagnosis.ok ? "ready" : "needs-repair",
+    code: diagnosis.code,
     checks: parsed.checks,
+    hosts: parsed.info?.mcp_hosts || [],
     providerReadiness: provider
   };
 }
@@ -638,7 +655,7 @@ async function installOrRepair(options = 240) {
     doctor = await runDoctor();
   }
   const readiness = doctor
-    ? readinessFromDoctor(doctor)
+    ? readinessFromDoctor(doctor, { installation: true })
     : startReady
       ? {
           ok: true,
@@ -654,12 +671,12 @@ async function installOrRepair(options = 240) {
             ? "wait for the StackOS service, then run doctor"
             : "restart the StackOS service, then run doctor"
         };
-  if (startReady && (!doctor || doctor.ok)) {
+  if (startReady && readiness.ok) {
     await reportProgress(lifecycle, "Local service is ready...", 88);
   }
   return {
-    ok: startReady && (!doctor || doctor.ok),
-    phase: !start.ok ? "restart" : startReady ? (doctor && !doctor.ok ? "doctor" : "ready") : "health",
+    ok: startReady && readiness.ok,
+    phase: !start.ok ? "restart" : startReady ? (readiness.ok ? "ready" : "doctor") : "health",
     install,
     start,
     doctor,
@@ -875,7 +892,8 @@ async function prepareInstalledVersion({
 
 async function runDoctor() {
   const result = await runStackos(["doctor", "--json"], {
-    timeoutMs: 60000
+    timeoutMs: 60000,
+    outputLimit: 1048576
   });
   const parsed = parseDoctorPayload(result);
   return {

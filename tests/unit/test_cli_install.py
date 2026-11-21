@@ -12,6 +12,7 @@ import io
 import json
 import os
 import plistlib
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -34,6 +35,9 @@ import stackos.db.migrate as migrate_module
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
 import stackos.host_mcp as host_mcp
 import stackos.host_mcp.adapters.claude_code as claude_code_adapter
+import stackos.host_mcp.adapters.claude_desktop as claude_desktop_adapter
+import stackos.host_mcp.adapters.grok as grok_adapter
+import stackos.host_mcp.service as host_mcp_service
 from stackos import claude_mcp
 from stackos import install as installer
 from stackos.auth_providers import AuthRepository
@@ -1397,7 +1401,7 @@ def test_cli_install_preserves_seed_and_token_on_rerun(
         "repair_mcp_hosts",
         lambda home: (True, ["codex ok", "claude ok"]),
     )
-    monkeypatch.setattr(local_cli, "doctor", lambda json_output=False: None)
+    monkeypatch.setattr(local_cli, "doctor", lambda **kwargs: None)
 
     runner = CliRunner()
     first = runner.invoke(app, ["install"], catch_exceptions=False)
@@ -1466,6 +1470,7 @@ def test_cli_install_targets_one_host(
             available=True,
             selected=True,
             managed=True,
+            connection_state="connected",
         )
 
     monkeypatch.setattr(host_mcp, "register_host", fake_register)
@@ -1515,6 +1520,350 @@ def test_bulk_install_can_finish_while_unmanaged_host_needs_review(
 
     assert ok is True
     assert messages == ["claude-code: The existing entry is not StackOS-owned."]
+
+
+@pytest.fixture
+def install_postflight(sandbox: Path, monkeypatch: pytest.MonkeyPatch):
+    """Real install, repair classification and Doctor; fake only native/runtime edges."""
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        monkeypatch.setenv("STACKOS_HOST", "127.0.0.1")
+        monkeypatch.setenv("STACKOS_PORT", str(reservation.getsockname()[1]))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(sandbox / ".config"))
+        monkeypatch.setenv("GROK_HOME", str(sandbox / ".grok"))
+        monkeypatch.delenv("STACKOS_PACKAGED_CLI", raising=False)
+        monkeypatch.setattr(installer, "ensure_gstack_runtime", lambda **kw: (True, "fixture"))
+        monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {}))
+        monkeypatch.setattr(doctor_cli, "_check_telegram_tdlib_runtime", lambda s: (True, {}))
+        monkeypatch.setattr(doctor_cli, "_check_scheduler_jobs", lambda s: (True, 4))
+        monkeypatch.setattr(doctor_cli, "_check_launchd_plist", lambda h: (True, {}))
+        monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda h, p: True)
+
+        # Keep all six real policies and real repair/inspection traversal. Synthetic
+        # native adapters record any registration so absent hosts cannot be installed.
+        definitions = host_mcp_service._definitions()
+        calls = []
+        states = {}
+
+        class NativeEdge:
+            def __init__(self, key):
+                self.key = key
+
+            def inspect(self, home):
+                status = states.get(self.key, "absent")
+                return HostMcpResult(
+                    host_key=self.key,
+                    surface="fixture-native",
+                    status=status,
+                    message=f"{self.key}: {status}",
+                    ok=status != "register_failed",
+                    blocking=status == "register_failed",
+                    available=status != "absent",
+                    selected=status
+                    in {"registered_current", "registered_unsafe", "registered_stale"},
+                    managed=status
+                    in {"registered_current", "registered_unsafe", "registered_stale"},
+                )
+
+            def register(self, home):
+                calls.append(self.key)
+                states[self.key] = states.get("registration_result", "registered_current")
+                return self.inspect(home)
+
+            def remove(self, home):
+                raise AssertionError("installation must not remove a host")
+
+        from dataclasses import replace
+
+        monkeypatch.setattr(
+            host_mcp_service,
+            "_definitions",
+            lambda: tuple(
+                replace(d, adapter=NativeEdge(d.policy.host_key), repair=None, force_register=None)
+                for d in definitions
+            ),
+        )
+        yield {"states": states, "calls": calls, "definitions": definitions}
+
+
+@pytest.mark.parametrize(
+    "host",
+    [None, "codex", "claude-code", "claude-desktop", "gemini-cli", "hermes", "grok", "unsupported"],
+)
+def test_normal_install_repair_doctor_optional_host_subsets(sandbox, install_postflight, host):
+    states, calls = install_postflight["states"], install_postflight["calls"]
+    if host == "unsupported":
+        states["grok"] = "unsupported_host_version"
+    elif host:
+        states[host] = "available_unregistered"
+    for _ in range(2):
+        result = CliRunner().invoke(app, ["install"])
+        assert result.exit_code == 0, result.output
+        assert "install complete" in result.output
+    assert calls == ([] if host in {None, "hermes", "unsupported"} else [host])
+    report = CliRunner().invoke(app, ["doctor", "--json"])
+    assert report.exit_code == 0, report.output
+    for config in (
+        ".codex/config.toml",
+        ".claude.json",
+        ".gemini/settings.json",
+        ".grok/config.toml",
+    ):
+        assert not (sandbox / config).exists()
+
+
+def _configure_optional_install_host(sandbox, monkeypatch, warning):
+    from dataclasses import replace
+
+    config = sandbox / "claude_desktop_config.json"
+    grok_config = sandbox / ".grok" / "config.toml"
+    foreign_bytes = (
+        b"# keep exact formatting\n[mcp_servers.stackos]\n"
+        b'command = "foreign-server"\nargs = ["serve"]\n'
+    )
+    if warning == "restart":
+        monkeypatch.setenv("STACKOS_CLAUDE_DESKTOP_CONFIG", str(config))
+        monkeypatch.setattr(claude_desktop_adapter, "_claude_desktop_running", lambda: "running")
+        monkeypatch.setattr(
+            claude_desktop_adapter, "_claude_desktop_started_after", lambda t: False
+        )
+        adapter, key = claude_desktop_adapter, "claude-desktop"
+    else:
+        grok_config.parent.mkdir()
+        grok_config.write_bytes(foreign_bytes)
+        monkeypatch.setattr(grok_adapter, "resolve_grok_bin", lambda h: "/fixture/grok")
+        adapter, key = grok_adapter, "grok"
+    synthetic = host_mcp_service._definitions()
+    monkeypatch.setattr(
+        host_mcp_service,
+        "_definitions",
+        lambda: tuple(
+            replace(d, adapter=adapter) if d.policy.host_key == key else d for d in synthetic
+        ),
+    )
+    return config, grok_config, foreign_bytes, key
+
+
+@pytest.mark.parametrize("warning", ["restart", "foreign"])
+def test_normal_install_retains_optional_warnings_and_desktop_readiness(
+    sandbox, install_postflight, monkeypatch, warning
+):
+    config, grok_config, foreign_bytes, key = _configure_optional_install_host(
+        sandbox, monkeypatch, warning
+    )
+    for _ in range(2):
+        installed = CliRunner().invoke(app, ["install"])
+        assert installed.exit_code == 0, installed.output
+        assert "install complete" in installed.output
+    targeted = CliRunner().invoke(
+        app, ["install", "--mcp-only", "--mcp-host", key, "--skip-doctor"]
+    )
+    assert targeted.exit_code == 0, targeted.output
+    report = CliRunner().invoke(app, ["doctor", "--json"])
+    assert report.exit_code == 9, report.output  # Direct Doctor stays strict.
+    payload = json.loads(report.stdout)
+    host = next(h for h in payload["info"]["mcp_hosts"] if h["host_key"] == key)
+    assert host["connection_state"] == (
+        "restart_required" if warning == "restart" else "review_required"
+    )
+    assert host["blocking"] is True
+    assert host["managed"] is (warning == "restart")
+    assert payload["installation"] == {"ok": True, "code": 0}
+    if warning == "foreign":
+        assert grok_config.read_bytes() == foreign_bytes
+    else:
+        assert json.loads(config.read_text())["mcpServers"]["stackos"]["args"][-1] == key
+    report_path = sandbox / "doctor-report.json"
+    report_path.write_text(report.stdout)
+    desktop = subprocess.run(
+        ["node", "desktop/scripts/test-service-readiness.cjs", "--doctor-report", str(report_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert desktop.returncode == 0, desktop.stdout + desktop.stderr
+
+
+@pytest.mark.parametrize("entry", ["restart", "finish-upgrade"])
+@pytest.mark.parametrize("state", ["healthy", "restart", "foreign", "owned", "runtime", "invalid"])
+def test_managed_install_postflight_and_named_recovery(
+    sandbox, install_postflight, monkeypatch, entry, state
+):
+    """Real lifecycle/Doctor/maintenance owner; only native/process/HTTP edges fake."""
+    from fastapi.testclient import TestClient
+
+    from stackos.server import create_app
+
+    if state in {"restart", "foreign"}:
+        _configure_optional_install_host(sandbox, monkeypatch, state)
+    installed = CliRunner().invoke(app, ["install"])
+    assert installed.exit_code == 0, installed.output
+    settings = Settings()
+    with TestClient(create_app(settings), base_url=f"http://127.0.0.1:{settings.port}") as api:
+        api.headers["Authorization"] = f"Bearer {settings.token_path.read_text().strip()}"
+        scheduler = api.app.state.scheduler
+        scheduler.pause()
+
+        def request(method, path, *, body=None, **kwargs):
+            response = api.request(method, path, json=body)
+            assert response.status_code == 200, response.text
+            return response.json()
+
+        monkeypatch.setattr(upgrade_cli, "_api_request", request)
+        status = upgrade_cli._call(settings, "upgradeStatus")
+        target = status["runtime"]["running_identity"]
+        upgrade_id = "oh891-optional-postflight-fixture"
+        prepared = upgrade_cli._call(
+            settings,
+            "prepareUpgrade",
+            {
+                "upgrade_id": upgrade_id,
+                "source_identity": target,
+                "target_identity": target,
+                "expected_revision": 0,
+            },
+        )["data"]
+        assert prepared["status"] == "quiesced" and prepared["fenced"] is True
+        scheduler.task_delivery_admission_id = "oh891-target-fixture-generation"
+        monkeypatch.setattr(upgrade_cli, "prepare_for_upgrade", lambda *a, **k: prepared)
+        monkeypatch.setattr(
+            daemon_cli, "_launchd_plist_for_requested_context", lambda *a, **k: None
+        )
+        monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *a: ([], []))
+        monkeypatch.setattr(daemon_processes, "_tcp_can_connect", lambda *a, **k: False)
+        monkeypatch.setattr(
+            daemon_processes, "_spawn_detached_daemon", lambda *a, **k: (True, "fixture started")
+        )
+        monkeypatch.setattr(upgrade_cli, "_daemon_health_ok", lambda *a: True)
+        damaged = state in {"owned", "runtime", "invalid"}
+        if state == "owned":
+            install_postflight["states"]["codex"] = "registered_unsafe"
+        if state == "runtime":
+            monkeypatch.setattr(
+                doctor_cli,
+                "_check_browser_runtime",
+                lambda: (False, {"repair": "repair fixture runtime"}),
+            )
+        invalid = state == "invalid"
+        emitted = []
+
+        def doctor_process(command, **kwargs):
+            assert command[:3] == [sys.executable, "-m", "stackos"]
+            assert kwargs["env"]["STACKOS_STATE_DIR"] == str(settings.state_dir)
+            with monkeypatch.context() as probe:
+                probe.setattr(daemon_processes, "_tcp_can_connect", lambda *a: True)
+                report = CliRunner().invoke(app, command[3:])
+            stdout = "invalid fixture report" if invalid else report.stdout
+            emitted.append((command, report.exit_code, stdout))
+            return subprocess.CompletedProcess(command, report.exit_code, stdout, report.stderr)
+
+        with monkeypatch.context() as native:
+            native.setattr(upgrade_cli.subprocess, "run", doctor_process)
+            command = [entry] if entry == "restart" else [entry, "--upgrade-id", upgrade_id]
+            result = CliRunner().invoke(app, command)
+            if damaged:
+                assert result.exit_code == 1, result.output
+                held = upgrade_cli._call(settings, "upgradeStatus", {"upgrade_id": upgrade_id})
+                assert held["fenced"] is True and held["status"] == "quiesced"
+                install_postflight["states"]["codex"] = "registered_current"
+                monkeypatch.setattr(doctor_cli, "_check_browser_runtime", lambda: (True, {}))
+                invalid = False
+                result = CliRunner().invoke(app, ["finish-upgrade", "--upgrade-id", upgrade_id])
+            assert result.exit_code == 0, result.output
+        completed = upgrade_cli._call(settings, "upgradeStatus", {"upgrade_id": upgrade_id})
+        assert completed["status"] == "continued" and completed["fenced"] is False
+        receipts = [
+            json.loads(p.read_text())
+            for p in settings.state_dir.glob("managed-upgrade-doctor-*.json")
+        ]
+        assert len(receipts) == (2 if damaged else 1)
+        assert sorted((r["command"], r["exit_code"], r["stdout"]) for r in receipts) == sorted(
+            emitted
+        )
+        if state in {"restart", "foreign"}:
+            diagnosis = json.loads(emitted[-1][2])
+            assert diagnosis["ok"] is False and diagnosis["code"] == 9
+            assert diagnosis["installation"] == {"ok": True, "code": 0}
+        if entry == "restart" and not damaged:
+            restart_path = sandbox / "restart-result.json"
+            restart_path.write_text(
+                json.dumps(
+                    {"exitCode": result.exit_code, "stdout": result.stdout, "stderr": result.stderr}
+                )
+            )
+            with monkeypatch.context() as probe:
+                probe.setattr(daemon_processes, "_tcp_can_connect", lambda *a: True)
+                report = CliRunner().invoke(app, ["doctor", "--json"])
+            report_path = sandbox / "strict-doctor.json"
+            report_path.write_text(report.stdout)
+            desktop = subprocess.run(
+                [
+                    "node",
+                    "desktop/scripts/test-service-readiness.cjs",
+                    "--doctor-report",
+                    str(report_path),
+                    "--restart-report",
+                    str(restart_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert desktop.returncode == 0, desktop.stdout + desktop.stderr
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["register_failed", "registered_stale", "registered_unsafe", "bootstrap", "runtime", "seed"],
+)
+def test_normal_install_retains_owned_and_bootstrap_failures(
+    sandbox, install_postflight, monkeypatch, failure
+):
+    states = install_postflight["states"]
+    if failure in {"register_failed", "registered_stale"}:
+        states["codex"] = "available_unregistered"
+        states["registration_result"] = failure
+    elif failure == "registered_unsafe":
+        states["codex"] = failure
+    elif failure == "bootstrap":
+        monkeypatch.setattr(
+            installer, "ensure_gstack_runtime", lambda **kw: (False, "bootstrap failed")
+        )
+    elif failure == "runtime":
+        monkeypatch.setattr(
+            doctor_cli, "_check_browser_runtime", lambda: (False, {"repair": "repair browser"})
+        )
+    else:
+        monkeypatch.setattr(
+            doctor_cli,
+            "_check_credentials_decrypt",
+            lambda s, d: (False, [{"error": "seed mismatch"}]),
+        )
+    result = CliRunner().invoke(app, ["install"])
+    assert result.exit_code == ({"bootstrap": 1, "runtime": 9, "seed": 8}.get(failure, 1)), (
+        result.output
+    )
+    assert isinstance(result.exception, SystemExit), repr(result.exception)
+    assert "install complete" not in result.output
+    if failure in {"register_failed", "registered_stale", "registered_unsafe"}:
+        report = CliRunner().invoke(app, ["doctor", "--json"])
+        assert report.exit_code == 9, report.output
+        assert json.loads(report.stdout)["installation"] == {"ok": False, "code": 9}
+        report_path = sandbox / "failed-owned-doctor-report.json"
+        report_path.write_text(report.stdout)
+        desktop = subprocess.run(
+            [
+                "node",
+                "desktop/scripts/test-service-readiness.cjs",
+                "--doctor-report",
+                str(report_path),
+                "--expect-install-failure",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert desktop.returncode == 0, desktop.stdout + desktop.stderr
 
 
 def test_cli_rejects_profile_target_for_non_profile_host() -> None:
@@ -1758,7 +2107,7 @@ def test_cli_install_tolerates_daemon_down_doctor(
         lambda home: (True, ["codex ok", "claude ok"]),
     )
 
-    def daemon_down_doctor(json_output: bool = False) -> None:
+    def daemon_down_doctor(json_output: bool = False, **kwargs) -> None:
         _ = json_output
         raise local_cli.typer.Exit(code=1)
 
@@ -1786,7 +2135,7 @@ def test_cli_install_preserves_blocking_doctor_failures(
         lambda home: (True, ["codex ok", "claude ok"]),
     )
 
-    def seed_failure_doctor(json_output: bool = False) -> None:
+    def seed_failure_doctor(json_output: bool = False, **kwargs) -> None:
         _ = json_output
         raise local_cli.typer.Exit(code=8)
 

@@ -467,9 +467,13 @@ def _check_claude_mcp_registered(home: Path) -> tuple[bool, dict[str, object]]:
 def _check_mcp_hosts(home: Path) -> tuple[bool, list[dict[str, object]]]:
     """Inspect all known host MCP registrations through the shared lifecycle service."""
     from stackos.host_mcp import inspect_all
+    from stackos.host_mcp.service import host_installation_ok
 
     aggregate = inspect_all(home=home)
-    return aggregate.ok, [result.to_info() for result in aggregate.results]
+    return aggregate.ok, [
+        {**result.to_info(), "installation_ok": host_installation_ok(result)}
+        for result in aggregate.results
+    ]
 
 
 @app.command(name="mcp-host-status")
@@ -642,6 +646,13 @@ def doctor(
             help="Read retained evidence for one bridge attempt only; no health probes.",
         ),
     ] = None,
+    installation: Annotated[
+        bool,
+        typer.Option(
+            "--installation",
+            help="Use installation readiness for the exit code; retain strict diagnostics.",
+        ),
+    ] = False,
 ) -> None:
     """Diagnose the local StackOS install.
 
@@ -657,6 +668,9 @@ def doctor(
     has no DB until `make migrate` runs.
     """
     if bridge_attempt is not None:
+        if installation:
+            typer.echo("--installation cannot be combined with --bridge-attempt", err=True)
+            raise typer.Exit(code=2)
         from stackos.mcp.bridge.diagnostics import bridge_diagnostic_snapshot
 
         try:
@@ -680,6 +694,11 @@ def doctor(
                 "Reconcile before retry."
             )
         return
+    _run_doctor(json_output=json_output, installation=installation)
+
+
+def _run_doctor(*, json_output: bool = False, installation: bool = False) -> None:
+    """Render the same diagnosis; installation uses its distinct host policy."""
     settings = get_settings()
 
     daemon_up = daemon_processes._tcp_can_connect(settings.host, settings.port)
@@ -770,26 +789,39 @@ def doctor(
     # DB without the seed, or seed was overwritten); we surface that as
     # the same exit-code 8 as a missing seed since the remediation is
     # identical (find the right seed or rotate).
-    if seed_mode is None or not seed_ok or not credentials_ok:
-        code = 8
-    elif token_mode is None or not token_ok:
-        code = 7
-    elif not alembic_ok:
-        code = 4
-    elif (
-        not all(install_checks.values())
-        or not browser_ok
-        or not browser_launcher_ok
-        or not mcp_registration_ready
-    ):
-        code = 9
-    elif not daemon_up:
-        code = 1
-    else:
-        code = 0
+    def exit_code(hosts_ready: bool) -> int:
+        if seed_mode is None or not seed_ok or not credentials_ok:
+            return 8
+        if token_mode is None or not token_ok:
+            return 7
+        if not alembic_ok:
+            return 4
+        if (
+            not all(install_checks.values())
+            or not browser_ok
+            or not browser_launcher_ok
+            or not hosts_ready
+        ):
+            return 9
+        return 0 if daemon_up else 1
+
+    code = exit_code(mcp_registration_ready)
+    installation_code = exit_code(
+        bool(mcp_host_infos) and all(host.get("installation_ok") is True for host in mcp_host_infos)
+    )
 
     if json_output:
-        typer.echo(json.dumps({"ok": code == 0, "code": code, "checks": checks, "info": info}))
+        typer.echo(
+            json.dumps(
+                {
+                    "ok": code == 0,
+                    "code": code,
+                    "checks": checks,
+                    "info": info,
+                    "installation": {"ok": installation_code == 0, "code": installation_code},
+                }
+            )
+        )
     else:
         status = "OK" if code == 0 else "ISSUES"
         typer.echo(f"stackos doctor: {status} (exit code {code})")
@@ -845,4 +877,6 @@ def doctor(
                 f"{provider_readiness_info.get('repair')}."
             )
 
-    _exit(code)
+    if installation and not json_output and code != installation_code:
+        typer.echo("  note: optional host attention does not prevent StackOS installation.")
+    _exit(installation_code if installation else code)
