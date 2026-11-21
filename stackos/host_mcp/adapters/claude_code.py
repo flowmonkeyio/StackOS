@@ -80,7 +80,7 @@ def run_agent(
         output_schema,
         "Claude Code",
         lambda stdout: _agent_result(stdout, native_version=_native_version(cli, project_dir)),
-        **({"process_control": process_control} if process_control else {}),
+        process_control=process_control,
     )
 
 

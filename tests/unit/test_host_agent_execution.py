@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from stackos.host_mcp import AgentRunResult, run_agent, service
-from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.adapters import antigravity_execution, claude_code, codex, grok, hermes
 from stackos.host_mcp.result import validate_agent_result
 
 
@@ -88,7 +88,7 @@ def test_setup_reasoning_reaches_native_command(
         ("codex", "gpt-6.2-sol", "none"),
         ("codex", None, "high"),
         ("claude-code", "claude-opus-5-5", "ultra"),
-        ("gemini-cli", "gemini-2.5-pro", "high"),
+        ("antigravity", "gemini-3.8-flash-low", "high"),
         ("hermes", "custom", "high"),
         ("grok", "custom-alias", "high"),
     ],
@@ -455,10 +455,15 @@ NATIVE_CASES = [
         },
     ),
     (
-        "gemini-cli",
-        "gemini-3.1-pro-preview",
+        "antigravity",
+        "gemini-3.8-flash-high",
         None,
-        {"response": '{"summary":"delivered"}', "stats": {}, "session_id": "native-thread"},
+        {
+            "response": "untrusted text",
+            "status": "SUCCESS",
+            "structured_output": {"summary": "delivered"},
+            "conversation_id": "native-thread",
+        },
     ),
     (
         "hermes",
@@ -484,7 +489,14 @@ def fake_native_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fake/claude")
     # Native version probing is exercised separately by usage-contract fixtures.
     monkeypatch.setattr(claude_code, "_native_version", lambda *_: "2.1.277 (Claude Code)")
-    monkeypatch.setattr(gemini_cli, "resolve_gemini_bin", lambda: "/fake/gemini")
+    monkeypatch.setattr(antigravity_execution, "resolve_antigravity_bin", lambda: "/fake/agy")
+    from stackos.host_mcp.agent_execution import execute_json_agent
+
+    def execute_fixture(*args, **kwargs):
+        kwargs.pop("timeout", None)
+        return execute_json_agent(*args, **kwargs)
+
+    monkeypatch.setattr(antigravity_execution, "execute_json_agent", execute_fixture)
     monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
     monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fake/grok")
 
@@ -528,12 +540,17 @@ def test_codex_native_usage_is_separate_from_agent_output(project, monkeypatch):
 def test_native_exact_resume(project, monkeypatch, host, model, provider, envelope, returned_id):
     fake_native_discovery(monkeypatch)
     envelope = dict(envelope)
-    envelope["sessionId" if host == "grok" else "session_id"] = returned_id
+    envelope[{"grok": "sessionId", "antigravity": "conversation_id"}.get(host, "session_id")] = (
+        returned_id
+    )
     calls = []
 
     def execute(command, **kwargs):
         calls.append(command)
-        assert command[command.index("--resume") + 1] == "native-thread"
+        assert (
+            command[command.index("--conversation" if host == "antigravity" else "--resume") + 1]
+            == "native-thread"
+        )
         assert command[command.index("--model") + 1] == model
         assert kwargs["cwd"] == project
         assert not any(flag in command for flag in ("--latest", "--last", "--fork"))
@@ -567,7 +584,7 @@ def test_native_exact_resume(project, monkeypatch, host, model, provider, envelo
         ("codex", "workspace-write"),
         ("claude-code", "workspace-write"),
         ("grok", "workspace-write"),
-        ("gemini-cli", "normal"),
+        ("antigravity", "normal"),
         ("hermes", "normal"),
     ],
 )
@@ -629,7 +646,7 @@ def test_invalid_resume_id_never_launches(project, monkeypatch, resume_thread_id
 
 
 @pytest.mark.parametrize("exit_code", [0, 1])
-def test_gemini_error_preserves_session_id(project, monkeypatch, exit_code):
+def test_antigravity_error_preserves_session_id(project, monkeypatch, exit_code):
     fake_native_discovery(monkeypatch)
     calls = []
 
@@ -640,8 +657,9 @@ def test_gemini_error_preserves_session_id(project, monkeypatch, exit_code):
             exit_code,
             json.dumps(
                 {
-                    "session_id": "native-thread",
-                    "error": {"message": "permission denied"},
+                    "conversation_id": "native-thread",
+                    "status": "ERROR",
+                    "error": "permission denied",
                 }
             ),
             "",
@@ -649,7 +667,7 @@ def test_gemini_error_preserves_session_id(project, monkeypatch, exit_code):
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
-        "gemini-cli",
+        "antigravity",
         project,
         "Instructions",
         "Repair",
@@ -684,8 +702,11 @@ def test_native_command_and_structured_result(
             assert "--tools" not in command
             assert "--disallowedTools" not in command
             assert json.loads(command[command.index("--json-schema") + 1]) == SCHEMA
-        elif host == "gemini-cli":
-            assert command[command.index("--approval-mode") + 1] == "auto_edit"
+        elif host == "antigravity":
+            assert (
+                json.loads(command[command.index("--settings") + 1])["agentMode"] == "accept-edits"
+            )
+            assert json.loads(command[command.index("--json-schema") + 1]) == SCHEMA
         elif host == "hermes":
             assert command[command.index("--provider") + 1] == provider
             assert command[command.index("--profile") + 1] == "work"
@@ -715,7 +736,7 @@ def test_native_command_and_structured_result(
     assert not (project / ".codex").exists()
 
 
-@pytest.mark.parametrize("host", ["gemini-cli", "hermes", "claude-desktop"])
+@pytest.mark.parametrize("host", ["antigravity", "hermes", "claude-desktop"])
 def test_unsupported_native_read_only_does_not_launch(project, monkeypatch, host):
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("must not launch"))
     result = run_agent(host, project, "Review", "packet", SCHEMA, sandbox="read-only")
@@ -723,7 +744,7 @@ def test_unsupported_native_read_only_does_not_launch(project, monkeypatch, host
     assert "support" in result.error.lower()
 
 
-@pytest.mark.parametrize("host", ["gemini-cli", "hermes"])
+@pytest.mark.parametrize("host", ["antigravity", "hermes"])
 @pytest.mark.parametrize("valid", [True, False])
 def test_normal_review_uses_native_permissions_and_review_schema(project, monkeypatch, host, valid):
     from stackos import task_delivery
@@ -743,9 +764,13 @@ def test_normal_review_uses_native_permissions_and_review_schema(project, monkey
             flag not in command
             for flag in ("--sandbox", "--approval-mode", "--yolo", "--always-approve")
         )
-        if host == "gemini-cli":
-            assert command[command.index("--output-format") + 1] == "json"
-            envelope = {"response": json.dumps(value)}
+        if host == "antigravity":
+            assert command[command.index("--output-format") + 1] == "stream-json"
+            envelope = {
+                "conversation_id": "review-session",
+                "status": "SUCCESS",
+                "structured_output": value,
+            }
         else:
             assert "--oneshot" in command
             assert command[command.index("--format") + 1] == "stream-json"
@@ -762,7 +787,7 @@ def test_normal_review_uses_native_permissions_and_review_schema(project, monkey
         "Review the exact committed candidate",
         task_delivery.RESULT_SCHEMA,
         sandbox=mode,
-        model="provider/model-id" if host == "hermes" else "gemini-3.1-pro-preview",
+        model="provider/model-id" if host == "hermes" else "gemini-3.8-flash-high",
         provider="openrouter" if host == "hermes" else None,
     )
     assert result.ok is valid
@@ -796,7 +821,7 @@ def test_native_review_controls(project, monkeypatch, host):
     ("host", "payload"),
     [
         ("claude-code", {"is_error": True, "result": "Account has no model access"}),
-        ("gemini-cli", {"error": {"message": "Account has no model access"}}),
+        ("antigravity", {"error": {"message": "Account has no model access"}}),
         ("hermes", {"type": "result", "exit_code": 1, "error": "Account has no model access"}),
         ("grok", {"error": "Account has no model access"}),
     ],
@@ -1471,7 +1496,7 @@ def test_codex_stream_exception_collects_primary_final(
     [
         ("codex", {"model": "invented-model"}, "catalog"),
         ("claude-code", {"provider": "other"}, "provider selector"),
-        ("gemini-cli", {"profile": "work"}, "profile selector"),
+        ("antigravity", {"profile": "work"}, "profile selector"),
         ("hermes", {}, "explicit provider and model"),
         ("grok", {"model": "--unsafe"}, "not a CLI option"),
     ],
@@ -1492,12 +1517,14 @@ def test_native_results_share_schema_validation(
     value = dict(envelope)
     field = {
         "claude-code": "structured_output",
-        "gemini-cli": "response",
+        "antigravity": "structured_output",
         "hermes": "text",
         "grok": "text",
     }[host]
     value[field] = (
-        payload if host == "claude-code" or isinstance(payload, str) else json.dumps(payload)
+        payload
+        if host in {"claude-code", "antigravity"} or isinstance(payload, str)
+        else json.dumps(payload)
     )
     monkeypatch.setattr(
         subprocess,
@@ -1552,7 +1579,12 @@ def test_discovery_and_execution_use_same_capability_catalog():
         capability = info["agent_execution"]
         assert info["connection_state"] == "connected"
         assert capability["credential_status"] == capability["model_access"] == "not_checked"
-        expected_dates = {"codex": "2026-11-17", "claude-code": "2026-11-13", "grok": "2026-11-13"}
+        expected_dates = {
+            "codex": "2026-11-17",
+            "claude-code": "2026-11-13",
+            "grok": "2026-11-13",
+            "antigravity": "2026-11-21",
+        }
         assert capability["checked_on"] == expected_dates.get(key, "2026-11-05")
         if key == "codex":
             assert capability["recommended_model"] == "gpt-6.2-sol"
@@ -1571,7 +1603,7 @@ def test_discovery_and_execution_use_same_capability_catalog():
         if definition.run_agent is not None:
             mode = service.agent_review_sandbox(key)
             assert capability["review_sandbox"] == mode
-            assert mode == ("normal" if key in {"gemini-cli", "hermes"} else "workspace-write")
+            assert mode == ("normal" if key in {"antigravity", "hermes"} else "workspace-write")
             if mode == "normal":
                 assert "no enforced read-only isolation" in capability["notes"]
         for model in capability["models"]:
@@ -1585,7 +1617,7 @@ def test_discovery_and_execution_use_same_capability_catalog():
             assert service.agent_selection_error(key, sandbox=sandbox, **selection) is None
 
 
-@pytest.mark.parametrize("host", ["codex", "claude-code", "gemini-cli", "hermes", "grok"])
+@pytest.mark.parametrize("host", ["codex", "claude-code", "antigravity", "hermes", "grok"])
 def test_plain_stdout_auth_failure_is_preserved_at_zero_exit(project, monkeypatch, host):
     fake_native_discovery(monkeypatch)
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")

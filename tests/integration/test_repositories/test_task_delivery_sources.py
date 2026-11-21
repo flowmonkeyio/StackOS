@@ -54,6 +54,85 @@ def start(session, project_id, root, scheduler, **kwargs):
     )
 
 
+def test_antigravity_registered_delivery_and_distinct_review(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos.host_mcp.adapters import antigravity_execution as native
+    from stackos.host_mcp.result import validate_agent_result
+
+    repo = TrackerRepository(session)
+    roles = {
+        "delivery_agent": {
+            "name": "writer",
+            "instructions": "Write the assigned change",
+            "host_key": "antigravity",
+            "model": "gemini-3.8-flash-high",
+        },
+        "review_agent": {
+            "name": "reviewer",
+            "instructions": "Review independently",
+            "host_key": "antigravity",
+            "model": "claude-sonnet-4-6",
+        },
+    }
+    repo.configure_delivery(project_id=project_id, delivery={"agents": roles})
+    repo.create_task(project_id=project_id, key="agy", title="Disposable native consumer proof")
+    repo.create_ticket(project_id=project_id, task_key="agy", key="agy-work", title="Work")
+    git(tmp_path, "init")
+    candidate = commit(tmp_path, "Baseline")
+    calls = []
+
+    def execute(command, directory, stdin, schema, host, decode, **options):
+        packet = json.loads(
+            command[command.index("--print") + 1].split("\nReturn only", 1)[0].rsplit("\n\n", 1)[-1]
+        )
+        phase = packet["phase"]
+        settings = json.loads(command[command.index("--settings") + 1])
+        assert settings["toolPermission"] == "request-review"
+        assert settings["agentMode"] == ("accept-edits" if phase == "delivery" else "")
+        assert command[command.index("--model") + 1] == roles[f"{phase}_agent"]["model"]
+        assert options["process_control"] is not None and options["timeout"] > 0
+        calls.append(phase)
+        envelope = {
+            "conversation_id": f"agy-{phase}",
+            "status": "SUCCESS",
+            "response": "ignored assistant text",
+            "structured_output": generic_result(outputs={"commit_sha": candidate}),
+        }
+        return validate_agent_result(decode(json.dumps(envelope)), schema, host)
+
+    monkeypatch.setattr(native, "resolve_antigravity_bin", lambda: "/fixture/agy")
+    monkeypatch.setattr(native, "execute_json_agent", execute)
+    scheduler = QueuedScheduler()
+    start(session, project_id, tmp_path, scheduler, task_key="agy")
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="agy-work").ticket
+    assert ticket.status == "complete", ticket.blocker_reason or ticket.outcome
+    assert calls == ["delivery", "review"]
+    receipt = ticket.completion_evidence_json["automatic_delivery"]
+    assert receipt["delivery"]["launch"]["host_key"] == "antigravity"
+    assert receipt["review"]["thread_id"] == "agy-review"
+    assert receipt["delivery"]["thread_id"] == "agy-delivery"
+
+
+def test_retired_saved_gemini_defaults_require_reselection(session, project_id, tmp_path):
+    defaults = {
+        "host_key": "gemini-cli",
+        "agents": {
+            "delivery_agent": {"name": "old-builder", "instructions": "Historical build"},
+            "review_agent": {"name": "old-review", "instructions": "Historical review"},
+        },
+    }
+    repo = TrackerRepository(session)
+    repo.configure_delivery(project_id=project_id, delivery=defaults)
+    with pytest.raises(ValidationError, match=r"support|retired|Unknown"):
+        task_delivery.resolve_delivery_settings(
+            session, project_id=project_id, project_dir=str(tmp_path)
+        )
+    assert repo.delivery_defaults(project_id=project_id) == defaults
+
+
 def stopped_source_review(session, project_id, root, monkeypatch, reviewer_instructions=None):
     """The same stopped-review scenario with committed project-native role sources."""
     root.mkdir()

@@ -180,7 +180,7 @@ def test_concurrent_admission_is_bounded_across_projects(delivery_engine, projec
                 tmp_path / str(index),
                 scheduler,
                 task_key=f"work-{index}",
-                host_key="gemini-cli",
+                host_key="antigravity",
                 delivery_agent={"name": "inert", "instructions": "Fixture"},
                 review_agent={"name": "reviewer", "instructions": "Fixture"},
             )
@@ -322,7 +322,7 @@ def test_saturated_backup_pool_does_not_consume_task_slots(
                         tmp_path / f"pool-{index}",
                         scheduler,
                         task_key=f"pool-{index}",
-                        host_key="gemini-cli",
+                        host_key="antigravity",
                         delivery_agent={"name": "inert", "instructions": "Fixture"},
                         review_agent={"name": "reviewer", "instructions": "Fixture"},
                     )

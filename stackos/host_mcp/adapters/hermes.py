@@ -88,7 +88,7 @@ def run_agent(
         output_schema,
         "Hermes",
         _agent_result,
-        **({"process_control": process_control} if process_control else {}),
+        process_control=process_control,
     )
 
 

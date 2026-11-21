@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from stackos.host_mcp import agent_execution, service
-from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.adapters import antigravity_execution, claude_code, codex, grok, hermes
 from stackos.host_mcp.agent_execution import InvocationCancelled, ManagedProcessControl
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 
@@ -272,15 +272,15 @@ def test_cancel_before_registration_and_before_handle_never_spawns(tmp_path, mon
     assert not service.usage_executions()
 
 
-@pytest.mark.parametrize("adapter", [claude_code, grok, gemini_cli, hermes])
+@pytest.mark.parametrize("adapter", [claude_code, grok, antigravity_execution, hermes])
 def test_all_shared_adapters_forward_same_private_control(adapter, tmp_path, monkeypatch):
     control = ManagedProcessControl()
     if adapter is claude_code:
         monkeypatch.setattr(adapter.claude_mcp, "resolve_claude_bin", lambda: "/fake/native")
     elif adapter is grok:
         monkeypatch.setattr(adapter, "resolve_grok_bin", lambda *_: "/fake/native")
-    elif adapter is gemini_cli:
-        monkeypatch.setattr(adapter, "resolve_gemini_bin", lambda: "/fake/native")
+    elif adapter is antigravity_execution:
+        monkeypatch.setattr(adapter, "resolve_antigravity_bin", lambda: "/fake/native")
     else:
         monkeypatch.setattr(adapter, "resolve_hermes_bin", lambda: "/fake/native")
     seen = []
@@ -297,7 +297,7 @@ def test_all_shared_adapters_forward_same_private_control(adapter, tmp_path, mon
         {},
         process_control=control,
         model="selected/model",
-        provider="selected",
+        provider=None if adapter is antigravity_execution else "selected",
     )
     assert seen == [control]
 

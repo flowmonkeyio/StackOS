@@ -5006,8 +5006,8 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
         "review_agent": {
             "name": "reviewer",
             "instructions": "Saved review instructions",
-            "host_key": "gemini-cli",
-            "model": "gemini-2.5-pro",
+            "host_key": "antigravity",
+            "model": "gemini-3.8-flash-low",
         },
     }
     repo.configure_delivery(project_id=project_id, delivery=defaults)
@@ -5018,7 +5018,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
         tmp_path,
         scheduler,
         delivery_agent=None,
-        review_agent={"model": "gemini-3.1-pro-preview"},
+        review_agent={"model": "gemini-3.8-flash-high"},
     )
     state = (
         TrackerRepository(session)
@@ -5033,7 +5033,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     }
     assert state["delivery"]["review_agent"] == {
         **defaults["review_agent"],
-        "model": "gemini-3.1-pro-preview",
+        "model": "gemini-3.8-flash-high",
     }
     # An edit after submission cannot change the effective task snapshot.
     repo.configure_delivery(
@@ -5078,10 +5078,10 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
                 {},
             ),
             (
-                "gemini-cli",
+                "antigravity",
                 f"Saved review instructions\n\n{task_delivery.LAUNCH_AUTHORITY_BOUNDARY}",
                 "normal",
-                {"model": "gemini-3.1-pro-preview"},
+                {"model": "gemini-3.8-flash-high"},
             ),
         ]
         * 2
@@ -5123,7 +5123,7 @@ def test_incomplete_or_invalid_resolved_defaults_never_schedule(
     assert task.metadata_json == {"keep": "yes"}
 
 
-@pytest.mark.parametrize("host", ["gemini-cli", "hermes"])
+@pytest.mark.parametrize("host", ["antigravity", "hermes"])
 @pytest.mark.parametrize("failure", [None, "reject", "native", "mutation"])
 def test_normal_review_receipts_and_same_task_failure(
     session, project_id, tmp_path, monkeypatch, host, failure

@@ -45,6 +45,48 @@ from tests.integration.test_repositories.test_project_setup import verified_resu
 KEY = "engineering.tracked-delivery"
 
 
+def test_managed_setup_selects_registered_antigravity(managed, session, monkeypatch):
+    from stackos.host_mcp.adapters import antigravity_execution as native
+    from stackos.host_mcp.result import validate_agent_result
+
+    _execution, _project, scheduler, _factory = managed
+    calls = []
+
+    def execute(command, root, stdin, schema, host, decode, **options):
+        assert host == "Antigravity" and options["process_control"] is not None
+        assert json.loads(command[command.index("--json-schema") + 1]) == RESULT_SCHEMA
+        assert "Consume its complete project_setup_method" in command[command.index("--print") + 1]
+        payload = {
+            "verification_status": None,
+            "report_json": SetupReport(
+                status="partial",
+                progress={"message": "Inspected native setup", "evidence_ref": "fixture/agy"},
+                recovery_condition="Select remaining inputs",
+            ).model_dump_json(),
+        }
+        calls.append(str(root))
+        envelope = {
+            "event": "result",
+            "result": {
+                "conversation_id": "agy-setup",
+                "status": "SUCCESS",
+                "structured_output": payload,
+            },
+        }
+        return validate_agent_result(decode(json.dumps(envelope)), schema, host)
+
+    monkeypatch.setattr(native, "resolve_antigravity_bin", lambda: "/fixture/agy")
+    monkeypatch.setattr(native, "execute_json_agent", execute)
+    opened = launch(managed, host_key="antigravity", model="gemini-3.8-flash-high")
+    scheduler.run()
+    session.expire_all()
+    row = session.get(AgentRequest, opened.attempt.request_id)
+    evidence = row.metadata_json["native_execution"]
+    assert evidence["snapshot"]["host_key"] == "antigravity"
+    assert evidence["execution"]["thread_id"] == "agy-setup"
+    assert row.metadata_json["project_setup"]["status"] == "partial" and len(calls) == 1
+
+
 @pytest.mark.parametrize("verification", [None, "passed", "failed", "blocked"])
 def test_native_setup_schema_file_is_closed_required_and_nullable(
     tmp_path, monkeypatch, verification

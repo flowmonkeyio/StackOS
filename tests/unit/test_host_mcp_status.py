@@ -15,7 +15,7 @@ from stackos import claude_mcp
 from stackos.cli import app
 from stackos.cli.doctor_commands import _check_mcp_hosts
 from stackos.host_mcp import restart_state, service
-from stackos.host_mcp.adapters import claude_desktop, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.adapters import antigravity, claude_desktop, codex, grok, hermes
 from stackos.host_mcp.result import HostMcpResult
 from stackos.install import copy_managed_stackos_skill_to
 from stackos.operations.system import HostMcpStatusInput, host_mcp_status
@@ -38,7 +38,7 @@ def native_registrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(codex, "resolve_codex_bins", lambda: ["/fixture/codex"])
     monkeypatch.setattr(claude_mcp, "resolve_claude_bin", lambda _bin: "/fixture/claude")
     monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fixture/grok")
-    monkeypatch.setattr(gemini_cli, "resolve_gemini_bin", lambda: None)
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: None)
     monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fixture/hermes")
     copy_managed_stackos_skill_to(tmp_path / ".grok/skills")
     codex_config = tmp_path / ".codex/config.toml"
@@ -108,9 +108,9 @@ def test_default_bridge_context_agrees_across_status_callers(
         for key in ("codex", "claude-code", "claude-desktop", "grok"):
             assert states[key]["connection_state"] == "connected", states[key]
             assert not states[key]["blocking"]
-        assert states["gemini-cli"]["connection_state"] == "unavailable"
+        assert states["antigravity"]["connection_state"] == "unavailable"
         assert states["hermes"]["connection_state"] == "available"
-        assert not states["gemini-cli"]["blocking"] and not states["hermes"]["blocking"]
+        assert not states["antigravity"]["blocking"] and not states["hermes"]["blocking"]
     assert [(p.read_bytes(), p.stat().st_mtime_ns) for p in paths] == before
 
 

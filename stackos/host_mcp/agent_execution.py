@@ -163,8 +163,15 @@ def execute_json_agent(
     /,
     *,
     process_control: ManagedProcessControl | None = None,
+    timeout: float | None = None,
+    stderr_error: Callable[[str], str | None] | None = None,
 ) -> AgentRunResult:
     native_env = subprocess_env_for_cli(command[0]) if env is None else env
+    # A native print timeout need not bound authentication or child startup.
+    # Reuse the same owned group boundary for callers without a managed scope.
+    if timeout is not None and process_control is None:
+        process_control = ManagedProcessControl()
+    process_error = None
     try:
         if process_control is not None:
             child = process_control.spawn(
@@ -178,7 +185,36 @@ def execute_json_agent(
                 pass_fds=pass_fds,
             )
             try:
-                stdout, stderr = child.communicate(prompt)
+                if timeout is None:
+                    stdout, stderr = child.communicate(prompt)
+                else:
+                    try:
+                        stdout, stderr = child.communicate(prompt, timeout=timeout)
+                    except subprocess.TimeoutExpired as exc:
+                        retirement = process_control.stop()
+                        process_error = (
+                            f"{host} exceeded its external deadline; retirement {retirement}."
+                        )
+                        try:
+                            stdout, stderr = child.communicate(timeout=2)
+                        except subprocess.TimeoutExpired as drain_exc:
+                            # An unconfirmed descendant may still hold a pipe.
+                            # Keep only observed bytes and return bounded failure.
+                            raw_stdout = drain_exc.output or exc.output or ""
+                            raw_stderr = drain_exc.stderr or exc.stderr or ""
+                            stdout = (
+                                raw_stdout.decode("utf-8", errors="replace")
+                                if isinstance(raw_stdout, bytes)
+                                else raw_stdout
+                            )
+                            stderr = (
+                                raw_stderr.decode("utf-8", errors="replace")
+                                if isinstance(raw_stderr, bytes)
+                                else raw_stderr
+                            )
+                            for pipe in (child.stdin, child.stdout, child.stderr):
+                                if pipe is not None:
+                                    pipe.close()
             except BaseException:
                 process_control.stop()
                 raise
@@ -208,7 +244,9 @@ def execute_json_agent(
         thread_id=native.thread_id,
         result=native.result,
         usage=native.usage,
-        error=native.error
+        error=process_error
+        or native.error
+        or (stderr_error(process.stderr) if stderr_error is not None else None)
         or (
             process.stderr.strip() or process.stdout.strip() or f"{host} exited unsuccessfully."
             if process.returncode

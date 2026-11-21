@@ -179,7 +179,7 @@ def test_concurrent_drains_skip_saturated_project_and_reserve_in_task_id_order(
                     TrackerRepository(session).create_task(project_id=project, key=key, title=key)
                     root = tmp_path / key
                     root.mkdir()
-                    submit(session, project, root, scheduler, task_key=key, host_key="gemini-cli")
+                    submit(session, project, root, scheduler, task_key=key, host_key="antigravity")
     ready = Barrier(4)
 
     def drain(_):
@@ -253,7 +253,7 @@ def test_independent_projects_execute_beyond_old_pool_and_lower_without_preempti
                     tmp_path / key,
                     scheduler,
                     task_key=key,
-                    host_key="gemini-cli",
+                    host_key="antigravity",
                     delivery_agent={"name": "inert", "instructions": "Fixture"},
                     review_agent={"name": "reviewer", "instructions": "Fixture"},
                 )

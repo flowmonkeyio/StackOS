@@ -22,7 +22,16 @@ from stackos.host_mcp.accounts import (
     HostAccounts,
     NativeAccountAdapter,
 )
-from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.adapters import (
+    antigravity,
+    antigravity_execution,
+    claude_code,
+    claude_desktop,
+    codex,
+    grok,
+    hermes,
+    retired_gemini,
+)
 from stackos.host_mcp.adapters.claude_accounts import accounts as claude_accounts
 from stackos.host_mcp.adapters.grok_accounts import GrokAccounts
 from stackos.host_mcp.agent_execution import (
@@ -1099,6 +1108,11 @@ def agent_selection_error(
     """
     definition = _definition_by_key(host_key)
     if definition is None or definition.run_agent is None:
+        if host_key == "gemini-cli":
+            return (
+                "Gemini CLI is retired. Reselect a supported native host; "
+                "saved sessions are not interchangeable."
+            )
         return f"Host {host_key!r} does not support headless agent execution."
     capability = definition.policy.agent_execution
     if sandbox not in capability.sandboxes:
@@ -1190,6 +1204,9 @@ def repair_all(*, home: Path | None = None) -> HostMcpAggregate:
             ]
         )
     results: list[HostMcpResult] = []
+    retired = retired_gemini.remove_owned_registration(home_dir)
+    if retired is not None:
+        results.append(retired)
     for definition in _definitions():
         current = normalize_result(
             _call_adapter(
@@ -1219,6 +1236,9 @@ def repair_all(*, home: Path | None = None) -> HostMcpAggregate:
 def remove_all(*, home: Path | None = None) -> HostMcpAggregate:
     home_dir = home or default_home()
     results = []
+    retired = retired_gemini.remove_owned_registration(home_dir)
+    if retired is not None:
+        results.append(retired)
     for definition in _definitions():
         current = normalize_result(
             _call_adapter(
@@ -1285,7 +1305,7 @@ def _single(
                 ok=False,
                 available=False,
                 blocking=True,
-                repair="Use one of: codex, claude-code, claude-desktop, gemini-cli, hermes, grok.",
+                repair="Use one of: codex, claude-code, claude-desktop, antigravity, hermes, grok.",
             ),
             HostMcpPolicy(host_key, host_key, "automatic"),
         )
@@ -1432,34 +1452,37 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             ),
         ),
         HostMcpDefinition(
-            gemini_cli,
+            antigravity,
             HostMcpPolicy(
-                "gemini-cli",
-                "Gemini CLI",
+                "antigravity",
+                "Antigravity",
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "normal"),
                     review_sandbox="normal",
                     models=(
-                        "gemini-3.1-pro-preview",
-                        "gemini-3-pro-preview",
-                        "gemini-3-flash-preview",
-                        "gemini-2.5-pro",
-                        "gemini-2.5-flash",
+                        "gemini-3.8-flash-high",
+                        "gemini-3.8-flash-medium",
+                        "gemini-3.8-flash-low",
+                        "claude-sonnet-4-6",
+                        "claude-opus-4-6-thinking",
+                        "gpt-oss-120b-medium",
                     ),
+                    checked_on="2026-11-21",
                     notes=(
-                        "Delivery uses auto_edit; unapproved shell calls are denied. "
+                        "Delivery uses accept-edits and request-review; "
+                        "unapproved tools are denied. "
                         "Review uses normal native permissions with review-only instructions; "
-                        "no enforced read-only isolation. Auth-status CLI is unverified."
+                        "no enforced read-only isolation. Model slugs carry native effort; "
+                        "separate effort overrides are unverified. Resumed usage is unavailable."
                     ),
                     sources=(
-                        "https://geminicli.com/docs/cli/headless/",
-                        "https://geminicli.com/docs/cli/model/",
-                        "https://geminicli.com/docs/cli/plan-mode/#non-interactive-execution",
+                        "https://antigravity.google/docs/cli/headless/",
+                        "https://antigravity.google/docs/cli/reference/",
                     ),
                 ),
             ),
-            run_agent=gemini_cli.run_agent,
+            run_agent=antigravity_execution.run_agent,
         ),
         HostMcpDefinition(
             hermes,

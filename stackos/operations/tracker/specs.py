@@ -387,7 +387,7 @@ def operation_specs() -> list[OperationSpec]:
                 "Optional per-role host_key, "
                 "model, provider and Hermes profile use the host_mcp capability catalog. "
                 "Without defaults, omitted host/model keeps the Codex/inherited-model path. "
-                "Codex, Claude Code and Grok retain native review controls; Gemini CLI and Hermes "
+                "Codex, Claude Code and Grok retain native review controls; Antigravity and Hermes "
                 "review with normal native permissions and review-only behavioral instructions. "
                 "Claude Desktop cannot run headlessly. Unsupported choices fail without fallback.",
             ),
@@ -406,8 +406,8 @@ def operation_specs() -> list[OperationSpec]:
                         "task_key": "feature",
                         "project_dir": "/work/project",
                         "review_agent": {
-                            "host_key": "gemini-cli",
-                            "model": "gemini-3.1-pro-preview",
+                            "host_key": "antigravity",
+                            "model": "gemini-3.8-flash-high",
                         },
                     },
                 ),

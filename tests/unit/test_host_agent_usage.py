@@ -2,7 +2,7 @@
 
 Sources: Codex rust-v0.167.0 exec/event_processor_with_jsonl_output.rs;
 Grok Build headless-mode contract; Claude Agent SDK cost-tracking;
-Gemini CLI headless JSON and core/src/telemetry/uiTelemetry.ts (hydrate).
+Antigravity documented protocol is covered in test_host_antigravity_execution.py.
 """
 
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from stackos.host_mcp import run_agent
-from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.adapters import claude_code, codex, grok, hermes
 from stackos.host_mcp.result import normalize_usage, usage_snapshot
 
 SCHEMA = {"type": "object", "required": ["summary"]}
@@ -72,36 +72,6 @@ CLAUDE = {
     },
     # Narrower main-loop counters must not be added or substituted.
     "usage": {"input_tokens": 999999, "output_tokens": 999999},
-}
-GEMINI = {
-    "session_id": "session",
-    "response": '{"summary":"OK"}',
-    "stats": {
-        "models": {
-            "main": {
-                "tokens": {
-                    "prompt": 100,
-                    "candidates": 20,
-                    "thoughts": 10,
-                    "tool": 5,
-                    "cached": 80,
-                    "input": 20,
-                    "total": 135,
-                },
-                "roles": {"main": {"tokens": {"total": 135}}},
-            },
-            "helper": {
-                "tokens": {
-                    "prompt": 10,
-                    "candidates": 5,
-                    "thoughts": 0,
-                    "tool": 0,
-                    "cached": 0,
-                    "total": 15,
-                }
-            },
-        }
-    },
 }
 
 
@@ -623,75 +593,24 @@ def test_detail_delta_bounds_do_not_erase_base(current_details, expected):
     assert result["measured"] == {"input": 60, "output": 20, "total": 80, **expected}
 
 
-def test_gemini_details_use_models_once_and_leave_cache_write_unknown():
-    first = normalize_usage(
-        gemini_cli._agent_result(json.dumps(GEMINI)).usage,
-        session_id="session",
-        resumed=False,
-    )
-    assert first["measured"] == {
-        "input": 110,
-        "output": 40,
-        "total": 150,
-        "cache_read": 80,
-        "cache_write": None,
-        "reasoning": 10,
-    }
-    value = json.loads(json.dumps(GEMINI))
-    value["stats"]["models"]["main"]["tokens"].update(
-        prompt=120,
-        cached=90,
-        thoughts=15,
-        total=160,
-    )
-    second = normalize_usage(
-        gemini_cli._agent_result(json.dumps(value)).usage,
-        session_id="session",
-        resumed=True,
-        previous=first,
-    )
-    assert second["measured"] == {
-        "input": 20,
-        "output": 5,
-        "total": 25,
-        "cache_read": 10,
-        "cache_write": None,
-        "reasoning": 5,
-    }
-
-
-@pytest.mark.parametrize("host", ["gemini", "grok"])
 @pytest.mark.parametrize("detail", [None, True, -1, "10", 99999])
-def test_invalid_native_optional_detail_preserves_other_counts(host, detail):
-    if host == "gemini":
-        value = json.loads(json.dumps(GEMINI))
-        value["stats"]["models"]["helper"]["tokens"]["cached"] = detail
-        result = gemini_cli._agent_result(json.dumps(value))
-        assert result.usage["snapshot"] == {
-            "input": 110,
-            "output": 40,
-            "total": 150,
-            "cache_read": None,
-            "cache_write": None,
-            "reasoning": 10,
-        }
-    else:
-        value = {
-            "sessionId": "session",
-            "stopReason": "end_turn",
-            "text": '{"summary":"OK"}',
-            "usage": {**GROK_1077[0], "reasoning_tokens": detail},
-        }
-        result = grok._agent_result(json.dumps(value))
-        assert result.usage["snapshot"] == {
-            "input": 15652,
-            "output": 57,
-            "total": 15709,
-            "cache_read": 8832,
-            "cache_write": 0,
-            "reasoning": None,
-        }
+def test_invalid_grok_optional_detail_preserves_other_counts(detail):
+    value = {
+        "sessionId": "session",
+        "stopReason": "end_turn",
+        "text": '{"summary":"OK"}',
+        "usage": {**GROK_1077[0], "reasoning_tokens": detail},
+    }
+    result = grok._agent_result(json.dumps(value))
     assert result.ok
+    assert result.usage["snapshot"] == {
+        "input": 15652,
+        "output": 57,
+        "total": 15709,
+        "cache_read": 8832,
+        "cache_write": 0,
+        "reasoning": None,
+    }
 
 
 def test_missing_detail_is_not_bridged_on_the_next_resume():
@@ -754,18 +673,6 @@ def test_claude_optional_thinking_requires_all_model_rows(thinking):
                 "reasoning": None,
             },
         ),
-        (
-            "gemini-cli",
-            GEMINI,
-            {
-                "input": 110,
-                "output": 40,
-                "total": 150,
-                "cache_read": 80,
-                "cache_write": None,
-                "reasoning": 10,
-            },
-        ),
     ],
 )
 @pytest.mark.parametrize("fault", [None, "native", "exit", "schema", "session", "text"])
@@ -774,7 +681,6 @@ def test_native_usage_survives_common_error_paths(
 ):
     value = json.loads(json.dumps(envelope))
     monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fake/claude")
-    monkeypatch.setattr(gemini_cli, "resolve_gemini_bin", lambda: "/fake/gemini")
     if fault == "native":
         value.update(is_error=True, error="native failed", result="native failed")
     if fault == "schema":
@@ -839,7 +745,7 @@ def test_codex_usage_survives_all_result_paths(tmp_path, monkeypatch, fault):
     assert result.usage["snapshot"]["reasoning"] is None
 
 
-@pytest.mark.parametrize("host,envelope", [("claude-code", CLAUDE), ("gemini-cli", GEMINI)])
+@pytest.mark.parametrize("host,envelope", [("claude-code", CLAUDE)])
 @pytest.mark.parametrize(
     "malformed",
     [
@@ -860,12 +766,8 @@ def test_codex_usage_survives_all_result_paths(tmp_path, monkeypatch, fault):
 )
 def test_malformed_native_usage_is_optional(host, envelope, malformed):
     value = json.loads(json.dumps(envelope))
-    if host == "claude-code":
-        value["modelUsage"] = malformed
-        result = claude_code._agent_result(json.dumps(value), native_version="2.1.277")
-    else:
-        value["stats"]["models"] = malformed
-        result = gemini_cli._agent_result(json.dumps(value))
+    value["modelUsage"] = malformed
+    result = claude_code._agent_result(json.dumps(value), native_version="2.1.277")
     assert result.ok and result.usage is None
 
 

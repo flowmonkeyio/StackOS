@@ -1588,7 +1588,16 @@ def install_postflight(sandbox: Path, monkeypatch: pytest.MonkeyPatch):
 
 @pytest.mark.parametrize(
     "host",
-    [None, "codex", "claude-code", "claude-desktop", "gemini-cli", "hermes", "grok", "unsupported"],
+    [
+        None,
+        "codex",
+        "claude-code",
+        "claude-desktop",
+        "antigravity",
+        "hermes",
+        "grok",
+        "unsupported",
+    ],
 )
 def test_normal_install_repair_doctor_optional_host_subsets(sandbox, install_postflight, host):
     states, calls = install_postflight["states"], install_postflight["calls"]

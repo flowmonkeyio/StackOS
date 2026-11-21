@@ -12,7 +12,7 @@ import yaml
 
 import stackos.host_mcp.service as host_mcp_service
 from stackos.config import Settings
-from stackos.host_mcp.adapters import claude_desktop, codex, gemini_cli, hermes
+from stackos.host_mcp.adapters import antigravity, claude_desktop, codex, hermes
 from stackos.host_mcp.bridge import command_line_mentions, command_matches, resolve_bridge_command
 from stackos.host_mcp.discovery import subprocess_env_for_cli
 from stackos.host_mcp.restart_state import state_path
@@ -135,7 +135,7 @@ def test_bridge_command_equivalence_preserves_identity_and_custom_context(
     assert not command_matches(custom, bare)
 
 
-@pytest.mark.parametrize("host", ["gemini-cli", "hermes"])
+@pytest.mark.parametrize("host", ["antigravity", "hermes"])
 def test_selected_optional_host_config_uses_shared_default_equivalence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, host: str
 ) -> None:
@@ -146,17 +146,12 @@ def test_selected_optional_host_config_uses_shared_default_equivalence(
     monkeypatch.delenv("HERMES_HOME", raising=False)
     command = resolve_bridge_command(runtime=host)
     entry = {"command": command[0], "args": command[1:]}
-    if host == "gemini-cli":
-        path = tmp_path / ".gemini/settings.json"
-        path.parent.mkdir()
+    if host == "antigravity":
+        path = tmp_path / ".gemini/config/mcp_config.json"
+        path.parent.mkdir(parents=True)
         path.write_text(json.dumps({"mcpServers": {"stackos": entry}}))
-        monkeypatch.setattr(gemini_cli, "resolve_gemini_bin", lambda: "/fixture/gemini")
+        monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: "/fixture/gemini")
 
-        def list_servers(_binary, args):
-            assert args == ["mcp", "list"]
-            return subprocess.CompletedProcess(args, 0, "", "")
-
-        monkeypatch.setattr(gemini_cli, "_run_gemini", list_servers)
     else:
         path = tmp_path / ".hermes/config.yaml"
         path.parent.mkdir()
@@ -169,7 +164,7 @@ def test_selected_optional_host_config_uses_shared_default_equivalence(
     monkeypatch.setenv("STACKOS_DATA_DIR", str(tmp_path / ".local/share/stackos"))
     monkeypatch.setenv("STACKOS_STATE_DIR", str(tmp_path / ".local/state/stackos"))
     result = (
-        gemini_cli.inspect(tmp_path) if host == "gemini-cli" else hermes.inspect_profile(tmp_path)
+        antigravity.inspect(tmp_path) if host == "antigravity" else hermes.inspect_profile(tmp_path)
     )
     assert result.status == "registered_current", result
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
@@ -736,11 +731,11 @@ def test_resolve_bridge_command_uses_workspace_root_env(tmp_path: Path, monkeypa
     monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
     monkeypatch.setenv("STACKOS_WORKSPACE_ROOT", str(workspace_root))
 
-    command = resolve_bridge_command(runtime="gemini-cli")
+    command = resolve_bridge_command(runtime="antigravity")
 
     assert "--workspace-root" in command
     assert str(workspace_root) in command
-    assert command[-2:] == ["--runtime", "gemini-cli"]
+    assert command[-2:] == ["--runtime", "antigravity"]
 
 
 def test_codex_adapter_rejects_stale_packaged_bridge_command(tmp_path: Path, monkeypatch) -> None:
@@ -1032,140 +1027,6 @@ def test_claude_desktop_never_overwrites_unmanaged_same_name_entry(
     assert registered.status == "registered_unmanaged"
     assert removed.status == "registered_unmanaged"
     assert json.loads(config.read_text(encoding="utf-8")) == original
-
-
-def test_gemini_adapter_registers_without_project_config(tmp_path: Path, monkeypatch) -> None:
-    _write_token(tmp_path)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    log = tmp_path / "gemini.log"
-    _write_fake_cli(bin_dir, "gemini", log)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-
-    result = gemini_cli.register(tmp_path)
-
-    assert result.ok is True
-    calls = log.read_text(encoding="utf-8").splitlines()
-    assert any(call.startswith("mcp add --scope user stackos ") for call in calls)
-    assert not (tmp_path / ".gemini").exists()
-
-
-def test_gemini_adapter_inspects_user_config_when_cli_list_is_silent(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    log = tmp_path / "gemini.log"
-    _write_fake_cli(bin_dir, "gemini", log)
-    packaged = tmp_path / "StackOS.app" / "Contents" / "Resources" / "stackos" / "bin" / "stackos"
-    packaged.parent.mkdir(parents=True)
-    packaged.write_text("#!/bin/sh\n", encoding="utf-8")
-    packaged.chmod(0o755)
-    settings = tmp_path / ".gemini" / "settings.json"
-    settings.parent.mkdir()
-    settings.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "stackos": {
-                        "command": str(packaged),
-                        "args": ["mcp-bridge", "--runtime", "gemini-cli"],
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-    monkeypatch.setenv("STACKOS_PACKAGED_CLI", str(packaged))
-
-    result = gemini_cli.inspect(tmp_path)
-
-    assert result.ok is True
-    assert result.status == "registered_current"
-    assert result.command == [str(packaged), "mcp-bridge", "--runtime", "gemini-cli"]
-
-
-def test_gemini_adapter_matches_exact_stackos_server_row(tmp_path: Path, monkeypatch) -> None:
-    _write_token(tmp_path)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    log = tmp_path / "gemini.log"
-    _write_fake_cli(
-        bin_dir,
-        "gemini",
-        log,
-        list_output="my-stackos-dev /tmp/stackos mcp-bridge --runtime gemini-cli\n",
-    )
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-
-    result = gemini_cli.inspect(tmp_path)
-
-    assert result.ok is True
-    assert result.advisory is True
-    assert result.blocking is False
-    assert result.status == "available_unregistered"
-
-
-def test_gemini_unsupported_mcp_is_advisory(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    log = tmp_path / "gemini.log"
-    _write_fake_cli(bin_dir, "gemini", log)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-    monkeypatch.setattr(
-        gemini_cli,
-        "_run_gemini",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            ["gemini", "mcp", "list"],
-            returncode=2,
-            stdout="",
-            stderr="unknown command",
-        ),
-    )
-
-    result = gemini_cli.inspect(tmp_path)
-
-    assert result.ok is True
-    assert result.advisory is True
-    assert result.blocking is False
-    assert result.status == "unsupported_host_version"
-
-
-def test_gemini_never_mutates_unmanaged_same_name_entry(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    _write_token(tmp_path)
-    calls: list[list[str]] = []
-    monkeypatch.setattr(gemini_cli, "resolve_gemini_bin", lambda _value=None: "/fake/gemini")
-    monkeypatch.setattr(
-        gemini_cli,
-        "_run_gemini",
-        lambda _binary, args: (
-            calls.append(list(args))
-            or subprocess.CompletedProcess(
-                args,
-                0,
-                "stackos other-tool serve\n" if args[:2] == ["mcp", "list"] else "",
-                "",
-            )
-        ),
-    )
-
-    inspected = gemini_cli.inspect(tmp_path)
-    registered = gemini_cli.register(tmp_path)
-    removed = gemini_cli.remove(tmp_path)
-
-    assert inspected.status == "registered_unmanaged"
-    assert inspected.managed is False
-    assert registered.status == "registered_unmanaged"
-    assert removed.status == "registered_unmanaged"
-    assert not any(args[:2] in (["mcp", "add"], ["mcp", "remove"]) for args in calls)
 
 
 def test_host_mcp_token_preflight_respects_configured_state_dir(

@@ -76,7 +76,7 @@ def install(
             "--mcp-host",
             help=(
                 "Connect one AI tool: codex, claude-code, claude-desktop, "
-                "gemini-cli, hermes, or grok."
+                "antigravity, hermes, or grok."
             ),
         ),
     ] = None,
@@ -142,7 +142,7 @@ def install(
         "codex",
         "claude-code",
         "claude-desktop",
-        "gemini-cli",
+        "antigravity",
         "hermes",
         "grok",
     }

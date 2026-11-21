@@ -97,7 +97,7 @@ def run_agent(
         output_schema,
         "Grok",
         _agent_result,
-        **({"process_control": process_control} if process_control else {}),
+        process_control=process_control,
     )
 
 
