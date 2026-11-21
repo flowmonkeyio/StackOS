@@ -155,21 +155,35 @@ def test_antigravity_native_command_reaches_console_independently(
     executable = tmp_path / "agy"
     marker = tmp_path / "argv.json"
     executable.write_text(
-        f"#!{sys.executable}\nimport json, pathlib, sys, time\n"
-        f"pathlib.Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]))\n"
-        + ("time.sleep(30)\n" if mode == "timeout" else "")
+        f"#!{sys.executable}\nimport json, pathlib, sys, threading, time\n"
+        # Reproduce legitimate startup latency before the command can report argv.
+        + ("time.sleep(0.5)\n" if mode == "timeout" else "")
+        + f"pathlib.Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+        + ("threading.Event().wait()\n" if mode == "timeout" else "")
         + f"print({('Sign in to continue' if mode == 'malformed' else json.dumps(payload))!r})\n"
     )
     executable.chmod(0o700)
     monkeypatch.setattr(service.antigravity, "resolve_antigravity_bin", lambda: str(executable))
     reader = service.subscription_readers()["antigravity"]
     capture = native.run_capture
+    spawn = native.ManagedProcessControl.spawn
+    processes = []
+    capture_results = []
+
+    def observed_spawn(control, *args, **kwargs):
+        process = spawn(control, *args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(native.ManagedProcessControl, "spawn", observed_spawn)
 
     def bounded(*args, **kwargs):
         assert kwargs["timeout"] == 12
-        if mode == "timeout":
-            kwargs["timeout"] = 0.2  # Exercise real retirement without a 12-second fixture wait.
-        return capture(*args, **kwargs)
+        # Keep the real reader budget: a shortened timer can kill the interpreter
+        # before its argv marker and never establish the hanging-call precondition.
+        result = capture(*args, **kwargs)
+        capture_results.append(result)
+        return result
 
     monkeypatch.setattr(native, "run_capture", bounded)
     sibling = {"plan": "ChatGPT Pro", "meters": []}
@@ -224,7 +238,20 @@ def test_antigravity_native_command_reaches_console_independently(
         }
     else:
         assert readings["antigravity"] is None
-    assert json.loads(marker.read_text()) == ["--print", "/usage", "--output-format", "json"]
+    argv = ["--print", "/usage", "--output-format", "json"]
+    assert json.loads(marker.read_text()) == argv
+    assert len(processes) == 1
+    assert processes[0].args == [str(executable), *argv]
+    assert processes[0].poll() is not None
+    if mode == "timeout":
+        assert capture_results == [None]
+        # The real owner terminated and reaped our hanging child.
+        assert processes[0].returncode < 0
+        status = client.post(
+            "/api/v1/operations/hostMcp.status/call", json={"arguments": {}}, headers=headers
+        )
+        assert status.status_code == 200
+        assert status.json()["items"][0]["connection_state"] == "connected"
 
 
 @pytest.fixture
