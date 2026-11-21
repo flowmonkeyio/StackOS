@@ -12,6 +12,7 @@
   "media-buying.custom-media-tool": { "src": "/images/integrations/custom-media-tool.svg", "kind": "icon" },
   "seo.dataforseo": { "src": "/images/integrations/dataforseo.jpeg", "kind": "icon" },
   "seo.serper": { "src": "/images/integrations/serper.svg", "kind": "wordmark" },
+  "utils.elevenlabs": { "src": "/images/integrations/elevenlabs.svg", "kind": "icon" },
   "branding.esp": { "src": "/images/integrations/email-service-provider.svg", "kind": "icon" },
   "utils.firecrawl": { "src": "/images/integrations/firecrawl-icon.png", "kind": "icon" },
   "utils.ftp": { "src": "/images/integrations/ftp.svg", "kind": "wordmark-dark" },
