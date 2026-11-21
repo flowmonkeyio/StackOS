@@ -232,7 +232,7 @@ def test_registration_requires_token_and_handles_write_failure_safely(native_hom
     path = _config(native_home, {"mcpServers": {"stackos": _entry(["/old/stackos", "mcp-bridge"])}})
     before = path.read_bytes()
 
-    def deny_write(*args):
+    def deny_write(*args, **kwargs):
         raise PermissionError("private-content")
 
     monkeypatch.setattr("stackos.host_mcp.json_config._atomic_write_json", deny_write)

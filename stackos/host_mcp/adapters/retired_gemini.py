@@ -7,7 +7,7 @@ Historical host keys/snapshots remain Gemini; callers must reselect retired host
 from pathlib import Path
 
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, is_stackos_bridge_command
-from stackos.host_mcp.json_config import read_json_object, remove_mcp_server
+from stackos.host_mcp.json_config import CONFIG_CHANGED, read_json_object, remove_mcp_server
 from stackos.host_mcp.result import HostMcpResult, looks_secretish
 
 
@@ -31,22 +31,26 @@ def remove_owned_registration(home: Path) -> HostMcpResult | None:
     if args.count("--runtime") != 1 or args[-2:] != ["--runtime", "gemini-cli"]:
         return None
     try:
-        ok, _, _ = remove_mcp_server(path, MCP_SERVER_NAME)
+        ok, error, _ = remove_mcp_server(path, MCP_SERVER_NAME, expected_entry=entry)
     except OSError:
-        ok = False
+        ok, error = False, None
     return HostMcpResult(
         host_key="gemini-cli",
         surface="retired-config",
         status="removed" if ok else "remove_failed",
         message="Removed obsolete owned Gemini CLI wiring."
         if ok
+        else "Gemini CLI configuration changed since inspection; inspect it again."
+        if error == CONFIG_CHANGED
         else "Could not remove owned Gemini CLI wiring.",
         ok=ok,
         available=False,
         blocking=not ok,
-        managed=True,
+        managed=error != CONFIG_CHANGED,
         config_path=str(path),
         repair=None
         if ok
+        else "Inspect ~/.gemini/settings.json again before retrying cleanup."
+        if error == CONFIG_CHANGED
         else "Review ~/.gemini/settings.json permissions locally and rerun Repair.",
     )

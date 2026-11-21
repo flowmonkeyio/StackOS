@@ -19,7 +19,13 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bins, subprocess_env_for_cli
-from stackos.host_mcp.json_config import read_json_object, remove_mcp_server, upsert_mcp_server
+from stackos.host_mcp.json_config import (
+    CONFIG_CHANGED,
+    JsonConfigRead,
+    read_json_object,
+    remove_mcp_server,
+    upsert_mcp_server,
+)
 from stackos.host_mcp.result import HostMcpResult, HostMcpStatus, looks_secretish
 
 HOST_KEY = "antigravity"
@@ -71,6 +77,12 @@ def config_path(home: Path) -> Path:
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
+    return _inspect_snapshot(home, server_name=server_name)[0]
+
+
+def _inspect_snapshot(
+    home: Path, *, server_name: str
+) -> tuple[HostMcpResult, JsonConfigRead | None]:
     path = config_path(home)
     if resolve_antigravity_bin() is None:
         return HostMcpResult(
@@ -81,8 +93,13 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
             ok=True,
             available=False,
             advisory=True,
-        )
+        ), None
     loaded = read_json_object(path)
+    return _inspect_config(home, loaded, server_name=server_name), loaded
+
+
+def _inspect_config(home: Path, loaded: JsonConfigRead, *, server_name: str) -> HostMcpResult:
+    path = config_path(home)
     if not loaded.ok:
         return _config_error(path)
     servers = loaded.data.get("mcpServers", {})
@@ -176,8 +193,8 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
 
 
 def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
-    current = inspect(home, server_name=server_name)
-    if current.status not in {"available_unregistered", "registered_stale"}:
+    current, loaded = _inspect_snapshot(home, server_name=server_name)
+    if loaded is None or current.status not in {"available_unregistered", "registered_stale"}:
         return current
     token_error = token_preflight(home)
     if token_error:
@@ -195,26 +212,35 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
     command = resolve_bridge_command(runtime=HOST_KEY)
     try:
         ok, _error = upsert_mcp_server(
-            path, server_name, {"command": command[0], "args": command[1:]}
+            path,
+            server_name,
+            {"command": command[0], "args": command[1:]},
+            expected_entry=loaded.data.get("mcpServers", {}).get(server_name),
         )
     except OSError:
-        ok = False
+        ok, _error = False, None
     if not ok:
-        return _config_error(path, status="register_failed")
+        return _config_error(path, status="register_failed", changed=_error == CONFIG_CHANGED)
     return inspect(home, server_name=server_name)
 
 
 def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
-    current = inspect(home, server_name=server_name)
-    if current.status not in {"available_unregistered", "registered_current", "registered_stale"}:
+    current, loaded = _inspect_snapshot(home, server_name=server_name)
+    if loaded is None or current.status not in {
+        "available_unregistered",
+        "registered_current",
+        "registered_stale",
+    }:
         return current
     path = config_path(home)
     try:
-        ok, _error, _removed = remove_mcp_server(path, server_name)
+        ok, _error, _removed = remove_mcp_server(
+            path, server_name, expected_entry=loaded.data.get("mcpServers", {}).get(server_name)
+        )
     except OSError:
-        ok = False
+        ok, _error = False, None
     if not ok:
-        return _config_error(path, status="remove_failed")
+        return _config_error(path, status="remove_failed", changed=_error == CONFIG_CHANGED)
     return HostMcpResult(
         host_key=HOST_KEY,
         surface=SURFACE,
@@ -228,12 +254,16 @@ def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     )
 
 
-def _config_error(path: Path, *, status: HostMcpStatus = "config_unreadable") -> HostMcpResult:
+def _config_error(
+    path: Path, *, status: HostMcpStatus = "config_unreadable", changed: bool = False
+) -> HostMcpResult:
     return HostMcpResult(
         host_key=HOST_KEY,
         surface=SURFACE,
         status=status,
-        message="Antigravity MCP configuration could not be read or changed safely.",
+        message="Antigravity MCP configuration changed since inspection; inspect it again."
+        if changed
+        else "Antigravity MCP configuration could not be read or changed safely.",
         ok=False,
         available=True,
         blocking=True,
