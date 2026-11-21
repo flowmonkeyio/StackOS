@@ -51,6 +51,7 @@ from stackos.host_mcp.result import (
     normalize_model_observation,
     normalize_usage,
 )
+from stackos.host_mcp.subscription_antigravity import read_antigravity
 from stackos.host_mcp.subscription_claude import read_claude
 from stackos.host_mcp.subscription_codex import read_codex
 from stackos.host_mcp.subscription_grok import read_grok
@@ -1483,6 +1484,9 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 ),
             ),
             run_agent=antigravity_execution.run_agent,
+            subscription=lambda: _read_subscription(
+                antigravity.resolve_antigravity_bin(), read_antigravity
+            ),
         ),
         HostMcpDefinition(
             hermes,

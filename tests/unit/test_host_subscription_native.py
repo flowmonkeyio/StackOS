@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from time import monotonic
 
 import pytest
@@ -16,6 +17,114 @@ from stackos.host_mcp.subscription_grok import read_grok
 
 FUTURE = "2099-01-01T00:00:00+00:00"
 FUTURE_EPOCH = int(datetime(2099, 1, 1, tzinfo=UTC).timestamp())
+
+
+@pytest.fixture
+def antigravity_usage():
+    # Sanitized agy 1.5.13 SUCCESS captured 2026-11-21. No account identity,
+    # tier or credits were reported. Keep the captured reset in the fixture;
+    # move it forward only in tests so ordinary discovery stays date-independent.
+    path = Path(__file__).parents[1] / "fixtures" / "antigravity_usage_success.json"
+    payload = json.loads(path.read_text())
+    for group in payload["command"]["data"]["groups"]:
+        group["buckets"][0]["reset_time"] = FUTURE
+    return payload
+
+
+def antigravity_read(monkeypatch, payload, returncode=0):
+    monkeypatch.setattr(service.antigravity, "resolve_antigravity_bin", lambda: "fake-agy")
+
+    def capture(binary, args, **kwargs):
+        assert binary == "fake-agy"
+        assert args == ["--print", "/usage", "--output-format", "json"]
+        assert 0 < kwargs["timeout"] <= 12
+        assert 0 < kwargs["max_output_bytes"] <= 1_048_576
+        return subprocess.CompletedProcess([binary], returncode, json.dumps(payload), "")
+
+    monkeypatch.setattr(native, "run_capture", capture)
+    return service.subscription_readers()["antigravity"]()
+
+
+def test_antigravity_registered_reader_preserves_both_native_groups(monkeypatch, antigravity_usage):
+    payload = antigravity_usage
+    payload["email"] = payload["tier"] = payload["credits"] = "private-identity-canary"
+    assert antigravity_read(monkeypatch, payload) == {
+        "plan": None,
+        "meters": [
+            {"scope": "Gemini Models · Weekly", "remaining_percent": 100, "resets_at": FUTURE},
+            {
+                "scope": "Claude and GPT models · Weekly",
+                "remaining_percent": 100,
+                "resets_at": FUTURE,
+            },
+        ],
+    }
+
+
+@pytest.mark.parametrize("fraction", [0, 1, 0.375])
+def test_antigravity_zero_full_and_partial_are_real_allowances(
+    monkeypatch, antigravity_usage, fraction
+):
+    antigravity_usage["command"]["data"]["groups"][0]["buckets"][0]["remaining_fraction"] = fraction
+    reading = antigravity_read(monkeypatch, antigravity_usage)
+    assert reading["meters"][0]["remaining_percent"] == fraction * 100
+    assert reading["meters"][1]["remaining_percent"] == 100
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("remaining_fraction", -0.1),
+        ("remaining_fraction", 1.1),
+        ("remaining_fraction", True),
+        ("remaining_fraction", "0.5"),
+        ("remaining_fraction", float("nan")),
+        ("remaining_fraction", float("inf")),
+        ("remaining_fraction", 10**400),
+        ("reset_time", "bad"),
+        ("reset_time", "2020-01-01T00:00:00Z"),
+        ("reset_time", "2099-01-01"),
+        ("reset_time", True),
+        ("reset_time", {}),
+        ("id", None),
+        ("name", None),
+        ("window", None),
+    ],
+)
+def test_antigravity_invalid_bucket_does_not_fabricate_or_erase_sibling(
+    monkeypatch, antigravity_usage, field, value
+):
+    antigravity_usage["command"]["data"]["groups"][0]["buckets"][0][field] = value
+    reading = antigravity_read(monkeypatch, antigravity_usage)
+    assert len(reading["meters"]) == 1
+    assert reading["meters"][0]["scope"] == "Claude and GPT models · Weekly"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {},
+        {"status": "ERROR"},
+        {"status": "SUCCESS", "command": {"name": "usage", "data": {"groups": {}}}},
+        {"status": "SUCCESS", "command": {"name": "other", "data": {"groups": []}}},
+    ],
+)
+def test_antigravity_malformed_or_native_error_is_unavailable(monkeypatch, payload):
+    assert antigravity_read(monkeypatch, payload) is None
+
+
+def test_antigravity_nonzero_success_and_auth_wait_are_unavailable(monkeypatch, antigravity_usage):
+    assert antigravity_read(monkeypatch, antigravity_usage, returncode=1) is None
+    antigravity_usage["error"] = "Native command failed"
+    assert antigravity_read(monkeypatch, antigravity_usage) is None
+    monkeypatch.setattr(native, "run_capture", lambda *a, **kw: None)
+    assert service.subscription_readers()["antigravity"]() is None
+    monkeypatch.setattr(
+        native, "run_capture", lambda *a, **kw: subprocess.CompletedProcess([], 0, "Sign in", "")
+    )
+    assert service.subscription_readers()["antigravity"]() is None
 
 
 def reply(value):

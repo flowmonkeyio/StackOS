@@ -62,7 +62,7 @@ type Meter = NonNullable<HomeSubscriptions['readings'][string]>['meters'][number
 const resetFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 const percentFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
 const quotaHosts: Record<string, string> = {
-  codex: 'Codex', 'claude-code': 'Claude Code', 'gemini-cli': 'Gemini CLI', grok: 'Grok Build',
+  codex: 'Codex', 'claude-code': 'Claude Code', antigravity: 'Antigravity', grok: 'Grok Build',
 }
 
 function resetLines(meters: Meter[]) {
@@ -92,7 +92,7 @@ const cards = computed(() => {
     const reading = quotaHosts[key] ? readings[key] : null
     const meters = reading?.meters ?? []
     const status = agentHostPresentation(host)
-    const waiting = !!quotaHosts[key] && key !== 'gemini-cli' && props.subscriptions.loading && !reading
+    const waiting = !!quotaHosts[key] && props.subscriptions.loading && !reading
     const quotaStatus = waiting ? 'Checking quota…' : 'Quota unavailable'
     let detail = host.repair || host.message
     if (status.state === 'connected') detail = undefined

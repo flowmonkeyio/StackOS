@@ -156,7 +156,7 @@ being deferred until closure. Source changes never refresh active
 or historical snapshots. Explicit
 rehandoff after a completed/stopped job resolves current defaults and preserves
 ticket sessions, receipts and repair allowance. Jobs do not resume after daemon restart. The shared
-host capability owner selects review mode; Gemini and Hermes use normal native
+host capability owner selects review mode; Antigravity and Hermes use normal native
 sessions with review-only instructions and no enforced read-only isolation.
 Native read-only controls remain where supported. See
 [task handoff](task-tracker.md#automated-task-delivery).

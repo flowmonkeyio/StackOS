@@ -287,7 +287,7 @@ must not rewrite drafts or saved values. Source/default edits affect fresh
 admissions; queued/running work and resumed native sessions retain admitted
 settings. Prove this without adding a settings owner, forcing effort or editing
 the user's host configuration.
-Gemini and Hermes reviewers use normal native permissions with review-only
+Antigravity and Hermes reviewers use normal native permissions with review-only
 instructions and no enforced read-only isolation. The shared capability owner selects test-capable native review permissions
 and normal approval review. Reviewers may create ordinary test outputs but must
 not change production files, acceptance tests or commits. Record the actual mode

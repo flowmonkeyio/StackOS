@@ -32,6 +32,7 @@ describe('agent host presentation', () => {
     expect(agentHostLogo(host())).toBe('/images/openai.webp')
     expect(agentHostLogo(host({ host_key: 'claude-code' }))).toBe('/images/claude-code.webp')
     expect(agentHostLogo(host({ host_key: 'claude-desktop' }))).toBe('/images/claude.webp')
+    expect(agentHostLogo(host({ host_key: 'antigravity' }))).toBe('/images/antigravity.png')
     expect(agentHostLogo(host({ host_key: 'gemini-cli' }))).toBe('/images/gemini.webp')
     expect(agentHostLogo(host({ host_key: 'hermes' }))).toBe('/images/hermes.webp')
     expect(agentHostLogo(host({ host_key: 'grok' }))).toBe('/images/grok.png')

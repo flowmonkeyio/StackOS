@@ -566,7 +566,7 @@ contracts. Explicit native model/effort wins, omitted values inherit task, proje
 then host choices. Supported source restrictions can only reduce capabilities.
 Reusable presets recommend no fixed models. The shared
 host capability owner selects test-capable native permissions and approval review and uses
-normal native sessions for Gemini and Hermes reviewers with review-only
+normal native sessions for Antigravity and Hermes reviewers with review-only
 instructions, truthfully reporting no enforced read-only isolation. Until acceptance,
 the ticket stays `in-progress`. There is no separate review ticket by default
 and no new tracker status. Main-agent scheduling and acceptance are guidance,

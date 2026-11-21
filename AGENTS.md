@@ -311,7 +311,7 @@ fresh install happy path. Verify the lifecycle state machine end to end:
 - repair messages must be operator-readable and actionable. Do not surface raw
   JSON as the primary desktop failure experience.
 - Host MCP registration is one lifecycle surface owned by
-  `stackos.host_mcp`: Codex CLI, Claude Code, Claude Desktop, and Gemini CLI
+  `stackos.host_mcp`: Codex CLI, Claude Code, Claude Desktop, Antigravity, Grok, and Hermes
   should use the shared service/adapters, command matcher, CLI discovery, and
   result contract. Do not add host-specific install logic that bypasses this
   layer.

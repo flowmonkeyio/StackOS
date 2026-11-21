@@ -262,8 +262,8 @@ describe('HomeView', () => {
           needs_restart: true,
         }),
         host({
-          host_key: 'gemini-cli',
-          display_name: 'Gemini CLI',
+          host_key: 'antigravity',
+          display_name: 'Antigravity',
           status: 'available_unregistered',
           connection_state: 'available',
           status_label: 'Available',
@@ -323,11 +323,11 @@ describe('HomeView', () => {
     const connections = wrapper.get('[aria-label="AI tool connections"]')
     expect(connections.findAll('ul > li')).toHaveLength(6)
     expect(connections.findAll('h4').map(heading => heading.text())).toEqual([
-      'Codex', 'Claude Code', 'Claude Desktop', 'Gemini CLI', 'Hermes', 'Grok Build',
+      'Codex', 'Claude Code', 'Claude Desktop', 'Antigravity', 'Hermes', 'Grok Build',
     ])
     expect(connections.findAll('img').map(image => image.attributes('src'))).toEqual([
       '/images/openai.webp', '/images/claude-code.webp', '/images/claude.webp',
-      '/images/gemini.webp', '/images/hermes.webp', '/images/grok.png',
+      '/images/antigravity.png', '/images/hermes.webp', '/images/grok.png',
     ])
     const claude = connections.get('li[aria-label="Claude Code"]')
     expect(claude.text()).toContain('Not detected')
@@ -338,7 +338,7 @@ describe('HomeView', () => {
     expect(claude.get('[aria-label="Claude Code Fable quota used (%)"]').attributes('aria-valuenow')).toBe('86')
     expect(connections.get('li[aria-label="Claude Desktop"]').text()).toContain('Restart needed')
     expect(connections.get('li[aria-label="Hermes"]').text()).toContain('Choose a profile')
-    for (const name of ['Claude Desktop', 'Gemini CLI', 'Hermes']) {
+    for (const name of ['Claude Desktop', 'Antigravity', 'Hermes']) {
       const card = connections.get(`li[aria-label="${name}"]`)
       expect(card.find('[role="meter"]').exists()).toBe(false)
       expect(card.get('.host-resets').text()).toBe('N/A')
@@ -393,7 +393,7 @@ function defaultFetch(url: string): Response {
         { scope: 'All models', remaining_percent: 55, resets_at: '2091-11-20T15:59:59.999Z' },
         { scope: 'Fable', remaining_percent: 14, resets_at: '2091-11-20T16:00:00.004Z' },
       ] },
-      'gemini-cli': null,
+      antigravity: null,
     },
   })
   if (url === '/api/v1/operations/hostMcp.status/call') {
@@ -403,7 +403,7 @@ function defaultFetch(url: string): Response {
         host({}),
         host({ host_key: 'claude-code', display_name: 'Claude Code' }),
         host({ host_key: 'claude-desktop', display_name: 'Claude Desktop' }),
-        host({ host_key: 'gemini-cli', display_name: 'Gemini CLI' }),
+        host({ host_key: 'antigravity', display_name: 'Antigravity' }),
         host({ host_key: 'hermes', display_name: 'Hermes' }),
         host({ host_key: 'grok', display_name: 'Grok' }),
       ],

@@ -2,8 +2,10 @@
 
 import asyncio
 import json
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
+from pathlib import Path
 from threading import Event, get_ident
 from uuid import uuid4
 
@@ -85,7 +87,7 @@ def test_host_status_has_one_read_only_local_admin_contract() -> None:
 
 
 def test_console_subscription_snapshot_is_independent_and_allowlisted(mcp_client, monkeypatch):
-    assert set(service.subscription_readers()) == {"codex", "claude-code", "grok"}
+    assert set(service.subscription_readers()) == {"codex", "claude-code", "grok", "antigravity"}
     client = mcp_client.test_client
     path = "/api/v1/operations/hostMcp.subscriptions/call"
     spec = build_operation_registry().get("hostMcp.subscriptions")
@@ -134,6 +136,95 @@ def test_console_subscription_snapshot_is_independent_and_allowlisted(mcp_client
     assert snapshot["selections"] == {
         key: {"account_ref": None, "revision": 0} for key in ("codex", "claude-code", "grok")
     }
+
+
+@pytest.mark.parametrize("mode", ["success", "native-error", "malformed", "timeout"])
+def test_antigravity_native_command_reaches_console_independently(
+    mcp_client, monkeypatch, tmp_path, mode
+):
+    from stackos.host_mcp import subscription_native as native
+
+    payload = json.loads(
+        (Path(__file__).parents[2] / "fixtures" / "antigravity_usage_success.json").read_text()
+    )
+    for group in payload["command"]["data"]["groups"]:
+        group["buckets"][0]["reset_time"] = "2099-01-01T00:00:00Z"
+    payload["command"]["data"]["groups"][0]["buckets"][0]["remaining_fraction"] = 0
+    if mode == "native-error":
+        payload["status"] = "ERROR"
+    executable = tmp_path / "agy"
+    marker = tmp_path / "argv.json"
+    executable.write_text(
+        f"#!{sys.executable}\nimport json, pathlib, sys, time\n"
+        f"pathlib.Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+        + ("time.sleep(30)\n" if mode == "timeout" else "")
+        + f"print({('Sign in to continue' if mode == 'malformed' else json.dumps(payload))!r})\n"
+    )
+    executable.chmod(0o700)
+    monkeypatch.setattr(service.antigravity, "resolve_antigravity_bin", lambda: str(executable))
+    reader = service.subscription_readers()["antigravity"]
+    capture = native.run_capture
+
+    def bounded(*args, **kwargs):
+        assert kwargs["timeout"] == 12
+        if mode == "timeout":
+            kwargs["timeout"] = 0.2  # Exercise real retirement without a 12-second fixture wait.
+        return capture(*args, **kwargs)
+
+    monkeypatch.setattr(native, "run_capture", bounded)
+    sibling = {"plan": "ChatGPT Pro", "meters": []}
+    monkeypatch.setattr(
+        service, "subscription_readers", lambda: {"antigravity": reader, "codex": lambda: sibling}
+    )
+    policy = next(d.policy for d in service._definitions() if d.policy.host_key == "antigravity")
+    connected = service.normalize_result(
+        HostMcpResult(
+            host_key="antigravity",
+            surface="cli-json",
+            status="registered_current",
+            message="Connected",
+            ok=True,
+            available=True,
+            selected=True,
+            managed=True,
+        ),
+        policy,
+    )
+    monkeypatch.setattr(
+        service, "inspect_all", lambda: service.HostMcpAggregate(ok=True, results=[connected])
+    )
+    client = mcp_client.test_client
+    headers = {"Authorization": f"Bearer {client.app.state.ui_token}"}
+    status = client.post(
+        "/api/v1/operations/hostMcp.status/call", json={"arguments": {}}, headers=headers
+    )
+    assert status.status_code == 200
+    assert status.json()["items"][0]["connection_state"] == "connected"
+    response = client.post(
+        "/api/v1/operations/hostMcp.subscriptions/call", json={"arguments": {}}, headers=headers
+    )
+    assert response.status_code == 200, response.text
+    readings = response.json()["readings"]
+    assert readings["codex"] == sibling
+    if mode == "success":
+        assert readings["antigravity"] == {
+            "plan": None,
+            "meters": [
+                {
+                    "scope": "Gemini Models · Weekly",
+                    "remaining_percent": 0,
+                    "resets_at": "2099-01-01T00:00:00Z",
+                },
+                {
+                    "scope": "Claude and GPT models · Weekly",
+                    "remaining_percent": 100,
+                    "resets_at": "2099-01-01T00:00:00Z",
+                },
+            ],
+        }
+    else:
+        assert readings["antigravity"] is None
+    assert json.loads(marker.read_text()) == ["--print", "/usage", "--output-format", "json"]
 
 
 @pytest.fixture

@@ -3,6 +3,8 @@ const AGENT_HOST_LOGOS = new Map([
   ['codex', '/images/openai.webp'],
   ['claude-code', '/images/claude-code.webp'],
   ['claude-desktop', '/images/claude.webp'],
+  ['antigravity', '/images/antigravity.png'],
+  // Historical Gemini work keeps its original identity.
   ['gemini-cli', '/images/gemini.webp'],
   ['hermes', '/images/hermes.webp'],
   ['grok', '/images/grok.png'],
@@ -18,6 +20,7 @@ const OWNER_HOST_KEYS = new Map([
   ['claude-code', 'claude-code'],
   ['claude desktop', 'claude-desktop'],
   ['claude-desktop', 'claude-desktop'],
+  ['antigravity', 'antigravity'],
   ['gemini', 'gemini-cli'],
   ['gemini cli', 'gemini-cli'],
   ['gemini-cli', 'gemini-cli'],

@@ -18,7 +18,7 @@ There is no new operation, credential store or connector-local token lifecycle.
 | `google-gemini-image` / 2 media actions | Existing Gemini Developer API key transport, including service-account-bound authorization keys. No JSON key method in StackOS. | [Gemini API key guide](https://ai.google.dev/gemini-api/docs/generate-content/api-key) |
 | `google-veo` / 1 video action | Same Developer API key contract; no Vertex AI switch. JSON service-account support for StackOS's reviewed media endpoints is not established. | [Gemini API key guide](https://ai.google.dev/gemini-api/docs/generate-content/api-key), [Veo generation](https://ai.google.dev/gemini-api/docs/video-generation) |
 
-Google PAA is a Firecrawl helper, and Gemini CLI is an agent-host integration;
+Google PAA is a Firecrawl helper, and Antigravity is an agent-host integration;
 neither adds a Google provider credential contract. Drive, Docs, Sheets and
 YouTube have no current Google action connector in this inventory.
 

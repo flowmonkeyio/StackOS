@@ -209,12 +209,16 @@ In **Overview → AI tool connections**, Codex, Claude Code and Grok Build can
 also show the signed-in plan, the percentage used in each reported quota
 window and its local reset time. Bars turn orange at 75% used and red at 95%.
 Returning to Overview within a minute reuses
-the last check. **Refresh** reads the native tools again. Gemini CLI currently
-shows **Quota unavailable**. Claude Desktop shows its MCP connection and Hermes shows its
+the last check. **Refresh** reads the native tools again. Antigravity reads
+`agy --print /usage --output-format json` and shows the reported Gemini Models
+and Claude and GPT models weekly windows. It has no reported plan, credits or
+email; **Plan unavailable** preserves that unknown. Failed, timed-out or malformed
+quota reads show **Quota unavailable** and an **N/A** reset footer.
+Claude Desktop shows its MCP connection and Hermes shows its
 profile status. A missing quota reading does not affect the connection badge.
 
 This reports the canonical connection state for ChatGPT / Codex, Claude Code,
-Claude Desktop, Gemini CLI, Hermes, and Grok. **Repair needed** means a selected,
+Claude Desktop, Antigravity, Hermes, and Grok. **Repair needed** means a selected,
 StackOS-owned entry is stale and safely repairable. Unselected detected hosts
 are **Available**, arbitrary same-name entries are **Review required**, and
 absent optional hosts are **Not detected** and nonblocking. The Vue UI renders
@@ -235,7 +239,7 @@ does not prove execution or model access. Save project agent defaults in
 `tracker.configureDelivery` operation. Task overrides merge by role and freeze
 at handoff. Fresh Codex roles require exact project-native source references;
 other hosts retain supported inline contracts. Saving defaults installs no agent.
-Gemini and Hermes reviewers use normal native permissions with review-only
+Antigravity and Hermes reviewers use normal native permissions with review-only
 instructions; receipts do not claim enforced read-only isolation. Supported
 native review controls remain in use on other hosts. See the task handoff
 contract for setup examples.
@@ -331,9 +335,18 @@ Ordinary `doctor --json` keeps its strict exit semantics.
 
 Claude Desktop reports **Restart needed** only after StackOS actually changes
 its config while Claude is open; a no-op repair must not renew that state.
-Gemini CLI registration is always user-scoped. When a compatible Gemini CLI
-returns no `mcp list` rows, StackOS verifies the managed entry in the user
-settings file instead of claiming registration from the add command alone.
+Antigravity uses the runnable `agy` CLI and user-scoped
+`~/.gemini/config/mcp_config.json` (`mcpServers`). The shared JSON owner
+inspects, registers, repairs and removes only the StackOS-owned stdio entry,
+with `--runtime antigravity` and the selected daemon context. It preserves
+foreign entries and malformed files for review. An executable shim alone does
+not prove that Antigravity is installed; discovery requires a successful bounded
+native version probe. See the [native MCP contract](https://antigravity.google/docs/mcp/).
+Gemini CLI is retired as a StackOS host. Lifecycle cleanup removes only a
+positively identified obsolete StackOS entry in `~/.gemini/settings.json`;
+foreign settings and Google/Gemini API consumers remain intact. Historical
+Gemini sessions and receipts keep their original identity, and saved retired
+host selections require explicit reselection instead of automatic migration.
 
 In packaged macOS mode, launchd owns the daemon after install, repair, and
 upgrade. Verify `stackos autostart status --json` as well as Doctor when

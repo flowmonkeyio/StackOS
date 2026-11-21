@@ -1102,13 +1102,14 @@ marker changes analytics eligibility, not the snapshot's resume identity. An
 intervening missing snapshot still prevents bridging. No historical backfill is
 performed by collection.
 
-Supported native contracts, checked 2026-11-06:
+Current native usage contracts (and retained historical Gemini provenance):
 
 | Host / scope | Native basis and arithmetic |
 | --- | --- |
 | Codex / `codex.turn` | Native `exec --json` emits cumulative thread usage on `turn.completed`, verified with CLI 0.167.0 fresh/resume captures and the [native producer](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/exec/src/event_processor_with_jsonl_output.rs) (`usage_from_last_total`). Normalize as session snapshots: 18442 then 36925 contribute 18442 then 18483, totaling 36925. Input plus output gives total; cached input/cache writes and reasoning output are already included subsets. `last_token_usage` covers only the latest model request and is not a substitute for a multi-request invocation. No historical version boundary is inferred from the captures. |
 | Claude Code / `claude.model-usage.v2.1` | The [Agent SDK cost-tracking contract](https://code.claude.com/docs/en/agent-sdk/cost-tracking#accumulate-costs-across-multiple-calls) defines a version boundary for `claude -p`: stable 2.1 releases before 2.1.277 report per-invocation `modelUsage`; 2.1.277+ restore session totals on resume. A bounded `--version` probe of the same selected executable establishes the basis. Unknown, prerelease, unsupported-series or failed version probes leave usage unavailable and preserve execution. Sum models' input, cache-read and cache-creation counts for input, plus output for total. The narrower main-loop `usage` is not a fallback. Missing counters and potentially zeroed crash results are unavailable. |
-| Gemini CLI / `gemini.models` | [Headless JSON](https://google-gemini.github.io/gemini-cli/docs/cli/headless.html) supplies `stats.models`; [telemetry hydration](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/telemetry/uiTelemetry.ts) restores these counters on resume. Sum each model once: input is prompt (already includes cached), output is candidates plus thoughts plus tool, total must match their sum. Nested role counters and the uncached input subtotal are not added. |
+| Antigravity / `antigravity.fresh-process` | The [native headless contract](https://antigravity.google/docs/cli/headless/) and agy 1.5.13 source fixtures (2026-11-21) supply `input_tokens`, `output_tokens`, `total_tokens` with cache/thinking subsets. Fresh processes prefer valid terminal usage, otherwise sum distinct completed step indexes once; never add step and terminal totals. Resumed usage is unavailable because its cross-process basis is unverified. Fixtures do not establish authenticated model/resume accounting. |
+| Gemini CLI (historical) / `gemini.models` | Retained receipts from the retired host used [headless JSON](https://google-gemini.github.io/gemini-cli/docs/cli/headless.html) `stats.models` and [telemetry hydration](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/telemetry/uiTelemetry.ts) on resume. Input is prompt (already includes cached), output is candidates plus thoughts plus tool; total must match their sum. No active Gemini runner remains and historical usage is not rewritten. |
 | Hermes / unavailable | The [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) does not prove a usage report compatible with the integrated `chat --oneshot` command. No telemetry flag is appended. |
 | Grok / `grok.headless` | Native `--output-format json` reports invocation usage, verified with CLI 1.0.77 fresh/resume captures and the [headless contract](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md#json). Full input is `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`; output already includes `reasoning_tokens`. Require all counters and a matching `total_tokens`. The captured calls contribute 15709 and 15796 (31505 total). Do not add `modelUsage` again or apply this arithmetic to persisted session `inputTokens`, which already includes cache. Missing, malformed or explicitly incomplete native usage remains unavailable; agent-authored usage is ignored. |
 
@@ -1119,17 +1120,18 @@ Native detail mappings (same scope and basis as their parent counters):
 | Codex | `cached_input_tokens` | `cache_write_input_tokens` | `reasoning_output_tokens` |
 | Claude Code | Sum `modelUsage.*.cacheReadInputTokens` | Sum `modelUsage.*.cacheCreationInputTokens`; TTL partitions are not added again | Sum `modelUsage.*.thinkingTokens`, only when every model reports a valid subset of its output |
 | Grok | `usage.cache_read_input_tokens` | `usage.cache_creation_input_tokens` | `usage.reasoning_tokens` |
-| Gemini CLI | Sum `stats.models.*.tokens.cached`, only when every model reports a valid subset of its prompt | Unavailable | Sum `stats.models.*.tokens.thoughts`, already included in output; nested roles are not added |
+| Antigravity (fresh only) | `usage.cache_read_tokens` | Unavailable | `usage.thinking_tokens`, already included in output |
+| Gemini CLI (historical) | Sum `stats.models.*.tokens.cached`, only when every model reports a valid subset of its prompt | Unavailable | Sum `stats.models.*.tokens.thoughts`, already included in output; nested roles are not added |
 | Hermes | Unavailable | Unavailable | Unavailable |
 
 Claude and Grok still require their native cache buckets to compute valid full
 input; an absent bucket cannot be assumed zero. Missing optional thinking or
-reasoning never erases valid base usage. Codex/Gemini missing optional cache
+reasoning never erases valid base usage. Codex, Antigravity and historical Gemini missing optional cache
 detail likewise preserves their already-inclusive input. Native arguments,
 version checks, session identity, scopes and bases are unchanged. Grok fresh and
 resumed invocations each contribute their entire map once, even with a previous
-receipt; they are never differenced. Gemini mappings are covered by structured
-counter fixtures/source contracts, not new authenticated Gemini calls. The
+receipt; they are never differenced. Historical Gemini mappings retain their
+original provenance; Antigravity does not inherit their resume basis. The
 [native usage specs](../tests/unit/test_host_agent_usage.py) preserve minimal
 native-shaped Codex, Claude and Grok captures; positive Codex cache-write
 behavior was not observed in those native samples.
@@ -1651,18 +1653,18 @@ and capability notes appear in host status `agent_execution`. Current selections
 | --- | --- | --- |
 | Codex | `gpt-6.2-sol` (recommended), `gpt-6.2-astra`; explicit `gpt-6.1-sol`, `gpt-6-astra`, Terra (`gpt-6.1-terra`), Luna (`gpt-6-luna`) and configured provider models remain available | Automatic approval review for delivery and test-capable review |
 | Claude Code | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` | Native `auto` permissions for delivery and test-capable review |
-| Gemini CLI | `gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` | `auto_edit`, unapproved shell denied / normal native permissions, review-only instructions |
+| Antigravity | `gemini-3.8-flash-high`, `gemini-3.8-flash-medium`, `gemini-3.8-flash-low`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium` | Delivery `accept-edits` with `request-review`, unapproved tools denied / normal native permissions, review-only instructions |
 | Hermes | Explicit provider's model ID; no Hermes model family | Native one-shot approvals / normal native permissions, review-only instructions |
 | Grok | CLI selections from `grok models`, including configured aliases such as `grok-build`; distinct from API ID `grok-4.7` | `workspace` sandbox, `auto` for delivery and test-capable review |
 | Claude Desktop | None for headless execution | Unsupported |
 
 Review modes permit focused shell-based tests under native permissions; they
-do not enforce reviewer source immutability. Gemini plan mode can leave plan mode in headless execution,
-and Hermes has no established strict read-only switch. Both support independent
+do not enforce reviewer source immutability. Antigravity and Hermes have no
+established strict read-only execution contract. Both support independent
 review through normal native sessions with instructions to avoid changing files
 or commits; these instructions provide no enforced read-only isolation. The shared
 host capability owner selects the mode (`review_sandbox`); launch receipts record
-`sandbox: "normal"` for these reviews. Gemini review adds no approval-mode override;
+`sandbox: "normal"` for these reviews. Antigravity review uses `request-review`;
 Hermes retains native one-shot permissions. Unsupported hosts still reject before scheduling.
 Native permissions may deny required work, including committing; a structured
 blocked result stops the task even if the process exit code is zero.
@@ -1673,8 +1675,8 @@ Source contracts checked 2026-11-05:
 [Codex models](https://learn.chatgpt.com/docs/models),
 [Claude CLI](https://code.claude.com/docs/en/cli-reference) and
 [models](https://platform.claude.com/docs/en/models/overview),
-[Gemini headless](https://geminicli.com/docs/cli/headless/) and
-[models](https://geminicli.com/docs/cli/model/),
+[Antigravity headless](https://antigravity.google/docs/cli/headless/) and
+[CLI reference](https://antigravity.google/docs/cli/reference/) (checked 2026-11-21, agy 1.5.13),
 [Hermes CLI](https://hermes-agent.nousresearch.com/docs/reference/cli-commands),
 [Grok CLI](https://docs.x.ai/build/cli/reference) and
 [headless](https://docs.x.ai/build/cli/headless-scripting),
@@ -1688,7 +1690,7 @@ model access. Discovery reports these as `not_checked` and provides documented
 native auth-status commands where available. `codex login status`,
 `claude auth status`, and `hermes auth status` (for the selected provider/profile)
 only report native authentication state, not entitlement to every model.
-Gemini/Grok auth-status support is unverified. Actual launch failures, including
+Antigravity/Grok auth-status support is unverified. Actual launch failures, including
 unrecovered errors on stdout, missing credentials, inaccessible models, and broken
 CLI shims, stop the current task with their reason. Codex can recover a stream
 interruption within the same invocation: a later `turn.completed`, exit code zero,

@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import HomeAgentHostStatus from './HomeAgentHostStatus.vue'
 import { useHomeSubscriptions } from './useHomeSubscriptions'
 import { useToastsStore } from '@/stores/toasts'
+import { UiScoreMeter } from '@/components/ui'
 
 const originalFetch = globalThis.fetch
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
@@ -16,11 +17,11 @@ function panel() {
   const store = useHomeSubscriptions()
   store.subscriptions.loading = false
   return mount(HomeAgentHostStatus, { props: {
-    state: { kind: 'loaded', items: ['codex', 'claude-code', 'grok', 'gemini-cli'].map(host_key => ({ host_key, status_label: 'Connected', ok: true, available: true, connection_state: 'connected' as const })) },
+    state: { kind: 'loaded', items: ['codex', 'claude-code', 'grok', 'antigravity'].map(host_key => ({ host_key, status_label: 'Connected', ok: true, available: true, connection_state: 'connected' as const })) },
     summary: 'Tools ready', subscriptions: store.subscriptions,
   }, attachTo: document.body })
 }
-const hostKeys = ['codex', 'claude-code', 'grok', 'claude-desktop', 'gemini-cli', 'hermes']
+const hostKeys = ['codex', 'claude-code', 'grok', 'claude-desktop', 'antigravity', 'hermes']
 function detection(available: string[]) {
   return { kind: 'loaded' as const, items: hostKeys.map(host_key => ({ host_key,
     available: available.includes(host_key), connection_state: available.includes(host_key) ? 'connected' as const : 'unavailable' as const,
@@ -36,6 +37,43 @@ const requests = (operation: string) => vi.mocked(fetch).mock.calls.filter(([url
 describe('native account picker', () => {
   beforeEach(() => { setActivePinia(createPinia()) })
   afterEach(() => { useToastsStore().clear(); globalThis.fetch = originalFetch; document.body.innerHTML = ''; vi.useRealTimers() })
+
+  it('renders Antigravity native windows through the operation caller and retains unavailable state independently', async () => {
+    let reading: unknown = { plan: null, meters: [
+      { scope: 'Gemini Models · Weekly', remaining_percent: 0, resets_at: '2099-01-01T00:00:00Z' },
+      { scope: 'Claude and GPT models · Weekly', remaining_percent: 25, resets_at: '2099-01-02T00:00:00Z' },
+    ] }
+    globalThis.fetch = vi.fn(async url => String(url).includes('subscriptions')
+      ? json({ checked_at: new Date().toISOString(), readings: { antigravity: reading, codex: { plan: 'ChatGPT Pro', meters: [] } } })
+      : String(url).includes('adoptAccount') ? json({ data: a }) : json(emptyInventory())) as typeof fetch
+    const store = useHomeSubscriptions()
+    await store.load(true)
+    const wrapper = panel()
+    try {
+      await flushPromises()
+      const card = () => wrapper.get('li[aria-label="Antigravity"]')
+      expect(card().get('img').attributes('src')).toBe('/images/antigravity.png')
+      expect(card().text()).toContain('Connected')
+      expect(card().text()).toContain('Plan unavailable')
+      expect(card().findAll('[role="meter"]').map(meter => meter.attributes('aria-valuenow'))).toEqual(['100', '75'])
+      expect(wrapper.findAllComponents(UiScoreMeter).map(meter => meter.props('tone'))).toEqual(['danger', 'warning'])
+      expect(card().findAll('time').map(time => time.attributes('datetime'))).toEqual(['2099-01-01T00:00:00Z', '2099-01-02T00:00:00Z'])
+      expect(card().find('[aria-haspopup="menu"]').exists()).toBe(false)
+      reading = null
+      await store.load(true)
+      await wrapper.setProps({ subscriptions: store.subscriptions })
+      expect(card().text()).toContain('Connected')
+      expect(card().text()).toContain('Quota unavailable')
+      expect(card().get('.host-resets').text()).toBe('N/A')
+      expect(wrapper.get('li[aria-label="Codex"]').text()).toContain('ChatGPT Pro')
+      reading = { plan: null, meters: [{ scope: 'Gemini Models · Weekly', remaining_percent: 100, resets_at: null }] }
+      await store.load(true)
+      await wrapper.setProps({ subscriptions: store.subscriptions, state: detection([]) })
+      expect(card().text()).toContain('Not detected')
+      expect(card().get('[role="meter"]').attributes('aria-valuenow')).toBe('0')
+      expect(wrapper.findComponent(UiScoreMeter).props('tone')).toBe('success')
+    } finally { wrapper.unmount() }
+  })
 
   it.each([null, 'codex', 'claude-code', 'grok'])('keeps six optional cards and adopts only %s', async host => {
     globalThis.fetch = vi.fn(async url => String(url).includes('adoptAccount')
@@ -446,7 +484,7 @@ describe('native account picker', () => {
     try {
       await flushPromises()
       expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('listAccounts'))).toHaveLength(1)
-      expect(wrapper.get('li[aria-label="Gemini CLI"]').find('[aria-haspopup="menu"]').exists()).toBe(false)
+      expect(wrapper.get('li[aria-label="Antigravity"]').find('[aria-haspopup="menu"]').exists()).toBe(false)
       const trigger = wrapper.get('button[aria-label="Codex account: first@example.com"]')
       await trigger.trigger('click')
       expect(wrapper.get('[role="menu"]').text()).toContain('Current')

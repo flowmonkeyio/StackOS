@@ -33,6 +33,10 @@ const hosts: DesktopMcpHostStatus[] = [{
 }, {
   host_key: 'native', display_name: 'Native default app', available: true,
   agent_execution: { ...capabilities, models: ['native-model'] },
+}, {
+  host_key: 'antigravity', display_name: 'Antigravity', available: true,
+  agent_execution: { ...capabilities, review_sandbox: 'normal',
+    models: ['gemini-3.8-flash-high', 'claude-sonnet-4-6'], recommended_model: null },
 }]
 
 async function dialog(key: string, preferences: Record<string, string> = {}) {
@@ -54,6 +58,15 @@ async function chooseCustom() {
   expect(choice, 'the catalog permits custom models').toBeDefined()
   await choice!.trigger('click')
 }
+
+it('launches Antigravity from the shared catalog without inventing separate effort choices', async () => {
+  const start = await dialog('antigravity', { model: 'gemini-3.8-flash-high' })
+  expect(wrapper!.text()).toContain('Antigravity')
+  expect(wrapper!.text()).not.toContain('Gemini CLI')
+  expect(field('Model').text()).toContain('gemini-3.8-flash-high')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenCalledWith({ host_key: 'antigravity', model: 'gemini-3.8-flash-high', model_reasoning_effort: null, provider: null, profile: null })
+})
 
 it('accepts an initial custom model from an empty catalog and requires its provider', async () => {
   const start = await dialog('hermes')

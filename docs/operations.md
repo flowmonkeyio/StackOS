@@ -411,8 +411,9 @@ catalog, shows model and reasoning in its summary, and puts optional native
 provider/profile selectors in Advanced options; required provider/model remain
 visible. Unsupported pairs reject before native execution. Codex uses its
 validated `model_reasoning_effort` config override; Claude uses `--effort`; Grok
-uses `--reasoning-effort`. Gemini and Hermes currently retain native reasoning
-because this runner has no verified per-invocation override for them. Claude
+uses `--reasoning-effort`. Antigravity model slugs carry native effort; separate
+effort overrides are unverified. Hermes retains native reasoning because this
+runner has no verified per-invocation override. Claude
 rejects a conflicting inherited `CLAUDE_CODE_EFFORT_LEVEL`, whose native priority
 would otherwise override the selection. Normal permissions and auth stay native.
 
@@ -942,6 +943,19 @@ Overview reads subscription data through the local-console REST operation
 host's plan and quota windows with scope, percentage remaining and optional
 reset time. An unavailable host reading is null. Native registration, agent
 selection and Doctor do not invoke subscription checks.
+
+Antigravity's reader runs bounded `agy --print /usage --output-format json`
+(12 seconds, 1 MiB per output stream). Only an exit-zero `SUCCESS` usage command
+is eligible. Its `command.data.groups[].buckets[]` supplies bucket `id`, `name`,
+`window`, `remaining_fraction` and `reset_time`. The verified weekly buckets
+become separate group/window meters, retaining zero/full remaining fractions
+and valid reset instants. The console shows used percent as
+`(1 - remaining_fraction) * 100`. Unknown windows and invalid buckets stay
+unavailable; valid sibling buckets survive. No plan, credits or email is
+inferred. Timeout, sign-in text, native error and malformed output leave only
+that host's reading null, independently of MCP connectivity and healthy siblings.
+The source fixture is a sanitized agy 1.5.13 capture; it proves the mapping,
+not installed activation or native model execution.
 
 Each host resolves its selected account before its native read and again after
 all native readers finish. A changed account reference or generation discards
