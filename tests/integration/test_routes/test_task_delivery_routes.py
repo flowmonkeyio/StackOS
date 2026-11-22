@@ -17,6 +17,7 @@ from stackos.context import ContextRepository
 from stackos.host_mcp import service
 from stackos.host_mcp.adapters import claude_code
 from stackos.host_mcp.result import AgentRunResult
+from tests.helpers.native_task_routes import native_route_defaults  # noqa: F401
 from tests.integration.test_mcp.conftest import MCPClient
 from tests.integration.test_repositories.test_task_delivery import (
     commit,

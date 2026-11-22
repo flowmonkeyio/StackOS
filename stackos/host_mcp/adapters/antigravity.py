@@ -77,6 +77,24 @@ def config_path(home: Path) -> Path:
     return home / ".gemini" / "config" / "mcp_config.json"
 
 
+def task_mcp_servers(project_dir: Path, home: Path, names: set[str]) -> dict:
+    """Read AGY's native workspace overlay without changing its global registry."""
+    global_config = read_json_object(config_path(home))
+    workspace = read_json_object(project_dir / ".agents" / "mcp_config.json")
+    try:
+        if not global_config.ok or not workspace.ok:
+            raise ValueError
+        servers = {
+            **global_config.data.get("mcpServers", {}),
+            **workspace.data.get("mcpServers", {}),
+        }
+        return {name: servers[name] for name in names}
+    except (ValueError, KeyError, TypeError):
+        raise ValueError(
+            "Antigravity task routes require existing native workspace servers"
+        ) from None
+
+
 def native_models(cli: str) -> tuple[str, ...] | None:
     """Exact account-eligible native IDs from `agy models`, never display names."""
     try:

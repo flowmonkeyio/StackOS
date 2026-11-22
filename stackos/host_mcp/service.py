@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import atexit
+import hashlib
+import json
 import logging
 from collections import deque
 from collections.abc import Callable
@@ -38,7 +40,14 @@ from stackos.host_mcp.agent_execution import (
     ManagedProcessControl,
     managed_launch_lock,
 )
-from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
+from stackos.host_mcp.bridge import (
+    MCP_SERVER_NAME,
+    _bridge_context,
+    default_home,
+    is_stackos_bridge_command,
+    resolve_bridge_command,
+    token_preflight,
+)
 from stackos.host_mcp.discovery import executable_identity, probe_cli_version
 from stackos.host_mcp.progress import CodexCounterReader
 from stackos.host_mcp.result import (
@@ -630,6 +639,124 @@ class HostMcpDefinition:
     native_models: Callable[[str], tuple[str, ...] | None] | None = None
 
 
+def task_mcp_route(
+    host_key: str,
+    project_dir: Path,
+    reference: dict[str, str] | None,
+    *,
+    profile: str | None = None,
+) -> dict[str, str]:
+    """Verify a task route at the native configuration owner; never install it.
+
+    For workspace/profile hosts the fragment is an expectation, not an override.
+    Only route fingerprints leave this boundary; native entries/auth do not.
+    """
+    from stackos.host_mcp.toml_config import read_mcp_config_ref
+
+    definition = _definition_by_key(host_key)
+    mode = definition.policy.agent_execution.mcp_routing if definition else "unsupported"
+    if mode == "unsupported":
+        raise ValueError(f"Task MCP configuration is unsupported by host {host_key!r}")
+    if host_key == "codex":
+        if reference is None:
+            return {}
+        identity, _ = codex.task_mcp_overrides(project_dir, reference)
+        return identity
+    identity, routes = read_mcp_config_ref(reference) if reference else ({}, {MCP_SERVER_NAME: {}})
+    if MCP_SERVER_NAME not in routes:
+        raise ValueError("Verified task routes require the StackOS server expectation")
+    home = default_home()
+    if host_key == "claude-code":
+        servers = claude_code.task_mcp_config(project_dir, reference)
+    elif host_key == "antigravity":
+        servers = antigravity.task_mcp_servers(project_dir, home, set(routes))
+    elif host_key == "grok":
+        servers = grok.task_mcp_servers(project_dir, home, set(routes))
+    elif host_key == "hermes":
+        servers = hermes.task_mcp_servers(home, profile, set(routes))
+    else:
+        raise ValueError("Task MCP routing has no native reader")
+    for name, expected in routes.items():
+        entry = servers[name]
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("command"), str)
+            or not entry["command"]
+            or entry.get("type", "stdio") != "stdio"
+            or entry.get("transport", "stdio") != "stdio"
+            or any(entry.get(key) for key in ("url", "headers", "auth"))
+            or entry.get("enabled") is False
+            or entry.get("disabled") is True
+            or not isinstance(entry.get("args", []), list)
+            or not all(isinstance(arg, str) for arg in entry.get("args", []))
+            or not isinstance(entry.get("env", {}), dict)
+            or not all(
+                isinstance(key, str) and isinstance(value, str)
+                for key, value in entry.get("env", {}).items()
+            )
+        ):
+            raise ValueError("Task routes require enabled native stdio servers")
+        for route_field, value in expected.items():
+            actual = entry.get(route_field, str(project_dir) if route_field == "cwd" else None)
+            matches = (
+                all(entry.get("env", {}).get(key) == leaf for key, leaf in value.items())
+                if route_field == "env"
+                else actual == value
+            )
+            if not matches:
+                raise ValueError(
+                    "Native workspace/profile route differs from task expectation; "
+                    "arbitrary external overrides are unsupported"
+                )
+        env = entry.get("env", {})
+        cwd = entry.get("cwd", str(project_dir))
+        if not isinstance(cwd, str) or Path(cwd).resolve() != project_dir.resolve():
+            raise ValueError("Task MCP server cwd targets a different project root")
+        if name == MCP_SERVER_NAME:
+            command = [entry["command"], *entry.get("args", [])]
+            if not is_stackos_bridge_command(command, runtime=host_key):
+                raise ValueError("Task StackOS server must retain its native runtime bridge")
+            context = _bridge_context(command)
+            expected_context = _bridge_context(resolve_bridge_command(runtime=host_key))
+            if context is None or expected_context is None:
+                raise ValueError("Task StackOS bridge has unsupported settings")
+            settings = context[1]
+            root = settings["--workspace-root"] or env.get("STACKOS_WORKSPACE_ROOT")
+            if not isinstance(root, str) or Path(root).resolve() != project_dir.resolve():
+                raise ValueError("Task StackOS bridge targets a different project root")
+            if any(
+                settings[key] != expected_context[1][key]
+                for key in ("--host", "--port", "--data-dir", "--state-dir")
+            ):
+                raise ValueError("Task StackOS bridge targets a different daemon context")
+            for option, variable in (
+                ("--host", "STACKOS_HOST"),
+                ("--port", "STACKOS_PORT"),
+                ("--data-dir", "STACKOS_DATA_DIR"),
+                ("--state-dir", "STACKOS_STATE_DIR"),
+            ):
+                if variable in env and env[variable] != expected_context[1][option]:
+                    raise ValueError("Task StackOS environment targets a different daemon context")
+        elif name == "serena":
+            root = env.get("SERENA_PROJECT")
+            wrapper = str((home / ".serena/bin/serena-mcp-wrapper.py").resolve())
+            if (
+                not isinstance(root, str)
+                or Path(root).resolve() != project_dir.resolve()
+                or wrapper not in entry.get("args", [])
+            ):
+                raise ValueError("Task Serena server targets a different project or wrapper")
+    digest = hashlib.sha256(json.dumps(servers, sort_keys=True).encode()).hexdigest()
+    return {
+        **identity,
+        "host_key": host_key,
+        "mode": mode,
+        "route_digest": digest,
+        "profile": profile or "default",
+        "project_dir": str(project_dir.resolve()),
+    }
+
+
 def _stale_execution_catalog(definition: HostMcpDefinition) -> dict[str, Any]:
     return {
         **asdict(definition.policy.agent_execution),
@@ -817,6 +944,7 @@ def run_agent(
     on_session_attached: Callable[[ActiveInvocation], None] | None = None,
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
+    mcp_route_identity: dict[str, str] | None = None,
     native_settings: dict[str, Any] | None = None,
     launch_allowed: Callable[[], bool] | None = None,
     request_execution: AgentRequestExecution | None = None,
@@ -852,6 +980,7 @@ def run_agent(
             on_session_attached=on_session_attached,
             previous_usage=previous_usage,
             mcp_config_ref=mcp_config_ref,
+            mcp_route_identity=mcp_route_identity,
             native_settings=native_settings,
             launch_allowed=launch_allowed,
             request_execution=request_execution,
@@ -894,6 +1023,7 @@ def _run_agent_once(
     on_session_attached: Callable[[ActiveInvocation], None] | None = None,
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
+    mcp_route_identity: dict[str, str] | None = None,
     native_settings: dict[str, Any] | None = None,
     launch_allowed: Callable[[], bool] | None = None,
     request_execution: AgentRequestExecution | None = None,
@@ -912,8 +1042,15 @@ def _run_agent_once(
         )
     ):
         return AgentRunResult(None, error="Request execution requires its exact repository owner.")
-    if mcp_config_ref is not None and host_key != "codex":
-        return AgentRunResult(None, error="Task MCP configuration is unsupported by this host.")
+    if (mcp_config_ref is not None or mcp_route_identity is not None) and host_key != "codex":
+        try:
+            actual_route = task_mcp_route(
+                host_key, Path(project_dir).resolve(), mcp_config_ref, profile=profile
+            )
+            if mcp_route_identity is not None and actual_route != mcp_route_identity:
+                raise ValueError("Frozen task MCP route changed; cannot launch or resume")
+        except ValueError as exc:
+            return AgentRunResult(None, error=str(exc))
     if resume_thread_id is not None and (
         not isinstance(resume_thread_id, str)
         or not resume_thread_id.strip()
@@ -991,8 +1128,10 @@ def _run_agent_once(
             progress_kwargs["model_reasoning_effort"] = model_reasoning_effort
     if native_settings is not None:
         progress_kwargs["native_settings"] = native_settings
-    if mcp_config_ref is not None:
+    if mcp_config_ref is not None and host_key in {"codex", "claude-code"}:
         progress_kwargs["mcp_config_ref"] = mcp_config_ref
+    if mcp_route_identity is not None and host_key == "claude-code":
+        progress_kwargs["mcp_route_identity"] = mcp_route_identity
     result: AgentRunResult | None = None
     registered = False
     request_admitted = False
@@ -1035,6 +1174,7 @@ def _run_agent_once(
                                     "profile": profile,
                                     "resume_thread_id": resume_thread_id,
                                     "mcp_config_ref": mcp_config_ref,
+                                    "mcp_route_identity": mcp_route_identity,
                                     "native_settings": native_settings,
                                 },
                             )
@@ -1611,6 +1751,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
+                    mcp_routing="per-call",
                     review_sandbox="workspace-write",
                     models=tuple(codex_reasoning),
                     reasoning_efforts=codex_reasoning,
@@ -1639,6 +1780,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
+                    mcp_routing="per-call",
                     review_sandbox="workspace-write",
                     models=(*claude_reasoning, "claude-fable-5-2"),
                     reasoning_efforts=claude_reasoning,
@@ -1681,6 +1823,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "normal"),
+                    mcp_routing="workspace",
                     review_sandbox="normal",
                     models=(
                         "gemini-4-neon-high",
@@ -1737,6 +1880,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "explicit",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "normal"),
+                    mcp_routing="profile",
                     review_sandbox="normal",
                     custom_models=True,
                     provider_selection=True,
@@ -1782,6 +1926,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
+                    mcp_routing="workspace",
                     review_sandbox="workspace-write",
                     models=("grok-4.7", "grok-4.7-build-fast", *grok_reasoning),
                     reasoning_efforts=grok_reasoning,

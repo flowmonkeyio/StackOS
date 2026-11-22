@@ -18,6 +18,7 @@ from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.workspaces import WorkspaceRepository
+from tests.helpers.native_task_routes import native_route_defaults  # noqa: F401
 from tests.integration.test_repositories.test_task_delivery import (
     QueuedScheduler,
     commit,

@@ -650,6 +650,17 @@ def _hermes_config_path(home: Path, profile: str | None = None) -> Path:
     return _profile_home(home, profile) / "config.yaml"
 
 
+def task_mcp_servers(home: Path, profile: str | None, names: set[str]) -> dict:
+    """Inspect only the explicitly selected native profile."""
+    servers = {}
+    for name in names:
+        entry, _, error = _read_profile_server(home, _normalize_profile(profile), name)
+        if error or entry is None:
+            raise ValueError("Hermes task routes require existing selected-profile servers")
+        servers[name] = entry
+    return servers
+
+
 def _run_hermes(
     hermes_bin: str,
     args: Sequence[str],

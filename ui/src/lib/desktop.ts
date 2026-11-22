@@ -46,6 +46,7 @@ export interface DesktopAgentExecutionCapabilities {
   custom_models: boolean
   provider_selection: boolean
   profile_selection: boolean
+  mcp_routing?: 'unsupported' | 'per-call' | 'workspace' | 'profile'
   /** False allows native defaults; true requires both provider and model. */
   requires_provider_model: boolean
   notes: string

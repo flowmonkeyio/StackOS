@@ -378,9 +378,12 @@ def _upgrade_settings_digest(state):
         "handoff_id",
         "admission_id",
     )
-    return sha256(
-        json.dumps({key: state.get(key) for key in fields}, sort_keys=True).encode()
-    ).hexdigest()
+    value = {key: state.get(key) for key in fields}
+    # Keep historical checkpoints byte-compatible when no verified native route
+    # was admitted. New task routes become part of their existing settings hash.
+    if state.get("mcp_route_identities"):
+        value["mcp_route_identities"] = state["mcp_route_identities"]
+    return sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
 def _upgrade_authority_digest(session, task, state):
@@ -822,7 +825,9 @@ def _validate_upgrade_checkpoint(session, task, state, checkpoint, *, consumed=F
     if not directory.is_dir():
         raise ValidationError("Checkpoint directory is unavailable")
     agents = state.get("agents", state)
-    if any(agent.get("source_ref") for agent in agents.values() if isinstance(agent, dict)):
+    if state.get("mcp_route_identities") or any(
+        agent.get("source_ref") for agent in agents.values() if isinstance(agent, dict)
+    ):
         matching = {
             b.project_id
             for b in WorkspaceRepository(session).list_bindings()
@@ -833,6 +838,20 @@ def _validate_upgrade_checkpoint(session, task, state, checkpoint, *, consumed=F
     if state.get("mcp_config_ref"):
         try:
             read_mcp_config_ref(state["mcp_config_ref"])
+        except ValueError as error:
+            raise ValidationError(str(error)) from None
+    for role, expected_route in state.get("mcp_route_identities", {}).items():
+        from stackos.host_mcp.service import task_mcp_route
+
+        try:
+            actual_route = task_mcp_route(
+                agents[role]["host_key"],
+                directory,
+                state.get("mcp_config_ref"),
+                profile=agents[role].get("profile"),
+            )
+            if actual_route != expected_route:
+                raise ValueError("Checkpoint frozen native MCP route changed")
         except ValueError as error:
             raise ValidationError(str(error)) from None
     _workflow_scope(
@@ -919,6 +938,11 @@ def _validate_upgrade_checkpoint(session, task, state, checkpoint, *, consumed=F
                 **(
                     {"mcp_config_ref": state["mcp_config_ref"]}
                     if state.get("mcp_config_ref")
+                    else {}
+                ),
+                **(
+                    {"mcp_route_identity": state["mcp_route_identities"][selected_role]}
+                    if selected_role in state.get("mcp_route_identities", {})
                     else {}
                 ),
             }
@@ -1774,6 +1798,13 @@ def _prepare_review_replacement(session, repo, project_id, task, previous, reque
         _source_bindings={"review_agent": source["binding_id"]} if source else None,
     )
     reviewer = settings["agents"]["review_agent"]
+    frozen_route = previous.get("mcp_route_identities", {}).get("review_agent")
+    if frozen_route and frozen_route != settings.get("mcp_route_identities", {}).get(
+        "review_agent"
+    ):
+        raise _replacement_error(
+            "route_changed", "Replacement must retain the admitted native route"
+        )
     if source and reviewer.get("source_digest") != source["expected_digest"]:
         raise _replacement_error("stale_source", "Selected reviewer source digest changed")
     digest = sha256(json.dumps(reviewer, sort_keys=True).encode()).hexdigest()
@@ -2395,6 +2426,7 @@ def resolve_delivery_settings(
     _retained_agents: Mapping[str, dict[str, Any]] | None = None,
     _defer_requirements_to_tickets: bool = False,
     _source_bindings: Mapping[str, int] | None = None,
+    _verify_native_routes: bool = True,
 ) -> dict[str, Any]:
     """Read-only execution preflight for explicit task delivery.
 
@@ -2571,13 +2603,35 @@ def resolve_delivery_settings(
         if error:
             raise ValidationError(error)
         resolved[role] = agent
-    if mcp_config_ref is not None:
-        if any(agent["host_key"] != "codex" for agent in resolved.values()):
-            raise ValidationError("Task MCP configuration is unsupported by this host")
-        from stackos.host_mcp.adapters.codex import task_mcp_overrides
+    route_identities = {}
+    if mcp_config_ref is not None or (
+        _verify_native_routes and any(agent["host_key"] != "codex" for agent in resolved.values())
+    ):
+        from stackos.host_mcp.service import task_mcp_route
+        from stackos.host_mcp.toml_config import mcp_config_identity
+        from stackos.repositories.workspaces import WorkspaceRepository
 
         try:
-            mcp_config_ref, _ = task_mcp_overrides(directory, mcp_config_ref)
+            # Resolve each selected host/profile, rather than claiming host parity
+            # from a Codex-only probe. Do not switch or create any binding here.
+            for role, agent in resolved.items():
+                observed_route = task_mcp_route(
+                    agent["host_key"], directory, mcp_config_ref, profile=agent.get("profile")
+                )
+                if agent["host_key"] != "codex":
+                    route_identities[role] = observed_route
+            if any(agent["host_key"] != "codex" for agent in resolved.values()):
+                matching = {
+                    b.project_id
+                    for b in WorkspaceRepository(session).list_bindings()
+                    if b.last_known_root and Path(b.last_known_root).resolve() == directory
+                }
+                if matching != {project_id}:
+                    raise ValueError(
+                        "Task MCP route requires the intended workspace project binding"
+                    )
+            if mcp_config_ref is not None:
+                mcp_config_ref = mcp_config_identity(mcp_config_ref)
         except ValueError as route_error:
             raise ValidationError(str(route_error)) from None
     return {
@@ -2590,6 +2644,7 @@ def resolve_delivery_settings(
             if role in {"delivery_agent", "review_agent"}
         },
         **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
+        **({"mcp_route_identities": route_identities} if route_identities else {}),
     }
 
 
@@ -3010,6 +3065,10 @@ def start_delivery(
     if not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
     _retain_directory(previous, directory)
+    # Reject an already owned tree before native configuration preflight can
+    # obscure that ownership with a different project's route/binding error.
+    # The queue owner repeats this check atomically when admitting the task.
+    _require_delivery_directory(session, task, directory, _admission_id(scheduler))
     # Omission on rehandoff preserves the frozen route, including its digest.
     mcp_config_ref = mcp_config_ref or previous.get("mcp_config_ref")
     if mcp_config_ref is not None:
@@ -3182,6 +3241,9 @@ def start_delivery(
             mcp_config_ref=mcp_config_ref,
             _retained_agents=retained_agents,
             _defer_requirements_to_tickets=True,
+            _verify_native_routes=bool(
+                not previous.get("project_dir") or previous.get("mcp_route_identities")
+            ),
         )
     else:
         if _resolved_settings.get("project_id") != project_id or _resolved_settings.get(
@@ -3198,6 +3260,12 @@ def start_delivery(
     host_key = settings["host_key"]
     mcp_config_ref = settings.get("mcp_config_ref")
     resolved = settings["agents"]
+    route_identities = settings.get("mcp_route_identities", {})
+    if (
+        previous.get("mcp_route_identities")
+        and previous["mcp_route_identities"] != route_identities
+    ):
+        raise ValidationError("Task delivery must retain its frozen native MCP routes")
     if ordinary:
         if "review_agent" not in resolved:
             raise ValidationError("Ordinary tickets require an independent review_agent binding")
@@ -3263,6 +3331,7 @@ def start_delivery(
         reason=None,
         project_dir=str(directory),
         **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
+        **({"mcp_route_identities": route_identities} if route_identities else {}),
         host_key=host_key,
         agents=resolved,
         **{
@@ -3672,6 +3741,18 @@ def run_delivery(
                     else {}
                 )
                 host_key = agent.get("host_key") or state["host_key"]
+                if selected_role in state.get("mcp_route_identities", {}):
+                    from stackos.repositories.workspaces import WorkspaceRepository
+
+                    matching = {
+                        b.project_id
+                        for b in WorkspaceRepository(session).list_bindings()
+                        if b.last_known_root
+                        and Path(b.last_known_root).resolve()
+                        == Path(state["project_dir"]).resolve()
+                    }
+                    if matching != {project_id}:
+                        raise ValidationError("Task native MCP workspace project binding changed")
                 selection = {
                     key: agent[key]
                     for key in ("model", "model_reasoning_effort", "provider", "profile")
@@ -3694,6 +3775,11 @@ def run_delivery(
                     **(
                         {"mcp_config_ref": state["mcp_config_ref"]}
                         if state.get("mcp_config_ref") is not None
+                        else {}
+                    ),
+                    **(
+                        {"mcp_route_identity": state["mcp_route_identities"][selected_role]}
+                        if selected_role in state.get("mcp_route_identities", {})
                         else {}
                     ),
                 }
@@ -3984,6 +4070,11 @@ def run_delivery(
                         session_snapshot=deepcopy(session_snapshot),
                     ),
                     launch_allowed=launch_allowed,
+                    **(
+                        {"mcp_route_identity": state["mcp_route_identities"][selected_role]}
+                        if selected_role in state.get("mcp_route_identities", {})
+                        else {}
+                    ),
                     **(
                         {"mcp_config_ref": state["mcp_config_ref"]}
                         if state.get("mcp_config_ref") is not None

@@ -37,6 +37,7 @@ from stackos.operations.tracker.write_handlers import (
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+from tests.helpers.native_task_routes import write_native_route
 from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
 
 
@@ -2351,13 +2352,14 @@ def git_project(tmp_path: Path) -> None:
 
 
 @pytest.fixture(autouse=True)
-def native_source_fixtures(monkeypatch):
+def native_source_fixtures(monkeypatch, tmp_path):
     """Existing lifecycle scenarios now admit real disposable native definitions.
 
     Remove only these owned fixture files after admission. Launch must consume the
     frozen snapshot, so source bytes cannot accidentally satisfy a later read.
     """
     from stackos import task_delivery
+    from stackos.host_mcp import bridge, service
     from stackos.repositories.workspaces import WorkspaceRepository
 
     original = task_delivery.start_delivery
@@ -2366,11 +2368,47 @@ def native_source_fixtures(monkeypatch):
 
     def admit(**kwargs):
         session, project_id = kwargs["session"], kwargs["project_id"]
-        root = Path(kwargs["project_dir"])
+        root = Path(kwargs["project_dir"]).resolve()
         defaults = TrackerRepository(session).delivery_defaults(project_id=project_id)
         owned = []
         for role in ("delivery_agent", "review_agent"):
-            selected = {**defaults.get(role, {}), **(kwargs.get(role) or {})}
+            selected = {
+                **task_delivery._delivery_role_defaults(defaults, role),
+                **(kwargs.get("agents") or {}).get(role, {}),
+                **(kwargs.get(role) or {}),
+            }
+            selected_host = selected.get(
+                "host_key", kwargs.get("host_key") or defaults.get("host_key") or "codex"
+            )
+            if selected_host in {"claude-code", "antigravity", "grok", "hermes"}:
+                prior_metadata = (
+                    TrackerRepository(session)
+                    .get(project_id=project_id, task_key=kwargs["task_key"])
+                    .tasks[0]
+                    .metadata_json
+                    or {}
+                )
+                prior_route = prior_metadata.get("delivery", {}).get("mcp_config_ref")
+                if not kwargs.get("mcp_config_ref") and not prior_route:
+                    # Lifecycle scenarios need real native configuration too. Keep
+                    # it in their owned temporary home, never the operator's home.
+                    home = tmp_path.parent / f"{tmp_path.name}-native-home"
+                    monkeypatch.setattr(service, "default_home", lambda home=home: home)
+                    monkeypatch.setattr(bridge, "default_home", lambda home=home: home)
+                    monkeypatch.delenv("GROK_HOME", raising=False)
+                    monkeypatch.delenv("HERMES_HOME", raising=False)
+                    write_native_route(home, root, selected_host, selected.get("profile"))
+                    bindings = WorkspaceRepository(session).list_bindings()
+                    if not any(
+                        b.last_known_root and Path(b.last_known_root).resolve() == root
+                        for b in bindings
+                    ):
+                        WorkspaceRepository(session).connect(
+                            project_id=project_id,
+                            last_known_root=str(root),
+                            repo_fingerprint=f"fixture:{root}",
+                        )
+                continue
             if selected.get(
                 "host_key", kwargs.get("host_key") or defaults.get("host_key") or "codex"
             ) != "codex" or selected.get("source_ref"):
@@ -3568,16 +3606,166 @@ def test_task_mcp_route_rejects_unsupported_role_before_queue(session, project_i
     fragment.write_text("[mcp_servers.serena]\nargs = []")
     ref = {"path": str(fragment), "sha256": hashlib.sha256(fragment.read_bytes()).hexdigest()}
     scheduler = QueuedScheduler()
-    with pytest.raises(ValidationError, match="unsupported"):
+    with pytest.raises(ValidationError, match=r"unsupported|does not support"):
         submit(
             session,
             project_id,
             tmp_path,
             scheduler,
             mcp_config_ref=ref,
-            review_agent={"name": "review", "instructions": "review", "host_key": "claude-code"},
+            review_agent={"name": "review", "instructions": "review", "host_key": "claude-desktop"},
         )
     assert scheduler.jobs == []
+
+
+def test_claude_task_mcp_route_frozen_through_registered_rehandoff(
+    session, project_id, tmp_path, monkeypatch
+):
+    import hashlib
+
+    from stackos import task_delivery
+    from stackos.host_mcp import bridge, service
+    from stackos.repositories.workspaces import WorkspaceRepository
+
+    prepared_task(session, project_id)
+    home = tmp_path.parent / f"{tmp_path.name}-native-home"
+    home.mkdir()
+    monkeypatch.setattr(service, "default_home", lambda: home)
+    monkeypatch.setattr(bridge, "default_home", lambda: home)
+    command = bridge.resolve_bridge_command(runtime="claude-code", workspace_root=tmp_path)
+    config = home / ".claude.json"
+    original = json.dumps(
+        {
+            "mcpServers": {
+                "stackos": {
+                    "command": command[0],
+                    "args": command[1:],
+                    "env": {"ROUTE_SENTINEL": "private-route"},
+                }
+            }
+        }
+    )
+    config.write_text(original)
+    WorkspaceRepository(session).connect(
+        project_id=project_id, last_known_root=str(tmp_path), repo_fingerprint=f"route:{tmp_path}"
+    )
+    fragment = home / "route.toml"
+    fragment.write_text(f'[mcp_servers.stackos]\ncwd="{tmp_path}"\n')
+    ref = {"path": str(fragment), "sha256": hashlib.sha256(fragment.read_bytes()).hexdigest()}
+    calls = []
+    identities = []
+
+    def launch(host, directory, instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        assert host == "claude-code" and kwargs["mcp_config_ref"] == ref
+        assert instructions.split("\n\n", 1)[0] in {"Build the ticket.", "Review the ticket."}
+        assert "private-route" not in prompt
+        identities.append(kwargs["mcp_route_identity"])
+        calls.append((key, phase, kwargs.get("resume_thread_id")))
+        return AgentRunResult(
+            0,
+            thread_id=f"{key}-{phase}",
+            result=generic_result(status="blocked" if len(calls) == 1 else "success"),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler, host_key="claude-code", mcp_config_ref=ref)
+    scheduler.run()
+    assert calls, (
+        TrackerRepository(session).brief(project_id=project_id, ticket_key="first").ticket.outcome
+    )
+    for status in ("in-progress", "not-started"):
+        TrackerRepository(session).update_ticket(
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"status": status, "blocker_reason": None},
+        )
+    changed = json.loads(original)
+    changed["mcpServers"]["stackos"]["env"]["ROUTE_SENTINEL"] = "changed"
+    config.write_text(json.dumps(changed))
+    with pytest.raises(ValidationError, match="retain its frozen native MCP routes"):
+        submit(session, project_id, tmp_path, scheduler, host_key="claude-code")
+    assert not scheduler.jobs
+    config.write_text(original)
+    submit(session, project_id, tmp_path, scheduler, host_key="claude-code")
+    scheduler.run()
+    assert calls[:3] == [
+        ("first", "delivery", None),
+        ("first", "delivery", "first-delivery"),
+        ("first", "review", None),
+    ]
+    assert all(identity == identities[0] for identity in identities)
+    state = (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key="deliver")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert state["status"] == "complete"
+    assert state["mcp_route_identities"]["delivery_agent"] == identities[0]
+    assert "private-route" not in json.dumps(state)
+
+
+def test_native_task_mcp_route_rejects_wrong_project_without_admission(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+    from stackos.host_mcp import bridge, service
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.workspaces import WorkspaceRepository
+
+    prepared_task(session, project_id)
+    foreign = (
+        ProjectRepository(session)
+        .create(slug="foreign-route", name="Foreign", domain="example.test")
+        .data.id
+    )
+    WorkspaceRepository(session).connect(
+        project_id=foreign, last_known_root=str(tmp_path), repo_fingerprint=f"foreign:{tmp_path}"
+    )
+    home = tmp_path.parent / f"{tmp_path.name}-native-home"
+    home.mkdir()
+    monkeypatch.setattr(service, "default_home", lambda: home)
+    monkeypatch.setattr(bridge, "default_home", lambda: home)
+    command = bridge.resolve_bridge_command(runtime="claude-code", workspace_root=tmp_path)
+    (home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"stackos": {"command": command[0], "args": command[1:]}}})
+    )
+    before = TrackerRepository(session).get(project_id=project_id, task_key="deliver").model_dump()
+    with pytest.raises(ValidationError, match="workspace project binding"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            host_key="claude-code",
+            delivery_agent={"name": "build", "instructions": "Build"},
+            review_agent={"name": "review", "instructions": "Review"},
+        )
+    assert (
+        TrackerRepository(session).get(project_id=project_id, task_key="deliver").model_dump()
+        == before
+    )
+
+
+def test_native_task_without_route_ref_still_requires_stackos(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+    from stackos.host_mcp import bridge, service
+
+    monkeypatch.setattr(service, "default_home", lambda: tmp_path)
+    monkeypatch.setattr(bridge, "default_home", lambda: tmp_path)
+    with pytest.raises(ValidationError, match="existing safe native stdio servers"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            host_key="claude-code",
+            delivery_agent={"name": "build", "instructions": "Build"},
+            review_agent={"name": "review", "instructions": "Review"},
+        )
 
 
 def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedScheduler, **scope):
@@ -5052,6 +5240,9 @@ def test_role_host_model_provider_reach_launch_and_receipt(
         assert callable(selection.pop("on_execution_change"))
         assert callable(selection.pop("on_session_attached"))
         assert selection.pop("launch_allowed")()
+        route = selection.pop("mcp_route_identity")
+        assert route["host_key"] == host and route["project_dir"] == str(tmp_path)
+        assert len(route["route_digest"]) == 64
         calls.append((host, selection))
         key = packet["brief"]["ticket"]["key"]
         sha = commit(tmp_path, key) if delivery else git(tmp_path, "rev-parse", "HEAD")
@@ -5198,6 +5389,13 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
         selection.pop("on_execution_change")
         assert callable(selection.pop("on_session_attached"))
         assert selection.pop("launch_allowed")()
+        route = selection.pop("mcp_route_identity")
+        assert (
+            route
+            == state["delivery"]["mcp_route_identities"][
+                "delivery_agent" if host == "claude-code" else "review_agent"
+            ]
+        )
         calls.append((host, instructions, sandbox, selection))
         packet = json.loads(prompt)
         key = packet["brief"]["ticket"]["key"]

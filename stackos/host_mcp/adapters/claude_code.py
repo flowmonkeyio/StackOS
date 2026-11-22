@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -26,6 +27,7 @@ from stackos.host_mcp.result import (
     looks_secretish,
     usage_snapshot,
 )
+from stackos.host_mcp.toml_config import read_mcp_config_ref
 
 HOST_KEY = "claude-code"
 SURFACE = "cli"
@@ -47,10 +49,24 @@ def run_agent(
     on_session: Callable[[str], None] | None = None,
     on_usage: Callable[[dict[str, Any] | None], None] | None = None,
     on_model: Callable[[ModelObservation], None] | None = None,
+    mcp_config_ref: dict[str, str] | None = None,
+    mcp_route_identity: dict[str, str] | None = None,
 ) -> AgentRunResult:
     cli = claude_mcp.resolve_claude_bin()
     if cli is None:
         return AgentRunResult(None, error="No Claude Code CLI was found by host discovery.")
+    try:
+        routed = (
+            task_mcp_config(project_dir, mcp_config_ref)
+            if mcp_config_ref or mcp_route_identity
+            else None
+        )
+        if mcp_route_identity is not None:
+            digest = hashlib.sha256(json.dumps(routed, sort_keys=True).encode()).hexdigest()
+            if digest != mcp_route_identity.get("route_digest"):
+                raise ValueError("Frozen Claude MCP route changed before native launch")
+    except ValueError as exc:
+        return AgentRunResult(None, error=str(exc))
     if model_reasoning_effort is not None:
         inherited = subprocess_env_for_cli(cli).get("CLAUDE_CODE_EFFORT_LEVEL")
         if inherited is not None and inherited != model_reasoning_effort:
@@ -80,6 +96,8 @@ def run_agent(
         command += ["--effort", model_reasoning_effort]
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
+    if mcp_config_ref is not None:
+        command += ["--mcp-config", json.dumps({"mcpServers": routed}), "--strict-mcp-config"]
     native_version = _native_version(cli, project_dir)
 
     def decode(stdout: str) -> AgentRunResult:
@@ -100,6 +118,71 @@ def run_agent(
         if on_session is not None or on_usage is not None or on_model is not None
         else None,
     )
+
+
+def task_mcp_config(project_dir: Path, reference: dict[str, str] | None) -> dict[str, Any]:
+    """Translate route leaves over Claude's existing effective stdio entries.
+
+    Never write native configuration or move raw credentials into a per-call
+    payload. Native environment references remain references.
+    """
+    from stackos.host_mcp.bridge import default_home
+    from stackos.host_mcp.json_config import read_json_object
+
+    routes = read_mcp_config_ref(reference)[1] if reference else {MCP_SERVER_NAME: {}}
+    loaded = read_json_object(default_home() / ".claude.json")
+    project = read_json_object(project_dir / ".mcp.json")
+    if not loaded.ok or not project.ok:
+        raise ValueError("Cannot read Claude native MCP configuration safely")
+    try:
+        roots = {str(project_dir.resolve())}
+        # Claude also uses the common repository's project settings for Git
+        # worktrees. An explicit disabled server there remains disabled here.
+        if (project_dir / ".git").exists():
+            common = subprocess.run(
+                ["git", "rev-parse", "--git-common-dir"],
+                cwd=project_dir,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            if common.returncode != 0:
+                raise ValueError("Cannot inspect Claude native repository routing")
+            roots.add(str((project_dir / common.stdout.strip()).resolve().parent))
+        projects = loaded.data.get("projects", {})
+        if any(
+            name in projects.get(root, {}).get("disabledMcpServers", [])
+            for root in roots
+            for name in routes
+        ):
+            raise ValueError("Required Claude MCP server is disabled in native project settings")
+        local = loaded.data.get("projects", {}).get(str(project_dir), {}).get("mcpServers", {})
+        servers = {
+            **loaded.data.get("mcpServers", {}),
+            **project.data.get("mcpServers", {}),
+            **local,
+        }
+        result = {}
+        for name, route in routes.items():
+            entry = servers[name]
+            if (
+                not isinstance(entry, dict)
+                or entry.get("type", "stdio") != "stdio"
+                or not isinstance(entry.get("command"), str)
+                or not entry["command"]
+                or set(entry) - {"type", "command", "args", "cwd", "env"}
+                or looks_secretish(entry)
+            ):
+                raise ValueError("Claude task routes require existing safe native stdio servers")
+            result[name] = {**entry, **route}
+            if "env" in route:
+                result[name]["env"] = {**entry.get("env", {}), **route["env"]}
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError("Cannot inspect Claude native project routing") from None
+    except (KeyError, TypeError, AttributeError):
+        raise ValueError("Claude task routes require existing safe native stdio servers") from None
+    return result
 
 
 def _native_version(cli: str, project_dir: Path, env: dict[str, str] | None = None) -> str | None:

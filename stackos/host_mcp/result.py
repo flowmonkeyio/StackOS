@@ -256,6 +256,7 @@ class AgentCapabilities:
     provider_selection: bool = False
     profile_selection: bool = False
     requires_provider_model: bool = False
+    mcp_routing: Literal["unsupported", "per-call", "workspace", "profile"] = "unsupported"
     auth_status_command: tuple[str, ...] = ()
     notes: str = "Headless agent execution is unsupported."
     sources: tuple[str, ...] = ()

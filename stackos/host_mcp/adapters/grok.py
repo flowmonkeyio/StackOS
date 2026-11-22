@@ -227,6 +227,20 @@ def grok_home(home: Path) -> Path:
     return Path(override).expanduser().resolve() if override else home / ".grok"
 
 
+def task_mcp_servers(project_dir: Path, home: Path, names: set[str]) -> dict:
+    """Use Grok's user registry and native project overlay, without writing either."""
+    servers = {}
+    try:
+        for path in (grok_home(home) / "config.toml", project_dir / ".grok" / "config.toml"):
+            if path.exists():
+                servers.update(
+                    tomllib.loads(path.read_text(encoding="utf-8")).get("mcp_servers", {})
+                )
+        return {name: servers[name] for name in names}
+    except (OSError, ValueError, KeyError, TypeError):
+        raise ValueError("Grok task routes require existing native workspace servers") from None
+
+
 def resolve_grok_bin(home: Path) -> str | None:
     return resolve_cli_bin(
         "grok",

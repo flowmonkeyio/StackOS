@@ -616,7 +616,7 @@ recovery/rehandoff authority still applies.
 
 ### Task-local native tool routing
 
-For a Codex task in a separate working tree, pass optional task-only
+For a task in a separate working tree, pass optional task-only
 `mcp_config_ref: {"path": "/absolute/outside-git/routes.toml", "sha256": "<64 lowercase hex>"}`
 to `tracker.startDelivery`. This is separate from project delivery defaults.
 The fragment contains only `[mcp_servers.<existing-name>]` tables with
@@ -634,8 +634,34 @@ preserves their executables, and serializes allowlisted route leaves as native
 `-c` overrides for both fresh and exact-session resume. Individual env leaves
 preserve unrelated existing environment/auth settings. Validation hashes and
 parses one in-memory byte buffer. Missing, malformed or changed fragments stop
-before native execution. Other selected hosts reject this reference before
-queueing. Only canonical path/digest identity enters snapshots, session
+before native execution.
+
+The shared host capability catalog declares `mcp_routing`: `per-call` for
+Codex/Claude Code, `workspace` for Antigravity/Grok, `profile` for Hermes, or
+`unsupported` for MCP-only hosts such as Claude Desktop. This declares a
+supported configuration mechanism; it does not assert a successful connection.
+Claude translates the same fragment over existing effective stdio entries into
+`--mcp-config` with `--strict-mcp-config`, for fresh and exact resumed calls.
+It retains commands and existing environment references, rejects unsafe entries
+instead of copying credentials, and preserves native permission rules, including
+disabled project servers. Worktree checks include the common repository's native
+project disable settings.
+
+Antigravity reads its native `.agents/mcp_config.json` workspace overlay; Grok
+reads `.grok/config.toml`; Hermes reads only its selected profile's `config.yaml`.
+Their fragment is an expectation to compare against native configuration, never
+an arbitrary external override. Different route leaves reject before queueing or
+spawn with an actionable unsupported-override reason. StackOS never rewrites
+these files, replaces their executables, or changes global settings/trust.
+Fresh non-Codex admissions also verify their native route when no fragment was
+provided. Required StackOS tooling, host runtime, daemon context, actual root and
+the existing project binding must agree; supplied Serena routes must target the
+same root through the canonical wrapper. The admitted native route fingerprint
+is frozen in existing task/session receipts, rechecked before fresh/resumed
+launches and retained on rehandoff. A changed route or project binding stops the
+affected launch. Legacy admitted sessions retain their original contract.
+
+Only canonical path/digest identity and native route fingerprints enter snapshots, session
 receipts and prompts; fragment contents do not. Omission on explicit rehandoff
 retains the reference; a different path/digest rejects, including adding a
 route to a task that already started without one. Queued/running snapshots stay

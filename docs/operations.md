@@ -417,6 +417,12 @@ runner has no verified per-invocation override. Claude
 rejects a conflicting inherited `CLAUDE_CODE_EFFORT_LEVEL`, whose native priority
 would otherwise override the selection. Normal permissions and auth stay native.
 
+`agent_execution.mcp_routing` declares the supported native configuration mechanism:
+`per-call`, `workspace`, `profile`, or `unsupported`. It is separate from connection
+readiness. Task admission verifies the intended root/project and freezes route
+identity through the existing delivery owner; a declared mode does not prove that
+native tools loaded or ran. See [task-local routing](task-tracker.md#task-local-native-tool-routing).
+
 One managed attempt creates one request-native coordinator, consuming the same
 authoring-guide reference and project setup method as existing-session entry.
 Start/return attaches to active work without exposing its writer token, replacing

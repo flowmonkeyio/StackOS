@@ -54,6 +54,7 @@ class HostMcpAgentExecutionOut(BaseModel):
     custom_models: bool
     provider_selection: bool
     profile_selection: bool
+    mcp_routing: Literal["unsupported", "per-call", "workspace", "profile"] = "unsupported"
     requires_provider_model: bool = Field(
         description="Requires explicit provider and model; otherwise native defaults are allowed."
     )
@@ -254,6 +255,8 @@ def operation_specs():
                 "runnable and cli_version reflect bounded CLI probes. catalog_source and "
                 "model_access distinguish packaged suggestions from observed native choices; "
                 "neither guarantees a model invocation or another account's entitlement.",
+                "mcp_routing declares per-call, workspace, profile or unsupported native routing; "
+                "it does not prove a connected project or successful native tool consumption.",
             ),
             mutating=False,
             grant_policy="local-admin-read",
