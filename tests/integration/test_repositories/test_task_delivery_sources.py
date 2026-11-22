@@ -54,8 +54,9 @@ def start(session, project_id, root, scheduler, **kwargs):
     )
 
 
+@pytest.mark.parametrize("usage_case", ["complete", "incomplete", "recovered"])
 def test_antigravity_registered_delivery_and_distinct_review(
-    session, project_id, tmp_path, monkeypatch
+    session, project_id, tmp_path, monkeypatch, usage_case
 ):
     from stackos.host_mcp.adapters import antigravity_execution as native
     from stackos.host_mcp.result import validate_agent_result
@@ -118,11 +119,20 @@ def test_antigravity_registered_delivery_and_distinct_review(
                     "conversation_id": envelope["conversation_id"],
                     "step_index": 1,
                     "state": "DONE",
-                    "usage": envelope["usage"],
+                    "usage": dict(envelope["usage"]),
                 },
             },
             {"event": "result", "result": envelope},
         ]
+        if usage_case != "complete":
+            incomplete = deepcopy(events[1])
+            incomplete["step_update"]["step_index"] = 2
+            incomplete["step_update"]["usage"].pop("cache_read_tokens")
+            events.insert(2, incomplete)
+            if usage_case == "recovered":
+                envelope["usage"] = {key: value * 2 for key, value in envelope["usage"].items()}
+            else:
+                envelope["usage"].pop("cache_read_tokens")
         text = ""
         for event in events:
             line = json.dumps(event) + "\n"
@@ -153,9 +163,16 @@ def test_antigravity_registered_delivery_and_distinct_review(
     assert receipt["review"]["thread_id"] == "agy-review"
     assert receipt["delivery"]["thread_id"] == "agy-delivery"
     for phase in ("delivery", "review"):
-        assert receipt[phase]["usage"]["measured"]["input"] == 90
-        assert receipt[phase]["usage"]["measured"]["cache_read"] == 80
-        assert receipt[phase]["usage"]["measured"]["total"] == 120
+        usage = receipt[phase]["usage"]
+        if usage_case == "incomplete":
+            assert usage["status"] == "unavailable"
+            assert usage["measured"] is None
+            assert receipt[phase]["execution"]["live_usage"] is None
+        else:
+            multiplier = 2 if usage_case == "recovered" else 1
+            assert usage["measured"]["input"] == 90 * multiplier
+            assert usage["measured"]["cache_read"] == 80 * multiplier
+            assert usage["measured"]["total"] == 120 * multiplier
 
 
 def test_retired_saved_gemini_defaults_require_reselection(session, project_id, tmp_path):

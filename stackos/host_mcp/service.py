@@ -1179,7 +1179,7 @@ def _attach_session(
         raise
 
 
-def _observe_usage(call: ActiveInvocation, raw: dict[str, Any]) -> None:
+def _observe_usage(call: ActiveInvocation, raw: dict[str, Any] | None) -> None:
     """Keep native stream measurements in the existing invocation/receipt owner."""
     with _active_invocations_lock:
         if (
@@ -1193,7 +1193,14 @@ def _observe_usage(call: ActiveInvocation, raw: dict[str, Any]) -> None:
         usage = normalize_usage(
             raw, session_id=call.session_id, resumed=call.resumed, previous=call.previous_usage
         )
-        if usage["status"] != "measured" or usage == call.usage:
+        if usage["status"] != "measured":
+            # Native completeness can be revoked after an earlier valid prefix.
+            # Do not leave that subtotal in live or provisional receipt readers.
+            call.usage = None
+            call.measured_at = None
+            call.samples.clear()
+            return
+        if usage == call.usage:
             return
         call.usage = usage
         call.measured_at = datetime.now(UTC).isoformat()

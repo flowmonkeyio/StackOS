@@ -101,6 +101,7 @@ class _Stream:
         self.terminal: dict[str, Any] | None = None
         self.error: str | None = None
         self.steps: dict[int, dict[str, Any]] = {}
+        self.incomplete_usage = False
         self.initialized = False
 
     def feed(self, line: str) -> None:
@@ -142,14 +143,17 @@ class _Stream:
                 if isinstance(info, dict) and permission_error(str(info.get("error", ""))):
                     self.error = permission_error(str(info["error"]))
                 index = payload.get("step_index")
-                if (
-                    not self.resumed
-                    and type(index) is int
-                    and index >= 0
-                    and payload.get("state") == "DONE"
-                ):
+                usage_step = "usage" in payload or payload.get("step_type") in {
+                    "agent_response",
+                    "checkpoint",
+                }
+                if not self.resumed and payload.get("state") == "DONE" and usage_step:
                     counts = _usage(payload.get("usage"))
-                    if counts is not None:
+                    if counts is None or type(index) is not int or index < 0:
+                        # A surviving subtotal cannot represent the invocation.
+                        # Only authoritative terminal counters resolve this gap.
+                        self.incomplete_usage = True
+                    else:
                         # Repeated state/delta events describe one step, not new work.
                         self.steps[index] = counts["snapshot"]
             elif kind == "result" or kind is None:
@@ -171,6 +175,8 @@ class _Stream:
             usage = _usage(self.terminal.get("usage"))
             if usage is not None:
                 return usage
+        if self.incomplete_usage:
+            return None
         if self.steps:
             sums = {
                 key: sum(row[key] for row in self.steps.values())
@@ -265,7 +271,7 @@ def run_agent(
     resume_thread_id: str | None = None,
     process_control: ManagedProcessControl | None = None,
     on_session: Callable[[str], None] | None = None,
-    on_usage: Callable[[dict[str, Any]], None] | None = None,
+    on_usage: Callable[[dict[str, Any] | None], None] | None = None,
 ) -> AgentRunResult:
     if sandbox not in {"workspace-write", "normal"} or provider is not None or profile is not None:
         return AgentRunResult(None, error="Unsupported Antigravity permissions/provider/profile.")
@@ -306,6 +312,12 @@ def run_agent(
     def observe(line: str) -> None:
         nonlocal attached, last_usage
         stream.feed(line)
+        usage = stream.usage()
+        if usage is None and last_usage is not None and on_usage is not None:
+            # Invalidation also crosses the boundary when this event reports
+            # a native failure; the earlier subtotal is no longer complete.
+            on_usage(None)
+            last_usage = None
         if stream.error or not stream.initialized:
             return
         if not attached:
@@ -313,8 +325,7 @@ def run_agent(
                 assert stream.session is not None
                 on_session(stream.session)
             attached = True
-        usage = stream.usage()
-        if usage is not None and usage != last_usage and on_usage is not None:
+        if usage != last_usage and on_usage is not None:
             on_usage(usage)
             last_usage = usage
 

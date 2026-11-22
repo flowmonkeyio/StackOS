@@ -162,6 +162,96 @@ def test_captured_1514_uncached_input_is_combined_with_cache_once():
     assert native.decode_result(encode(events)).usage == partial.usage
 
 
+def incomplete_usage_stream(*, terminal_recovers=False, missing="cache_read_tokens"):
+    events = json.loads(json.dumps(documented_stream()))
+    second = json.loads(json.dumps(events[1]))
+    second["step_update"]["step_index"] = 4
+    second["step_update"]["usage"].pop(missing)
+    events.insert(2, second)
+    if terminal_recovers:
+        events[-1]["result"]["usage"] = {key: value * 2 for key, value in COUNTS.items()}
+    else:
+        events[-1]["result"]["usage"].pop(missing)
+    return events
+
+
+@pytest.mark.parametrize(
+    "missing", ["input_tokens", "cache_read_tokens", "output_tokens", "total_tokens"]
+)
+@pytest.mark.parametrize("terminal_recovers", [False, True])
+def test_mixed_incomplete_steps_need_authoritative_terminal_usage(missing, terminal_recovers):
+    events = incomplete_usage_stream(terminal_recovers=terminal_recovers, missing=missing)
+    partial = native.decode_result(encode(events[:-1]))
+    assert partial.usage is None
+    result = native.decode_result(encode(events))
+    assert result.ok  # Missing telemetry does not invalidate the structured outcome.
+    if terminal_recovers:
+        assert result.usage["snapshot"]["total"] == 420
+        assert result.usage["snapshot"]["cache_read"] == 160
+    else:
+        assert result.usage is None
+
+
+@pytest.mark.parametrize("step_type", ["agent_response", "checkpoint"])
+def test_completed_model_step_without_usage_invalidates_aggregate(step_type):
+    events = incomplete_usage_stream()
+    events[2]["step_update"]["step_type"] = step_type
+    del events[2]["step_update"]["usage"]
+    assert native.decode_result(encode(events)).usage is None
+
+
+def test_incomplete_duplicate_does_not_retain_previous_valid_step_counts():
+    events = incomplete_usage_stream()
+    events[2]["step_update"]["step_index"] = events[1]["step_update"]["step_index"]
+    assert native.decode_result(encode(events)).usage is None
+
+
+@pytest.mark.parametrize("terminal_recovers", [False, True])
+@pytest.mark.parametrize("native_failure", [False, True])
+def test_native_incomplete_usage_invalidates_live_and_final_consumers(
+    tmp_path, monkeypatch, terminal_recovers, native_failure
+):
+    events = incomplete_usage_stream(terminal_recovers=terminal_recovers)
+    if native_failure:
+        events[2]["step_update"]["tool_info"] = {"error": "required tool permission denied"}
+    executable_fixture(tmp_path, monkeypatch, events=events)
+    observed, handoffs = [], []
+    observe_usage = service._observe_usage
+
+    def observe(call, raw):
+        observe_usage(call, raw)
+        observed.append((call.projection(), service.provisional_usage(1)))
+
+    monkeypatch.setattr(service, "_observe_usage", observe)
+    result = run_agent(
+        "antigravity",
+        tmp_path,
+        "complete instructions",
+        "assignment packet",
+        SCHEMA,
+        execution_scope=service.AgentExecutionScope(1, "fixture", "child", "worker", 1, "delivery"),
+        on_execution_change=lambda call, active: (
+            handoffs.append((call.projection(), service.provisional_usage(1)))
+            if not active
+            else None
+        ),
+    )
+    assert result.ok is (not native_failure)
+    assert observed[0][0]["live_usage"]["usage"]["measured"]["total"] == 210
+    assert observed[0][1][1, "child"][0][2]["measured"]["total"] == 210
+    assert observed[1][0]["live_usage"] is None
+    assert observed[1][1] == {}
+    if terminal_recovers:
+        assert result.usage["snapshot"]["total"] == 420
+        assert handoffs[0][0]["live_usage"]["usage"]["measured"]["total"] == 420
+        assert handoffs[0][1][1, "child"][0][2]["measured"]["total"] == 420
+    else:
+        assert result.usage is None
+        assert handoffs[0][0]["live_usage"] is None
+        assert handoffs[0][1] == {}
+    assert not service._active_invocations
+
+
 @pytest.mark.parametrize(
     "counts",
     [
@@ -529,7 +619,7 @@ def test_unusable_native_permission_settings_fail_before_discovery(tmp_path, mon
 
 @pytest.mark.parametrize("cache", [None, True, -1])
 def test_unknown_required_cache_bucket_leaves_full_usage_unknown(cache):
-    events = documented_stream()
+    events = json.loads(json.dumps(documented_stream()))
     events.pop(1)
     events[-1]["result"]["usage"]["cache_read_tokens"] = cache
     assert native.decode_result(encode(events)).usage is None
