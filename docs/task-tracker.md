@@ -1135,10 +1135,11 @@ Native detail mappings (same scope and basis as their parent counters):
 | Gemini CLI (historical) | Sum `stats.models.*.tokens.cached`, only when every model reports a valid subset of its prompt | Unavailable | Sum `stats.models.*.tokens.thoughts`, already included in output; nested roles are not added |
 | Hermes | Unavailable | Unavailable | Unavailable |
 
-Claude and Grok still require their native cache buckets to compute valid full
-input; an absent bucket cannot be assumed zero. Missing optional thinking or
-reasoning never erases valid base usage. Codex, Antigravity and historical Gemini missing optional cache
-detail likewise preserves their already-inclusive input. Native arguments,
+Claude, Grok and current Antigravity headless accounting require their native
+cache buckets to compute valid full input; an absent bucket cannot be assumed
+zero. Missing optional thinking or reasoning never erases valid base usage.
+Codex and historical Gemini missing optional cache detail likewise preserves
+their already-inclusive input. Native arguments,
 version checks, session identity, scopes and bases are unchanged. Grok fresh and
 resumed invocations each contribute their entire map once, even with a previous
 receipt; they are never differenced. Historical Gemini mappings retain their
