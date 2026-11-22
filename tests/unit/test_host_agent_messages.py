@@ -44,18 +44,45 @@ def events(host, session="native-a"):
     return [{"type": "system", "subtype": "init", "session_id": session, "model": model}, terminal]
 
 
-def executable(tmp_path, monkeypatch, host, rows, *, wait=False, stderr="", exit_code=0):
+def executable(
+    tmp_path,
+    monkeypatch,
+    host,
+    rows,
+    *,
+    wait=False,
+    stderr="",
+    exit_code=0,
+    release_after_result=None,
+    stderr_before_result=False,
+    stderr_after_gate=False,
+):
     import sys
 
     path = tmp_path / "native"
+    diagnostic = (
+        f"sys.stderr.buffer.write({stderr!r}); sys.stderr.buffer.flush()\n"
+        if isinstance(stderr, bytes)
+        else f"print({stderr!r}, file=sys.stderr, flush=True)\n"
+    )
     path.write_text(
         f"#!{sys.executable}\nimport json,sys,time\n"
         "if '--version' in sys.argv:\n print('2.1.330 (Claude Code)'); sys.exit(0)\n"
         f"rows = {rows!r}\n"
         "print(json.dumps(rows[0]), flush=True)\n"
+        + (diagnostic if stderr_before_result else "")
         + ("time.sleep(30)\n" if wait else "")
         + "for row in rows[1:]: print(json.dumps(row), flush=True)\n"
-        + f"print({stderr!r}, file=sys.stderr)\nsys.exit({exit_code})\n"
+        + ("" if stderr_before_result or stderr_after_gate else diagnostic)
+        + (
+            "from pathlib import Path\n"
+            f"gate = Path({str(release_after_result)!r})\n"
+            "while not gate.exists(): time.sleep(.01)\n"
+            if release_after_result is not None
+            else ""
+        )
+        + (diagnostic if stderr_after_gate else "")
+        + f"sys.exit({exit_code})\n"
     )
     path.chmod(0o700)
     monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: str(path))
@@ -194,6 +221,102 @@ def test_grok_messages_incomplete_stderr_invalidates_live_usage(tmp_path, monkey
     assert result.ok is (fault == "warning")
     assert result.usage is None
     assert updates[-1] is None
+
+
+@pytest.mark.parametrize(
+    "warning_position,fault",
+    [
+        ("before", None),
+        ("after", None),
+        (None, None),
+        ("before", "native"),
+        ("before", "exit"),
+        ("before", "cancel"),
+        ("unreadable", "decode"),
+    ],
+)
+def test_grok_messages_withhold_usage_until_complete_process_observation(
+    tmp_path, monkeypatch, warning_position, fault
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    rows = events("grok")
+    if fault == "native":
+        rows[-1].update(is_error=True, errors=["denied"])
+    gate = tmp_path / "release"
+    executable(
+        tmp_path,
+        monkeypatch,
+        "grok",
+        rows,
+        stderr=b"\xff"
+        if fault == "decode"
+        else "warning: incomplete usage"
+        if warning_position
+        else "",
+        stderr_before_result=warning_position == "before",
+        stderr_after_gate=fault == "decode",
+        release_after_result=gate,
+        exit_code=int(fault == "exit"),
+    )
+    result_seen = Event()
+    feed = MessagesStream.feed
+
+    def observe_result(stream, line):
+        feed(stream, line)
+        if stream.terminal is not None:
+            result_seen.set()
+
+    monkeypatch.setattr(MessagesStream, "feed", observe_result)
+    usage_updates = []
+    observe_usage = service._observe_usage
+
+    def usage(call, raw):
+        observe_usage(call, raw)
+        usage_updates.append(raw)
+
+    monkeypatch.setattr(service, "_observe_usage", usage)
+    attached = []
+    handoffs = []
+    with ThreadPoolExecutor(1) as pool:
+        future = pool.submit(
+            service.run_agent,
+            "grok",
+            tmp_path,
+            "role",
+            "work",
+            SCHEMA,
+            execution_scope=service.AgentExecutionScope(909001, "fixture", "warning", "review"),
+            on_session_attached=attached.append,
+            on_execution_change=lambda call, active: (
+                handoffs.append(call.projection()) if not active else None
+            ),
+        )
+        try:
+            assert result_seen.wait(10), "Native result event was not observed"
+            assert not future.done(), "Child exited before live consumer inspection"
+            assert attached[0].process_control._process.poll() is None
+            live = service.usage_executions(909001)
+            assert len(live) == 1 and live[0]["thread_id"] == "native-a"
+            assert live[0]["model_observation"]["model"] == rows[0]["model"]
+            assert live[0]["live_usage"] is None
+            assert all(update is None for update in usage_updates)
+            if fault == "cancel":
+                assert service.retire_invocation(attached[0]) == "stopped"
+        finally:
+            gate.touch()
+        result = future.result(timeout=10)
+    assert result.ok is (fault is None)
+    if fault == "decode":
+        assert "UnicodeDecodeError" in result.error
+    if warning_position is not None:
+        assert result.usage is None and handoffs[-1]["live_usage"] is None
+        assert usage_updates[-1] is None
+    else:
+        assert result.usage["snapshot"]["total"] == 35
+        assert handoffs[-1]["live_usage"]["usage"]["measured"]["total"] == 35
+        assert len(handoffs[-1]["live_usage"]["samples"]) == 1
 
 
 @pytest.mark.parametrize("host", ["claude", "grok"])

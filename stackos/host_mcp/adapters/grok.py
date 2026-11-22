@@ -96,9 +96,10 @@ def run_agent(
         command += ["--reasoning-effort", model_reasoning_effort]
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
-    stream = MessagesStream(
-        HOST_KEY, _message_result, on_session=on_session, on_usage=on_usage, on_model=on_model
-    )
+    # Grok Messages may zero-fill incomplete counters and report the warning
+    # on stderr. Keep identity/model observation early, but do not publish usage
+    # until the owned process exits and both output streams have been consumed.
+    stream = MessagesStream(HOST_KEY, _message_result, on_session=on_session, on_model=on_model)
     diagnostics = False
 
     def diagnostic(stderr: str) -> None:
@@ -117,14 +118,15 @@ def run_agent(
         lambda stdout: MessagesStream(HOST_KEY, _message_result).decode_output(stdout),
         process_control=process_control,
         stderr_error=diagnostic,
+        usage_requires_complete_output=True,
         on_output_line=stream.feed
         if on_session is not None or on_usage is not None or on_model is not None
         else None,
     )
     if diagnostics:
-        if on_usage is not None:
-            on_usage(None)
-        return replace(result, usage=None)
+        result = replace(result, usage=None)
+    if on_usage is not None:
+        on_usage(result.usage)
     return result
 
 

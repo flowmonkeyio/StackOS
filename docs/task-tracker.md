@@ -1145,14 +1145,18 @@ Native init/assistant models provide early observation. A single terminal
 `modelUsage` key identifies the model for its aggregate; multiple models remain
 ambiguous. This preserves native alias differences without changing selection.
 
-Aggregate usage becomes observable when the native result event arrives, before
-process exit. Earlier partial/message counters cannot establish complete session
-or invocation totals and remain unknown. Claude retains its versioned cumulative
-basis. Grok Messages totals sum the three disjoint input buckets and output once
-per invocation, including on resume. This format omits reasoning detail; it stays
-unknown. Grok zero-fills missing/incomplete usage and warns on stderr, so any
-stderr diagnostic conservatively withholds its usage without turning a warning
-into execution failure. All-zero Grok Messages counters are unknown. Captured
+Claude aggregate usage becomes observable when its native result event arrives,
+before process exit, retaining its versioned cumulative basis. Grok aggregate
+usage is withheld until process exit and complete stdout/stderr observation:
+its Messages format zero-fills missing/incomplete usage and warns on stderr,
+which can arrive after the result event. Any stderr diagnostic conservatively
+withholds Grok usage without turning a warning into execution failure. Early
+Grok session and model observation remains available. Failed output decoding
+also leaves Grok accounting unknown. Earlier partial/message
+counters cannot establish complete session or invocation totals for either host
+and remain unknown. Grok Messages totals sum the three disjoint input buckets
+and output once per invocation, including on resume. This format omits reasoning
+detail; it stays unknown. All-zero Grok Messages counters are unknown. Captured
 Claude 2.1.330/Grok 1.0.92 fresh/resume projections are maintained in
 `tests/fixtures/claude_grok_streams_20261122.json`; their completed calls do not
 claim native first-call interruption or installed StackOS activation.
@@ -2838,8 +2842,11 @@ Existing receipt normalization and aggregation serve ticket, task, project,
 daily and grouped summaries. A persisted final receipt wins over any in-flight
 provisional observation. Native result/error handling and repair rules remain
 unchanged. Missing or unsupported telemetry is N/A; final collection still runs
-for every supported host. Claude/Grok full-scope live subagent/cache accounting
-has not been established, so their live adapters remain disabled.
+for every supported host. Claude/Grok Messages callbacks expose early session
+identity and native model observation. Full-scope per-message subagent/cache
+checkpoint accounting is unproven for both hosts and remains unavailable.
+Claude can publish aggregate usage at its result event; Grok publishes it only
+after process exit and complete diagnostic validation, as described above.
 
 The rolling ten-minute history bounds active-call samples only; collection and
 final totals cover the entire invocation. Native-session reads are independent

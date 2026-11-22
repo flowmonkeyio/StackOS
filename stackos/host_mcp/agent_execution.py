@@ -166,6 +166,7 @@ def execute_json_agent(
     timeout: float | None = None,
     stderr_error: Callable[[str], str | None] | None = None,
     on_output_line: Callable[[str], None] | None = None,
+    usage_requires_complete_output: bool = False,
 ) -> AgentRunResult:
     native_env = subprocess_env_for_cli(command[0]) if env is None else env
     # A native print timeout need not bound authentication or child startup.
@@ -264,7 +265,9 @@ def execute_json_agent(
         process.returncode,
         thread_id=native.thread_id,
         result=native.result,
-        usage=native.usage,
+        # Some native formats signal incomplete counters only on stderr. A
+        # failed output read cannot establish completeness for those formats.
+        usage=None if usage_requires_complete_output and process_error else native.usage,
         model_observation=native.model_observation,
         error=process_error
         or native.error
