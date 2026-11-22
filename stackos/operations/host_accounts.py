@@ -99,11 +99,11 @@ _ACCOUNT_MESSAGES = {
     ),
     "account_switch_busy": "An account switch is already in progress. Try again shortly.",
     "account_switch_unresumable_worker": (
-        "An automated Codex process cannot yet resume its saved conversation. "
+        "An automated process cannot yet resume its saved conversation. "
         "Let it finish before switching accounts."
     ),
     "account_switch_retirement_unconfirmed": (
-        "An automated Codex process has not stopped. The account was not changed. "
+        "An automated process has not stopped. The account was not changed. "
         "Check the running task before trying again."
     ),
 }

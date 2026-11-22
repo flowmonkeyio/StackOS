@@ -399,7 +399,16 @@ def test_native_resume_keeps_original_session_id_and_environment(tmp_path, monke
         return subprocess.CompletedProcess(
             command,
             0,
-            json.dumps({"session_id": session, "structured_output": {"summary": "retained"}}),
+            json.dumps({"type": "system", "subtype": "init", "session_id": session})
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "session_id": session,
+                    "structured_output": {"summary": "retained"},
+                }
+            ),
             "",
         )
 

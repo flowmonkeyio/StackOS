@@ -11,8 +11,8 @@ const originalFetch = globalThis.fetch
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
 const a = { account_ref: 'a', email: 'first@example.com', identity_status: 'verified' }
 const b = { account_ref: 'b', email: 'second-long-account-email@example.com', identity_status: 'verified' }
-function inventory(accounts = [a, b], desired: string | null = 'a') {
-  return { hosts: { codex: { accounts, desired: { account_ref: desired, revision: 0 }, pending_enrollment: null } } }
+function inventory(accounts = [a, b], desired: string | null = 'a', host = 'codex') {
+  return { hosts: { [host]: { accounts, desired: { account_ref: desired, revision: 0 }, pending_enrollment: null } } }
 }
 function panel() {
   const store = useHomeSubscriptions()
@@ -449,22 +449,22 @@ describe('native account picker', () => {
     } finally { if (!retired) wrapper.unmount() }
   })
 
-  it('shows switching immediately and confirms before a slow quota refresh finishes', async () => {
+  it.each([['codex', 'Codex'], ['claude-code', 'Claude Code'], ['grok', 'Grok Build']])('shows %s switching and continuation guidance before a slow quota refresh finishes', async (host, name) => {
     let finishSwitch!: (response: Response) => void
     let finishQuota!: (response: Response) => void
     globalThis.fetch = vi.fn(async url => {
       if (String(url).includes('selectAccount')) return new Promise<Response>(resolve => { finishSwitch = resolve })
       if (String(url).includes('subscriptions')) return new Promise<Response>(resolve => { finishQuota = resolve })
-      return json(inventory())
+      return json(inventory([a, b], 'a', host))
     }) as typeof fetch
     const store = useHomeSubscriptions()
-    store.subscriptions.readings.codex = { plan: 'A plan', meters: [] }
+    store.subscriptions.readings[host] = { plan: 'A plan', meters: [] }
     const wrapper = panel()
     try {
       await flushPromises()
-      await wrapper.get('[aria-label="Codex account: first@example.com"]').trigger('click')
+      await wrapper.get(`[aria-label="${name} account: first@example.com"]`).trigger('click')
       await wrapper.findAll('[role="menuitem"]').find(item => item.text().includes(b.email))!.trigger('click')
-      const pending = wrapper.get<HTMLButtonElement>('[aria-label="Codex account: first@example.com"]')
+      const pending = wrapper.get<HTMLButtonElement>(`[aria-label="${name} account: first@example.com"]`)
       expect(pending.element.disabled).toBe(true)
       expect(pending.attributes('aria-busy')).toBe('true')
       expect(pending.get('[role="status"]').text()).toBe('Switching account…')
@@ -473,23 +473,23 @@ describe('native account picker', () => {
 
       finishSwitch(json({ data: { account_ref: 'b', revision: 1 } }))
       await flushPromises()
-      const selected = wrapper.get<HTMLButtonElement>('[aria-label="Codex account: second-long-account-email@example.com"]')
+      const selected = wrapper.get<HTMLButtonElement>(`[aria-label="${name} account: second-long-account-email@example.com"]`)
       expect(selected.element.disabled).toBe(false)
       expect(selected.attributes('aria-busy')).toBeUndefined()
       expect(store.subscriptions.loading).toBe(true)
-      expect(store.subscriptions.readings.codex).toBeNull()
+      expect(store.subscriptions.readings[host]).toBeNull()
       expect(useToastsStore().items.at(-1)).toMatchObject({
-        kind: 'success', title: 'Codex account switched',
-        detail: 'Restart existing Codex processes to use this account. StackOS automated processes will restart automatically.',
+        kind: 'success', title: 'Account switched',
+        detail: 'StackOS managed workers can now continue their saved conversations unless stopped. Restart external terminals to use this account.',
       })
 
       finishQuota(json({ detail: 'Quota temporarily unavailable' }, 503))
       await flushPromises()
       await wrapper.setProps({ subscriptions: store.subscriptions })
-      expect(wrapper.find('[aria-label="Codex account: second-long-account-email@example.com"]').exists()).toBe(true)
+      expect(wrapper.find(`[aria-label="${name} account: second-long-account-email@example.com"]`).exists()).toBe(true)
       expect(store.subscriptions.failed).toBe(true)
       expect(wrapper.text()).toContain('Couldn’t refresh subscription quotas.')
-      expect(wrapper.get('li[aria-label="Codex"]').find('[role="alert"]').exists()).toBe(false)
+      expect(wrapper.get(`li[aria-label="${name}"]`).find('[role="alert"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
 
@@ -532,23 +532,23 @@ describe('native account picker', () => {
     } finally { wrapper.unmount() }
   })
 
-  it('retains the old selection and quota when native activation fails', async () => {
+  it.each([['codex', 'Codex'], ['claude-code', 'Claude Code'], ['grok', 'Grok Build']])('retains the old %s selection and quota when native activation fails', async (host, name) => {
     globalThis.fetch = vi.fn(async url => String(url).includes('selectAccount')
-      ? json({ detail: 'Native activation failed' }, 400) : json(inventory())) as typeof fetch
+      ? json({ detail: 'Native activation failed' }, 400) : json(inventory([a, b], 'a', host))) as typeof fetch
     const store = useHomeSubscriptions()
-    store.subscriptions.readings.codex = { plan: 'A plan', meters: [] }
+    store.subscriptions.readings[host] = { plan: 'A plan', meters: [] }
     const wrapper = panel()
     try {
       await flushPromises()
-      await wrapper.get('[aria-label="Codex account: first@example.com"]').trigger('click')
+      await wrapper.get(`[aria-label="${name} account: first@example.com"]`).trigger('click')
       await wrapper.findAll('[role="menuitem"]').find(item => item.text().includes(b.email))!.trigger('click')
       await flushPromises()
-      expect(wrapper.find('[aria-label="Codex account: first@example.com"]').exists()).toBe(true)
+      expect(wrapper.find(`[aria-label="${name} account: first@example.com"]`).exists()).toBe(true)
       expect(wrapper.get('[role="alert"]').text()).toContain('Native activation failed')
-      expect(store.subscriptions.readings.codex?.plan).toBe('A plan')
+      expect(store.subscriptions.readings[host]?.plan).toBe('A plan')
       expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('subscriptions'))).toBe(false)
       expect(useToastsStore().items).toHaveLength(0)
-      expect(wrapper.get<HTMLButtonElement>('[aria-label="Codex account: first@example.com"]').element.disabled).toBe(false)
+      expect(wrapper.get<HTMLButtonElement>(`[aria-label="${name} account: first@example.com"]`).element.disabled).toBe(false)
     } finally { wrapper.unmount() }
   })
 

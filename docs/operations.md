@@ -1041,7 +1041,7 @@ registry. Requests only accept the declared identifiers and revision.
 | `hostMcp.addAccount` | `host_key`, new UUID `enrollment_ref` | Provisional native sign-in receipt. Retry with the same reference to recover the original receipt without starting sign-in again. |
 | `hostMcp.completeAccountEnrollment` | `host_key`, `enrollment_ref` | Current enrollment outcome. Poll while pending. Native verification can report missing email, expired credentials or a competing credential. |
 | `hostMcp.cancelAccountEnrollment` | `host_key`, `enrollment_ref` | Final enrollment outcome. If `cleanup_pending` is true, retirement is unconfirmed and the same cancel call may retry it. |
-| `hostMcp.selectAccount` | `host_key`, `account_ref`, `expected_revision` | Verified desired account and revision. A Codex switch restarts affected automated delivery workers in their retained conversations. On a stale revision, reload inventory before submitting a new selection. |
+| `hostMcp.selectAccount` | `host_key`, `account_ref`, `expected_revision` | Verified desired account and revision. Codex, Claude Code and Grok switches resume affected managed delivery workers in their retained conversations. On a stale revision, reload inventory before submitting a new selection. |
 | `hostMcp.refreshAccount` | `host_key`, `account_ref` | Enrolled account with current identity status and the last verified display email. |
 
 The inventory is the read response body. Writes return the corresponding
@@ -1086,15 +1086,15 @@ a failed file replacement keeps the prior usable native login.
 Normal Codex CLI and app launches retain the same `CODEX_HOME`, original
 conversations, settings and native capabilities. There is no per-child credential
 lease or automatic revert. Existing clients cache their login. Account selection
-pauses affected StackOS automated delivery workers across projects, confirms
-their native process has stopped, switches credentials, then resumes the same
-conversation with `proceed`. Delivery/review phase, settings and repair allowance
+for Codex, Claude Code and Grok pauses affected StackOS automated delivery workers
+across projects, confirms their native process has stopped, switches credentials,
+then resumes the same conversation with `proceed`. Delivery/review phase, settings and repair allowance
 remain unchanged, and interrupted invocation usage stays recorded. Work already
-stopped or cancelled is not restarted. New automated Codex launches wait for the
-switch to finish. A worker without a resumable session, including an active setup
-request, prevents switching before credentials change.
+stopped or cancelled is not restarted. New managed launches for the selected host
+wait for the switch to finish. A worker without a resumable session, including an
+active setup request, prevents switching before credentials change.
 
-Personal Codex terminals and other independently started processes must be
+Personal terminals and other independently started processes must be
 restarted manually, then resumed in their original conversation. The console
 shows switching progress immediately and confirms selection before refreshing
 quotas; its success message explains the restart requirement. Avoid concurrent
@@ -1119,7 +1119,8 @@ native `.credentials.json` fallback. A locked or unreadable primary item stops
 selection. Writes use the native `security` command's stdin protocol and reject
 oversized payloads without passing secrets in arguments. Ordinary Claude runs
 and resume keep native defaults and original session IDs. Existing clients may
-cache credentials; selection does not restart them or guarantee immediate reload.
+cache credentials; managed delivery workers resume through the shared continuation
+above, while external terminals require a manual restart.
 
 ## Browser Operations
 

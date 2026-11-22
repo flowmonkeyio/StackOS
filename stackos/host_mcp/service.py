@@ -843,7 +843,7 @@ def select_account(
     accounts: HostAccounts, host_key: str, account_ref: str, expected_revision: int
 ) -> DesiredAccount:
     """Switch native credentials between exact, resumable managed invocations."""
-    if host_key != "codex":
+    if host_key not in {"codex", "claude-code", "grok"}:
         return accounts.select(host_key, account_ref, expected_revision)
     with managed_launch_lock:
         if host_key in _account_switches:

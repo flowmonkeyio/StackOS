@@ -2525,8 +2525,9 @@ def use_codex_native(monkeypatch, native):
 
 
 @pytest.mark.parametrize("interrupted_phase", ["delivery", "review"])
+@pytest.mark.parametrize("host_key", ["codex", "claude-code", "grok"])
 def test_account_switch_resumes_same_phase_twice_without_spending_repair_budget(
-    native_task_session, project_id, tmp_path, monkeypatch, interrupted_phase
+    native_task_session, project_id, tmp_path, monkeypatch, interrupted_phase, host_key
 ):
     from types import SimpleNamespace
 
@@ -2544,7 +2545,7 @@ def test_account_switch_resumes_same_phase_twice_without_spending_repair_budget(
         patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 2}}},
     )
     scheduler = QueuedScheduler()
-    submit(session, project_id, tmp_path, scheduler)
+    submit(session, project_id, tmp_path, scheduler, host_key=host_key)
     selected = DesiredAccount(account_ref="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", revision=1)
     account_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     account_a = selected.account_ref
@@ -2562,7 +2563,7 @@ def test_account_switch_resumes_same_phase_twice_without_spending_repair_budget(
         resolve=lambda _host: SimpleNamespace(desired=selected),
         inventory=lambda: SimpleNamespace(
             hosts={
-                "codex": SimpleNamespace(
+                host_key: SimpleNamespace(
                     accounts=[
                         SimpleNamespace(account_ref=account_a),
                         SimpleNamespace(account_ref=account_b),
@@ -2596,19 +2597,34 @@ def test_account_switch_resumes_same_phase_twice_without_spending_repair_budget(
                 process.returncode,
                 thread_id=thread,
                 usage=usage_snapshot(
-                    "codex.turn", "session", 100 * len(targeted), 20 * len(targeted)
+                    f"{host_key}.turn", "session", 100 * len(targeted), 20 * len(targeted)
                 ),
             )
         return AgentRunResult(
             0,
             thread_id=thread,
             result=generic_result(),
-            usage=usage_snapshot("codex.turn", "session", 300, 60)
+            usage=usage_snapshot(f"{host_key}.turn", "session", 300, 60)
             if phase == interrupted_phase
             else None,
         )
 
-    use_codex_native(monkeypatch, native)
+    from dataclasses import replace
+
+    from stackos import task_delivery
+
+    lookup = service._definition_by_key
+    definition = lookup(host_key)
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda key: (
+            replace(definition, run_agent=native, native_models=None)
+            if key == host_key
+            else lookup(key)
+        ),
+    )
+    monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
     try:
         with ThreadPoolExecutor() as pool:
             work = pool.submit(scheduler.run)
@@ -2621,7 +2637,7 @@ def test_account_switch_resumes_same_phase_twice_without_spending_repair_budget(
                         .ticket.completion_evidence_json["automatic_delivery"]
                     )
                     retained.append(deepcopy(evidence["sessions"][interrupted_phase]))
-                service.select_account(accounts, "codex", target, index + 1)
+                service.select_account(accounts, host_key, target, index + 1)
             work.result(timeout=5)
         session.expire_all()
         ticket = repo.brief(project_id=project_id, ticket_key="first").ticket

@@ -16,6 +16,11 @@ from stackos.host_mcp.accounts import DesiredAccount, HostAccountError
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 
 
+@pytest.fixture(params=["codex", "claude-code", "grok"])
+def host_key(request):
+    return request.param
+
+
 class Accounts:
     def __init__(self, activation=None):
         self.desired = DesiredAccount(
@@ -30,12 +35,13 @@ class Accounts:
     def inventory(self):
         return SimpleNamespace(
             hosts={
-                "codex": SimpleNamespace(
+                host: SimpleNamespace(
                     accounts=[
                         SimpleNamespace(account_ref="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                         SimpleNamespace(account_ref="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
                     ]
                 )
+                for host in ("codex", "claude-code", "grok")
             }
         )
 
@@ -48,7 +54,7 @@ class Accounts:
 
 
 @pytest.fixture
-def worker(tmp_path, monkeypatch):
+def worker(tmp_path, monkeypatch, host_key):
     ready = Event()
     calls, transitions, processes = [], [], []
     accounts = Accounts()
@@ -77,16 +83,16 @@ def worker(tmp_path, monkeypatch):
                 0 if completion_wins else process.returncode,
                 thread_id="native-account-thread",
                 result={"done": True} if completion_wins else None,
-                usage=usage_snapshot("codex", "session", 100, 20),
+                usage=usage_snapshot(host_key, "session", 100, 20),
             )
         return AgentRunResult(
             0,
             thread_id=thread,
             result={"done": True},
-            usage=usage_snapshot("codex", "session", 130, 25),
+            usage=usage_snapshot(host_key, "session", 130, 25),
         )
 
-    definition = service._definition_by_key("codex")
+    definition = service._definition_by_key(host_key)
     monkeypatch.setattr(
         service, "_definition_by_key", lambda _: replace(definition, run_agent=native)
     )
@@ -97,13 +103,15 @@ def worker(tmp_path, monkeypatch):
 
     def run():
         return service.run_agent(
-            "codex",
+            host_key,
             tmp_path,
             "Original instructions",
             "Original assignment",
             {},
             model="selected-model",
             model_reasoning_effort="high",
+            provider="frozen-provider",
+            profile="frozen-profile",
             sandbox="read-only",
             execution_scope=service.AgentExecutionScope(
                 42, "task", "ticket", "reviewer", 3, "review"
@@ -125,6 +133,7 @@ def worker(tmp_path, monkeypatch):
         run=run,
         processes=processes,
         finish_normally=finish_normally,
+        host_key=host_key,
     )
     for process in processes:
         if process.poll() is None:
@@ -136,6 +145,18 @@ def worker(tmp_path, monkeypatch):
 
 def test_switch_resumes_exact_thread_with_proceed_and_separate_usage(worker):
     external = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    other_call = service.ActiveInvocation(
+        "unrelated-host",
+        service.AgentExecutionScope(99, "other-task", "other-ticket", "worker", 1, "delivery"),
+        "grok" if worker.host_key != "grok" else "codex",
+        None,
+        "now",
+        thread_id="other-session",
+    )
+    other_process = other_call.process_control.spawn(
+        [sys.executable, "-c", "import time; time.sleep(30)"]
+    )
+    service._register(other_call)
     try:
         with ThreadPoolExecutor() as pool:
             future = pool.submit(worker.run)
@@ -145,17 +166,27 @@ def test_switch_resumes_exact_thread_with_proceed_and_separate_usage(worker):
                 or pytest.fail("credentials changed before exit")
             )
             selected = service.select_account(
-                worker.accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
+                worker.accounts, worker.host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
             )
             assert selected.revision == 2
             assert future.result(timeout=3).ok
         assert external.poll() is None
+        assert other_process.poll() is None
+        assert not other_call.process_control.cancelled.is_set()
+        assert other_call.account_switch is None
         assert [row[:2] for row in worker.calls] == [
             ("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "Original assignment"),
             ("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "proceed"),
         ]
         assert worker.calls[1][2]["resume_thread_id"] == "native-account-thread"
-        assert worker.calls[0][2]["native_settings"] == worker.calls[1][2]["native_settings"]
+        assert worker.calls[0][2].get("native_settings") == worker.calls[1][2].get(
+            "native_settings"
+        )
+        if worker.host_key != "codex":
+            assert worker.calls[0][2]["model_reasoning_effort"] == "high"
+            assert worker.calls[1][2]["model_reasoning_effort"] == "high"
+        for key in ("model", "provider", "profile", "sandbox"):
+            assert worker.calls[0][2][key] == worker.calls[1][2][key]
         assert [row[0] for row in worker.transitions] == [True, False, True, False]
         first, second = worker.transitions[1], worker.transitions[3]
         assert second[1]["restart_of"] == first[1]["invocation_id"]
@@ -165,9 +196,13 @@ def test_switch_resumes_exact_thread_with_proceed_and_separate_usage(worker):
     finally:
         external.terminate()
         external.wait(timeout=3)
+        other_call.process_control.stop()
+        service._unregister(other_call)
 
 
-@pytest.mark.parametrize("code", ["activation_failed", "selection_restore_failed"])
+@pytest.mark.parametrize(
+    "code", ["activation_failed", "account_store_unavailable", "selection_restore_failed"]
+)
 def test_failed_switch_resumes_only_when_original_credentials_are_restored(worker, code):
     def fail():
         raise HostAccountError(code)
@@ -178,11 +213,11 @@ def test_failed_switch_resumes_only_when_original_credentials_are_restored(worke
         worker.accounts.activation = fail
         with pytest.raises(HostAccountError, match=code):
             service.select_account(
-                worker.accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
+                worker.accounts, worker.host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
             )
         result = future.result(timeout=3)
     assert len(worker.calls) == (1 if code == "selection_restore_failed" else 2)
-    if code == "activation_failed":
+    if code != "selection_restore_failed":
         assert result.ok and worker.calls[-1][0] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 
 
@@ -191,18 +226,24 @@ def test_successful_result_racing_switch_is_not_replayed(worker):
     with ThreadPoolExecutor() as pool:
         future = pool.submit(worker.run)
         assert worker.ready.wait(3)
-        service.select_account(worker.accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1)
+        service.select_account(
+            worker.accounts, worker.host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
+        )
         assert future.result(timeout=3).ok
     assert len(worker.calls) == 1
 
 
-def test_switch_fences_new_codex_launch_but_not_other_hosts(worker, tmp_path, monkeypatch):
+def test_switch_fences_new_host_launch_but_not_other_hosts(worker, tmp_path, monkeypatch):
     entered, release, queued = Event(), Event(), Event()
     started = []
     lookup = service._definition_by_key
-    other = replace(lookup("codex"), run_agent=lambda *a, **kw: AgentRunResult(0, result={}))
+    other = replace(
+        lookup(worker.host_key), run_agent=lambda *a, **kw: AgentRunResult(0, result={})
+    )
     monkeypatch.setattr(
-        service, "_definition_by_key", lambda host: lookup(host) if host == "codex" else other
+        service,
+        "_definition_by_key",
+        lambda host: lookup(host) if host == worker.host_key else other,
     )
 
     def activation():
@@ -221,7 +262,7 @@ def test_switch_fences_new_codex_launch_but_not_other_hosts(worker, tmp_path, mo
                 99, "new", "new-ticket", "worker", 1, "delivery"
             ),
             on_execution_change=lambda call, active: (
-                started.append(call.started_at) if active and host == "codex" else None
+                started.append(call.started_at) if active and host == worker.host_key else None
             ),
         )
 
@@ -232,19 +273,20 @@ def test_switch_fences_new_codex_launch_but_not_other_hosts(worker, tmp_path, mo
         switching = pool.submit(
             service.select_account,
             worker.accounts,
-            "codex",
+            worker.host_key,
             "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
             1,
         )
         try:
             assert entered.wait(3)
-            pending = pool.submit(launch_new, "codex")
+            pending = pool.submit(launch_new, worker.host_key)
             assert queued.wait(3)
             assert not pending.done() and len(worker.calls) == 1
-            assert pool.submit(launch_new, "grok").result(timeout=2).ok
+            other_host = "codex" if worker.host_key != "codex" else "grok"
+            assert pool.submit(launch_new, other_host).result(timeout=2).ok
             with pytest.raises(HostAccountError, match="account_switch_busy"):
                 service.select_account(
-                    worker.accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
+                    worker.accounts, worker.host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
                 )
             released_at = datetime.now(UTC).isoformat()
         finally:
@@ -259,7 +301,9 @@ def test_abort_during_activation_prevents_restart(worker):
         future = pool.submit(worker.run)
         assert worker.ready.wait(3)
         worker.accounts.activation = worker.allowed.clear
-        service.select_account(worker.accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1)
+        service.select_account(
+            worker.accounts, worker.host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
+        )
         assert not future.result(timeout=3).ok
     assert len(worker.calls) == 1
 
@@ -270,39 +314,41 @@ def test_stale_selection_does_not_interrupt(worker):
         assert worker.ready.wait(3)
         with pytest.raises(HostAccountError, match="stale_selection"):
             service.select_account(
-                worker.accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 0
+                worker.accounts, worker.host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 0
             )
         assert worker.processes[0].poll() is None and worker.accounts.writes == 0
-        service.select_account(worker.accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1)
+        service.select_account(
+            worker.accounts, worker.host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1
+        )
         assert future.result(timeout=3).ok
 
 
 @pytest.mark.parametrize("is_request", [False, True])
-def test_unresumable_worker_rejects_before_credentials_or_process_change(is_request):
+def test_unresumable_worker_rejects_before_credentials_or_process_change(is_request, host_key):
     scope = (
         service.AgentExecutionScope(43, agent="setup", request_id=1)
         if is_request
         else service.AgentExecutionScope(42, "task", "ticket", "worker", 1, "delivery")
     )
-    call = service.ActiveInvocation("unresumable", scope, "codex", None, "now")
+    call = service.ActiveInvocation("unresumable", scope, host_key, None, "now")
     if is_request:
         call.thread_id = "setup-thread"
     service._register(call)
     accounts = Accounts()
     try:
         with pytest.raises(HostAccountError, match="account_switch_unresumable_worker"):
-            service.select_account(accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1)
+            service.select_account(accounts, host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1)
         assert accounts.writes == 0 and not call.process_control.cancelled.is_set()
     finally:
         service._unregister(call)
         service.shutdown_usage()
 
 
-def test_unconfirmed_retirement_prevents_credential_write(monkeypatch):
+def test_unconfirmed_retirement_prevents_credential_write(monkeypatch, host_key):
     call = service.ActiveInvocation(
         "uncertain",
         service.AgentExecutionScope(43, "task", "ticket", "worker", 1, "delivery"),
-        "codex",
+        host_key,
         None,
         "now",
         thread_id="retained-thread",
@@ -312,7 +358,7 @@ def test_unconfirmed_retirement_prevents_credential_write(monkeypatch):
     monkeypatch.setattr(service, "retire_invocation", lambda _call: "unconfirmed")
     try:
         with pytest.raises(HostAccountError, match="account_switch_retirement_unconfirmed"):
-            service.select_account(accounts, "codex", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1)
+            service.select_account(accounts, host_key, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1)
         assert accounts.writes == 0 and accounts.desired.revision == 1
         assert not call.retired.is_set() and not service._account_switches
     finally:

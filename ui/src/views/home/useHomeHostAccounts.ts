@@ -153,11 +153,8 @@ export function useHomeHostAccounts(canAdopt: (host: string) => boolean) {
         if (hosts.value[host]) hosts.value[host].desired = desired
         // Quota refresh has its own loading/error state and must not hold the switch open.
         void quotas.accountChanged(host, desired)
-        const title = host === 'codex' ? 'Codex account switched' : 'Account switched'
-        const manualRestart = host === 'codex' ? 'Restart existing Codex processes to use this account.' : ''
-        toasts.success(title, host === 'codex'
-          ? `${manualRestart} StackOS automated processes will restart automatically.`
-          : undefined)
+        toasts.success('Account switched',
+          'StackOS managed workers can now continue their saved conversations unless stopped. Restart external terminals to use this account.')
       } finally { if (current()) switching.value[host] = false }
     })
   }

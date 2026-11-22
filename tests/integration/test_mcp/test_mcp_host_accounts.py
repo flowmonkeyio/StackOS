@@ -189,7 +189,7 @@ def test_console_selection_diagnostics_preserve_generation(
         and B.email not in response.text
     )
     code = failure
-    if failure == "identity_changed" or (failure == "profile_missing" and host_key != "codex"):
+    if failure == "identity_changed":
         code = "identity_unverified"
     assert body["data"]["code"] == code
     expected = {
@@ -678,7 +678,9 @@ def test_console_enrolls_and_selects_through_the_registered_host_adapter(
         ),
         policy,
     )
-    monkeypatch.setattr(service, "inspect_all", lambda: service.HostMcpAggregate(True, [row]))
+    monkeypatch.setattr(
+        service, "inspect_all", lambda **_kwargs: service.HostMcpAggregate(True, [row])
+    )
     status = call("status")
     assert status.status_code == 200, status.text
     assert status.json()["items"][0]["host_key"] == "codex"
