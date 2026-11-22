@@ -6033,6 +6033,15 @@ export interface components {
              */
             provider: string | null;
         };
+        /** MainRoleSettingsPatch */
+        MainRoleSettingsPatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            role: MainRoleSettingsPatchRole;
+            settings: components["schemas"]["MainAgentPreferences"];
+        };
         /** MetricSnapshotOut */
         MetricSnapshotOut: {
             /**
@@ -9167,6 +9176,15 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** SpecialistRoleSettingsPatch */
+        SpecialistRoleSettingsPatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            role: SpecialistRoleSettingsPatchRole;
+            settings: components["schemas"]["TaskDeliveryAgentOverride"];
+        };
         /** SubscriptionMeter */
         SubscriptionMeter: {
             /** Remaining Percent */
@@ -9728,6 +9746,11 @@ export interface components {
              */
             expected_etag: string | null;
             /**
+             * Expected Revision
+             * @default null
+             */
+            expected_revision: number | null;
+            /**
              * Idempotency Key
              * @default null
              */
@@ -9752,6 +9775,11 @@ export interface components {
              * @enum {string}
              */
             response_mode: TrackerConfigureDeliveryInputResponse_mode;
+            /**
+             * Role Patch
+             * @default null
+             */
+            role_patch: (components["schemas"]["SpecialistRoleSettingsPatch"] | components["schemas"]["MainRoleSettingsPatch"]) | null;
             /**
              * Run Token
              * @default null
@@ -12183,6 +12211,7 @@ export type SchemaLoadedWorkflowTemplate = components['schemas']['LoadedWorkflow
 export type SchemaLocalAgentChatCreateMessageInput = components['schemas']['LocalAgentChatCreateMessageInput'];
 export type SchemaLocalAgentChatMessageOut = components['schemas']['LocalAgentChatMessageOut'];
 export type SchemaMainAgentPreferences = components['schemas']['MainAgentPreferences'];
+export type SchemaMainRoleSettingsPatch = components['schemas']['MainRoleSettingsPatch'];
 export type SchemaMetricSnapshotOut = components['schemas']['MetricSnapshotOut'];
 export type SchemaOperationCallIn = components['schemas']['OperationCallIn'];
 export type SchemaOperationDescribeOut = components['schemas']['OperationDescribeOut'];
@@ -12288,6 +12317,7 @@ export type SchemaSetupWorkflowOutcome = components['schemas']['SetupWorkflowOut
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
+export type SchemaSpecialistRoleSettingsPatch = components['schemas']['SpecialistRoleSettingsPatch'];
 export type SchemaSubscriptionMeter = components['schemas']['SubscriptionMeter'];
 export type SchemaTaskActivityItem = components['schemas']['TaskActivityItem'];
 export type SchemaTaskActivityOut = components['schemas']['TaskActivityOut'];
@@ -15890,6 +15920,9 @@ export enum LocalAgentChatCreateMessageInputResponse_modeAnyOf0 {
     standard = "standard",
     verbose = "verbose"
 }
+export enum MainRoleSettingsPatchRole {
+    main_agent = "main_agent"
+}
 export enum OperationDescribeOutIdempotency_policy {
     dispatcher = "dispatcher",
     handler = "handler"
@@ -16255,6 +16288,10 @@ export enum SetupWorkflowOutcomeStatus {
     needs_input = "needs_input",
     cancelled = "cancelled",
     interrupted = "interrupted"
+}
+export enum SpecialistRoleSettingsPatchRole {
+    delivery_agent = "delivery_agent",
+    review_agent = "review_agent"
 }
 export enum TaskActivityItemSource_kind {
     project_event = "project_event",

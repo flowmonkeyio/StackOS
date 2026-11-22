@@ -277,12 +277,18 @@ def operation_specs() -> list[OperationSpec]:
                 "Replace TaskTracker.config_json.delivery only, preserving other tracker keys. "
                 "Or supply main_agent alone to replace only typed main-agent launch choices, "
                 "preserving specialist contracts and other defaults. This changes future "
-                "admissions, never task snapshots or stored ticket evidence."
+                "admissions, never task snapshots or stored ticket evidence. The Agents console "
+                "uses a typed role_patch with project_dir and expected_revision to merge only "
+                "changed fields of delivery_agent, review_agent or main_agent. Omission preserves; "
+                "null clears to inheritance. preview resolves effective choices without saving."
             ),
             prerequisites=(
                 "Requires authenticated local-admin REST setup; no MCP or workflow grants.",
                 "For full delivery replacement, read tracker.get raw and include all desired "
                 "defaults. The main_agent-only form preserves the other fields. "
+                "Role patches require an exact project-bound folder and current tracker revision; "
+                "stale or foreign writes reject. Codex uses source_ref; "
+                "other hosts use inline contracts. "
                 "Do not store secrets in instructions or selections.",
             ),
             returns=("Saved tracker configuration and revision; inspect with tracker.get raw.",),
@@ -308,6 +314,19 @@ def operation_specs() -> list[OperationSpec]:
                                 },
                             },
                         },
+                    },
+                ),
+                OperationExample(
+                    title="Patch one role from the local Agents console",
+                    arguments={
+                        "project_id": 1,
+                        "project_dir": "/work/project",
+                        "expected_revision": 7,
+                        "role_patch": {
+                            "role": "delivery_agent",
+                            "settings": {"model": None},
+                        },
+                        "preview": True,
                     },
                 ),
                 OperationExample(

@@ -264,10 +264,21 @@ MCP/system and workflow grants cannot authorize this local-admin write.
 
 The local console exposes native project definitions at **Setup → Agents**
 (`/projects/:id/agents`). It lists, adds and edits actual native files through
-`projectAgent.*`; generic presets are not the live project list. Its saved-default
-adoption uses the preview/write/readback contract below. The old fixed
-delivery/review form is removed. Editing a source or adopting defaults never
-calls `tracker.startDelivery` and does not establish execution readiness.
+`projectAgent.*`; generic presets are not the live project list. **Role defaults**
+on that same screen configures delivery, review and main launch choices. Its typed
+`role_patch: {role, settings}` goes through `tracker.configureDelivery` with the
+exact bound `project_dir` and `expected_revision` from `tracker.get`. Omitted
+fields are preserved; explicit null removes an optional choice to inherit. The
+writer merges one role, preserves unrelated defaults, rejects stale/foreign
+drafts, and returns saved plus effective readback. `preview: true` uses the same
+launch resolver without saving. Codex roles select native project source refs;
+other hosts edit their supported inline names/instructions. Main instructions
+remain owned by the setup or automation contract. Source model/effort takes
+precedence over fallback fields; the console labels the effective saved values.
+Failed saves retain drafts and require an explicit reload/reconciliation. Source
+editing, role saves and adoption never call `tracker.startDelivery`; active and
+resumed snapshots stay frozen. Source adoption also retains the explicit
+preview/write/readback contract below.
 
 Migration `0035_generic_task_delivery` moves existing engineering plugin
 delivery defaults once, preserving role instructions, names, host, model,

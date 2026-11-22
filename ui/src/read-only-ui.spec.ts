@@ -135,6 +135,7 @@ describe('restricted UI write contract', () => {
       [TASK_CONTENT_CONTROLLER, ['tracker.updateTaskContent']],
       [TASK_BOARD_CLIENT, ['tracker.updateTaskPriority', 'tracker.reorderTask', 'tracker.placeTask']],
       [CAPACITY_CONTROL, ['tracker.deliveryCapacity', 'tracker.setDeliveryCapacity']],
+      [join(ROOT, 'views', 'agents', 'useRoleSettings.ts'), ['tracker.configureDelivery', 'tracker.configureDelivery']],
     ])
     const callers: string[] = []
     for (const scope of SCOPES) {

@@ -1324,6 +1324,19 @@ defaults and overrides. Historical task/run snapshots and ticket evidence retain
 their settings. Migration `0035_generic_task_delivery` transfers the retired
 engineering plugin defaults once and preserves existing generic values.
 
+The existing Agents console can instead send `role_patch: {role, settings}` for
+`delivery_agent`, `review_agent` or `main_agent`, with exact bound `project_dir`
+and current `expected_revision`. This typed patch merges only supplied fields
+at that same defaults owner: omission preserves, null clears to inheritance.
+The compare-and-swap rejects concurrent stale saves; foreign project folders
+reject before mutation. `preview: true` returns effective settings through the
+existing specialist or main launch resolver without a write. Successful saves
+return tracker configuration/revision plus `role_settings` with effective values
+and scope. Codex source values retain precedence; non-Codex roles use inline
+contracts. Main contracts remain setup/automation-owned. These forms retain the
+same browser-safe, authenticated local-admin REST-only boundary and never
+dispatch work or rewrite active/resumed snapshots.
+
 `tracker.startDelivery` freezes project defaults, task overrides and optional
 `agent_assignments` into one execution snapshot. The map identifies canonical
 ticket keys and selected arbitrary role keys in `agents`; frozen step

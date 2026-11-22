@@ -9,6 +9,7 @@ import { UiButton, UiCallout, UiConfirmDialog, UiFormField, UiIcon, UiIconButton
 import { useProjectFolder } from '@/composables/useProjectFolder'
 import { useHomeAgentHostStatuses } from '@/views/home/useHomeAgentHostStatuses'
 import { agentError, agentIdentity, useProjectAgents, type AgentSummary, type AgentFields } from './useProjectAgents'
+import ProjectRoleSettings from './ProjectRoleSettings.vue'
 
 const props = defineProps<{ projectId: number; standalone?: boolean }>()
 const codexLogo = resolveAgentHostLogo('codex')
@@ -141,6 +142,13 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
         </UiButton>
       </template>
     </ProjectPageHeader>
+    <ProjectRoleSettings
+      v-if="folderReady && projectDir"
+      :key="`${projectId}:${projectDir}`"
+      :project-id="projectId"
+      :project-dir="projectDir"
+      :sources="items"
+    />
     <div
       class="flex flex-wrap items-start justify-between gap-3"
       :class="{ '!mt-2': standalone }"
@@ -216,16 +224,30 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
           placeholder="Find an agent"
           class="mb-3"
         />
-        <div class="min-h-12 text-xs text-fg-muted" role="status">
-          <p v-if="loaded && (loading || folderLoading)">Last-known agents · refreshing sources…</p>
+        <div
+          class="min-h-12 text-xs text-fg-muted"
+          role="status"
+        >
+          <p v-if="loaded && (loading || folderLoading)">
+            Last-known agents · refreshing sources…
+          </p>
           <template v-else-if="loaded && !ready">
             <p>Last-known agents · refresh required</p>
             <div class="flex items-start gap-2">
               <details class="min-w-0 flex-1">
-                <summary class="focus-ring cursor-pointer">Refresh details</summary>
+                <summary class="focus-ring cursor-pointer">
+                  Refresh details
+                </summary>
                 <p>{{ error || folderIssue || 'Source validation required.' }}</p>
               </details>
-              <UiButton v-if="folderIssue" size="sm" variant="ghost" @click="guardedRefresh">Retry project folder</UiButton>
+              <UiButton
+                v-if="folderIssue"
+                size="sm"
+                variant="ghost"
+                @click="guardedRefresh"
+              >
+                Retry project folder
+              </UiButton>
             </div>
           </template>
         </div>
@@ -276,7 +298,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
           {{ search ? 'No matching agents.' : 'No project agents yet. Add an agent to create its project file.' }}
         </p>
         <p class="mt-3 text-xs text-fg-muted">
-          Project file editing supports Codex. Other agent apps keep their existing execution settings.
+          Project file editing supports Codex. Other agent apps use inline role defaults above.
         </p>
         <UiCallout
           v-if="error && ready && !draft && !requestedSource"

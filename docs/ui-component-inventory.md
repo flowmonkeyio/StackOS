@@ -98,6 +98,14 @@ visual acceptance.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 
+Agents retains its Codex native definition editor and adds `ProjectRoleSettings`
+with `useRoleSettings` for delivery/review/main defaults through the existing
+`tracker.configureDelivery` operation. The form uses shared controls and the
+host capability catalog, labels effective saved source/inheritance, and keeps
+role/host drafts across selection changes. Stale/failed saves require explicit
+reload while retaining edited fields; project/role response identities fence
+late reads. Main edits launch choices; its contract stays with setup/automation.
+
 Project Home adds setup through `views/project-setup/useProjectSetup`: the shared
 `projectSetup.get/start/setReminders` operations retain status, saved choices and
 independent permanent reminder preferences. Home keeps a quiet contextual action

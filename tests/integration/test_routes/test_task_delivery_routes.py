@@ -221,6 +221,10 @@ def test_project_defaults_setup_rejects_lossy_responses(api, project_id, respons
 def test_registered_saved_reasoning_reaches_distinct_native_role_commands(
     api, project_id, tmp_path, monkeypatch, argument_form, choice
 ):
+    from tests.integration.test_routes.test_project_agent_operations import bind
+
+    bind(api, project_id, tmp_path)
+
     def operation(name, **arguments):
         response = api.post(
             f"/api/v1/operations/{name}/call",
@@ -245,7 +249,15 @@ def test_registered_saved_reasoning_reaches_distinct_native_role_commands(
         },
     }
     saved["agents"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
-    operation("tracker.configureDelivery", delivery=saved)
+    # Exercise the exact typed console writer before the actual admission/runner.
+    state = operation("tracker.configureDelivery", delivery={"host_key": "claude-code"})
+    for role, settings in saved["agents"].items():
+        state = operation(
+            "tracker.configureDelivery",
+            project_dir=str(tmp_path),
+            expected_revision=state["rev"],
+            role_patch={"role": role, "settings": settings},
+        )
     operation("tracker.createTask", key="reasoning", title="Reasoning")
     operation("tracker.createTicket", task_key="reasoning", key="work", title="Work")
     git(tmp_path, "init")
@@ -304,6 +316,170 @@ def test_registered_saved_reasoning_reaches_distinct_native_role_commands(
             assert "--effort" not in command
         else:
             assert command[command.index("--effort") + 1] == effort
+
+
+def test_console_role_patch_preserves_defaults_and_rejects_stale_foreign_writes(
+    api, project_id, tmp_path
+):
+    from tests.integration.test_routes.test_project_agent_operations import bind
+
+    scope = bind(api, project_id, tmp_path / "roles")
+    endpoint = "/api/v1/operations/tracker.configureDelivery/call"
+    saved = {
+        "host_key": "claude-code",
+        "agents": {
+            "delivery_agent": {
+                "name": "writer",
+                "instructions": "Build",
+                "model": "sonnet",
+                "provider": None,
+            },
+            "review_agent": {"name": "reviewer", "instructions": "Review"},
+            "other_role": {"name": "other", "instructions": "Keep"},
+        },
+        "main_agent": {"host_key": "codex", "model": "gpt-6.1-sol"},
+    }
+    original = api.post(endpoint, json={"arguments": {"project_id": project_id, "delivery": saved}})
+    assert original.status_code == 200, original.text
+    arguments = {
+        "project_id": project_id,
+        "project_dir": scope["project_dir"],
+        "expected_revision": original.json()["data"]["rev"],
+        "role_patch": {
+            "role": "delivery_agent",
+            "settings": {"model": None},
+        },
+    }
+    token = api.get("/api/v1/auth/ui-token").json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    preview = api.post(
+        endpoint, json={"arguments": {**arguments, "preview": True}}, headers=headers
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["data"]["role_settings"]["effective"]["name"] == "writer"
+    response = api.post(endpoint, json={"arguments": arguments}, headers=headers)
+    assert response.status_code == 200, response.text
+    readback = response.json()["data"]
+    expected = json.loads(json.dumps(saved))
+    expected["agents"]["delivery_agent"].pop("model")
+    assert readback["config_json"]["delivery"] == expected
+    stale = api.post(endpoint, json={"arguments": arguments}, headers=headers)
+    assert stale.status_code == 409, stale.text
+    foreign = api.post(
+        "/api/v1/projects", json={"slug": "foreign-roles", "name": "Foreign", "domain": "test"}
+    ).json()["data"]["id"]
+    denied = api.post(
+        endpoint,
+        json={"arguments": {**arguments, "project_id": foreign, "expected_revision": 0}},
+        headers=headers,
+    )
+    assert denied.status_code == 422, denied.text
+    assert denied.json()["data"]["code"] == "missing_scope"
+    current = api.post(
+        "/api/v1/operations/tracker.get/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "response_mode": "raw",
+                "task_index_only": True,
+                "include_graph": False,
+            }
+        },
+    ).json()
+    assert current["tracker"]["config_json"] == readback["config_json"]
+    assert current["tasks"] == []  # Saving never dispatches work.
+
+
+def test_console_main_role_patch_uses_main_preferences_resolver(api, project_id, tmp_path):
+    from stackos.project_setup_execution import resolve_preferences
+    from tests.integration.test_routes.test_project_agent_operations import bind
+
+    scope = bind(api, project_id, tmp_path / "main-role")
+    endpoint = "/api/v1/operations/tracker.configureDelivery/call"
+    before = api.post(
+        endpoint,
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "delivery": {"host_key": "claude-code", "main_agent": {"provider": None}},
+            }
+        },
+    ).json()["data"]
+    response = api.post(
+        endpoint,
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "project_dir": scope["project_dir"],
+                "expected_revision": before["rev"],
+                "role_patch": {
+                    "role": "main_agent",
+                    "settings": {
+                        "host_key": "codex",
+                        "model": "gpt-6.1-sol",
+                        "model_reasoning_effort": "high",
+                    },
+                },
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    choices = response.json()["data"]["config_json"]["delivery"]["main_agent"]
+    assert choices["provider"] is None
+    effective = {key: value for key, value in choices.items() if value is not None}
+    with Session(api.app.state.engine) as session:
+        assert resolve_preferences(session, project_id) == effective
+    assert response.json()["data"]["role_settings"]["effective"] == effective
+
+
+def test_console_role_patch_reports_source_precedence_over_saved_fallback(
+    api, project_id, tmp_path
+):
+    from tests.integration.test_routes.test_project_agent_operations import bind, call
+
+    scope = bind(api, project_id, tmp_path / "source-precedence")
+    created = call(
+        api,
+        "create",
+        {
+            **scope,
+            "fields": {
+                "name": "builder",
+                "description": "Fixture",
+                "developer_instructions": "Build fixture",
+                "model": "gpt-6.1-sol",
+                "model_reasoning_effort": "high",
+            },
+        },
+    )
+    assert created.status_code == 200, created.text
+    endpoint = "/api/v1/operations/tracker.configureDelivery/call"
+    saved = api.post(endpoint, json={"arguments": {"project_id": project_id, "delivery": {}}})
+    response = api.post(
+        endpoint,
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "project_dir": scope["project_dir"],
+                "expected_revision": saved.json()["data"]["rev"],
+                "role_patch": {
+                    "role": "delivery_agent",
+                    "settings": {
+                        "source_ref": created.json()["data"]["source_ref"],
+                        "model": "gpt-6-astra",
+                        "model_reasoning_effort": "low",
+                    },
+                },
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    readback = response.json()["data"]
+    assert readback["config_json"]["delivery"]["agents"]["delivery_agent"]["model"] == "gpt-6-astra"
+    effective = readback["role_settings"]["effective"]
+    assert effective["model"] == "gpt-6.1-sol"
+    assert effective["native_settings"]["model_reasoning_effort"] == "high"
+    assert effective["setting_sources"] == {"model": "source", "model_reasoning_effort": "source"}
 
 
 @pytest.mark.parametrize("cleared", [False, True])
@@ -386,7 +562,9 @@ def test_source_adoption_preview_and_write_use_registered_local_setup(
     assert readback["config_json"]["delivery"]["review_agent"] is None
 
 
-@pytest.mark.parametrize("variant", ["delivery", "main_agent", "source_preview", "source_write"])
+@pytest.mark.parametrize(
+    "variant", ["delivery", "main_agent", "source_preview", "source_write", "role_patch"]
+)
 def test_configure_delivery_denies_actual_cli_transport(
     api, project_id, tmp_path, settings, monkeypatch, variant
 ):
@@ -422,6 +600,12 @@ def test_configure_delivery_denies_actual_cli_transport(
         payload = {"delivery": {"host_key": "claude-code"}}
     elif variant == "main_agent":
         payload = {"main_agent": {"host_key": "codex"}}
+    elif variant == "role_patch":
+        payload = {
+            "project_dir": scope["project_dir"],
+            "expected_revision": saved.json()["data"]["rev"],
+            "role_patch": {"role": "main_agent", "settings": {"model": "gpt-6.1-sol"}},
+        }
     else:
         payload = {
             "project_dir": scope["project_dir"],

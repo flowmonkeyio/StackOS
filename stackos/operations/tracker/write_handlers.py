@@ -54,7 +54,17 @@ async def tracker_configure_delivery(
     ):
         raise ValidationError("Delivery defaults require authenticated local-admin setup")
     repo = TrackerRepository(ctx.session)
-    if inp.main_agent is not None:
+    if inp.role_patch is not None:
+        assert inp.project_dir is not None and inp.expected_revision is not None
+        result = repo.patch_delivery_role(
+            project_id=inp.project_id,
+            project_dir=inp.project_dir,
+            expected_revision=inp.expected_revision,
+            role=inp.role_patch.role,
+            settings=inp.role_patch.settings.model_dump(exclude_unset=True),
+            preview=inp.preview,
+        )
+    elif inp.main_agent is not None:
         result = repo.configure_main_agent(
             project_id=inp.project_id,
             preferences=inp.main_agent.model_dump(exclude_none=True),

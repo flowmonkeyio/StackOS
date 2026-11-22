@@ -3,9 +3,9 @@
 import asyncio
 import json
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from threading import Event
-from types import SimpleNamespace
 
 import pytest
 from sqlmodel import Session, select
@@ -26,6 +26,12 @@ from tests.integration.test_repositories.test_schedule_main_thread import bind_f
 from tests.integration.test_repositories.test_schedule_main_thread import (
     native_ready as native_ready,
 )
+
+
+def native_runner_definition(host_key, runner):
+    """Replace only the process seam; retain the registered capability contract."""
+    definition = next(item for item in service._definitions() if item.policy.host_key == host_key)
+    return replace(definition, run_agent=runner)
 
 
 @pytest.fixture
@@ -70,7 +76,9 @@ def occurrence(engine, tmp_path, monkeypatch, native_ready):
         )
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *_a, **_k: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: native_runner_definition(key, runner)
+    )
     try:
         yield row.id, project.id, runtime, clock, database, calls
     finally:
@@ -233,7 +241,9 @@ async def test_live_request_beyond_lease_blocks_overlap_and_retains_real_livenes
         assert finish.wait(10)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: native_runner_definition(key, runner)
+    )
     task = asyncio.create_task(fire(occurrence))
     assert await asyncio.to_thread(entered.wait, 10)
     try:
@@ -304,7 +314,9 @@ async def test_failures_are_truthful_no_replay_and_blocked_remains_open(
             },
         )
 
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: native_runner_definition(key, runner)
+    )
     await fire(occurrence)
     with Session(engine) as session:
         request = session.exec(select(AgentRequest)).one()
@@ -347,7 +359,9 @@ async def test_native_spawn_guard_fences_changes_after_admission(occurrence, mon
             spawned.append(True)
         return AgentRunResult(None, error="Fenced before spawn")
 
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: native_runner_definition(key, runner)
+    )
     await fire(occurrence)
     assert not spawned
     with Session(engine) as session:
@@ -383,7 +397,9 @@ async def test_admitted_occurrence_survives_native_preparation_delay(
         )
 
     monkeypatch.setattr(service, "run_agent", delayed_registration)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: native_runner_definition(key, runner)
+    )
     due = runtime.registrations[row_id].due
     await fire(occurrence)
     with Session(engine) as session:
@@ -446,7 +462,9 @@ async def test_actual_plan_link_is_project_checked_and_unfinished_plan_blocks(
             },
         )
 
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: native_runner_definition(key, runner)
+    )
     await fire(occurrence)
     with Session(engine) as session:
         request = session.exec(select(AgentRequest)).one()

@@ -6,7 +6,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from sqlmodel import select
+from sqlalchemy.orm.attributes import set_committed_value
+from sqlmodel import col, select, update
 
 from stackos.db.models import (
     Project,
@@ -67,6 +68,115 @@ class TrackerSetupMixin:
         return self.configure_delivery(
             project_id=project_id, delivery={**defaults, "main_agent": selected}
         )
+
+    def patch_delivery_role(
+        self,
+        *,
+        project_id: int,
+        project_dir: str,
+        expected_revision: int,
+        role: str,
+        settings: dict[str, Any],
+        preview: bool,
+    ) -> dict[str, Any]:
+        """Guard one console role draft at the existing defaults/launch owners."""
+        from pathlib import Path
+
+        from stackos.operations.tracker.schemas import TaskDeliveryAgentOverride
+        from stackos.project_setup_execution import MainAgentPreferences, resolve_preferences
+        from stackos.repositories.workspaces import WorkspaceRepository
+        from stackos.task_delivery import resolve_delivery_settings
+
+        directory = Path(project_dir).expanduser().resolve()
+        owners = {
+            binding.project_id
+            for binding in WorkspaceRepository(self._s).list_bindings()
+            if binding.last_known_root and Path(binding.last_known_root).resolve() == directory
+        }
+        if not directory.is_dir() or owners != {project_id}:
+            raise ValidationError("Role settings missing_scope", data={"code": "missing_scope"})
+        tracker = self._tracker_or_none(project_id=project_id)
+        if (tracker.rev if tracker else 0) != expected_revision:
+            raise ConflictError("Role settings changed; reload and reconcile the draft")
+        current = self.delivery_defaults(project_id=project_id)
+        proposed = deepcopy(current)
+        before = (
+            current.get("main_agent") or {}
+            if role == "main_agent"
+            else _delivery_role_defaults(current, role)
+        )
+        selected = deepcopy(before)
+        for key, value in settings.items():
+            if value is None:
+                selected.pop(key, None)
+            else:
+                selected[key] = value
+        if role == "main_agent":
+            selected = MainAgentPreferences.model_validate(selected).model_dump(exclude_unset=True)
+            effective = resolve_preferences(
+                self._s, project_id, selected, inherit_saved=False, validate_selection=not preview
+            )
+            proposed[role] = selected
+        else:
+            if role not in {"delivery_agent", "review_agent"}:
+                raise ValidationError("Unsupported console role")
+            selected = TaskDeliveryAgentOverride.model_validate(selected).model_dump(
+                exclude_unset=True
+            )
+            effective = resolve_delivery_settings(
+                self._s,
+                project_id=project_id,
+                project_dir=str(directory),
+                agents={role: {**dict.fromkeys(before), **selected}},
+                role_keys={role},
+            )["agents"][role]
+            if "setting_sources" in effective:
+                # The resolver's explicit overrides are this preview's proposed
+                # project defaults, rather than a task-specific admission.
+                effective["setting_sources"] = {
+                    key: "project" if value == "task" else value
+                    for key, value in effective["setting_sources"].items()
+                }
+            proposed["agents"] = {**(proposed.get("agents") or {}), role: selected}
+            proposed.pop(role, None)
+        receipt = {
+            "role_settings": {
+                "role": role,
+                "preview": preview,
+                "effective": effective,
+                "delivery": proposed,
+                "project_dir": str(directory),
+            }
+        }
+        if preview:
+            return receipt
+        tracker = tracker or self.ensure_tracker(project_id=project_id)
+        original = deepcopy(tracker.config_json)
+        after = {**(original or {}), "delivery": proposed}
+        # Compare-and-swap before the revision writer; a concurrent console save
+        # cannot be lost even if both requests loaded the same ORM snapshot.
+        updated = self._s.execute(
+            update(TaskTracker)
+            .where(col(TaskTracker.id) == tracker.id, col(TaskTracker.rev) == tracker.rev)
+            .values(config_json=after)
+            .execution_options(synchronize_session=False)
+        )
+        if updated.rowcount != 1:
+            raise ConflictError("Role settings changed; reload and reconcile the draft")
+        set_committed_value(tracker, "config_json", after)
+        self._record_revision(
+            tracker,
+            actor="local-admin",
+            change_kind="update",
+            entity_kind="tracker",
+            entity_id=tracker.id,
+            entity_key=tracker.key,
+            summary=f"Updated project {role} defaults.",
+            before_json={"config_json": original},
+            after_json={"config_json": after},
+            commit=True,
+        )
+        return {**TrackerSummaryOut.model_validate(tracker).model_dump(mode="json"), **receipt}
 
     def adopt_delivery_sources(
         self,

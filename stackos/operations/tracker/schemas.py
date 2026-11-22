@@ -125,6 +125,18 @@ class AgentSourceAdoption(BaseModel):
     expected_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class SpecialistRoleSettingsPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["delivery_agent", "review_agent"]
+    settings: TaskDeliveryAgentOverride
+
+
+class MainRoleSettingsPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["main_agent"]
+    settings: MainAgentPreferences
+
+
 class TrackerConfigureDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(ge=1)
@@ -132,11 +144,27 @@ class TrackerConfigureDeliveryInput(MCPInput):
     main_agent: MainAgentPreferences | None = None
     project_dir: str | None = None
     adopt_sources: dict[AgentRole, AgentSourceAdoption] | None = None
+    role_patch: (
+        Annotated[SpecialistRoleSettingsPatch | MainRoleSettingsPatch, Field(discriminator="role")]
+        | None
+    ) = None
+    expected_revision: int | None = Field(default=None, ge=0, strict=True)
     preview: bool = False
 
     @model_validator(mode="after")
     def explicit_setup_mode(self):
-        if self.main_agent is not None:
+        if self.role_patch is not None:
+            if (
+                self.delivery is not None
+                or self.main_agent is not None
+                or self.adopt_sources is not None
+                or not self.project_dir
+                or self.expected_revision is None
+            ):
+                raise ValueError("role_patch requires project_dir and expected_revision only")
+        elif self.expected_revision is not None:
+            raise ValueError("expected_revision belongs to role_patch")
+        elif self.main_agent is not None:
             if self.delivery is not None or self.adopt_sources is not None or self.preview:
                 raise ValueError("main_agent saves launch preferences only")
         elif self.adopt_sources is not None:
