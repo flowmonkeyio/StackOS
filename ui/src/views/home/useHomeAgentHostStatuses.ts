@@ -22,6 +22,7 @@ const retained = new WeakMap<App, DesktopMcpHostStatus[]>()
 export function useHomeAgentHostStatuses(isShell: boolean) {
   const app = getCurrentInstance()?.appContext.app
   let disposed = false
+  let request = 0
   if (app) onBeforeUnmount(() => { disposed = true })
   const hostStatuses = ref<HostStatusState>({ kind: 'loading', items: (app && retained.get(app)) || [] })
 
@@ -34,14 +35,15 @@ export function useHomeAgentHostStatuses(isShell: boolean) {
 
   async function loadHostStatuses(): Promise<void> {
     if (disposed) return
+    const current = ++request
     hostStatuses.value = { kind: 'loading', items: hostStatuses.value.items }
     try {
       const result = isShell
         ? await desktop.hostStatuses()
         : await callOperation<DesktopHostStatusesResult>('hostMcp.status', {})
-      applyHostStatuses(result)
+      if (current === request) applyHostStatuses(result)
     } catch (err) {
-      if (disposed) return
+      if (disposed || current !== request) return
       hostStatuses.value = {
         kind: 'error',
         items: hostStatuses.value.items,

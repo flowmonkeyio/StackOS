@@ -7,7 +7,7 @@ import { resolveStatus } from '@/design/status'
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
 import { isDesktopShell } from '@/lib/desktop'
 import { useHomeAgentHostStatuses } from '@/views/home/useHomeAgentHostStatuses'
-import { reasoningChoices as capabilityReasoningChoices, reasoningOptions as capabilityReasoningOptions, reconcileReasoning } from '@/components/domain/agentSelection'
+import { executionAvailable, executionStatus, reasoningChoices as capabilityReasoningChoices, reasoningOptions as capabilityReasoningOptions, reconcileReasoning } from '@/components/domain/agentSelection'
 import { readProjectSetup, setupErrorMessage } from './useProjectSetup'
 import { setupActivationGaps, setupWorkflowStatus } from './viewModel'
 
@@ -47,10 +47,10 @@ const reasoningChoices = computed(() => capabilityReasoningChoices(catalog.value
 const reasoningOptions = computed(() => capabilityReasoningOptions(catalog.value, model.value, reasoning.value, 'Agent default'))
 const selectionError = computed(() => reasoning.value && !reasoningChoices.value.includes(reasoning.value)
   ? `Reasoning ${reasoning.value} is unavailable for this model. Choose a supported level or Agent default.` : null)
-const ready = computed(() => props.state.folder_status === 'available' && host.value?.available && !selectionError.value
+const ready = computed(() => props.state.folder_status === 'available' && executionAvailable(host.value) && !selectionError.value
   && (!usesCustomModel.value || !!model.value.trim())
   && (!catalog.value?.requires_provider_model || (provider.value.trim() && model.value.trim())))
-const hostOptions = computed(() => supported.value.map(item => ({ value: item.host_key, label: item.display_name || item.host_key, disabled: !item.available })))
+const hostOptions = computed(() => supported.value.map(item => ({ value: item.host_key, label: item.display_name || item.host_key, disabled: !executionAvailable(item) })))
 const modelOptions = computed(() => {
   const options = (catalog.value?.models ?? []).map(value => ({ value, label: value === catalog.value?.recommended_model ? `${value} (Recommended)` : value }))
   if (!catalog.value?.custom_models && model.value && !options.some(option => option.value === model.value)) options.push({ value: model.value, label: model.value })
@@ -240,6 +240,9 @@ async function submit(): Promise<void> {
             Change
           </UiButton>
         </div>
+        <p v-if="host && executionStatus(host)" class="text-xs text-fg-muted">
+          {{ executionStatus(host) }}
+        </p>
         <UiCallout
           v-if="selectionError"
           tone="warning"
@@ -339,7 +342,7 @@ async function submit(): Promise<void> {
           </p>
         </div>
         <UiCallout
-          v-if="!host?.available"
+          v-if="!executionAvailable(host)"
           tone="warning"
         >
           {{ hostKey ? 'Your selected agent app is unavailable. Check its setup or choose another detected app.' : 'Install a supported agent app before starting setup.' }}

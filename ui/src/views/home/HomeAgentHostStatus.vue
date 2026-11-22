@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted } from '
 import { UiBadge, UiButton, UiCallout, UiDialog, UiDropdownMenu, UiIcon, UiScoreMeter, UiSkeleton } from '@/components/ui'
 import { accountHosts, useHomeHostAccounts } from './useHomeHostAccounts'
 import HomeAccountEmail from './HomeAccountEmail.vue'
+import { executionAvailable, executionStatus } from '@/components/domain/agentSelection'
 
 import { agentHostLabel, agentHostLogo, agentHostPresentation } from './agentHostPresentation'
 import type { HostStatusState } from './useHomeAgentHostStatuses'
@@ -12,7 +13,7 @@ const props = defineProps<{ state: HostStatusState; summary: string; subscriptio
 const emit = defineEmits<{ refresh: [] }>()
 function hostAvailable(key: string) {
   const host = props.state.items.find(item => item.host_key === key)
-  return host?.available === true && host.connection_state !== 'unavailable'
+  return executionAvailable(host) && host?.connection_state !== 'unavailable'
 }
 const accounts = useHomeHostAccounts(hostAvailable)
 let loadedState: HostStatusState | undefined
@@ -102,6 +103,7 @@ const cards = computed(() => {
     const plan = reading?.plan || (meters.length ? 'Plan unavailable' : undefined)
     return {
       key, name, logo: agentHostLogo(host), status, message: host.message,
+      execution: executionStatus(host),
       primary: plan || detail || (quotaHosts[key] ? quotaStatus : status.state === 'connected' ? 'MCP connected' : status.detail),
       note: plan && detail ? detail : (reading?.plan && !meters.length ? quotaStatus : undefined),
       meters: meters.map(({ scope, remaining_percent }) => ({
@@ -173,6 +175,7 @@ function meterTone(used: number) {
         </div>
         <div class="pt-2 text-xs text-fg-muted">
           <p :title="card.message">{{ card.primary }}</p>
+          <p v-if="card.execution">{{ card.execution }}</p>
           <p v-if="accounts.errors.value[card.key]" role="alert" class="text-danger-fg">{{ accounts.errors.value[card.key] }}</p>
         </div>
         <div class="space-y-2 pt-3">

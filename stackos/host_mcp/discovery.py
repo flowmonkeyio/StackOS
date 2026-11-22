@@ -89,6 +89,30 @@ def subprocess_env_for_cli(cli_bin: str) -> dict[str, str]:
     return env
 
 
+def probe_cli_version(cli_bin: str) -> tuple[str, str | None]:
+    """Bounded, noninteractive runnable evidence; unknown version is not absence."""
+    try:
+        result = subprocess.run(
+            [cli_bin, "--version"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+            timeout=3,
+            env=subprocess_env_for_cli(cli_bin),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unavailable", None
+    if result.returncode != 0:
+        return "unavailable", None
+    # Never publish arbitrary stdout, paths, account identity or diagnostics.
+    version = re.search(
+        r"(?<![\w.])\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?(?![\w.])", result.stdout[:4096]
+    )
+    return "available", version[0] if version else None
+
+
 def discover_with_login_shell(command_name: str) -> str | None:
     shell = os.environ.get("SHELL")
     if not shell:

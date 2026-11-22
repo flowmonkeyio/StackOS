@@ -33,6 +33,25 @@ const catalogHost: DesktopMcpHostStatus = {
 }
 
 describe('home host status transport', () => {
+  it('keeps the latest refresh when older success or failure finishes late', async () => {
+    let finish!: (value: unknown) => void
+    let fail!: (error: Error) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+      .mockResolvedValue({ items: [{ ...catalogHost, message: 'Current native capability' }] })
+    const state = useHomeAgentHostStatuses(false)
+    const old = state.loadHostStatuses()
+    await state.loadHostStatuses()
+    finish({ items: [{ ...catalogHost, message: 'Old account capability' }] })
+    await old
+    expect(state.hostStatuses.value.items[0]?.message).toBe('Current native capability')
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+      .mockResolvedValue({ items: [{ ...catalogHost, message: 'New current capability' }] })
+    const older = state.loadHostStatuses()
+    await state.loadHostStatuses()
+    fail(new Error('Retired refresh failed')); await older
+    expect(state.hostStatuses.value.kind).toBe('loaded')
+    expect(state.hostStatuses.value.items[0]?.message).toBe('New current capability')
+  })
   it('never replaces retained current connections with a retired reader result', async () => {
     const visible = ref(true)
     let state!: ReturnType<typeof useHomeAgentHostStatuses>

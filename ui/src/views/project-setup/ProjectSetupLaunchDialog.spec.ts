@@ -68,6 +68,22 @@ it('launches Antigravity from the shared catalog without inventing separate effo
   expect(start).toHaveBeenCalledWith({ host_key: 'antigravity', model: 'gemini-3.8-flash-high', model_reasoning_effort: null, provider: null, profile: null })
 })
 
+it('retains saved pins but blocks a connected unavailable CLI', async () => {
+  const broken = { ...hosts[0]!, connection_state: 'connected',
+    agent_execution: { ...hosts[0]!.agent_execution!, runnable: 'unavailable' as const, cli_version: null } }
+  vi.mocked(callOperation).mockResolvedValue({ items: [broken] })
+  const start = vi.fn()
+  wrapper = mount(Dialog, { props: { state: setupFixture({ launch_preferences: {
+    host_key: 'hermes', model: 'saved/model', provider: 'saved-provider',
+  } }), pending: false, error: null, start }, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('saved/model')
+  expect(wrapper.text()).toContain('CLI unavailable')
+  expect(button('Start setup').attributes('disabled')).toBeDefined()
+  await button('Start setup').trigger('click')
+  expect(start).not.toHaveBeenCalled()
+})
+
 it('accepts an initial custom model from an empty catalog and requires its provider', async () => {
   const start = await dialog('hermes')
   expect(button('Start setup').attributes('disabled')).toBeDefined()

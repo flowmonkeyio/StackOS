@@ -51,8 +51,13 @@ export interface DesktopAgentExecutionCapabilities {
   notes: string
   sources: string[]
   checked_on: string
+  runnable?: 'available' | 'unavailable' | 'unknown' | 'unsupported'
+  cli_version?: string | null
+  catalog_source?: 'packaged' | 'native'
+  probe_status?: 'not_checked' | 'observed' | 'failed' | 'stale'
+  runtime_checked_at?: string | null
   credential_status: 'not_checked'
-  model_access: 'not_checked'
+  model_access: 'not_checked' | 'observed'
 }
 
 export interface DesktopMcpHostStatus {

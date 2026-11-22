@@ -39,6 +39,7 @@ from stackos.host_mcp.agent_execution import (
     managed_launch_lock,
 )
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
+from stackos.host_mcp.discovery import probe_cli_version
 from stackos.host_mcp.progress import CodexCounterReader
 from stackos.host_mcp.result import (
     AgentCapabilities,
@@ -619,6 +620,73 @@ class HostMcpDefinition:
     run_agent: AgentRunner | None = None
     subscription: Callable[[], dict | None] | None = None
     account_adapter: NativeAccountAdapter | None = None
+    cli: Callable[[Path], str | None] | None = None
+    native_models: Callable[[str], tuple[str, ...] | None] | None = None
+
+
+def execution_catalog(definition: HostMcpDefinition, *, home: Path) -> dict[str, Any]:
+    """Refresh one registry entry, without caching, changing pins or starting a turn.
+
+    Only explicit status refresh and fresh admission call this. Native listing
+    proves observed choices for this account, not entitlement for another account
+    or a successful model invocation. Failed reads leave packaged suggestions
+    explicitly unverified. Sibling results are independent.
+    """
+    catalog = {
+        **asdict(definition.policy.agent_execution),
+        "credential_status": "not_checked",
+        "model_access": "not_checked",
+        "runtime_checked_at": datetime.now(UTC).isoformat(),
+    }
+    if definition.run_agent is None:
+        return {**catalog, "runnable": "unsupported"}
+    try:
+        cli = definition.cli(home) if definition.cli else None
+        if cli is None:
+            return {**catalog, "runnable": "unavailable", "probe_status": "failed"}
+        before = Path(cli).stat()
+        runnable, version = probe_cli_version(cli)
+        catalog.update(
+            runnable=runnable,
+            cli_version=version,
+            probe_status="observed" if runnable == "available" else "failed",
+        )
+        if runnable == "available" and definition.native_models:
+            models = definition.native_models(cli)
+            if models:
+                catalog.update(
+                    models=list(models), catalog_source="native", model_access="observed"
+                )
+                catalog["reasoning_efforts"] = {
+                    model: efforts
+                    for model, efforts in catalog["reasoning_efforts"].items()
+                    if model in models
+                }
+                if catalog["recommended_model"] not in models:
+                    catalog["recommended_model"] = None
+            else:
+                catalog["probe_status"] = "failed"
+        after = Path(cli).stat()
+        if (before.st_ino, before.st_size, before.st_mtime_ns) != (
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+        ):
+            return {
+                **asdict(definition.policy.agent_execution),
+                "credential_status": "not_checked",
+                "model_access": "not_checked",
+                "probe_status": "stale",
+            }
+    except Exception:
+        # Native discovery failure cannot erase another host or publish diagnostics.
+        return {
+            **asdict(definition.policy.agent_execution),
+            "credential_status": "not_checked",
+            "model_access": "not_checked",
+            "probe_status": "failed",
+        }
+    return catalog
 
 
 def host_accounts(data_dir: Path) -> HostAccounts:
@@ -840,15 +908,43 @@ def _run_agent_once(
         or resume_thread_id.lower() in {"latest", "last"}
     ):
         return AgentRunResult(None, error="An exact native session ID is required for resume.")
-    error = agent_selection_error(
-        host_key,
-        sandbox=sandbox,
-        model=model,
-        model_reasoning_effort=model_reasoning_effort,
-        provider=provider,
-        profile=profile,
-        native_settings=native_settings,
-    )
+    definition = _definition_by_key(host_key)
+    catalog = None
+    selection: dict[str, Any] = {
+        "sandbox": sandbox,
+        "model": model,
+        "model_reasoning_effort": model_reasoning_effort,
+        "provider": provider,
+        "profile": profile,
+        "native_settings": native_settings,
+    }
+    if definition is not None and (definition.native_models or resume_thread_id is not None):
+        catalog = asdict(definition.policy.agent_execution)
+        if model is not None and model not in catalog["models"]:
+            # Native lists may introduce exact IDs newer than packaged suggestions.
+            catalog["models"] = [*catalog["models"], model]
+            if resume_thread_id is not None and model_reasoning_effort is not None:
+                catalog["reasoning_efforts"][model] = [model_reasoning_effort]
+    # Reject malformed selections and unsupported modes before any CLI read.
+    error = agent_selection_error(host_key, **selection, catalog=catalog)
+    if error:
+        return AgentRunResult(None, error=error)
+    # Exact resumes retain their admitted choices. Fresh native listings and
+    # selectors share the same reader; no model/account substitution occurs.
+    if (
+        resume_thread_id is None
+        and definition is not None
+        and definition.native_models
+        and provider is None
+        and profile is None
+    ):
+        basis = _catalog_account(definition)
+        catalog = execution_catalog(definition, home=default_home())
+        if basis is False or basis != _catalog_account(definition):
+            return AgentRunResult(
+                None, error="Native capability account changed; refresh before admission."
+            )
+    error = agent_selection_error(host_key, **selection, catalog=catalog)
     if error:
         return AgentRunResult(None, error=error)
     sandbox = effective_agent_sandbox(host_key, sandbox, native_settings)
@@ -1099,6 +1195,9 @@ def agent_selection_error(
     provider: str | None = None,
     profile: str | None = None,
     native_settings: dict[str, Any] | None = None,
+    catalog: dict[str, Any] | None = None,
+    refresh: bool = False,
+    retained: bool = False,
 ) -> str | None:
     """Validate explicit choices and existing source syntax without resolving defaults.
 
@@ -1141,14 +1240,29 @@ def agent_selection_error(
     if capability.requires_provider_model and (not model or not provider):
         return f"Host {host_key!r} requires explicit provider and model."
     if (
+        refresh
+        and catalog is None
+        and definition.native_models
+        and provider is None
+        and profile is None
+    ):
+        basis = _catalog_account(definition)
+        catalog = execution_catalog(definition, home=default_home())
+        if basis is False or basis != _catalog_account(definition):
+            return "Native capability account changed; refresh before admission."
+    models = catalog["models"] if catalog is not None else capability.models
+    if (
         model is not None
-        and model not in capability.models
+        and model not in models
         and not (capability.custom_models or provider is not None)
+        and not retained
     ):
         return f"Model {model!r} is not in the current {host_key} native model catalog."
     if model_reasoning_effort is not None:
-        efforts = capability.reasoning_efforts.get(model or "", ())
-        if model_reasoning_effort not in efforts:
+        efforts = (
+            catalog["reasoning_efforts"] if catalog is not None else capability.reasoning_efforts
+        ).get(model or "", ())
+        if model_reasoning_effort not in efforts and not (retained and model not in models):
             choices = ", ".join(efforts) or "native default only"
             return (
                 f"Host {host_key!r}, model {model or 'native default'!r} does not support "
@@ -1157,27 +1271,57 @@ def agent_selection_error(
     return None
 
 
-def inspect_all(*, home: Path | None = None) -> HostMcpAggregate:
+def inspect_all(*, home: Path | None = None, data_dir: Path | None = None) -> HostMcpAggregate:
     home_dir = home or default_home()
     definitions = _definitions()
+    bases = {d.policy.host_key: _catalog_account(d, data_dir=data_dir) for d in definitions}
     with ThreadPoolExecutor(
         max_workers=len(definitions),
         thread_name_prefix="stackos-host-inspect",
     ) as executor:
         futures = [
-            executor.submit(
-                _call_adapter,
-                definition.adapter.inspect,
-                home_dir,
-                definition.policy.host_key,
+            executor.submit(_inspect_definition, definition, home_dir) for definition in definitions
+        ]
+        results = [future.result() for future in futures]
+    # Recheck after all siblings complete, including A -> B -> A revisions.
+    for index, definition in enumerate(definitions):
+        basis = bases[definition.policy.host_key]
+        if basis is False or basis != _catalog_account(definition, data_dir=data_dir):
+            results[index] = replace(
+                results[index],
+                agent_execution={
+                    **asdict(definition.policy.agent_execution),
+                    "credential_status": "not_checked",
+                    "model_access": "not_checked",
+                    "probe_status": "stale",
+                },
             )
-            for definition in definitions
-        ]
-        results = [
-            normalize_result(future.result(), definition.policy)
-            for future, definition in zip(futures, definitions, strict=True)
-        ]
     return _aggregate(results)
+
+
+def _catalog_account(
+    definition: HostMcpDefinition, *, data_dir: Path | None = None
+) -> DesiredAccount | bool | None:
+    if definition.account_adapter is None:
+        return None
+    from stackos.config import Settings
+
+    try:
+        return (
+            host_accounts(data_dir or Settings().data_dir)
+            .resolve(definition.policy.host_key)
+            .desired
+        )
+    except Exception:
+        return False
+
+
+def _inspect_definition(definition: HostMcpDefinition, home: Path) -> HostMcpResult:
+    return normalize_result(
+        _call_adapter(definition.adapter.inspect, home, definition.policy.host_key),
+        definition.policy,
+        execution=execution_catalog(definition, home=home),
+    )
 
 
 def repair_all(*, home: Path | None = None) -> HostMcpAggregate:
@@ -1328,6 +1472,7 @@ def _single(
         return normalize_result(
             _invoke_adapter(definition, action, home_dir, profile=profile),
             definition.policy,
+            execution=execution_catalog(definition, home=home_dir),
         )
     if action == "remove":
         current = normalize_result(
@@ -1377,7 +1522,6 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             "claude-opus-5-5",
             "claude-sonnet-5-5",
             "claude-haiku-5-5",
-            "claude-fable-5-1",
         )
     }
     grok_reasoning: dict[str, tuple[str, ...]] = {
@@ -1410,6 +1554,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             run_agent=codex.run_agent,
             subscription=lambda: _read_subscription(codex.resolve_codex_bin(), read_codex),
             account_adapter=codex.accounts,
+            cli=lambda _home: codex.resolve_codex_bin(),
         ),
         HostMcpDefinition(
             claude_code,
@@ -1420,9 +1565,9 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
                     review_sandbox="workspace-write",
-                    models=tuple(claude_reasoning),
+                    models=(*claude_reasoning, "claude-fable-5-2"),
                     reasoning_efforts=claude_reasoning,
-                    checked_on="2026-11-13",
+                    checked_on="2026-11-22",
                     auth_status_command=("claude", "auth", "status"),
                     notes=(
                         "Review uses normal auto permissions with shell available; "
@@ -1439,6 +1584,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             run_agent=claude_code.run_agent,
             subscription=lambda: _read_subscription(claude_mcp.resolve_claude_bin(), read_claude),
             account_adapter=claude_accounts,
+            cli=lambda _home: claude_mcp.resolve_claude_bin(),
         ),
         HostMcpDefinition(
             claude_desktop,
@@ -1462,14 +1608,31 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     sandboxes=("workspace-write", "normal"),
                     review_sandbox="normal",
                     models=(
+                        "gemini-4-neon-high",
+                        "gemini-4-neon-xhigh",
+                        "gemini-4-neon-medium",
+                        "gemini-4-neon-low",
+                        "gemini-4-argon-medium",
+                        "gemini-4-argon-high",
+                        "gemini-4-argon-low",
+                        "gemini-4-hydrogen-high",
+                        "gemini-4-hydrogen-xhigh",
+                        "gemini-4-hydrogen-medium",
+                        "gemini-4-hydrogen-low",
+                        "gemini-pro-orchestrator-neon",
+                        "gemini-pro-orchestrator-g1-pro",
                         "gemini-3.8-flash-high",
                         "gemini-3.8-flash-medium",
                         "gemini-3.8-flash-low",
-                        "claude-sonnet-4-6",
-                        "claude-opus-4-6-thinking",
+                        "claude-opus-5-5-low",
+                        "claude-opus-5-5-medium",
+                        "claude-opus-5-5-high",
+                        "claude-sonnet-5-5-low",
+                        "claude-sonnet-5-5-medium",
+                        "claude-sonnet-5-5-high",
                         "gpt-oss-120b-medium",
                     ),
-                    checked_on="2026-11-21",
+                    checked_on="2026-11-22",
                     notes=(
                         "Delivery uses accept-edits and request-review; "
                         "unapproved tools are denied. "
@@ -1484,6 +1647,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 ),
             ),
             run_agent=antigravity_execution.run_agent,
+            cli=lambda _home: antigravity_execution.resolve_antigravity_bin(),
+            native_models=antigravity.native_models,
             subscription=lambda: _read_subscription(
                 antigravity.resolve_antigravity_bin(), read_antigravity
             ),
@@ -1515,6 +1680,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 ),
             ),
             run_agent=hermes.run_agent,
+            cli=lambda _home: hermes.resolve_hermes_bin(),
             repair=hermes.repair,
             inspect_profile=lambda home, profile: hermes.inspect_profile(
                 home,
@@ -1538,9 +1704,10 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
                     review_sandbox="workspace-write",
-                    models=tuple(grok_reasoning),
+                    models=("grok-4.7", "grok-4.7-build-fast", *grok_reasoning),
                     reasoning_efforts=grok_reasoning,
-                    checked_on="2026-11-13",
+                    checked_on="2026-11-22",
+                    recommended_model="grok-4.7",
                     custom_models=True,
                     notes=(
                         "Native sandbox. Verified built-in CLI models; custom aliases retain "
@@ -1556,6 +1723,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 ),
             ),
             run_agent=grok.run_agent,
+            cli=grok.resolve_grok_bin,
+            native_models=grok.native_models,
             account_adapter=_grok_accounts,
             subscription=lambda: _read_subscription(
                 grok.resolve_grok_bin(default_home()), read_grok
@@ -1678,7 +1847,9 @@ def host_installation_ok(result: HostMcpResult) -> bool:
     )
 
 
-def normalize_result(result: HostMcpResult, policy: HostMcpPolicy) -> HostMcpResult:
+def normalize_result(
+    result: HostMcpResult, policy: HostMcpPolicy, *, execution: dict[str, Any] | None = None
+) -> HostMcpResult:
     """Apply the shared host lifecycle policy to adapter-native facts."""
 
     configured_statuses = {
@@ -1744,7 +1915,9 @@ def normalize_result(result: HostMcpResult, policy: HostMcpPolicy) -> HostMcpRes
     ok = not blocking
     return replace(
         result,
-        agent_execution={
+        agent_execution=execution
+        if execution is not None
+        else {
             **asdict(policy.agent_execution),
             "credential_status": "not_checked",
             "model_access": "not_checked",
@@ -1758,5 +1931,6 @@ def normalize_result(result: HostMcpResult, policy: HostMcpPolicy) -> HostMcpRes
         setup_policy=policy.setup_policy,
         ok=ok,
         blocking=blocking,
-        advisory=not blocking and state != "connected",
+        advisory=not blocking
+        and (state != "connected" or (execution or {}).get("runnable") == "unavailable"),
     )

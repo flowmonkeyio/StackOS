@@ -241,6 +241,11 @@ class AgentCapabilities:
     notes: str = "Headless agent execution is unsupported."
     sources: tuple[str, ...] = ()
     checked_on: str = "2026-11-05"
+    runnable: Literal["available", "unavailable", "unknown", "unsupported"] = "unknown"
+    cli_version: str | None = None
+    catalog_source: Literal["packaged", "native"] = "packaged"
+    probe_status: Literal["not_checked", "observed", "failed", "stale"] = "not_checked"
+    runtime_checked_at: str | None = None
 
 
 HostMcpStatus = Literal[

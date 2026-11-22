@@ -146,11 +146,17 @@ def resolve_preferences(
     # invalid or unavailable saved choices so the operator can repair them.
     if not validate_selection:
         return selected
-    error = service.agent_selection_error(sandbox="workspace-write", **selected)
+    host = service.inspect_host(host_key)
+    error = service.agent_selection_error(
+        sandbox="workspace-write", **selected, catalog=host.agent_execution or None
+    )
     if error:
         raise ValidationError(error)
-    host = service.inspect_host(host_key)
-    if not host.available:
+    if not host.available or host.agent_execution.get("runnable") in {
+        "unavailable",
+        "unknown",
+        "unsupported",
+    }:
         raise ValidationError(f"Selected native host needs setup: {host.message}")
     return selected
 

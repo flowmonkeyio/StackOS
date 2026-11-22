@@ -1,4 +1,20 @@
-import type { DesktopAgentExecutionCapabilities } from '@/lib/desktop'
+import type { DesktopAgentExecutionCapabilities, DesktopMcpHostStatus } from '@/lib/desktop'
+
+export function executionAvailable(host: DesktopMcpHostStatus | undefined): boolean {
+  // Older native shells may lack a probe; explicit unavailable/unknown never
+  // becomes executable merely because the MCP registration is connected.
+  const runnable = host?.agent_execution?.runnable
+  return host?.available === true && (runnable === undefined || runnable === 'available')
+}
+
+export function executionStatus(host: DesktopMcpHostStatus): string | null {
+  const capability = host.agent_execution
+  if (!capability?.runnable) return null
+  if (capability.runnable === 'unsupported') return 'MCP only'
+  if (capability.runnable === 'unavailable') return 'CLI unavailable'
+  if (capability.runnable === 'unknown') return 'CLI status unknown'
+  return `CLI ready · ${capability.cli_version ? `v${capability.cli_version}` : 'Version unknown'}`
+}
 
 // Model capability facts stay in hostMcp.status; source-native syntax options
 // come from projectAgent responses. Loading a catalog never reconciles

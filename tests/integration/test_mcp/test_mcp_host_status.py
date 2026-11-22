@@ -32,7 +32,7 @@ from .test_mcp_host_accounts import B, FakeNativeAccounts
 def inspected(monkeypatch: pytest.MonkeyPatch):
     threads: list[int] = []
 
-    def inspect():
+    def inspect(**_kwargs):
         threads.append(get_ident())
         result = service.normalize_result(
             HostMcpResult(
@@ -223,7 +223,9 @@ def test_antigravity_native_command_reaches_console_independently(
         policy,
     )
     monkeypatch.setattr(
-        service, "inspect_all", lambda: service.HostMcpAggregate(ok=True, results=[connected])
+        service,
+        "inspect_all",
+        lambda **_kwargs: service.HostMcpAggregate(ok=True, results=[connected]),
     )
     client = mcp_client.test_client
     headers = {"Authorization": f"Bearer {client.app.state.ui_token}"}

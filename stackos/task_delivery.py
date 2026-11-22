@@ -2565,6 +2565,8 @@ def resolve_delivery_settings(
             model_reasoning_effort=explicit_effort,
             provider=agent.get("provider"),
             profile=agent.get("profile"),
+            refresh=_retained_agents is None,
+            retained=_retained_agents is not None,
         )
         if error:
             raise ValidationError(error)

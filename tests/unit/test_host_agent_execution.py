@@ -1560,6 +1560,52 @@ def test_hermes_discovered_shim_failure_is_actionable(project, monkeypatch):
     assert "command not found" in result.error
 
 
+def test_native_catalog_id_reaches_actual_caller_and_frozen_resume(project, monkeypatch):
+    """Owned executable exercises list -> shared validator -> real adapter args."""
+    cli = project / "agy-fixture"
+    calls = project / "native-calls.jsonl"
+    cli.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"with Path({str(calls)!r}).open('a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n"
+        "if sys.argv[1:] == ['--version']: print('1.5.14')\n"
+        "elif sys.argv[1:] == ['models']: print('future-native-id\\tNative account model')\n"
+        "else: print(json.dumps({'status':'SUCCESS','conversation_id':'native-thread',"
+        "'structured_output':{'summary':'delivered'}}))\n"
+    )
+    cli.chmod(0o755)
+    monkeypatch.setattr(antigravity_execution, "resolve_antigravity_bin", lambda: str(cli))
+    result = run_agent(
+        "antigravity", project, "Instructions", "packet", SCHEMA, model="future-native-id"
+    )
+    assert result.ok, result.error
+    commands = [json.loads(line) for line in calls.read_text().splitlines()]
+    assert ["models"] in commands
+    launch = commands[-1]
+    assert launch[launch.index("--model") + 1] == "future-native-id"
+    calls.unlink()
+    rejected = run_agent(
+        "antigravity", project, "Instructions", "packet", SCHEMA, model="gemini-4-neon-high"
+    )
+    assert not rejected.ok and "catalog" in rejected.error
+    assert all("--print" not in json.loads(line) for line in calls.read_text().splitlines())
+    calls.unlink()
+    resumed = run_agent(
+        "antigravity",
+        project,
+        "Instructions",
+        "packet",
+        SCHEMA,
+        model="claude-sonnet-4-6",
+        resume_thread_id="native-thread",
+    )
+    assert resumed.ok, resumed.error
+    commands = [json.loads(line) for line in calls.read_text().splitlines()]
+    assert ["models"] not in commands
+    assert commands[-1][commands[-1].index("--model") + 1] == "claude-sonnet-4-6"
+
+
 def test_discovery_and_execution_use_same_capability_catalog():
     from stackos.host_mcp.result import HostMcpResult
 
@@ -1581,9 +1627,9 @@ def test_discovery_and_execution_use_same_capability_catalog():
         assert capability["credential_status"] == capability["model_access"] == "not_checked"
         expected_dates = {
             "codex": "2026-11-17",
-            "claude-code": "2026-11-13",
-            "grok": "2026-11-13",
-            "antigravity": "2026-11-21",
+            "claude-code": "2026-11-22",
+            "grok": "2026-11-22",
+            "antigravity": "2026-11-22",
         }
         assert capability["checked_on"] == expected_dates.get(key, "2026-11-05")
         if key == "codex":

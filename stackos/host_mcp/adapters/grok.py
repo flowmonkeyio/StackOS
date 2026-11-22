@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tomllib
 from collections.abc import Sequence
@@ -177,6 +178,31 @@ def resolve_grok_bin(home: Path) -> str | None:
             *COMMON_GROK_CLI_CANDIDATES,
         ),
     )
+
+
+def native_models(cli: str) -> tuple[str, ...] | None:
+    """Read native built-ins; custom aliases still require native validation."""
+    try:
+        result = subprocess.run(
+            [cli, "--no-auto-update", "models"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+            timeout=8,
+            env=subprocess_env_for_cli(cli),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    rows = [
+        line.strip()[2:] for line in result.stdout.splitlines() if line.strip().startswith("- ")
+    ]
+    if not rows or any(re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,199}", row) is None for row in rows):
+        return None
+    return tuple(dict.fromkeys(rows))
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

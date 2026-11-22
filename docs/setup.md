@@ -263,6 +263,21 @@ Queued/running work, setup continuations and resumed native sessions retain
 their admitted settings. Editing or adopting choices starts no work.
 Generic agent presets remain a separate read-only catalog.
 
+The same host registry reports `agent_execution.runnable` separately from MCP
+connection, plus the observed `cli_version` (null when unknown). A connected
+Hermes shim that exits 127 is unavailable for execution; Claude Desktop is
+MCP-only. Explicit status reads run bounded `--version` and supported native
+model-list probes; rendering does not start a polling job or model turn.
+Antigravity uses exact `agy models` IDs, including Gemini 4 and Claude 5.5
+variants. Grok uses `grok models`. `catalog_source=native` and
+`model_access=observed` identify the current native list, not a guarantee that
+a model invocation will succeed. Packaged suggestions remain unverified when
+native listing is unavailable. They retain Codex `gpt-6.1-sol` and `gpt-6-astra`,
+and include Claude `claude-fable-5-2` and Grok `grok-4.7`/`grok-4.7-build-fast`.
+Fresh launches use the same list and validation; exact resumes retain frozen
+choices. Refresh changes no saved pins, drafts, defaults, or active sessions.
+Late account/host results are marked stale, and sibling failures are isolated.
+
 Harness account switching is declared by the host's native account adapter.
 The local account inventory includes supported hosts before enrollment.
 Adopting the default account verifies the existing native sign-in in place.

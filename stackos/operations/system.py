@@ -60,8 +60,13 @@ class HostMcpAgentExecutionOut(BaseModel):
     notes: str
     sources: list[str]
     checked_on: str
+    runnable: Literal["available", "unavailable", "unknown", "unsupported"]
+    cli_version: str | None
+    catalog_source: Literal["packaged", "native"]
+    probe_status: Literal["not_checked", "observed", "failed", "stale"]
+    runtime_checked_at: str | None
     credential_status: Literal["not_checked"]
-    model_access: Literal["not_checked"]
+    model_access: Literal["not_checked", "observed"]
 
 
 class HostMcpStatusItemOut(BaseModel):
@@ -169,7 +174,10 @@ async def host_subscriptions(
 async def host_mcp_status(
     _inp: HostMcpStatusInput, _ctx: MCPContext, _emit: ProgressEmitter
 ) -> HostMcpStatusOut:
-    aggregate = await to_thread(host_mcp_service.inspect_all)
+    settings = _ctx.extras.get("settings") if _ctx is not None else None
+    aggregate = await to_thread(
+        host_mcp_service.inspect_all, **({"data_dir": settings.data_dir} if settings else {})
+    )
     items = []
     for result in aggregate.results:
         data = result.to_info()
@@ -233,8 +241,9 @@ def operation_specs():
             purpose=(
                 "Let the local console inspect supported host connections through the shared "
                 "host lifecycle service and its canonical agent capability catalog. "
-                "This does not repair hosts, clear restart markers, restart apps, probe auth "
-                "or model access, or expose registration/auth commands and config contents."
+                "Bounded version and supported native model-list reads report observed runtime "
+                "facts separately from MCP. This does not repair hosts, clear restart markers, "
+                "restart apps, start model turns or expose registration/auth configuration."
             ),
             returns=(
                 "agent_execution contains declared model, per-model reasoning_efforts, "
@@ -242,8 +251,9 @@ def operation_specs():
                 "sandbox choices, with catalog notes and provenance. Empty sandboxes mean "
                 "headless execution is unsupported. requires_provider_model controls whether "
                 "native defaults are allowed; provider_selection also permits provider model IDs.",
-                "Connection/installation status does not establish credential presence or model "
-                "access; both execution checks remain not_checked.",
+                "runnable and cli_version reflect bounded CLI probes. catalog_source and "
+                "model_access distinguish packaged suggestions from observed native choices; "
+                "neither guarantees a model invocation or another account's entitlement.",
             ),
             mutating=False,
             grant_policy="local-admin-read",

@@ -21,6 +21,193 @@ from stackos.install import copy_managed_stackos_skill_to
 from stackos.operations.system import HostMcpStatusInput, host_mcp_status
 
 
+def test_current_native_ids_are_shared_selection_choices():
+    choices = {
+        "codex": ("gpt-6.1-sol", "gpt-6-astra"),
+        "claude-code": ("claude-fable-5-2",),
+        "grok": ("grok-4.7", "grok-4.7-build-fast"),
+        "antigravity": (
+            "gemini-4-neon-xhigh",
+            "gemini-4-argon-high",
+            "gemini-4-hydrogen-high",
+            "claude-opus-5-5-high",
+            "claude-sonnet-5-5-medium",
+        ),
+    }
+    for key, models in choices.items():
+        definition = service._definition_by_key(key)
+        for model in models:
+            assert model in definition.policy.agent_execution.models
+            assert (
+                service.agent_selection_error(key, sandbox="workspace-write", model=model) is None
+            )
+    assert (
+        service.agent_selection_error(
+            "claude-code",
+            sandbox="workspace-write",
+            model="claude-fable-5-1",
+            model_reasoning_effort="high",
+            retained=True,
+        )
+        is None
+    )
+    assert (
+        service.agent_selection_error(
+            "claude-code",
+            sandbox="workspace-write",
+            model="claude-fable-5-1",
+        )
+        is not None
+    )
+
+
+def test_connected_broken_shim_is_not_runnable(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    shim = tmp_path / "hermes"
+    shim.write_text("#!/bin/sh\nexit 127\n")
+    shim.chmod(0o755)
+    definition = replace(service._definition_by_key("hermes"), cli=lambda _home: str(shim))
+    catalog = service.execution_catalog(definition, home=tmp_path)
+    assert catalog["runnable"] == "unavailable"
+    assert catalog["cli_version"] is None
+    assert catalog["model_access"] == "not_checked"
+    connected = service.normalize_result(
+        HostMcpResult("hermes", "fixture", "registered_current", "Connected", True, True),
+        definition.policy,
+        execution=catalog,
+    )
+    assert connected.connection_state == "connected"
+    assert connected.agent_execution["runnable"] == "unavailable"
+    assert connected.ok  # An optional execution capability is not an MCP repair failure.
+    assert connected.advisory
+
+
+def test_native_catalog_controls_status_and_fresh_validation(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    cli = tmp_path / "agy"
+    cli.write_text("#!/bin/sh\nprintf '1.5.14\\n'\n")
+    cli.chmod(0o755)
+    definition = replace(
+        service._definition_by_key("antigravity"),
+        cli=lambda _home: str(cli),
+        native_models=lambda _cli: ("gemini-4-neon-xhigh",),
+    )
+    monkeypatch.setattr(service, "_definition_by_key", lambda _key: definition)
+    catalog = service.execution_catalog(definition, home=tmp_path)
+    assert catalog["models"] == ["gemini-4-neon-xhigh"]
+    assert catalog["model_access"] == "observed"
+    assert catalog["cli_version"] == "1.5.14"
+    assert (
+        service.agent_selection_error(
+            "antigravity", sandbox="workspace-write", model="gemini-4-neon-xhigh", catalog=catalog
+        )
+        is None
+    )
+    assert service.agent_selection_error(
+        "antigravity", sandbox="workspace-write", model="gemini-4-argon-high", catalog=catalog
+    )
+
+
+@pytest.mark.parametrize(
+    "text,code,runnable,version",
+    [
+        ("native version unknown", 0, "available", None),
+        ("codex-cli 0.171.0", 0, "available", "0.171.0"),
+        ("1.0.0", 127, "unavailable", None),
+    ],
+)
+def test_runnable_and_version_are_independent(tmp_path, text, code, runnable, version):
+    from stackos.host_mcp.discovery import probe_cli_version
+
+    cli = tmp_path / "native"
+    cli.write_text(f"#!/bin/sh\nprintf '%s\\n' '{text}'\nexit {code}\n")
+    cli.chmod(0o755)
+    assert probe_cli_version(str(cli)) == (runnable, version)
+
+
+def test_account_change_while_sibling_is_held_invalidates_only_that_catalog(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from dataclasses import replace
+    from threading import Event
+
+    from stackos.host_mcp.accounts import DesiredAccount
+
+    cli = tmp_path / "native"
+    cli.write_text("#!/bin/sh\nprintf '1.5.14\\n'\n")
+    cli.chmod(0o755)
+    entered, release = Event(), Event()
+    revision = [0]
+    definitions = [
+        replace(
+            service._definition_by_key(key),
+            cli=lambda _home: str(cli),
+            native_models=lambda _cli: ("grok-4.7",),
+        )
+        for key in ("grok", "antigravity")
+    ]
+
+    def held(_cli):
+        entered.set()
+        assert release.wait(5)
+        return ("gemini-4-neon-high",)
+
+    definitions[1] = replace(definitions[1], native_models=held)
+    monkeypatch.setattr(service, "_definitions", lambda: definitions)
+    monkeypatch.setattr(
+        service,
+        "_catalog_account",
+        lambda d, **_kwargs: DesiredAccount(
+            revision=revision[0] if d.policy.host_key == "grok" else 0
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_call_adapter",
+        lambda _call, _home, key: HostMcpResult(
+            key, "fixture", "registered_current", "Connected", True, True
+        ),
+    )
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(service.inspect_all, home=tmp_path)
+        try:
+            assert entered.wait(5)
+            revision[0] = 2  # A -> B -> A still invalidates the original read.
+        finally:
+            release.set()
+        result = pending.result(timeout=5)
+    catalogs = {r.host_key: r.agent_execution for r in result.results}
+    assert catalogs["grok"]["probe_status"] == "stale"
+    assert catalogs["grok"]["model_access"] == "not_checked"
+    assert catalogs["antigravity"]["models"] == ["gemini-4-neon-high"]
+    assert catalogs["antigravity"]["model_access"] == "observed"
+
+
+def test_native_host_replacement_discards_probe(tmp_path):
+    from dataclasses import replace
+
+    cli = tmp_path / "agy"
+    cli.write_text("#!/bin/sh\nprintf '1.5.14\\n'\n")
+    cli.chmod(0o755)
+
+    def models(_cli):
+        cli.write_text("#!/bin/sh\nprintf '2.0.0\\n'\n")
+        return ("unaccepted-model",)
+
+    catalog = service.execution_catalog(
+        replace(
+            service._definition_by_key("antigravity"),
+            cli=lambda _home: str(cli),
+            native_models=models,
+        ),
+        home=tmp_path,
+    )
+    assert catalog["probe_status"] == "stale"
+    assert catalog["model_access"] == "not_checked"
+    assert "unaccepted-model" not in catalog["models"]
+
+
 @pytest.fixture
 def native_registrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Real saved host formats; substitute native discovery/CLI reads only."""

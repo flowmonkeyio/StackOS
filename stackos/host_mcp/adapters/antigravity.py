@@ -77,6 +77,29 @@ def config_path(home: Path) -> Path:
     return home / ".gemini" / "config" / "mcp_config.json"
 
 
+def native_models(cli: str) -> tuple[str, ...] | None:
+    """Exact account-eligible native IDs from `agy models`, never display names."""
+    try:
+        result = subprocess.run(
+            [cli, "models"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+            timeout=8,
+            env=subprocess_env_for_cli(cli),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    rows = [line.split("\t", 1)[0] for line in result.stdout.splitlines() if "\t" in line]
+    if not rows or any(re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,199}", row) is None for row in rows):
+        return None
+    return tuple(dict.fromkeys(rows))
+
+
 def skills_root(home: Path) -> Path:
     return config_path(home).parent / "skills"
 

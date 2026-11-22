@@ -5,6 +5,7 @@ import HomeAgentHostStatus from './HomeAgentHostStatus.vue'
 import { useHomeSubscriptions } from './useHomeSubscriptions'
 import { useToastsStore } from '@/stores/toasts'
 import { UiScoreMeter } from '@/components/ui'
+import type { DesktopAgentExecutionCapabilities } from '@/lib/desktop'
 
 const originalFetch = globalThis.fetch
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
@@ -37,6 +38,29 @@ const requests = (operation: string) => vi.mocked(fetch).mock.calls.filter(([url
 describe('native account picker', () => {
   beforeEach(() => { setActivePinia(createPinia()) })
   afterEach(() => { useToastsStore().clear(); globalThis.fetch = originalFetch; document.body.innerHTML = ''; vi.useRealTimers() })
+
+  it('shows runnable version, unavailable CLI and MCP-only independently of connection', async () => {
+    globalThis.fetch = vi.fn(async () => json(inventory())) as typeof fetch
+    const wrapper = panel()
+    const execution: DesktopAgentExecutionCapabilities = {
+      sandboxes: ['workspace-write'], review_sandbox: 'normal', models: [],
+      custom_models: false, provider_selection: false, profile_selection: false,
+      requires_provider_model: false, notes: '', sources: [], checked_on: '2026-11-22',
+      credential_status: 'not_checked', model_access: 'not_checked',
+    }
+    try {
+      await wrapper.setProps({ state: { kind: 'loaded', items: [
+        { host_key: 'codex', connection_state: 'connected', available: true, agent_execution: { ...execution, runnable: 'available', cli_version: '0.171.0' } },
+        { host_key: 'hermes', display_name: 'Hermes', connection_state: 'connected', available: true, agent_execution: { ...execution, runnable: 'unavailable', cli_version: null } },
+        { host_key: 'claude-desktop', display_name: 'Claude Desktop', connection_state: 'connected', available: true, agent_execution: { ...execution, sandboxes: [], runnable: 'unsupported' } },
+      ] } })
+      await flushPromises()
+      expect(wrapper.get('li[aria-label="Codex"]').text()).toContain('CLI ready · v0.171.0')
+      expect(wrapper.get('li[aria-label="Hermes"]').text()).toContain('CLI unavailable')
+      expect(wrapper.get('li[aria-label="Claude Desktop"]').text()).toContain('MCP only')
+      expect(wrapper.findAll('li.host-card').every(card => card.text().includes('Connected'))).toBe(true)
+    } finally { wrapper.unmount() }
+  })
 
   it('renders Antigravity native windows through the operation caller and retains unavailable state independently', async () => {
     let reading: unknown = { plan: 'Antigravity Starter Quota', meters: [

@@ -2,19 +2,28 @@
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from sqlmodel import Session
 
 from stackos.auth import derive_ui_token
 from stackos.host_mcp import service
+from stackos.host_mcp.result import HostMcpResult
 from stackos.repositories.project_setup import ProjectSetupRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
 from tests.integration.test_repositories.test_project_setup import verified_result
 from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+
+def _available_host(host):
+    result = service.normalize_result(
+        HostMcpResult(host, "fixture", "registered_current", "Connected", True, True),
+        service._definition_by_key(host).policy,
+    )
+    return replace(result, agent_execution={**result.agent_execution, "runnable": "available"})
 
 
 @pytest.mark.parametrize("configured_host", [None, "hermes"])
@@ -28,7 +37,7 @@ def test_console_previews_inherited_host_without_replacing_saved_choices(
 
     def inspect(host):
         probes.append(host)
-        return SimpleNamespace(available=True)
+        return _available_host(host)
 
     monkeypatch.setattr(service, "inspect_host", inspect)
     with Session(api.app.state.engine) as session:
@@ -87,7 +96,7 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
         )
     scheduler = QueuedScheduler()
     api.app.state.operation_services["scheduler"] = scheduler
-    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    monkeypatch.setattr(service, "inspect_host", _available_host)
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fixture/codex")
     commands = []
 
@@ -209,7 +218,7 @@ def test_console_explicit_null_clears_launch_only_and_configure_clears_saved_def
         )
     scheduler = QueuedScheduler()
     api.app.state.operation_services["scheduler"] = scheduler
-    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    monkeypatch.setattr(service, "inspect_host", _available_host)
     ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
 
     def call(name, **arguments):
@@ -507,7 +516,7 @@ def test_console_managed_start_duplicate_cancel_and_preferences(
         project = startup.project_id
     scheduler = QueuedScheduler()
     api.app.state.operation_services["scheduler"] = scheduler
-    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    monkeypatch.setattr(service, "inspect_host", _available_host)
     ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
 
     def call(name, arguments):
@@ -577,7 +586,7 @@ def test_console_answer_scope_replay_and_continuation(api, settings, tmp_path, m
         )
     scheduler = QueuedScheduler()
     api.app.state.operation_services["scheduler"] = scheduler
-    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    monkeypatch.setattr(service, "inspect_host", _available_host)
     question_runner(monkeypatch)
     ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
 
