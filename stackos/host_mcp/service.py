@@ -1744,7 +1744,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     requires_provider_model=True,
                     auth_status_command=("hermes", "auth", "status"),
                     notes=(
-                        "Explicit provider/model; native approvals retained. "
+                        "Explicit provider/model; native single-query approval policy "
+                        "retained (default deny for unanswered flagged actions). "
                         "Review uses normal native permissions with review-only instructions; "
                         "no enforced read-only isolation. "
                         "One-shot usage-file identity/model/provider and main-loop session usage "

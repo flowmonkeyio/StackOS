@@ -713,9 +713,11 @@ def test_native_command_and_structured_result(
         elif host == "hermes":
             assert command[command.index("--provider") + 1] == provider
             assert command[command.index("--profile") + 1] == "work"
-            assert "Project instructions" in command[command.index("-z") + 1]
+            assert "Project instructions" in command[command.index("--query") + 1]
             assert "--usage-file" in command
-            assert not {"chat", "--oneshot", "--query-file", "--format"}.intersection(command)
+            assert {"chat", "--oneshot", "--quiet"}.issubset(command)
+            assert command[command.index("--format") + 1] == "stream-json"
+            assert not {"-z", "--query-file"}.intersection(command)
         elif host == "grok":
             assert "--no-auto-update" in command
             assert command[command.index("--sandbox") + 1] == "workspace"
@@ -776,8 +778,8 @@ def test_normal_review_uses_native_permissions_and_review_schema(project, monkey
                 "structured_output": value,
             }
         else:
-            assert "-z" in command and "--usage-file" in command
-            assert "--format" not in command
+            assert "chat" in command and "--usage-file" in command
+            assert command[command.index("--format") + 1] == "stream-json"
             envelope = {
                 "completed": True,
                 "session_id": "review-session",

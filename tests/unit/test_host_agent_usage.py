@@ -42,6 +42,123 @@ HERMES_0233 = {
 }
 
 
+@pytest.mark.parametrize("sandbox", ["workspace-write", "normal"])
+@pytest.mark.parametrize("resumed", [False, True])
+def test_hermes_native_single_query_preserves_approval_policy(
+    tmp_path, monkeypatch, sandbox, resumed
+):
+    """Run exact upstream approval functions; only detection/config facts are synthetic."""
+    import argparse
+    import contextlib
+    import contextvars
+    import dataclasses
+    import sys
+    import types
+
+    fixture = json.loads(
+        (Path(__file__).parents[1] / "fixtures/hermes_0233_approval.json").read_text()
+    )
+    finite = types.ModuleType("gateway.session_finite")
+    finite.__dict__.update(
+        contextmanager=contextlib.contextmanager,
+        _finite_turn=contextvars.ContextVar("finite", default=None),
+        _unattended_turn=contextvars.ContextVar("unattended", default=False),
+    )
+    exec("\n\n".join(fixture["sources"][0]["functions"]), finite.__dict__)
+    monkeypatch.setitem(sys.modules, "gateway.session_finite", finite)
+    native = types.ModuleType("hermes_approval_fixture")
+    monkeypatch.setitem(sys.modules, native.__name__, native)
+    native.__dict__.update(dataclass=dataclasses.dataclass)
+    exec("\n\n".join(fixture["sources"][1]["functions"]), native.__dict__)
+    dangerous = "rm -rf /synthetic-owned-fixture"
+    native.__dict__.update(
+        _YOLO_MODE_FROZEN=False,
+        is_current_session_yolo_enabled=lambda: False,
+        approval_context=types.SimpleNamespace(
+            _get_approval_mode=lambda: "manual", _get_single_query_approval_mode=lambda: "deny"
+        ),
+        _should_skip_container_guards=lambda *_a, **_kw: False,
+        _floor_block=lambda _cmd: None,
+        hardline_scan_incomplete=lambda _cmd: False,
+        _command_matches_permanent_allowlist=lambda _cmd: False,
+        get_current_session_key=lambda: "hermes-session",
+        _approval_scope=lambda *_: None,
+        _command_findings=lambda cmd: (
+            [("recursive-delete", "recursive deletion")] if cmd == dangerous else []
+        ),
+        _is_permanently_approved=lambda _: False,
+    )
+    context = native._Unattended(
+        "single_query", "single_query_mode", "no human is present", "here", "trusted"
+    )
+    native._run_approval_gate = lambda **kwargs: native._unattended_deny(
+        kwargs["display_target"], context
+    )
+    calls = []
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        # Exact upstream declarations exercise top-level/subcommand placement,
+        # defaults and destinations. Hermes consumes --profile before argparse.
+        parser = argparse.ArgumentParser()
+        chat_parser = parser.add_subparsers(dest="command").add_parser("chat")
+        for owner, selected in (
+            (parser, "_add_top_level_flags"),
+            (chat_parser, "_build_chat_parser"),
+        ):
+            bindings = {
+                "add": owner.add_argument,
+                "parser": parser,
+                "chat_parser": chat_parser,
+                "SUPPRESS": argparse.SUPPRESS,
+                "_query_group": chat_parser.add_mutually_exclusive_group(),
+                "inherited": lambda target, *a, **kw: target.add_argument(*a, **kw),
+            }
+            for declaration in fixture["parser"]["declarations"][selected]:
+                exec(declaration, bindings)
+        profile_index = command.index("--profile")
+        argv = command[1:profile_index] + command[profile_index + 2 :]
+        args = parser.parse_args(argv)
+        # cmd_chat forwards the report through its documented stream dispatcher.
+        assert args.output_format == "stream-json"
+        assert args.usage_file == command[command.index("--usage-file") + 1]
+        assert args.provider == "openrouter" and args.model == "selected/model"
+        finite_run = bool(args.oneshot or args.oneshot_exit or args.quiet)
+        with finite.finite_turn_scope(finite_run, isinstance(args.oneshot, str)):
+            assert native._yolo_active() is False
+            denied = native.check_dangerous_command(dangerous, "local")
+            assert denied["approved"] is False and "BLOCKED" in denied["message"]
+            assert native.check_dangerous_command("python --version", "local")["approved"] is True
+        report = Path(command[command.index("--usage-file") + 1])
+        report.write_text(json.dumps(HERMES_0233))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            messages_output("hermes", {"text": '{"summary":"OK"}'}),
+            "session_id: hermes-session",
+        )
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        "hermes",
+        tmp_path,
+        "Review" if sandbox == "normal" else "Delivery",
+        "Work",
+        SCHEMA,
+        sandbox=sandbox,
+        model="selected/model",
+        provider="openrouter",
+        profile="work",
+        resume_thread_id="hermes-session" if resumed else None,
+    )
+    assert result.ok, result.error
+    assert len(calls) == 1
+    # Counterfactual control: the rejected entrypoint bypasses the same native gate.
+    with finite.finite_turn_scope(True, True):
+        assert native.check_dangerous_command(dangerous, "local")["approved"] is True
+
+
 @pytest.mark.parametrize(
     "fault", [None, "exit", "partial", "failed", "interrupted", "incomplete", "text", "schema"]
 )
@@ -58,16 +175,18 @@ def test_hermes_0233_result_and_usage_survive_failures(tmp_path, monkeypatch, fa
         assert command[command.index("--profile") + 1] == "work"
         assert command[command.index("--provider") + 1] == "openrouter"
         assert command[command.index("--model") + 1] == "selected/model"
-        assert "Role" in command[command.index("-z") + 1]
-        assert "Work" in command[command.index("-z") + 1]
-        assert not {"--query-file", "--format", "--yolo", "chat"}.intersection(command)
+        assert "Role" in command[command.index("--query") + 1]
+        assert "Work" in command[command.index("--query") + 1]
+        assert not {"--query-file", "-z", "--yolo"}.intersection(command)
         path = Path(command[command.index("--usage-file") + 1])
         paths.append(path)
         assert path.parent.stat().st_mode & 0o777 == 0o700
         assert not path.exists()
         path.write_text(json.dumps(report))
         text = "bad JSON" if fault == "text" else "{}" if fault == "schema" else '{"summary":"OK"}'
-        return subprocess.CompletedProcess(command, 2 if fault == "exit" else 0, text, "")
+        return subprocess.CompletedProcess(
+            command, 2 if fault == "exit" else 0, messages_output("hermes", {"text": text}), ""
+        )
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -105,7 +224,9 @@ def test_hermes_0233_result_and_usage_survive_failures(tmp_path, monkeypatch, fa
     assert len(paths) == 1 and not paths[0].parent.exists()
 
 
-@pytest.mark.parametrize("fault", ["missing", "malformed", "array", "oversized", "symlink", "fifo"])
+@pytest.mark.parametrize(
+    "fault", ["missing", "malformed", "array", "oversized", "nested", "symlink", "fifo"]
+)
 def test_hermes_optional_report_is_bounded_owned_and_unknown(tmp_path, monkeypatch, fault):
     import os
 
@@ -123,11 +244,15 @@ def test_hermes_optional_report_is_bounded_owned_and_unknown(tmp_path, monkeypat
             path.write_text("[]")
         elif fault == "oversized":
             path.write_text(" " * 65537 + json.dumps(HERMES_0233))
+        elif fault == "nested":
+            path.write_text("[" * 32000 + "0" + "]" * 32000)
         elif fault == "symlink":
             path.symlink_to(foreign)
         elif fault == "fifo":
             os.mkfifo(path)
-        return subprocess.CompletedProcess(command, 0, '{"summary":"OK"}', "")
+        return subprocess.CompletedProcess(
+            command, 0, messages_output("hermes", {"text": '{"summary":"OK"}'}), ""
+        )
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -150,9 +275,39 @@ def test_hermes_optional_report_is_bounded_owned_and_unknown(tmp_path, monkeypat
     ],
 )
 def test_hermes_malformed_counters_do_not_invent_zero(field, value):
-    result = hermes._agent_result('{"summary":"OK"}', {**HERMES_0233, field: value})
+    result = hermes._agent_result(
+        messages_output("hermes", {"text": '{"summary":"OK"}'}), {**HERMES_0233, field: value}
+    )
     assert result.usage is None
     assert result.thread_id == "hermes-session" and result.result == {"summary": "OK"}
+
+
+@pytest.mark.parametrize(
+    "fault", ["missing_result", "native_error", "missing_exit", "invalid_text"]
+)
+def test_hermes_chat_terminal_failure_keeps_report_evidence(tmp_path, monkeypatch, fault):
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
+
+    def execute(command, **kwargs):
+        Path(command[command.index("--usage-file") + 1]).write_text(json.dumps(HERMES_0233))
+        terminal = {"type": "result", "exit_code": 0, "text": '{"summary":"OK"}'}
+        if fault == "missing_result":
+            terminal["type"] = "text"
+        elif fault == "native_error":
+            terminal.update(exit_code=1, error="native denied")
+        elif fault == "missing_exit":
+            del terminal["exit_code"]
+        else:
+            terminal["text"] = "invalid JSON"
+        return subprocess.CompletedProcess(command, 0, json.dumps(terminal), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        "hermes", tmp_path, "Role", "Work", SCHEMA, model="model", provider="openrouter"
+    )
+    assert not result.ok and result.error
+    assert result.thread_id == "hermes-session"
+    assert result.usage["snapshot"]["total"] == 150
 
 
 @pytest.mark.parametrize("failure", ["launch", "exit"])
@@ -188,7 +343,7 @@ def test_hermes_owned_process_reaches_final_receipt_and_exact_resume(tmp_path, m
     native.write_text(
         f"#!{sys.executable}\nimport json, sys\nfrom pathlib import Path\n"
         "args = sys.argv[1:]\n"
-        "assert '-z' in args and '--usage-file' in args\n"
+        "assert '--query' in args and '--usage-file' in args and '-z' not in args\n"
         f"report = {HERMES_0233!r}\n"
         "if '--resume' in args:\n"
         " assert args[args.index('--resume')+1] == report['session_id']\n"
@@ -196,7 +351,8 @@ def test_hermes_owned_process_reaches_final_receipt_and_exact_resume(tmp_path, m
         "'cache_write_tokens','reasoning_tokens'): report[k] *= 2\n"
         "path = Path(args[args.index('--usage-file')+1])\n"
         f"with open({str(output_paths)!r}, 'a') as log: log.write(str(path)+'\\n')\n"
-        'path.write_text(json.dumps(report))\nprint(\'{"summary":"OK"}\')\n'
+        "path.write_text(json.dumps(report))\n"
+        'print(json.dumps({"type":"result", "exit_code":0, "text":\'{"summary":"OK"}\'}))\n'
     )
     native.chmod(0o700)
     monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: str(native))

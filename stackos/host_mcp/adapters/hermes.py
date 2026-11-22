@@ -71,8 +71,9 @@ def run_agent(
     cli = resolve_hermes_bin()
     if cli is None:
         return AgentRunResult(None, error="No Hermes CLI was found by host discovery.")
-    # The v0.23.3 -z contract prints only the final answer. Identity and native
-    # counters are terminal-only, in this invocation's private usage file.
+    # -z unconditionally auto-approves unattended turns in v0.23.3. The documented
+    # chat stream route retains the profile's single-query approval policy and
+    # forwards usage-file to the same native terminal report writer.
     with tempfile.TemporaryDirectory(prefix="stackos-hermes-") as directory:
         usage_path = Path(directory) / "usage.json"
         command = [
@@ -81,10 +82,15 @@ def run_agent(
             profile or "default",
             "--in",
             str(project_dir),
-            "-z",
-            structured_prompt(instructions + "\n\n" + prompt, output_schema),
             "--usage-file",
             str(usage_path),
+            "chat",
+            "--oneshot",
+            "--quiet",
+            "--format",
+            "stream-json",
+            "--query",
+            structured_prompt(instructions + "\n\n" + prompt, output_schema),
             "--provider",
             provider,
             "--model",
@@ -115,7 +121,7 @@ def _read_usage_report(path: Path) -> dict[str, Any]:
         if len(data) > 65536:
             return {}
         return json_object(data.decode("utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return {}
 
 
@@ -169,8 +175,14 @@ def _agent_result(stdout: str, report: dict[str, Any] | None = None) -> AgentRun
         error = f"Hermes turn did not complete ({', '.join(failures)}): {reason}"
     result = None
     try:
-        result = json_object(stdout)
-    except (ValueError, TypeError) as exc:
+        events = [json_object(line) for line in stdout.splitlines() if line.strip()]
+        if not events or events[-1].get("type") != "result":
+            raise ValueError("Missing Hermes terminal result event")
+        terminal = events[-1]
+        if type(terminal.get("exit_code")) is not int or terminal["exit_code"] != 0:
+            error = error or str(terminal.get("error") or "Hermes turn did not complete.")
+        result = json_object(terminal["text"])
+    except (ValueError, TypeError, KeyError) as exc:
         if not report:
             # Let the common process boundary retain stderr launch/auth errors.
             raise

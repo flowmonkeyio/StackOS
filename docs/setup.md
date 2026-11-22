@@ -865,10 +865,17 @@ or sibling skills. StackOS uses Hermes's documented `-p/--profile`,
 contracts; default-profile operations explicitly target `-p default` rather
 than inheriting the user's active-profile preference.
 
-Automated Hermes execution targets the documented v0.23.3 `-z` final-answer and
-`--usage-file` report contract. Provider/model/profile selections and native
-approvals remain in force. The report supplies terminal session/model/provider
-and main-loop usage; early identity and live usage are unavailable on this path.
+Automated Hermes execution uses v0.23.3
+`--usage-file ... chat --oneshot --quiet --format stream-json --query ...`.
+The chat stream dispatcher forwards the report and retains the selected profile's
+single-query approval policy (default deny for unanswered flagged actions).
+The `-z` entrypoint is excluded because it unconditionally auto-approves unattended
+turns, even without an explicit `--yolo` flag. See the upstream
+[finite-turn policy](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/gateway/session_finite.py)
+and [approval gate](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/tools/approval.py).
+Provider/model/profile selections remain in force. The report supplies terminal
+session/model/provider and main-loop usage; early identity and live usage are
+unavailable on this path.
 Missing exact-resume identity stops continuation. See the
 [native usage contract](task-tracker.md#native-usage-receipts)
 for scope, missing-report handling and the protocol-fixture proof limitation.
