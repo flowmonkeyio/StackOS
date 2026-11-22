@@ -208,6 +208,78 @@ def test_native_host_replacement_discards_probe(tmp_path):
     assert "unaccepted-model" not in catalog["models"]
 
 
+@pytest.mark.parametrize("transition", ["replace", "delete"])
+def test_host_replacement_while_sibling_is_held_is_not_published(tmp_path, monkeypatch, transition):
+    from concurrent.futures import ThreadPoolExecutor
+    from dataclasses import replace
+    from threading import Event
+
+    fast_cli, slow_cli = tmp_path / "agy", tmp_path / "grok"
+    for cli in (fast_cli, slow_cli):
+        cli.write_text("#!/bin/sh\nprintf '1.0.92\\n'\n")
+        cli.chmod(0o755)
+    completed, release = Event(), Event()
+
+    def held(_cli):
+        assert release.wait(5)
+        return ("sibling-model",)
+
+    definitions = (
+        replace(
+            service._definition_by_key("antigravity"),
+            cli=lambda _home: str(fast_cli),
+            native_models=lambda _cli: ("old-host-model",),
+        ),
+        replace(
+            service._definition_by_key("grok"), cli=lambda _home: str(slow_cli), native_models=held
+        ),
+    )
+    inspect = service._inspect_definition
+
+    def observed(definition, home):
+        result = inspect(definition, home)
+        if definition.policy.host_key == "antigravity":
+            completed.set()
+        return result
+
+    monkeypatch.setattr(service, "_definitions", lambda: definitions)
+    monkeypatch.setattr(service, "_catalog_account", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "_inspect_definition", observed)
+    monkeypatch.setattr(
+        service,
+        "_call_adapter",
+        lambda _fn, _home, key: HostMcpResult(
+            key, "fixture", "registered_current", "Connected", True, True
+        ),
+    )
+    # Exercise the normalized console consumer, including its safe field allowlist.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(
+            lambda: asyncio.run(host_mcp_status(HostMcpStatusInput(), None, None)).model_dump(
+                mode="json"
+            )
+        )
+        try:
+            assert completed.wait(5)
+            if transition == "replace":
+                fast_cli.write_text("#!/bin/sh\nprintf '2.0.0\\n'\n")
+            else:
+                fast_cli.unlink()
+        finally:
+            release.set()
+        output = pending.result(timeout=5)
+    rows = {row["host_key"]: row for row in output["items"]}
+    stale = rows["antigravity"]["agent_execution"]
+    assert stale["probe_status"] == "stale"
+    assert stale["runnable"] == "unknown" and stale["cli_version"] is None
+    assert stale["model_access"] == "not_checked" and "old-host-model" not in stale["models"]
+    assert rows["antigravity"]["connection_state"] == "connected"
+    sibling = rows["grok"]["agent_execution"]
+    assert sibling["probe_status"] == sibling["model_access"] == "observed"
+    assert sibling["cli_version"] == "1.0.92" and sibling["models"] == ["sibling-model"]
+    assert str(fast_cli) not in json.dumps(output)
+
+
 @pytest.fixture
 def native_registrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Real saved host formats; substitute native discovery/CLI reads only."""

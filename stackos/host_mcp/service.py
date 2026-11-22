@@ -39,7 +39,7 @@ from stackos.host_mcp.agent_execution import (
     managed_launch_lock,
 )
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
-from stackos.host_mcp.discovery import probe_cli_version
+from stackos.host_mcp.discovery import executable_identity, probe_cli_version
 from stackos.host_mcp.progress import CodexCounterReader
 from stackos.host_mcp.result import (
     AgentCapabilities,
@@ -624,7 +624,21 @@ class HostMcpDefinition:
     native_models: Callable[[str], tuple[str, ...] | None] | None = None
 
 
-def execution_catalog(definition: HostMcpDefinition, *, home: Path) -> dict[str, Any]:
+def _stale_execution_catalog(definition: HostMcpDefinition) -> dict[str, Any]:
+    return {
+        **asdict(definition.policy.agent_execution),
+        "credential_status": "not_checked",
+        "model_access": "not_checked",
+        "probe_status": "stale",
+    }
+
+
+def execution_catalog(
+    definition: HostMcpDefinition,
+    *,
+    home: Path,
+    executable_basis: list[tuple[str, tuple[int, ...]]] | None = None,
+) -> dict[str, Any]:
     """Refresh one registry entry, without caching, changing pins or starting a turn.
 
     Only explicit status refresh and fresh admission call this. Native listing
@@ -644,7 +658,11 @@ def execution_catalog(definition: HostMcpDefinition, *, home: Path) -> dict[str,
         cli = definition.cli(home) if definition.cli else None
         if cli is None:
             return {**catalog, "runnable": "unavailable", "probe_status": "failed"}
-        before = Path(cli).stat()
+        before = executable_identity(cli)
+        if before is None:
+            return {**catalog, "runnable": "unknown", "probe_status": "failed"}
+        if executable_basis is not None:
+            executable_basis.append((cli, before))
         runnable, version = probe_cli_version(cli)
         catalog.update(
             runnable=runnable,
@@ -666,18 +684,8 @@ def execution_catalog(definition: HostMcpDefinition, *, home: Path) -> dict[str,
                     catalog["recommended_model"] = None
             else:
                 catalog["probe_status"] = "failed"
-        after = Path(cli).stat()
-        if (before.st_ino, before.st_size, before.st_mtime_ns) != (
-            after.st_ino,
-            after.st_size,
-            after.st_mtime_ns,
-        ):
-            return {
-                **asdict(definition.policy.agent_execution),
-                "credential_status": "not_checked",
-                "model_access": "not_checked",
-                "probe_status": "stale",
-            }
+        if before != executable_identity(cli):
+            return _stale_execution_catalog(definition)
     except Exception:
         # Native discovery failure cannot erase another host or publish diagnostics.
         return {
@@ -1283,18 +1291,19 @@ def inspect_all(*, home: Path | None = None, data_dir: Path | None = None) -> Ho
             executor.submit(_inspect_definition, definition, home_dir) for definition in definitions
         ]
         results = [future.result() for future in futures]
-    # Recheck after all siblings complete, including A -> B -> A revisions.
+    # Observation lifetime includes waiting for every sibling, not just the
+    # native command. Recheck both executable and A -> B -> A account identity.
     for index, definition in enumerate(definitions):
         basis = bases[definition.policy.host_key]
-        if basis is False or basis != _catalog_account(definition, data_dir=data_dir):
+        executable = results[index]._execution_basis
+        if (
+            basis is False
+            or basis != _catalog_account(definition, data_dir=data_dir)
+            or (executable is not None and executable_identity(executable[0]) != executable[1])
+        ):
             results[index] = replace(
                 results[index],
-                agent_execution={
-                    **asdict(definition.policy.agent_execution),
-                    "credential_status": "not_checked",
-                    "model_access": "not_checked",
-                    "probe_status": "stale",
-                },
+                agent_execution=_stale_execution_catalog(definition),
             )
     return _aggregate(results)
 
@@ -1317,11 +1326,13 @@ def _catalog_account(
 
 
 def _inspect_definition(definition: HostMcpDefinition, home: Path) -> HostMcpResult:
-    return normalize_result(
+    basis: list[tuple[str, tuple[int, ...]]] = []
+    result = normalize_result(
         _call_adapter(definition.adapter.inspect, home, definition.policy.host_key),
         definition.policy,
-        execution=execution_catalog(definition, home=home),
+        execution=execution_catalog(definition, home=home, executable_basis=basis),
     )
+    return replace(result, _execution_basis=basis[0] if basis else None)
 
 
 def repair_all(*, home: Path | None = None) -> HostMcpAggregate:
@@ -1426,8 +1437,9 @@ def inspect_host(
     *,
     home: Path | None = None,
     profile: str | None = None,
+    data_dir: Path | None = None,
 ) -> HostMcpResult:
-    return _single(host_key, action="inspect", home=home, profile=profile)
+    return _single(host_key, action="inspect", home=home, profile=profile, data_dir=data_dir)
 
 
 def _single(
@@ -1437,6 +1449,7 @@ def _single(
     home: Path | None,
     force: bool = False,
     profile: str | None = None,
+    data_dir: Path | None = None,
 ) -> HostMcpResult:
     home_dir = home or default_home()
     definition = _definition_by_key(host_key)
@@ -1469,10 +1482,19 @@ def _single(
             definition.policy,
         )
     if action == "inspect":
+        basis = _catalog_account(definition, data_dir=data_dir)
+        current = _invoke_adapter(definition, action, home_dir, profile=profile)
+        execution = (
+            _stale_execution_catalog(definition)
+            if basis is False
+            else execution_catalog(definition, home=home_dir)
+        )
+        if basis != _catalog_account(definition, data_dir=data_dir):
+            execution = _stale_execution_catalog(definition)
         return normalize_result(
-            _invoke_adapter(definition, action, home_dir, profile=profile),
+            current,
             definition.policy,
-            execution=execution_catalog(definition, home=home_dir),
+            execution=execution,
         )
     if action == "remove":
         current = normalize_result(

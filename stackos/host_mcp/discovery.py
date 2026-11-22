@@ -89,6 +89,15 @@ def subprocess_env_for_cli(cli_bin: str) -> dict[str, str]:
     return env
 
 
+def executable_identity(cli_bin: str) -> tuple[int, ...] | None:
+    """File identity for one observation, without executing another native read."""
+    try:
+        info = Path(cli_bin).stat()
+    except OSError:
+        return None
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
 def probe_cli_version(cli_bin: str) -> tuple[str, str | None]:
     """Bounded, noninteractive runnable evidence; unknown version is not absence."""
     try:

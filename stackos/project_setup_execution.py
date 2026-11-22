@@ -127,6 +127,17 @@ def resolve_preferences(
         saved.pop("model_reasoning_effort", None)
     selected = {key: value for key, value in {**saved, **explicit}.items() if value is not None}
     host_key = selected.get("host_key") or defaults.get("host_key") or fallback_host_key
+    data_dir = None
+    if session is not None:
+        runtime_settings = session.info.get("operation_services", {}).get("settings")
+        if runtime_settings is not None:
+            data_dir = runtime_settings.data_dir
+        else:
+            # Managed/background sessions have no request services. Settings.db_path
+            # binds the daemon's account directory to the database's parent.
+            database = session.get_bind().engine.url.database
+            if database and database != ":memory:":
+                data_dir = Path(database).parent
     if host_key is None:
         # Catalog order is the existing preference order; never substitute an explicit choice.
         host_key = next(
@@ -135,7 +146,7 @@ def resolve_preferences(
                 for d in service._definitions()
                 if d.run_agent
                 and "workspace-write" in d.policy.agent_execution.sandboxes
-                and service.inspect_host(d.policy.host_key).available
+                and service.inspect_host(d.policy.host_key, data_dir=data_dir).available
             ),
             None,
         )
@@ -146,7 +157,11 @@ def resolve_preferences(
     # invalid or unavailable saved choices so the operator can repair them.
     if not validate_selection:
         return selected
-    host = service.inspect_host(host_key)
+    host = service.inspect_host(host_key, data_dir=data_dir)
+    if host.agent_execution.get("probe_status") == "stale":
+        raise ValidationError(
+            "Native host or account changed during inspection; refresh before setup"
+        )
     error = service.agent_selection_error(
         sandbox="workspace-write", **selected, catalog=host.agent_execution or None
     )

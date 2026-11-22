@@ -18,12 +18,97 @@ from tests.integration.test_repositories.test_project_setup import verified_resu
 from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
 
 
-def _available_host(host):
+def _available_host(host, **_kwargs):
     result = service.normalize_result(
         HostMcpResult(host, "fixture", "registered_current", "Connected", True, True),
         service._definition_by_key(host).policy,
     )
     return replace(result, agent_execution={**result.agent_execution, "runnable": "available"})
+
+
+@pytest.mark.parametrize("transition", ["changed", "unknown", "unknown-before"])
+def test_console_setup_selection_fences_account_probe(
+    api, settings, tmp_path, monkeypatch, transition
+):
+    from stackos.host_mcp.accounts import DesiredAccount
+    from stackos.project_setup_execution import resolve_preferences
+    from stackos.repositories.tracker import TrackerRepository
+
+    with Session(api.app.state.engine) as session:
+        project = (
+            WorkspaceRepository(session)
+            .start_session(runtime="codex", cwd=str(tmp_path))
+            .project_id
+        )
+    cli = tmp_path / "grok"
+    cli.write_text("#!/bin/sh\nprintf '1.0.92\\n'\n")
+    cli.chmod(0o755)
+    revision = 0
+    changing = False
+    model_reads = []
+    account_reads = []
+
+    def models(_cli):
+        nonlocal revision
+        model_reads.append(revision)
+        if changing:
+            revision += 1
+        return ("grok-4.5", "old-account-only-model")
+
+    def account(_definition, *, data_dir=None):
+        account_reads.append((data_dir, revision))
+        if changing and (
+            transition == "unknown-before" or (transition == "unknown" and revision > 0)
+        ):
+            return False
+        return DesiredAccount(revision=revision)
+
+    original_definition = service._definition_by_key
+    grok = replace(original_definition("grok"), cli=lambda _home: str(cli), native_models=models)
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda key: grok if key == "grok" else original_definition(key),
+    )
+    monkeypatch.setattr(service, "_catalog_account", account)
+    monkeypatch.setattr(
+        service,
+        "_invoke_adapter",
+        lambda *_args, **_kwargs: HostMcpResult(
+            "grok", "fixture", "registered_current", "Connected", True, True
+        ),
+    )
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def save(model):
+        return api.post(
+            "/api/v1/operations/tracker.configureDelivery/call",
+            headers=ui,
+            json={
+                "arguments": {
+                    "project_id": project,
+                    "main_agent": {"host_key": "grok", "model": model},
+                },
+            },
+        )
+
+    stable = save("grok-4.5")
+    assert stable.status_code == 200, stable.text
+    with Session(api.app.state.engine) as session:
+        saved = TrackerRepository(session).delivery_defaults(project_id=project)
+        # Managed/background sessions have no request operation_services; they
+        # must retain the data directory belonging to this database as well.
+        assert resolve_preferences(session, project) == {"host_key": "grok", "model": "grok-4.5"}
+    prior_reads = len(model_reads)
+    changing = True
+    rejected = save("old-account-only-model")
+    assert rejected.status_code == 422, rejected.text
+    assert "changed" in rejected.text and "refresh" in rejected.text
+    assert account_reads and all(directory == settings.data_dir for directory, _ in account_reads)
+    if transition == "unknown-before":
+        assert len(model_reads) == prior_reads
+    with Session(api.app.state.engine) as session:
+        assert TrackerRepository(session).delivery_defaults(project_id=project) == saved
 
 
 @pytest.mark.parametrize("configured_host", [None, "hermes"])
@@ -35,7 +120,7 @@ def test_console_previews_inherited_host_without_replacing_saved_choices(
 
     probes = []
 
-    def inspect(host):
+    def inspect(host, **_kwargs):
         probes.append(host)
         return _available_host(host)
 

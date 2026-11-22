@@ -305,6 +305,10 @@ class HostMcpResult:
     target: dict[str, str] | None = None
     targets: list[dict[str, str]] = field(default_factory=list)
     agent_execution: dict[str, Any] = field(default_factory=dict)
+    # Refresh-local witness; deliberately excluded from public to_info output.
+    _execution_basis: tuple[str, tuple[int, ...]] | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def to_info(self) -> dict[str, object]:
         return {

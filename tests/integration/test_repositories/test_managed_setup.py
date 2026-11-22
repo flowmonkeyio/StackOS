@@ -21,7 +21,7 @@ from sqlmodel import Session, select
 from stackos import task_delivery
 from stackos.db.models import AgentRequest, RunPlan, TrackerTask
 from stackos.host_mcp import service
-from stackos.host_mcp.result import AgentRunResult
+from stackos.host_mcp.result import AgentRunResult, HostMcpResult
 from stackos.repositories.base import ValidationError
 from stackos.repositories.project_setup import ProjectSetupRepository
 from stackos.repositories.tracker import TrackerRepository
@@ -50,6 +50,27 @@ def reserve_setup(execution, session, scheduler):
     return execution.reserve_setup(session, scheduler, {row["project_id"]: row for row in rows})
 
 
+def _host_status(host, *, available=True, **_kwargs):
+    result = service.normalize_result(
+        HostMcpResult(
+            host,
+            "fixture",
+            "registered_current" if available else "absent",
+            "Connected" if available else "Install this host",
+            True,
+            available,
+        ),
+        service._definition_by_key(host).policy,
+    )
+    return replace(
+        result,
+        agent_execution={
+            **result.agent_execution,
+            "runnable": "available" if available else "unavailable",
+        },
+    )
+
+
 @pytest.fixture
 def managed(session, tmp_path, monkeypatch):
     from stackos import project_setup_execution as execution
@@ -58,7 +79,7 @@ def managed(session, tmp_path, monkeypatch):
     folder.mkdir()
     opened = WorkspaceRepository(session).start_session(runtime="codex", cwd=str(folder))
     scheduler = QueuedScheduler()
-    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    monkeypatch.setattr(service, "inspect_host", _host_status)
     return execution, opened.project_id, scheduler, lambda: Session(session.get_bind())
 
 
@@ -768,7 +789,7 @@ def test_live_cancel_retains_reports_fences_late_report_and_releases_after_callb
         return Session(session.get_bind())
 
     scheduler = QueuedScheduler()
-    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    monkeypatch.setattr(service, "inspect_host", _host_status)
     definition = service._definition_by_key("codex")
     entered, finish = Event(), Event()
     checked = []
@@ -995,7 +1016,7 @@ def test_unavailable_host_or_folder_creates_no_request(managed, session, monkeyp
         monkeypatch.setattr(
             service,
             "inspect_host",
-            lambda _: SimpleNamespace(available=False, message="Install this host"),
+            lambda host, **kwargs: _host_status(host, available=False, **kwargs),
         )
     else:
         Path(ProjectRepository(session).get(project).project_dir).rmdir()

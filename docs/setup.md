@@ -277,6 +277,9 @@ and include Claude `claude-fable-5-2` and Grok `grok-4.7`/`grok-4.7-build-fast`.
 Fresh launches use the same list and validation; exact resumes retain frozen
 choices. Refresh changes no saved pins, drafts, defaults, or active sessions.
 Late account/host results are marked stale, and sibling failures are isolated.
+Executable identity is rechecked after the complete refresh, including sibling
+waits. Single-host setup inspection checks the account in its owning daemon's
+data directory; changed or unresolved observations require a fresh check.
 
 Harness account switching is declared by the host's native account adapter.
 The local account inventory includes supported hosts before enrollment.
