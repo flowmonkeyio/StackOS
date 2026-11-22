@@ -172,6 +172,8 @@ def test_claude_per_call_route_preserves_commands_and_role(tmp_path, monkeypatch
         calls.append(command)
         assert directory == tree
         assert command[command.index("--append-system-prompt") + 1] == "current role"
+        assert command[command.index("--system-prompt-snapshot") + 1] == "off"
+        assert "--system-prompt" not in command  # Retain Claude's native default prompt.
         assert "--strict-mcp-config" in command
         actual = json.loads(command[command.index("--mcp-config") + 1])["mcpServers"]
         assert actual["stackos"] == content["mcpServers"]["stackos"]

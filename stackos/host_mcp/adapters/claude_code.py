@@ -85,6 +85,10 @@ def run_agent(
         json.dumps(output_schema),
         "--append-system-prompt",
         instructions,
+        # Rebuild the native default prompt with this invocation's selected role;
+        # otherwise exact resume reuses the conversation's initial prompt text.
+        "--system-prompt-snapshot",
+        "off",
         "--permission-mode",
         "auto" if sandbox == "workspace-write" else "dontAsk",
     ]

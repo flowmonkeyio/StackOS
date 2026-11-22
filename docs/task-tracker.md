@@ -642,6 +642,9 @@ Codex/Claude Code, `workspace` for Antigravity/Grok, `profile` for Hermes, or
 supported configuration mechanism; it does not assert a successful connection.
 Claude translates the same fragment over existing effective stdio entries into
 `--mcp-config` with `--strict-mcp-config`, for fresh and exact resumed calls.
+Its invocation-scoped `--system-prompt-snapshot off` applies the supplied role
+instructions on exact resume while `--append-system-prompt` retains the native
+default prompt. This does not change the selected frozen assignment settings.
 It retains commands and existing environment references, rejects unsafe entries
 instead of copying credentials, and preserves native permission rules, including
 disabled project servers. Worktree checks include the common repository's native
