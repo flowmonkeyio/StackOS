@@ -990,10 +990,12 @@ def _run_agent_once(
     result: AgentRunResult | None = None
     registered = False
     request_admitted = False
-    if call is not None and host_key == "codex":
+    if call is not None and host_key in {"codex", "antigravity"}:
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
             call, session_id, Path(project_dir), resume_thread_id, on_session_attached
         )
+        if host_key == "antigravity":
+            progress_kwargs["on_usage"] = lambda usage: _observe_usage(call, usage)
     if call is not None:
         progress_kwargs["process_control"] = call.process_control
     try:
@@ -1160,7 +1162,8 @@ def _attach_session(
                     return
                 call.session_id = session_id
                 call.thread_id = session_id
-                call.reader = CodexCounterReader(session_id, project_dir, resumed=call.resumed)
+                if call.host_key == "codex":
+                    call.reader = CodexCounterReader(session_id, project_dir, resumed=call.resumed)
             if call.request_execution is not None:
                 try:
                     call.request_execution.renew(call)
@@ -1174,6 +1177,27 @@ def _attach_session(
         # lock first: stop() owns its process lock before taking the launch lock.
         retire_invocation(call)
         raise
+
+
+def _observe_usage(call: ActiveInvocation, raw: dict[str, Any]) -> None:
+    """Keep native stream measurements in the existing invocation/receipt owner."""
+    with _active_invocations_lock:
+        if (
+            _active_invocations.get(call.invocation_id) is not call
+            or call.finished
+            or call.cancelled.is_set()
+            or call.session_error is not None
+            or call.session_id is None
+        ):
+            return
+        usage = normalize_usage(
+            raw, session_id=call.session_id, resumed=call.resumed, previous=call.previous_usage
+        )
+        if usage["status"] != "measured" or usage == call.usage:
+            return
+        call.usage = usage
+        call.measured_at = datetime.now(UTC).isoformat()
+        call.samples.append({"at": call.measured_at, "source": "native", **usage["measured"]})
 
 
 def effective_agent_sandbox(
@@ -1656,7 +1680,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     ),
                     checked_on="2026-11-22",
                     notes=(
-                        "Delivery uses accept-edits and request-review; "
+                        "Delivery uses accept-edits and proceed-in-sandbox with "
+                        "explicit StackOS MCP tools; saved ask/deny rules remain in force; "
                         "unapproved tools are denied. "
                         "Review uses normal native permissions with review-only instructions; "
                         "no enforced read-only isolation. Model slugs carry native effort; "

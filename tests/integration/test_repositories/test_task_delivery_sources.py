@@ -66,13 +66,13 @@ def test_antigravity_registered_delivery_and_distinct_review(
             "name": "writer",
             "instructions": "Write the assigned change",
             "host_key": "antigravity",
-            "model": "gemini-3.8-flash-high",
+            "model": "gemini-4-neon-high",
         },
         "review_agent": {
             "name": "reviewer",
             "instructions": "Review independently",
             "host_key": "antigravity",
-            "model": "claude-sonnet-4-6",
+            "model": "claude-sonnet-5-5-low",
         },
     }
     repo.configure_delivery(project_id=project_id, delivery={"agents": roles})
@@ -88,7 +88,8 @@ def test_antigravity_registered_delivery_and_distinct_review(
         )
         phase = packet["phase"]
         settings = json.loads(command[command.index("--settings") + 1])
-        assert settings["toolPermission"] == "request-review"
+        assert settings["toolPermission"] == "proceed-in-sandbox"
+        assert settings["enableTerminalSandbox"] is True
         assert settings["agentMode"] == ("accept-edits" if phase == "delivery" else "")
         assert command[command.index("--model") + 1] == roles[f"{phase}_agent"]["model"]
         assert options["process_control"] is not None and options["timeout"] > 0
@@ -98,11 +99,48 @@ def test_antigravity_registered_delivery_and_distinct_review(
             "status": "SUCCESS",
             "response": "ignored assistant text",
             "structured_output": generic_result(outputs={"commit_sha": candidate}),
+            "usage": {
+                "input_tokens": 10,
+                "cache_read_tokens": 80,
+                "output_tokens": 30,
+                "total_tokens": 40,
+            },
         }
-        return validate_agent_result(decode(json.dumps(envelope)), schema, host)
+        events = [
+            {
+                "event": "init",
+                "conversation_id": envelope["conversation_id"],
+                "init": {"cwd": str(directory), "permission_mode": settings["toolPermission"]},
+            },
+            {
+                "event": "step_update",
+                "step_update": {
+                    "conversation_id": envelope["conversation_id"],
+                    "step_index": 1,
+                    "state": "DONE",
+                    "usage": envelope["usage"],
+                },
+            },
+            {"event": "result", "result": envelope},
+        ]
+        text = ""
+        for event in events:
+            line = json.dumps(event) + "\n"
+            options["on_output_line"](line)
+            text += line
+            if event["event"] == "init":
+                early = repo.brief(project_id=project_id, ticket_key="agy-work").ticket
+                assert (
+                    early.completion_evidence_json["automatic_delivery"]["sessions"][phase][
+                        "thread_id"
+                    ]
+                    == f"agy-{phase}"
+                )
+        return validate_agent_result(decode(text), schema, host)
 
     monkeypatch.setattr(native, "resolve_antigravity_bin", lambda: "/fixture/agy")
     monkeypatch.setattr(native, "execute_json_agent", execute)
+    monkeypatch.setattr(native, "default_home", lambda: tmp_path)
     scheduler = QueuedScheduler()
     start(session, project_id, tmp_path, scheduler, task_key="agy")
     scheduler.run()
@@ -114,6 +152,10 @@ def test_antigravity_registered_delivery_and_distinct_review(
     assert receipt["delivery"]["launch"]["host_key"] == "antigravity"
     assert receipt["review"]["thread_id"] == "agy-review"
     assert receipt["delivery"]["thread_id"] == "agy-delivery"
+    for phase in ("delivery", "review"):
+        assert receipt[phase]["usage"]["measured"]["input"] == 90
+        assert receipt[phase]["usage"]["measured"]["cache_read"] == 80
+        assert receipt[phase]["usage"]["measured"]["total"] == 120
 
 
 def test_retired_saved_gemini_defaults_require_reselection(session, project_id, tmp_path):

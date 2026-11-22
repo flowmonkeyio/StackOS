@@ -7,11 +7,12 @@ import json
 import os
 import sqlite3
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import closing, suppress
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
+from time import monotonic
 from typing import Any, BinaryIO
 from uuid import UUID
 
@@ -244,12 +245,20 @@ class CodexCounterReader:
         self.pending = b""
 
 
-class CodexStreamError(Exception):
+class NativeStreamError(Exception):
     """Post-launch stream failure with the reaped process's available output."""
 
-    def __init__(self, process: subprocess.CompletedProcess[str], cause: Exception) -> None:
+    def __init__(
+        self, process: subprocess.CompletedProcess[str], cause: Exception, host: str
+    ) -> None:
         self.process = process
-        super().__init__(f"Codex stream failed ({type(cause).__name__}): {cause}")
+        self.cause = cause
+        super().__init__(f"{host} stream failed ({type(cause).__name__}): {cause}")
+
+
+class CodexStreamError(NativeStreamError):
+    def __init__(self, process: subprocess.CompletedProcess[str], cause: Exception) -> None:
+        super().__init__(process, cause, "Codex")
 
 
 def run_codex_process(
@@ -263,6 +272,46 @@ def run_codex_process(
     pass_fds: tuple[int, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
     """Preserve native stdout/stderr/result behavior while exposing thread.started early."""
+
+    def observe(line: str) -> None:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return
+        if (
+            isinstance(event, dict)
+            and event.get("type") == "thread.started"
+            and isinstance(event.get("thread_id"), str)
+        ):
+            on_session(event["thread_id"])
+
+    try:
+        return run_stream_process(
+            command,
+            input=input,
+            cwd=cwd,
+            env=env,
+            on_output_line=observe,
+            process_control=process_control,
+            pass_fds=pass_fds,
+        )
+    except NativeStreamError as exc:
+        raise CodexStreamError(exc.process, exc.cause) from exc.cause
+
+
+def run_stream_process(
+    command: list[str],
+    *,
+    input: str,
+    cwd: Path,
+    env: Mapping[str, str],
+    on_output_line: Callable[[str], None],
+    process_control: ManagedProcessControl | None = None,
+    pass_fds: tuple[int, ...] = (),
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Observe native lines within the existing owned process lifetime."""
+    deadline = monotonic() + timeout if timeout is not None else None
     process = (process_control.spawn if process_control else subprocess.Popen)(
         command,
         stdin=subprocess.PIPE,
@@ -281,19 +330,7 @@ def run_codex_process(
         assert process.stdout is not None
         for line in process.stdout:
             output.append(line)
-            if '"thread.started"' in line:
-                try:
-                    event = json.loads(line)
-                except ValueError:
-                    continue
-                if (
-                    isinstance(event, dict)
-                    and event.get("type") == "thread.started"
-                    and isinstance(event.get("thread_id"), str)
-                ):
-                    # Session attachment can commit required recovery identity.
-                    # Its failures must reach read_safely and stop the process.
-                    on_session(event["thread_id"])
+            on_output_line(line)
 
     def read_errors() -> None:
         assert process.stderr is not None
@@ -326,7 +363,15 @@ def run_codex_process(
         finally:
             with suppress(BrokenPipeError):
                 process.stdin.close()
-        process.wait()
+        process.wait(timeout=max(0, deadline - monotonic()) if deadline is not None else None)
+        for reader in (stdout, stderr):
+            reader.join(max(0, deadline - monotonic()) if deadline is not None else None)
+        if stdout.is_alive() or stderr.is_alive():
+            assert timeout is not None
+            raise subprocess.TimeoutExpired(command, timeout)
+    except subprocess.TimeoutExpired:
+        retirement = process_control.stop() if process_control else "unconfirmed"
+        read_failures.append(RuntimeError(f"external deadline; retirement {retirement}"))
     except (OSError, UnicodeError) as exc:
         read_failures.append(exc)
     finally:
@@ -336,15 +381,15 @@ def run_codex_process(
             else:
                 process.terminate()
                 process.wait()
-        stdout.join()
-        stderr.join()
-        if process.stdout:
+        stdout.join(2)
+        stderr.join(2)
+        if process.stdout and not stdout.is_alive():
             process.stdout.close()
-        if process.stderr:
+        if process.stderr and not stderr.is_alive():
             process.stderr.close()
     completed = subprocess.CompletedProcess(
         command, process.returncode, "".join(output), "".join(errors)
     )
     if read_failures:
-        raise CodexStreamError(completed, read_failures[0]) from read_failures[0]
+        raise NativeStreamError(completed, read_failures[0], "Native") from read_failures[0]
     return completed

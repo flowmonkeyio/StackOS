@@ -368,6 +368,14 @@ The bridge exposes underscore tool names to Antigravity (for example,
 `workspace_startSession` and `toolbox_call`) because its native tool-name
 validator rejects dots. It accepts both spellings at that boundary; operation
 refs inside toolbox arguments remain canonical, such as `project.get`.
+Native task execution uses session-only `--settings`: terminal sandbox enabled,
+`proceed-in-sandbox`, non-workspace access disabled, and explicit names for the
+StackOS MCP tools. Saved ask/deny rules are carried forward; strict approval,
+malformed settings and soft-denied required actions fail closed. Daemon project
+scope, grants and approval checks still apply. Native init identity is published
+through the existing invocation/receipt owner before exit, with distinct completed
+step usage observed live and terminal usage reconciled once. Exact resume retains
+the conversation; usage without a native pre-invocation baseline stays unknown.
 Install/repair also mirrors the canonical StackOS mechanics skill into
 `~/.gemini/config/skills/stackos/`, the
 [shared app and CLI skill location](https://antigravity.google/docs/customization-discovery/).

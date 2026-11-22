@@ -165,6 +165,7 @@ def execute_json_agent(
     process_control: ManagedProcessControl | None = None,
     timeout: float | None = None,
     stderr_error: Callable[[str], str | None] | None = None,
+    on_output_line: Callable[[str], None] | None = None,
 ) -> AgentRunResult:
     native_env = subprocess_env_for_cli(command[0]) if env is None else env
     # A native print timeout need not bound authentication or child startup.
@@ -173,7 +174,24 @@ def execute_json_agent(
         process_control = ManagedProcessControl()
     process_error = None
     try:
-        if process_control is not None:
+        if on_output_line is not None:
+            from stackos.host_mcp.progress import NativeStreamError, run_stream_process
+
+            try:
+                process = run_stream_process(
+                    command,
+                    input=prompt,
+                    cwd=project_dir,
+                    env=native_env,
+                    on_output_line=on_output_line,
+                    process_control=process_control,
+                    pass_fds=pass_fds,
+                    timeout=timeout,
+                )
+            except NativeStreamError as exc:
+                process = exc.process
+                process_error = str(exc)
+        elif process_control is not None:
             child = process_control.spawn(
                 command,
                 stdin=subprocess.PIPE,

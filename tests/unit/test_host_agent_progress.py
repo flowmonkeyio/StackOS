@@ -3,9 +3,8 @@
 import json
 import sqlite3
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -19,6 +18,14 @@ from stackos.repositories.tracker.agent_stats import (
     summarize_receipts,
 )
 from stackos.repositories.tracker.receipt_projection import receipt_input
+
+
+def install_runner(monkeypatch, runner):
+    # Keep the current native definition/selection contract while replacing I/O.
+    definition = service._definition_by_key("codex")
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, run_agent=runner)
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -383,7 +390,7 @@ def test_exit_handoff_uses_final_native_counters_and_always_releases_snapshot(
         raise RuntimeError("optional observer failure")
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    install_runner(monkeypatch, runner)
     monkeypatch.setattr(service, "CodexCounterReader", lambda *a, **kw: reader)
     result = service.run_agent(
         "codex",
@@ -423,7 +430,7 @@ def test_lifetime_cleanup_success_error_cancel_and_no_idle_collector(
         return AgentRunResult(0, thread_id="native", result={})
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    install_runner(monkeypatch, runner)
     monkeypatch.setattr(service, "CodexCounterReader", lambda *args, **kwargs: invocation_reader)
 
     def observe(invocation, active):
@@ -805,7 +812,7 @@ def test_final_read_retains_observation_without_a_live_counter_poll(
             handoffs.append(invocation.projection())
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    install_runner(monkeypatch, runner)
     result = service.run_agent(
         "codex",
         tmp_path,
@@ -887,7 +894,7 @@ def test_context_loss_stays_ambiguous_through_live_final_and_retained_attributio
             handoffs.append(invocation.projection())
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    install_runner(monkeypatch, runner)
     result = service.run_agent(
         "codex",
         tmp_path,
@@ -1028,7 +1035,7 @@ def test_required_session_callback_is_once_and_failure_is_not_observability(
         return AgentRunResult(0, thread_id="different-result", result={})
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    install_runner(monkeypatch, runner)
     monkeypatch.setattr(service, "CodexCounterReader", lambda *a, **kw: reader)
     original_stop = service.ManagedProcessControl.stop
 
