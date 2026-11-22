@@ -137,6 +137,11 @@ def _receipt_items(
         (f"account_interruptions:{position}", item, "receipt")
         for position, item in enumerate(interruptions if isinstance(interruptions, list) else [])
     )
+    interruptions = automatic.get("runtime_interruptions")
+    observations.extend(
+        (f"runtime_interruptions:{position}", item, "receipt")
+        for position, item in enumerate(interruptions if isinstance(interruptions, list) else [])
+    )
     corrections = automatic.get("reporting_corrections")
     observations.extend(
         (f"reporting_corrections:{position}:{receipt_key}", item, receipt_key)
@@ -182,6 +187,21 @@ def _receipt_items(
             # inventing a native invocation identity, timestamp or usage.
             observation = locator
         retained[attempt, phase][observation] = receipt
+    for identity, receipts in retained.items():
+        # Different interruption producers can alternate in one phase. Source
+        # list order alone must not make an older snapshot the resume baseline.
+        # Missing native timestamps retain legacy order, never invented times.
+        starts = {}
+        for observation, receipt in receipts.items():
+            execution = receipt.get("execution")
+            launch = receipt.get("launch")
+            started = _instant(
+                execution.get("started_at") if isinstance(execution, dict) else None
+            ) or _instant(launch.get("started_at") if isinstance(launch, dict) else None)
+            if started is not None:
+                starts[observation] = started
+        if len(starts) == len(receipts):
+            retained[identity] = dict(sorted(receipts.items(), key=lambda item: starts[item[0]]))
     unique = {}
     for (attempt, phase), receipt in normal.items():
         for observation, interrupted in retained.pop((attempt, phase), {}).items():

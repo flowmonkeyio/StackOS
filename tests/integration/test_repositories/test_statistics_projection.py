@@ -138,6 +138,42 @@ def test_cancelled_current_and_archive_inputs_survive_each_projection_writer(
     assert durations[ticket.id].total_seconds == 1800
 
 
+def test_mixed_runtime_and_account_observations_keep_native_order_and_deduplicate(
+    session, project_id
+):
+    def receipt(index):
+        value = _receipt("review_agent", None, 10 * index)
+        value["launch"]["started_at"] = f"2026-11-22T00:00:0{index}Z"
+        value["execution"] = {"invocation_id": f"native-{index}"}
+        return value
+
+    first, runtime, account, current = [receipt(i) for i in range(1, 5)]
+    automatic = {
+        "attempt": 1,
+        "review": current,
+        "attempts": [{"attempt": 1, "review": deepcopy(current)}],
+        "runtime_interruptions": [
+            {"attempt": 1, "phase": "review", "receipt": runtime},
+            {"attempt": 1, "phase": "review", "receipt": deepcopy(first)},
+        ],
+        "account_interruptions": [
+            {"attempt": 1, "phase": "review", "receipt": first},
+            {"attempt": 1, "phase": "review", "receipt": account},
+        ],
+    }
+    # The same inventory supplies run_delivery's immediately preceding baseline.
+    receipts = stats.invocation_receipts({"automatic_delivery": automatic})
+    assert [r["execution"]["invocation_id"] for r in receipts] == [
+        f"native-{i}" for i in range(1, 5)
+    ]
+    _store(session, project_id, "mixed-interruptions", automatic)
+    original = TrackerRepository(session).agent_stats(project_id=project_id).totals
+    assert original.launch_attempts == 4 and original.reported_usage.total == 100
+    index.initialize_receipt_projection(session.connection())
+    session.commit()
+    assert TrackerRepository(session).agent_stats(project_id=project_id).totals == original
+
+
 def test_short_report_does_not_read_full_evidence(session: Session, project_id: int, monkeypatch):
     seed_statistics_workload(session, project_id, tasks=4, receipts=365)
     statements = []

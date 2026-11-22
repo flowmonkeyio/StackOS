@@ -1117,14 +1117,19 @@ no separate ledger or historical rewrite is involved. A receipt occurrence is
 identified by ticket, attempt number and phase; tracker-history copies are not
 additional invocations.
 
-Managed upgrade continuation also retains `automatic_delivery.upgrade_interruptions`
-observations. Those invocations keep their original attempt and phase. The shared
+Managed upgrade, account-switch and ordinary runtime continuation retain
+`automatic_delivery.upgrade_interruptions`, `account_interruptions` and
+`runtime_interruptions` observations. Those invocations keep their original
+attempt and phase. The shared
 receipt inventory includes each distinct interrupted invocation once alongside
 the resumed invocation; duplicate copies of an already current/archived invocation
 do not add work. The existing derived statistics index uses `observation_key` to
 distinguish these records, using the actual invocation ID when available and a
 source-list locator for incomplete observations. A locator never supplies a native
 ID, missing time or usage. Ordinary current/archive precedence remains unchanged.
+Known native start times order retained observations across interruption modes so
+resume selects the latest preceding invocation. Missing times stay missing and
+retain stable legacy observation order.
 The additive index migration rebuilds derived rows from canonical ticket evidence
 without rewriting attempts, sessions, candidates, usage or repair allowance. A
 downgrade refuses while distinct retained observations require the newer reader.
