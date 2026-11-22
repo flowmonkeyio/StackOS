@@ -1,11 +1,13 @@
 """Schedule setup delegates workflow decisions to a native project main agent."""
 
-from types import SimpleNamespace
+from dataclasses import replace
 
 import pytest
 from sqlmodel import select
 
 from stackos.db.models import AgentRequest, RunPlan, TrackerTask
+from stackos.host_mcp import service
+from stackos.host_mcp.result import HostMcpResult
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository, ScheduledJobRepository
 from stackos.repositories.workspaces import WorkspaceRepository
@@ -20,12 +22,30 @@ def bind_folder(session, project_id, root):
     ProjectRepository(session).update(project_id, primary_workspace_binding_id=binding.id)
 
 
+def _host_status(host_key, *, available=True, **_kwargs):
+    result = service.normalize_result(
+        HostMcpResult(
+            host_key,
+            "fixture",
+            "registered_current" if available else "absent",
+            "Ready" if available else "Install native host",
+            True,
+            available,
+        ),
+        service._definition_by_key(host_key).policy,
+    )
+    return replace(
+        result,
+        agent_execution={
+            **result.agent_execution,
+            "runnable": "available" if available else "unavailable",
+        },
+    )
+
+
 @pytest.fixture
 def native_ready(monkeypatch):
-    monkeypatch.setattr(
-        "stackos.host_mcp.service.inspect_host",
-        lambda *_a, **_k: SimpleNamespace(available=True, blocking=False, message="Ready"),
-    )
+    monkeypatch.setattr(service, "inspect_host", _host_status)
 
 
 @pytest.mark.parametrize("workflow", [None, "core.project-memory-review"])
@@ -78,10 +98,13 @@ def test_enabled_setup_gaps_are_actionable_without_creating_work(
         config["execution_json"] = {"project_dir": str(tmp_path / "old")}
     elif gap == "host":
         monkeypatch.setattr(
-            "stackos.host_mcp.service.inspect_host",
-            lambda *_a, **_k: SimpleNamespace(available=False, message="Install native host"),
+            service,
+            "inspect_host",
+            lambda *a, **k: _host_status(*a, available=False, **k),
         )
-    with pytest.raises((ValidationError, NotFoundError)):
+    with pytest.raises(
+        (ValidationError, NotFoundError), match="Install native host" if gap == "host" else None
+    ):
         ScheduledJobRepository(session).set(**config)
     for model in (AgentRequest, RunPlan, TrackerTask):
         assert session.exec(select(model)).all() == []

@@ -8,7 +8,7 @@ import pytest
 
 from stackos import install
 from stackos.host_mcp import service
-from stackos.host_mcp.adapters import antigravity
+from stackos.host_mcp.adapters import antigravity, antigravity_execution
 from stackos.host_mcp.bridge import resolve_bridge_command
 
 
@@ -17,7 +17,23 @@ def isolated_host(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     for name in ("STACKOS_STATE_DIR", "STACKOS_DATA_DIR", "STACKOS_PACKAGED_CLI"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: "/fixture/agy")
+    cli = tmp_path / "agy"
+    cli.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  --version) printf '1.5.14\\n' ;;\n"
+        "  models) printf 'gemini-4-neon-high\\tGemini 4 Neon High\\n' ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n"
+    )
+    cli.chmod(0o755)
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: str(cli))
+    # Both discovery consumers see each test's available/absent native edge.
+    monkeypatch.setattr(
+        antigravity_execution,
+        "resolve_antigravity_bin",
+        lambda: antigravity.resolve_antigravity_bin(),
+    )
     monkeypatch.setattr(antigravity, "token_preflight", lambda _: None)
     definition = next(d for d in service._definitions() if d.policy.host_key == "antigravity")
     monkeypatch.setattr(service, "_definitions", lambda: [definition])
@@ -53,6 +69,10 @@ def test_registration_installs_canonical_skill_and_preserves_user_settings(tmp_p
     result = service.register_host("antigravity", home=tmp_path)
 
     assert result.connection_state == "connected"
+    status = service.inspect_host("antigravity", home=tmp_path)
+    assert status.agent_execution["runnable"] == "available"
+    assert status.agent_execution["cli_version"] == "1.5.14"
+    assert status.agent_execution["models"] == ["gemini-4-neon-high"]
     assert install.stackos_skill_is_owned(root)
     assert install.stackos_skill_is_current(root)
     assert (root / "stackos/references/browser.md").is_file()
@@ -125,6 +145,7 @@ def test_absent_host_is_optional_and_does_not_install_assets(tmp_path, monkeypat
     monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: None)
     result = service.inspect_host("antigravity", home=tmp_path)
     assert result.connection_state == "unavailable" and not result.blocking
+    assert result.agent_execution["runnable"] == "unavailable"
     assert antigravity.register(tmp_path).status == "absent"
     assert not (tmp_path / ".gemini").exists()
 
