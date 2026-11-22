@@ -1139,7 +1139,9 @@ Claude, Grok and current Antigravity headless accounting require their native
 cache buckets to compute valid full input; an absent bucket cannot be assumed
 zero. For Antigravity, an incomplete usage-bearing completed step invalidates the invocation
 aggregate and its live/provisional measurements; valid authoritative terminal
-counters can restore measurement. Surviving steps alone cannot supply a full
+counters can restore measurement. Drained output after cancellation must also
+clear invalidated usage from final receipts. Stop continues to fence positive
+live updates and outcome acceptance. Surviving steps alone cannot supply a full
 invocation total. Missing optional thinking or reasoning never erases valid base usage.
 Codex and historical Gemini missing optional cache detail likewise preserves
 their already-inclusive input. Native arguments,

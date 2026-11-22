@@ -252,6 +252,52 @@ def test_native_incomplete_usage_invalidates_live_and_final_consumers(
     assert not service._active_invocations
 
 
+@pytest.mark.parametrize("usage_case", ["valid_prefix", "incomplete", "recovered"])
+def test_cancelled_native_drain_reconciles_usage(usage_case, tmp_path, monkeypatch):
+    events = (
+        documented_stream()[:-1]
+        if usage_case == "valid_prefix"
+        else incomplete_usage_stream(terminal_recovers=usage_case == "recovered")
+    )
+    executable_fixture(tmp_path, monkeypatch, events=events, pause=30)
+    observe_usage = service._observe_usage
+    observations, handoffs, retired = [], [], []
+
+    def observe(call, raw):
+        observe_usage(call, raw)
+        observations.append(call.projection())
+        if len(observations) == 1:
+            assert service.cancel_task_invocations(1, "fixture") == [call]
+            retired.append(service.retire_invocation(call))
+
+    monkeypatch.setattr(service, "_observe_usage", observe)
+    result = run_agent(
+        "antigravity",
+        tmp_path,
+        "complete instructions",
+        "assignment packet",
+        SCHEMA,
+        execution_scope=service.AgentExecutionScope(1, "fixture", "child", "worker", 1, "delivery"),
+        on_execution_change=lambda call, active: (
+            handoffs.append((call.projection(), service.provisional_usage(1)))
+            if not active
+            else None
+        ),
+    )
+    assert not result.ok and result.exit_code != 0
+    assert retired == ["stopped"] and not service._active_invocations
+    if usage_case == "incomplete":
+        assert observations[-1]["live_usage"] is None
+        assert result.usage is None
+        assert handoffs[0][0]["live_usage"] is None
+        assert handoffs[0][1] == {}
+    else:
+        expected = 420 if usage_case == "recovered" else 210
+        assert result.usage["snapshot"]["total"] == expected
+        assert handoffs[0][0]["live_usage"]["usage"]["measured"]["total"] == expected
+        assert handoffs[0][1][1, "child"][0][2]["measured"]["total"] == expected
+
+
 @pytest.mark.parametrize(
     "counts",
     [

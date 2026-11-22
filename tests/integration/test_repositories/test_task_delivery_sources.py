@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from stackos.host_mcp import service
 from stackos.host_mcp.adapters import claude_code, codex, grok
 from stackos.host_mcp.project_agents import ProjectAgentService
 from stackos.host_mcp.result import AgentRunResult
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.workspaces import WorkspaceRepository
@@ -25,6 +26,10 @@ from tests.integration.test_repositories.test_task_delivery import (
     git,
     stopped_review_fixture,
     use_codex_native,
+    workflow_task,
+)
+from tests.integration.test_repositories.test_task_delivery import (
+    native_task_session as native_task_session,
 )
 
 
@@ -173,6 +178,157 @@ def test_antigravity_registered_delivery_and_distinct_review(
             assert usage["measured"]["input"] == 90 * multiplier
             assert usage["measured"]["cache_read"] == 80 * multiplier
             assert usage["measured"]["total"] == 120 * multiplier
+
+
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+@pytest.mark.parametrize("usage_case", ["valid_prefix", "incomplete", "recovered"])
+def test_antigravity_stop_drains_usage_into_owned_receipt(
+    native_task_session, project_id, tmp_path, monkeypatch, phase, usage_case
+):
+    from stackos.host_mcp.adapters import antigravity_execution as native
+
+    session = native_task_session
+    repo = TrackerRepository(session)
+    roles = {
+        key: {
+            "name": key,
+            "instructions": "Owned native fixture",
+            "host_key": "antigravity",
+            "model": model,
+        }
+        for key, model in (
+            ("delivery_agent", "gemini-4-neon-high"),
+            ("review_agent", "claude-sonnet-5-5-low"),
+        )
+    }
+    repo.configure_delivery(project_id=project_id, delivery={"agents": roles})
+    plan_id = workflow_task(session, project_id)
+    task_key = f"workflow-{plan_id}"
+    git(tmp_path, "init")
+    candidate = commit(tmp_path, "Fixture baseline")
+    executable = tmp_path.parent / f"{tmp_path.name}-agy-fixture"
+    executable.write_text(
+        f"#!{sys.executable}\nimport json, os, sys, time\n"
+        "args = sys.argv[1:]\n"
+        "if '--version' in args: print('1.5.14'); sys.exit(0)\n"
+        "if args == ['models']:\n"
+        " print('gemini-4-neon-high\\tFixture\\nclaude-sonnet-5-5-low\\tFixture'); sys.exit(0)\n"
+        "text = args[args.index('--print') + 1]\n"
+        "packet = json.loads(text.split('\\nReturn only', 1)[0].rsplit('\\n\\n', 1)[-1])\n"
+        "phase = packet['phase']; sid = 'agy-' + phase\n"
+        "counts = {'input_tokens':100,'cache_read_tokens':80,"
+        "'output_tokens':30,'total_tokens':130}\n"
+        "events = [\n"
+        " {'event':'init','conversation_id':sid,'init':{'cwd':os.getcwd(),"
+        "'permission_mode':'proceed-in-sandbox'}},\n"
+        " {'event':'step_update','step_update':{'conversation_id':sid,'step_index':1,"
+        "'state':'DONE','step_type':'agent_response','usage':counts.copy()}}]\n"
+        f"cancel = phase == {phase!r}; case = {usage_case!r}\n"
+        "if cancel and case != 'valid_prefix':\n"
+        " bad = counts.copy(); bad.pop('cache_read_tokens')\n"
+        " events.append({'event':'step_update','step_update':{'conversation_id':sid,"
+        "'step_index':2,'state':'DONE','step_type':'agent_response','usage':bad}})\n"
+        "if not cancel or case != 'valid_prefix':\n"
+        " final = counts.copy()\n"
+        " if cancel and case == 'incomplete': final.pop('cache_read_tokens')\n"
+        " if cancel and case == 'recovered': final = {k:v*2 for k,v in final.items()}\n"
+        f" value = {generic_result(outputs={'commit_sha': candidate})!r}\n"
+        " events.append({'event':'result','result':{'conversation_id':sid,'status':'SUCCESS',"
+        "'structured_output':value,'usage':final}})\n"
+        "print('\\n'.join(map(json.dumps,events)),flush=True)\n"
+        "if cancel: time.sleep(30)\n"
+    )
+    executable.chmod(0o755)
+    callbacks, calls, cancelled, handoffs = {}, [], [], []
+    run_native = task_delivery.run_agent
+    observe_usage = service._observe_usage
+
+    def run(*args, **kwargs):
+        callback = kwargs["on_execution_change"]
+
+        def changed(call, active):
+            if active:
+                callbacks[call.invocation_id] = callback
+                calls.append(call.scope.phase)
+            callback(call, active)
+            if not active:
+                with Session(session.get_bind()) as reader:
+                    ticket = (
+                        TrackerRepository(reader)
+                        .brief(project_id=project_id, ticket_key="selected")
+                        .ticket
+                    )
+                    handoffs.append(
+                        ticket.completion_evidence_json["automatic_delivery"][call.scope.phase]
+                    )
+
+        return run_native(*args, **{**kwargs, "on_execution_change": changed})
+
+    def observe(call, raw):
+        observe_usage(call, raw)
+        if call.scope.phase == phase and not cancelled:
+            cancelled.append(call)
+            # Retain the valid prefix through both existing receipt writers.
+            callbacks[call.invocation_id](call, True)
+            with (
+                Session(session.get_bind()) as stopping,
+                pytest.raises(ConflictError, match="could not be confirmed"),
+            ):
+                task_delivery.abort_run_plan(
+                    stopping,
+                    run_plan_id=plan_id,
+                    project_id=project_id,
+                    reason="Owned fixture Stop during buffered native output",
+                )
+
+    monkeypatch.setattr(native, "resolve_antigravity_bin", lambda: str(executable))
+    monkeypatch.setattr(native, "default_home", lambda: tmp_path)
+    monkeypatch.setattr(service, "_observe_usage", observe)
+    monkeypatch.setattr(task_delivery, "run_agent", run)
+    scheduler = QueuedScheduler()
+    start(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan_id,
+        step_id="deliver",
+    )
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="selected").ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    assert cancelled, (ticket.blocker_reason, evidence.get("delivery", {}).get("error"))
+    receipt = evidence[phase]
+    assert ticket.status == "aborted"
+    assert receipt["cancelled"] is True and receipt["validated_outcome"] is None
+    assert receipt["exit_code"] != 0 and receipt["thread_id"] == f"agy-{phase}"
+    assert receipt["result"] is None and evidence["repair_count"] == 0
+    assert cancelled[0].process_control.retirement_status() == "stopped"
+    assert calls == (["delivery"] if phase == "delivery" else ["delivery", "review"])
+    if phase == "review":
+        assert evidence["delivery"]["validated_outcome"] == "success"
+        assert evidence["sessions"]["delivery"]["thread_id"] == "agy-delivery"
+    if usage_case == "incomplete":
+        assert receipt["usage"]["status"] == "unavailable"
+        assert receipt["usage"]["measured"] is None
+        assert receipt["execution"]["live_usage"] is None
+        assert "usage" not in handoffs[-1]
+        assert handoffs[-1]["execution"]["live_usage"] is None
+    else:
+        expected = 420 if usage_case == "recovered" else 210
+        assert receipt["usage"]["measured"]["total"] == expected
+        assert receipt["execution"]["live_usage"]["usage"]["measured"]["total"] == expected
+        assert handoffs[-1]["usage"]["measured"]["total"] == expected
+    expected_total = (210 if phase == "review" else 0) + (
+        0 if usage_case == "incomplete" else 420 if usage_case == "recovered" else 210
+    )
+    stats = repo.agent_stats(project_id=project_id).totals
+    assert stats.reported_usage.total == (expected_total or None)
+    assert stats.coverage.usage_unavailable_attempts == int(usage_case == "incomplete")
+    assert stats.coverage.usage_measured_attempts == len(calls) - int(usage_case == "incomplete")
+    assert service.provisional_usage(project_id) == {} and not service._active_invocations
 
 
 def test_retired_saved_gemini_defaults_require_reselection(session, project_id, tmp_path):

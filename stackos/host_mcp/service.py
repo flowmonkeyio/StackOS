@@ -1185,7 +1185,6 @@ def _observe_usage(call: ActiveInvocation, raw: dict[str, Any] | None) -> None:
         if (
             _active_invocations.get(call.invocation_id) is not call
             or call.finished
-            or call.cancelled.is_set()
             or call.session_error is not None
             or call.session_id is None
         ):
@@ -1195,12 +1194,13 @@ def _observe_usage(call: ActiveInvocation, raw: dict[str, Any] | None) -> None:
         )
         if usage["status"] != "measured":
             # Native completeness can be revoked after an earlier valid prefix.
+            # Drained output can revoke completeness even after cancellation.
             # Do not leave that subtotal in live or provisional receipt readers.
             call.usage = None
             call.measured_at = None
             call.samples.clear()
             return
-        if usage == call.usage:
+        if call.cancelled.is_set() or usage == call.usage:
             return
         call.usage = usage
         call.measured_at = datetime.now(UTC).isoformat()

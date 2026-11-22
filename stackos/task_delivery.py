@@ -3423,6 +3423,8 @@ def _record_execution_transition(
                     receipt["finished_at"] = call.finished_at
                 if call.usage is not None:
                     receipt["usage"] = deepcopy(call.usage)
+                elif not active:
+                    receipt.pop("usage", None)
                 repo.update_ticket(
                     project_id=call.scope.project_id,
                     ticket_key=call.scope.ticket_key,
@@ -3483,6 +3485,8 @@ def run_delivery(
                     receipt["finished_at"] = call.finished_at
                 if call.usage is not None:
                     receipt["usage"] = deepcopy(call.usage)
+                elif not active:
+                    receipt.pop("usage", None)
         _record_execution_transition(session_factory, call, active)
 
     ticket_key = None

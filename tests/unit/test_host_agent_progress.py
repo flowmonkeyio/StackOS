@@ -57,6 +57,36 @@ def call(pid=1, ticket="child", resumed=False):
     )
 
 
+@pytest.mark.parametrize("fence", ["owned", "replaced", "finished", "session_error", "no_session"])
+def test_cancelled_usage_invalidation_preserves_ownership_fences(fence):
+    invocation = call()
+    first = usage_snapshot("fixture", "invocation", 10, 1)
+    invocation.usage = normalize_usage(first, session_id="native", resumed=False)
+    invocation.measured_at = invocation.started_at
+    invocation.samples.append({"at": invocation.started_at, "total": 11})
+    invocation.cancelled.set()
+    service._active_invocations[invocation.invocation_id] = invocation
+    if fence == "replaced":
+        service._active_invocations[invocation.invocation_id] = call()
+    elif fence == "finished":
+        invocation.finished = True
+    elif fence == "session_error":
+        invocation.session_error = "foreign native identity"
+    elif fence == "no_session":
+        invocation.session_id = None
+    service._observe_usage(invocation, usage_snapshot("fixture", "invocation", 20, 2))
+    assert invocation.usage["measured"]["total"] == 11  # Stop still fences positive updates.
+    service._observe_usage(invocation, None)
+    if fence == "owned":
+        assert invocation.usage is None and invocation.measured_at is None
+        assert not invocation.samples
+        service._observe_usage(invocation, first)
+        assert invocation.usage is None
+    else:
+        assert invocation.usage["measured"]["total"] == 11
+        assert invocation.samples
+
+
 def counter(i, *, stamp=None):
     return (
         stamp or (datetime(2026, 11, 8, 1, tzinfo=UTC) + timedelta(seconds=i * 5)).isoformat(),
