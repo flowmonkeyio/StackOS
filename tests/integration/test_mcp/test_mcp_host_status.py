@@ -138,7 +138,9 @@ def test_console_subscription_snapshot_is_independent_and_allowlisted(mcp_client
     }
 
 
-@pytest.mark.parametrize("mode", ["success", "native-error", "malformed", "timeout"])
+@pytest.mark.parametrize(
+    "mode", ["success", "plan-unavailable", "native-error", "malformed", "timeout"]
+)
 def test_antigravity_native_command_reaches_console_independently(
     mcp_client, monkeypatch, tmp_path, mode
 ):
@@ -154,8 +156,24 @@ def test_antigravity_native_command_reaches_console_independently(
         payload["status"] = "ERROR"
     executable = tmp_path / "agy"
     marker = tmp_path / "argv.json"
+    plan_marker = tmp_path / "plan-call.json"
+    plan = "Antigravity Starter Quota" if mode == "success" else None
     executable.write_text(
-        f"#!{sys.executable}\nimport json, pathlib, sys, threading, time\n"
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, select, shlex, subprocess, sys, threading, time\n"
+        "if sys.argv[1:4] == ['--mode', 'plan', '--settings']:\n"
+        "    assert all(os.isatty(fd) for fd in (0, 1, 2))\n"
+        "    settings = json.loads(sys.argv[4])\n"
+        "    assert set(settings) == {'statusLine'}\n"
+        "    assert settings['statusLine']['enabled'] is True\n"
+        "    command = shlex.split(settings['statusLine']['command'])\n"
+        f"    state = {{'plan_tier': {plan!r}, 'email': 'private-identity-canary'}}\n"
+        "    observed = {'argv': sys.argv[1:4], 'cwd': os.getcwd(),\n"
+        "        'stdin_ready': bool(select.select([0], [], [], 0)[0])}\n"
+        f"    pathlib.Path({str(plan_marker)!r}).write_text(json.dumps(observed))\n"
+        "    subprocess.run(command, input=json.dumps(state), text=True, check=True)\n"
+        + ("    threading.Event().wait()\n" if mode == "success" else "")
+        + "    raise SystemExit(0)\n"
         # Reproduce legitimate startup latency before the command can report argv.
         + ("time.sleep(0.5)\n" if mode == "timeout" else "")
         + f"pathlib.Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]))\n"
@@ -220,9 +238,9 @@ def test_antigravity_native_command_reaches_console_independently(
     assert response.status_code == 200, response.text
     readings = response.json()["readings"]
     assert readings["codex"] == sibling
-    if mode == "success":
+    if mode in {"success", "plan-unavailable"}:
         assert readings["antigravity"] == {
-            "plan": None,
+            "plan": plan,
             "meters": [
                 {
                     "scope": "Gemini Models · Weekly",
@@ -240,9 +258,17 @@ def test_antigravity_native_command_reaches_console_independently(
         assert readings["antigravity"] is None
     argv = ["--print", "/usage", "--output-format", "json"]
     assert json.loads(marker.read_text()) == argv
-    assert len(processes) == 1
+    assert len(processes) == (2 if mode in {"success", "plan-unavailable"} else 1)
     assert processes[0].args == [str(executable), *argv]
-    assert processes[0].poll() is not None
+    assert all(process.poll() is not None for process in processes)
+    assert "private-identity-canary" not in response.text
+    if mode in {"success", "plan-unavailable"}:
+        observed = json.loads(plan_marker.read_text())
+        assert observed["argv"] == ["--mode", "plan", "--settings"]
+        assert observed["stdin_ready"] is False
+        assert not Path(observed["cwd"]).exists()
+    else:
+        assert not plan_marker.exists()
     if mode == "timeout":
         assert capture_results == [None]
         # The real owner terminated and reaped our hanging child.

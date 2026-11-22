@@ -11,6 +11,7 @@ from time import monotonic
 import pytest
 
 from stackos.host_mcp import service
+from stackos.host_mcp import subscription_antigravity as antigravity
 from stackos.host_mcp import subscription_native as native
 from stackos.host_mcp.subscription_codex import read_codex
 from stackos.host_mcp.subscription_grok import read_grok
@@ -31,8 +32,9 @@ def antigravity_usage():
     return payload
 
 
-def antigravity_read(monkeypatch, payload, returncode=0):
+def antigravity_read(monkeypatch, payload, returncode=0, plan=None):
     monkeypatch.setattr(service.antigravity, "resolve_antigravity_bin", lambda: "fake-agy")
+    monkeypatch.setattr(antigravity, "_read_plan", lambda *a, **kw: plan)
 
     def capture(binary, args, **kwargs):
         assert binary == "fake-agy"
@@ -59,6 +61,34 @@ def test_antigravity_registered_reader_preserves_both_native_groups(monkeypatch,
             },
         ],
     }
+
+
+def test_antigravity_plan_is_optional_and_uses_the_quota_read_deadline(
+    monkeypatch, antigravity_usage
+):
+    assert (
+        antigravity_read(monkeypatch, antigravity_usage, plan="Antigravity Starter Quota")["plan"]
+        == "Antigravity Starter Quota"
+    )
+    monkeypatch.setattr(antigravity, "monotonic", lambda: 100)
+    deadlines = []
+
+    def missing_plan(binary, *, deadline):
+        assert binary == "fake-agy"
+        deadlines.append(deadline)
+        return None
+
+    monkeypatch.setattr(antigravity, "_read_plan", missing_plan)
+    reading = service.subscription_readers()["antigravity"]()
+    assert reading["plan"] is None
+    assert len(reading["meters"]) == 2
+    assert deadlines == [112]
+
+    def failed_cleanup(*args, **kwargs):
+        raise OSError("Temporary cleanup unavailable")
+
+    monkeypatch.setattr(antigravity, "_read_plan", failed_cleanup)
+    assert service.subscription_readers()["antigravity"]() == reading
 
 
 @pytest.mark.parametrize("fraction", [0, 1, 0.375])

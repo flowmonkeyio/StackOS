@@ -39,7 +39,7 @@ describe('native account picker', () => {
   afterEach(() => { useToastsStore().clear(); globalThis.fetch = originalFetch; document.body.innerHTML = ''; vi.useRealTimers() })
 
   it('renders Antigravity native windows through the operation caller and retains unavailable state independently', async () => {
-    let reading: unknown = { plan: null, meters: [
+    let reading: unknown = { plan: 'Antigravity Starter Quota', meters: [
       { scope: 'Gemini Models · Weekly', remaining_percent: 0, resets_at: '2099-01-01T00:00:00Z' },
       { scope: 'Claude and GPT models · Weekly', remaining_percent: 25, resets_at: '2099-01-02T00:00:00Z' },
     ] }
@@ -54,11 +54,18 @@ describe('native account picker', () => {
       const card = () => wrapper.get('li[aria-label="Antigravity"]')
       expect(card().get('img').attributes('src')).toBe('/images/antigravity.png')
       expect(card().text()).toContain('Connected')
-      expect(card().text()).toContain('Plan unavailable')
+      expect(card().text()).toContain('Antigravity Starter Quota')
+      expect(card().text()).not.toContain('Plan unavailable')
       expect(card().findAll('[role="meter"]').map(meter => meter.attributes('aria-valuenow'))).toEqual(['100', '75'])
       expect(wrapper.findAllComponents(UiScoreMeter).map(meter => meter.props('tone'))).toEqual(['danger', 'warning'])
       expect(card().findAll('time').map(time => time.attributes('datetime'))).toEqual(['2099-01-01T00:00:00Z', '2099-01-02T00:00:00Z'])
       expect(card().find('[aria-haspopup="menu"]').exists()).toBe(false)
+      reading = { ...(reading as object), plan: null }
+      await store.load(true)
+      await wrapper.setProps({ subscriptions: store.subscriptions })
+      expect(card().text()).toContain('Plan unavailable')
+      expect(card().text()).not.toContain('Antigravity Starter Quota')
+      expect(card().findAll('[role="meter"]').map(meter => meter.attributes('aria-valuenow'))).toEqual(['100', '75'])
       reading = null
       await store.load(true)
       await wrapper.setProps({ subscriptions: store.subscriptions })

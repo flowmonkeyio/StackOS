@@ -211,8 +211,12 @@ window and its local reset time. Bars turn orange at 75% used and red at 95%.
 Returning to Overview within a minute reuses
 the last check. **Refresh** reads the native tools again. Antigravity reads
 `agy --print /usage --output-format json` and shows the reported Gemini Models
-and Claude and GPT models weekly windows. It has no reported plan, credits or
-email; **Plan unavailable** preserves that unknown. Failed, timed-out or malformed
+and Claude and GPT models weekly windows. Its optional plan name comes from
+the native status-line `plan_tier` metadata using a short terminal read with
+session-only settings, no model prompt, and no saved configuration changes.
+Both reads share the quota check's 12-second budget. If plan metadata is absent
+or fails, **Plan unavailable** preserves that unknown while quota bars remain
+usable. Account identity and credits are not included. Failed, timed-out or malformed
 quota reads show **Quota unavailable** and an **N/A** reset footer.
 Claude Desktop shows its MCP connection and Hermes shows its
 profile status. A missing quota reading does not affect the connection badge.
