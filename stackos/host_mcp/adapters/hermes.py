@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
+import tempfile
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -27,7 +29,14 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
+    HostMcpResult,
+    looks_secretish,
+    normalize_model_observation,
+    usage_snapshot,
+)
 
 HOST_KEY = "hermes"
 SURFACE = "profile-config"
@@ -62,51 +71,117 @@ def run_agent(
     cli = resolve_hermes_bin()
     if cli is None:
         return AgentRunResult(None, error="No Hermes CLI was found by host discovery.")
-    command = [
-        cli,
-        "--profile",
-        profile or "default",
-        "--in",
-        str(project_dir),
-        "chat",
-        "--oneshot",
-        "--query-file",
-        "-",
-        "--format",
-        "stream-json",
-        "--provider",
-        provider,
-        "--model",
-        model,
-    ]
-    if resume_thread_id is not None:
-        command += ["--resume", resume_thread_id]
-    return execute_json_agent(
-        command,
-        project_dir,
-        structured_prompt(instructions + "\n\n" + prompt, output_schema),
-        output_schema,
-        "Hermes",
-        _agent_result,
-        process_control=process_control,
-    )
-
-
-def _agent_result(stdout: str) -> AgentRunResult:
-    events = [json_object(line) for line in stdout.splitlines() if line.strip()]
-    if not events or events[-1].get("type") != "result":
-        raise ValueError("Hermes did not return a terminal result event")
-    value = events[-1]
-    if value.get("error") or value.get("exit_code") != 0:
-        return AgentRunResult(
-            0,
-            thread_id=value.get("session_id"),
-            error=str(value.get("error") or "Hermes turn did not complete."),
+    # The v0.23.3 -z contract prints only the final answer. Identity and native
+    # counters are terminal-only, in this invocation's private usage file.
+    with tempfile.TemporaryDirectory(prefix="stackos-hermes-") as directory:
+        usage_path = Path(directory) / "usage.json"
+        command = [
+            cli,
+            "--profile",
+            profile or "default",
+            "--in",
+            str(project_dir),
+            "-z",
+            structured_prompt(instructions + "\n\n" + prompt, output_schema),
+            "--usage-file",
+            str(usage_path),
+            "--provider",
+            provider,
+            "--model",
+            model,
+        ]
+        if resume_thread_id is not None:
+            command += ["--resume", resume_thread_id]
+        return execute_json_agent(
+            command,
+            project_dir,
+            "",
+            output_schema,
+            "Hermes",
+            lambda stdout: _agent_result(stdout, _read_usage_report(usage_path)),
+            process_control=process_control,
         )
+
+
+def _read_usage_report(path: Path) -> dict[str, Any]:
+    """Optional native evidence: never follow links, block on pipes or read unbounded data."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as report:
+            info = os.fstat(report.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 65536:
+                return {}
+            data = report.read(65537)
+        if len(data) > 65536:
+            return {}
+        return json_object(data.decode("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _agent_result(stdout: str, report: dict[str, Any] | None = None) -> AgentRunResult:
+    report = report or {}
+    session_id = report.get("session_id")
+    if not isinstance(session_id, str) or not session_id.strip() or looks_secretish(session_id):
+        session_id = None
+    model_observation = normalize_model_observation(
+        {
+            "status": "observed",
+            "model": report.get("model"),
+            "provider": report.get("provider"),
+            "session_id": session_id,
+            "source": "hermes.usage-file.v0.23.3",
+        },
+        session_id=session_id,
+        host_key=HOST_KEY,
+    )
+    # oneshot.py copies turn_finalizer's session_* main-loop counters.
+    # usage_pricing.CanonicalUsage defines cache buckets as additional input;
+    # reasoning is already included in output. Auxiliary totals have other scope.
+    counts = [
+        report.get(key)
+        for key in (
+            "input_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "output_tokens",
+            "total_tokens",
+        )
+    ]
+    usage = None
+    if session_id and all(type(count) is int and count >= 0 for count in counts):
+        usage = usage_snapshot(
+            "hermes.oneshot.main.v0.23.3",
+            "session",
+            sum(counts[:3]),
+            counts[3],
+            counts[4],
+            cache_read=counts[1],
+            cache_write=counts[2],
+            reasoning=report.get("reasoning_tokens"),
+        )
+    error = None
+    failures = [key for key in ("failed", "partial", "interrupted") if report.get(key)]
+    if report.get("completed") is False:
+        failures.append("completed=false")
+    if failures:
+        reason = report.get("failure") or report.get("turn_exit_reason") or "unknown reason"
+        error = f"Hermes turn did not complete ({', '.join(failures)}): {reason}"
+    result = None
+    try:
+        result = json_object(stdout)
+    except (ValueError, TypeError) as exc:
+        if not report:
+            # Let the common process boundary retain stderr launch/auth errors.
+            raise
+        error = error or f"Invalid Hermes result: {stdout.strip()[:4096] or exc}"
     return AgentRunResult(
         0,
-        thread_id=value.get("session_id"),
-        result=json_object(value["text"]),
+        thread_id=session_id,
+        result=result,
+        usage=usage,
+        model_observation=model_observation,
+        error=error,
     )
 
 

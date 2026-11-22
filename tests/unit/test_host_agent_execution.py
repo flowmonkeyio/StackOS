@@ -473,9 +473,9 @@ NATIVE_CASES = [
         "provider/model-id",
         "openrouter",
         {
-            "type": "result",
             "session_id": "native-thread",
-            "exit_code": 0,
+            "completed": True,
+            "failed": False,
             "text": '{"summary":"delivered"}',
         },
     ),
@@ -560,7 +560,7 @@ def test_native_exact_resume(project, monkeypatch, host, model, provider, envelo
         if host == "hermes":
             assert command[command.index("--provider") + 1] == provider
             assert command[command.index("--profile") + 1] == "work"
-        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope, command), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -713,13 +713,14 @@ def test_native_command_and_structured_result(
         elif host == "hermes":
             assert command[command.index("--provider") + 1] == provider
             assert command[command.index("--profile") + 1] == "work"
-            assert command[command.index("--query-file") + 1] == "-"
-            assert "--oneshot" in command
+            assert "Project instructions" in command[command.index("-z") + 1]
+            assert "--usage-file" in command
+            assert not {"chat", "--oneshot", "--query-file", "--format"}.intersection(command)
         elif host == "grok":
             assert "--no-auto-update" in command
             assert command[command.index("--sandbox") + 1] == "workspace"
             assert command[command.index("--permission-mode") + 1] == "auto"
-        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope, command), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -775,10 +776,14 @@ def test_normal_review_uses_native_permissions_and_review_schema(project, monkey
                 "structured_output": value,
             }
         else:
-            assert "--oneshot" in command
-            assert command[command.index("--format") + 1] == "stream-json"
-            envelope = {"type": "result", "exit_code": 0, "text": json.dumps(value)}
-        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
+            assert "-z" in command and "--usage-file" in command
+            assert "--format" not in command
+            envelope = {
+                "completed": True,
+                "session_id": "review-session",
+                "text": json.dumps(value),
+            }
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope, command), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     mode = service.agent_review_sandbox(host)
@@ -825,7 +830,7 @@ def test_native_review_controls(project, monkeypatch, host):
     [
         ("claude-code", {"is_error": True, "result": "Account has no model access"}),
         ("antigravity", {"error": {"message": "Account has no model access"}}),
-        ("hermes", {"type": "result", "exit_code": 1, "error": "Account has no model access"}),
+        ("hermes", {"failed": True, "failure": "Account has no model access"}),
         ("grok", {"error": "Account has no model access"}),
     ],
 )
@@ -840,7 +845,7 @@ def test_native_stdout_failure_stops_without_retry(project, monkeypatch, host, p
         if host in {"claude-code", "grok"}:
             native_payload = {**payload, "session_id": "failed", "sessionId": "failed"}
         return subprocess.CompletedProcess(
-            command, exit_code, messages_output(host, native_payload), ""
+            command, exit_code, messages_output(host, native_payload, command), ""
         )
 
     monkeypatch.setattr(subprocess, "run", execute)
@@ -1538,7 +1543,7 @@ def test_native_results_share_schema_validation(
         subprocess,
         "run",
         lambda command, **kw: subprocess.CompletedProcess(
-            command, 0, messages_output(host, value), ""
+            command, 0, messages_output(host, value, command), ""
         ),
     )
     result = run_agent(

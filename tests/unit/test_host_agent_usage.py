@@ -17,6 +17,237 @@ from stackos.host_mcp.result import normalize_usage, usage_snapshot
 from tests.helpers.native_messages import messages_output
 
 SCHEMA = {"type": "object", "required": ["summary"]}
+# Synthetic v0.23.3 --usage-file fields, checked against official producers:
+# https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/oneshot.py
+# https://github.com/NousResearch/hermes-agent/blob/v0.23.3/agent/turn_finalizer.py
+# https://github.com/NousResearch/hermes-agent/blob/v0.23.3/agent/usage_pricing.py
+# No runnable Hermes binary is available locally; these are protocol fixtures.
+HERMES_0233 = {
+    "session_id": "hermes-session",
+    "model": "observed/model",
+    "provider": "openrouter",
+    "completed": True,
+    "failed": False,
+    "partial": False,
+    "interrupted": False,
+    "turn_exit_reason": "completed",
+    "input_tokens": 10,
+    "cache_read_tokens": 80,
+    "cache_write_tokens": 10,
+    "output_tokens": 50,
+    "reasoning_tokens": 20,
+    "total_tokens": 150,
+    "auxiliary": {"input_tokens": 999, "output_tokens": 999, "total_tokens": 1998},
+    "total_including_auxiliary": {"total_tokens": 2148},
+}
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "exit", "partial", "failed", "interrupted", "incomplete", "text", "schema"]
+)
+def test_hermes_0233_result_and_usage_survive_failures(tmp_path, monkeypatch, fault):
+    report = dict(HERMES_0233)
+    if fault in {"partial", "failed", "interrupted"}:
+        report[fault] = True
+    if fault == "incomplete":
+        report["completed"] = False
+    paths = []
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
+
+    def execute(command, **kwargs):
+        assert command[command.index("--profile") + 1] == "work"
+        assert command[command.index("--provider") + 1] == "openrouter"
+        assert command[command.index("--model") + 1] == "selected/model"
+        assert "Role" in command[command.index("-z") + 1]
+        assert "Work" in command[command.index("-z") + 1]
+        assert not {"--query-file", "--format", "--yolo", "chat"}.intersection(command)
+        path = Path(command[command.index("--usage-file") + 1])
+        paths.append(path)
+        assert path.parent.stat().st_mode & 0o777 == 0o700
+        assert not path.exists()
+        path.write_text(json.dumps(report))
+        text = "bad JSON" if fault == "text" else "{}" if fault == "schema" else '{"summary":"OK"}'
+        return subprocess.CompletedProcess(command, 2 if fault == "exit" else 0, text, "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        "hermes",
+        tmp_path,
+        "Role",
+        "Work",
+        SCHEMA,
+        model="selected/model",
+        provider="openrouter",
+        profile="work",
+    )
+    assert result.ok is (fault is None)
+    if fault in {"partial", "failed", "interrupted", "incomplete"}:
+        assert ("completed=false" if fault == "incomplete" else fault) in result.error
+    assert result.exit_code == (2 if fault == "exit" else 0)
+    assert result.thread_id == "hermes-session"
+    assert result.model_observation == {
+        "status": "observed",
+        "source": "hermes.usage-file.v0.23.3",
+        "session_id": "hermes-session",
+        "model": "observed/model",
+        "provider": "openrouter",
+    }
+    assert result.usage == usage_snapshot(
+        "hermes.oneshot.main.v0.23.3",
+        "session",
+        100,
+        50,
+        150,
+        cache_read=80,
+        cache_write=10,
+        reasoning=20,
+    )
+    assert len(paths) == 1 and not paths[0].parent.exists()
+
+
+@pytest.mark.parametrize("fault", ["missing", "malformed", "array", "oversized", "symlink", "fifo"])
+def test_hermes_optional_report_is_bounded_owned_and_unknown(tmp_path, monkeypatch, fault):
+    import os
+
+    foreign = tmp_path / "foreign.json"
+    foreign.write_text(json.dumps(HERMES_0233))
+    paths = []
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
+
+    def execute(command, **kwargs):
+        path = Path(command[command.index("--usage-file") + 1])
+        paths.append(path)
+        if fault == "malformed":
+            path.write_text("{")
+        elif fault == "array":
+            path.write_text("[]")
+        elif fault == "oversized":
+            path.write_text(" " * 65537 + json.dumps(HERMES_0233))
+        elif fault == "symlink":
+            path.symlink_to(foreign)
+        elif fault == "fifo":
+            os.mkfifo(path)
+        return subprocess.CompletedProcess(command, 0, '{"summary":"OK"}', "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        "hermes", tmp_path, "Role", "Work", SCHEMA, model="model", provider="openrouter"
+    )
+    assert result.ok
+    assert result.usage is None and result.thread_id is None and result.model_observation is None
+    assert not paths[0].parent.exists()
+    assert json.loads(foreign.read_text()) == HERMES_0233
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("input_tokens", None),
+        ("output_tokens", -1),
+        ("cache_read_tokens", True),
+        ("cache_write_tokens", "10"),
+        ("total_tokens", 50),
+    ],
+)
+def test_hermes_malformed_counters_do_not_invent_zero(field, value):
+    result = hermes._agent_result('{"summary":"OK"}', {**HERMES_0233, field: value})
+    assert result.usage is None
+    assert result.thread_id == "hermes-session" and result.result == {"summary": "OK"}
+
+
+@pytest.mark.parametrize("failure", ["launch", "exit"])
+def test_hermes_failure_without_report_stays_failed_and_cleans(tmp_path, monkeypatch, failure):
+    paths = []
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
+
+    def execute(command, **kwargs):
+        paths.append(Path(command[command.index("--usage-file") + 1]))
+        if failure == "launch":
+            raise OSError("fixture launch unavailable")
+        return subprocess.CompletedProcess(command, 2, '{"summary":"OK"}', "fixture failure")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        "hermes", tmp_path, "Role", "Work", SCHEMA, model="model", provider="openrouter"
+    )
+    assert not result.ok and result.error
+    assert result.exit_code == (None if failure == "launch" else 2)
+    assert result.usage is None and result.thread_id is None
+    assert len(paths) == 1 and not paths[0].parent.exists()
+
+
+def test_hermes_owned_process_reaches_final_receipt_and_exact_resume(tmp_path, monkeypatch):
+    import sys
+
+    from stackos.host_mcp import service
+    from stackos.repositories.tracker.agent_stats import _model_identity
+    from stackos.repositories.tracker.receipt_projection import receipt_input
+
+    native = tmp_path / "hermes-fixture"
+    output_paths = tmp_path / "paths.jsonl"
+    native.write_text(
+        f"#!{sys.executable}\nimport json, sys\nfrom pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "assert '-z' in args and '--usage-file' in args\n"
+        f"report = {HERMES_0233!r}\n"
+        "if '--resume' in args:\n"
+        " assert args[args.index('--resume')+1] == report['session_id']\n"
+        " for k in ('input_tokens','output_tokens','total_tokens','cache_read_tokens',"
+        "'cache_write_tokens','reasoning_tokens'): report[k] *= 2\n"
+        "path = Path(args[args.index('--usage-file')+1])\n"
+        f"with open({str(output_paths)!r}, 'a') as log: log.write(str(path)+'\\n')\n"
+        'path.write_text(json.dumps(report))\nprint(\'{"summary":"OK"}\')\n'
+    )
+    native.chmod(0o700)
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: str(native))
+    previous = None
+    measured = []
+    receipts = []
+    for resumed in (False, True):
+        result = service.run_agent(
+            "hermes",
+            tmp_path,
+            "Role",
+            "Work",
+            SCHEMA,
+            model="selected/model",
+            provider="openrouter",
+            profile="work",
+            resume_thread_id="hermes-session" if resumed else None,
+            execution_scope=service.AgentExecutionScope(
+                1, "fixture-task", "fixture-ticket", "role"
+            ),
+            previous_usage=previous,
+            on_execution_change=lambda call, live: (
+                receipts.append(call.projection()) if not live else None
+            ),
+        )
+        assert result.ok, result.error
+        assert result.model_observation["model"] == "observed/model"
+        assert result.model_observation["provider"] == "openrouter"
+        previous = normalize_usage(
+            result.usage, session_id=result.thread_id, resumed=resumed, previous=previous
+        )
+        measured.append(previous["measured"]["total"])
+        receipt = receipt_input(
+            {
+                "launch": {"host_key": "hermes", "model": "selected/model"},
+                "thread_id": result.thread_id,
+                "model_observation": result.model_observation,
+                "execution": receipts[-1],
+                "usage": previous,
+            }
+        )
+        assert receipt["model_observation"]["provider"] == "openrouter"
+        assert _model_identity(receipt) == ("observed/model", "observed")
+        assert receipt["usage"]["measured"]["total"] == 150
+    assert measured == [150, 150]
+    assert all(row["model_observation"]["model"] == "observed/model" for row in receipts)
+    paths = [Path(line) for line in output_paths.read_text().splitlines()]
+    assert len(paths) == 2 and paths[0] != paths[1]
+    assert all(not path.parent.exists() for path in paths)
+
+
 # Minimal native counters captured 2026-11-06 in the approved usage probe.
 # Session IDs and response text are synthetic; no transcript is retained.
 CODEX_0167 = [

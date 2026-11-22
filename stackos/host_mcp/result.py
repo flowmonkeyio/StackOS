@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from jsonschema import ValidationError, validate
 
 AgentSandbox = Literal["read-only", "workspace-write", "normal"]
-ModelObservationSource = Literal["codex.turn_context", "claude.messages", "grok.messages"]
+ModelObservationSource = Literal[
+    "codex.turn_context", "claude.messages", "grok.messages", "hermes.usage-file.v0.23.3"
+]
 
 
 class ModelObservation(TypedDict):
@@ -24,6 +26,7 @@ class ModelObservation(TypedDict):
     model: str | None
     source: ModelObservationSource
     session_id: str
+    provider: NotRequired[str]
 
 
 def normalize_model_observation(
@@ -34,6 +37,7 @@ def normalize_model_observation(
         "codex": "codex.turn_context",
         "claude-code": "claude.messages",
         "grok": "grok.messages",
+        "hermes": "hermes.usage-file.v0.23.3",
     }
     if (
         not isinstance(value, dict)
@@ -54,12 +58,21 @@ def normalize_model_observation(
             return None
     elif model is not None:
         return None
-    return {
+    observation: ModelObservation = {
         "status": value["status"],
         "model": model,
         "source": sources[host_key],
         "session_id": session_id,
     }
+    if host_key == "hermes":
+        provider = value.get("provider")
+        if (
+            isinstance(provider, str)
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,199}", provider)
+            and not looks_secretish(provider)
+        ):
+            observation["provider"] = provider
+    return observation
 
 
 @dataclass(frozen=True)

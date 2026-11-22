@@ -865,6 +865,14 @@ or sibling skills. StackOS uses Hermes's documented `-p/--profile`,
 contracts; default-profile operations explicitly target `-p default` rather
 than inheriting the user's active-profile preference.
 
+Automated Hermes execution targets the documented v0.23.3 `-z` final-answer and
+`--usage-file` report contract. Provider/model/profile selections and native
+approvals remain in force. The report supplies terminal session/model/provider
+and main-loop usage; early identity and live usage are unavailable on this path.
+Missing exact-resume identity stops continuation. See the
+[native usage contract](task-tracker.md#native-usage-receipts)
+for scope, missing-report handling and the protocol-fixture proof limitation.
+
 The upstream product contracts are OpenAI's
 [shared ChatGPT/Codex plugin directory](https://learn.chatgpt.com/docs/plugins)
 and Hermes's

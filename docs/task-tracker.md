@@ -1121,7 +1121,7 @@ Current native usage contracts (and retained historical Gemini provenance):
 | Claude Code / `claude.model-usage.v2.1` | The [Agent SDK cost-tracking contract](https://code.claude.com/docs/en/agent-sdk/cost-tracking#accumulate-costs-across-multiple-calls) defines a version boundary for `claude -p`: stable 2.1 releases before 2.1.277 report per-invocation `modelUsage`; 2.1.277+ restore session totals on resume. A bounded `--version` probe of the same selected executable establishes the basis. Unknown, prerelease, unsupported-series or failed version probes leave usage unavailable and preserve execution. Sum models' input, cache-read and cache-creation counts for input, plus output for total. The narrower main-loop `usage` is not a fallback. Missing counters and potentially zeroed crash results are unavailable. |
 | Antigravity / `antigravity.headless` | The [native headless contract](https://antigravity.google/docs/cli/headless/) and owned agy 1.5.14 fresh/resume capture (2026-11-22) supply per-step counters and cumulative terminal counters. Captured native input/total exclude cache reads (a step reports input 2184 and cache 9821); full input is `input_tokens + cache_read_tokens`, and total adds output. Require valid native input/output/cache counters and native total equal to input plus output; thinking is already included in output. Fresh processes prefer valid terminal usage, otherwise sum distinct completed step indexes once; never add step and terminal totals. Resumed usage remains unavailable without a verified exact-session pre-invocation native baseline; neither the first post-work event nor an old StackOS receipt supplies one. Historical `antigravity.fresh-process` receipts retain their original accounting provenance. |
 | Gemini CLI (historical) / `gemini.models` | Retained receipts from the retired host used [headless JSON](https://google-gemini.github.io/gemini-cli/docs/cli/headless.html) `stats.models` and [telemetry hydration](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/telemetry/uiTelemetry.ts) on resume. Input is prompt (already includes cached), output is candidates plus thoughts plus tool; total must match their sum. No active Gemini runner remains and historical usage is not rewritten. |
-| Hermes / unavailable | The [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) does not prove a usage report compatible with the integrated `chat --oneshot` command. No telemetry flag is appended. |
+| Hermes / `hermes.oneshot.main.v0.23.3` | The documented [`-z --usage-file` contract](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/website/docs/reference/cli-commands.md#hermes--z-prompt--scripted-one-shot) returns final answer text on stdout and a separate terminal report. The [producer](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/agent/turn_finalizer.py) copies main-loop session counters; [native arithmetic](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/agent/usage_pricing.py) makes full input `input_tokens + cache_read_tokens + cache_write_tokens`, plus output for total. Reasoning is a subset of output. Matching resumed session snapshots use the existing delta rules; a missing baseline stays unavailable. Auxiliary usage and `total_including_auxiliary` have different scope and are excluded. This is versioned protocol-fixture proof, not live Hermes certification. |
 | Grok / `grok.headless` | Native `--output-format json` reports invocation usage, verified with CLI 1.0.77 fresh/resume captures and the [headless contract](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md#json). Full input is `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`; output already includes `reasoning_tokens`. Require all counters and a matching `total_tokens`. The captured calls contribute 15709 and 15796 (31505 total). Do not add `modelUsage` again or apply this arithmetic to persisted session `inputTokens`, which already includes cache. Missing, malformed or explicitly incomplete native usage remains unavailable; agent-authored usage is ignored. |
 
 Native detail mappings (same scope and basis as their parent counters):
@@ -1133,7 +1133,25 @@ Native detail mappings (same scope and basis as their parent counters):
 | Grok | `usage.cache_read_input_tokens` | `usage.cache_creation_input_tokens` | `usage.reasoning_tokens` |
 | Antigravity (fresh only) | `usage.cache_read_tokens` | Unavailable | `usage.thinking_tokens`, already included in output |
 | Gemini CLI (historical) | Sum `stats.models.*.tokens.cached`, only when every model reports a valid subset of its prompt | Unavailable | Sum `stats.models.*.tokens.thoughts`, already included in output; nested roles are not added |
-| Hermes | Unavailable | Unavailable | Unavailable |
+| Hermes (main loop) | `cache_read_tokens` | `cache_write_tokens` | `reasoning_tokens`, already included in output |
+
+Hermes uses the selected provider/model and explicit profile (defaulting to
+`default`), with native approvals intact. Each invocation owns a private temporary
+directory for its report, reads at most 64 KiB from a regular non-symlink file,
+then removes it. Missing, corrupt, oversized or unsafe reports leave usage and
+identity unknown; they do not manufacture zero counters. Session, native model
+and provider observations come only from this report, never the agent's answer
+or requested selection. Native model/provider observations use source
+`hermes.usage-file.v0.23.3` in the existing receipt contract.
+
+This one-shot path has no early-session or live-usage observation. If interrupted
+before a report exists, StackOS cannot invent a resumable identity. An exact
+resume with a missing or different observed session fails without a fresh retry.
+Nonzero process exits, `failed`, `partial`, `interrupted`, and `completed: false`
+remain failures even when stdout contains valid structured output. Valid counters
+and identity survive result/schema or native failure for accounting and diagnosis.
+No Hermes installation, login, account switch, private session-file synthesis or
+replacement result store is involved; optional local absence leaves other hosts usable.
 
 Claude and Grok managed calls consume native Messages streams (`stream-json
 --verbose` and `streaming-messages-json`, respectively). Only the native

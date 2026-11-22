@@ -430,6 +430,12 @@ def _finish(
             resume_thread_id is None or result.thread_id == resume_thread_id
         ):
             call.thread_id = call.thread_id or result.thread_id
+            if result.model_observation is not None:
+                call.model_observation = normalize_model_observation(
+                    result.model_observation,
+                    session_id=result.thread_id,
+                    host_key=call.host_key,
+                )
             final = normalize_usage(
                 result.usage,
                 session_id=result.thread_id,
@@ -1741,6 +1747,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                         "Explicit provider/model; native approvals retained. "
                         "Review uses normal native permissions with review-only instructions; "
                         "no enforced read-only isolation. "
+                        "One-shot usage-file identity/model/provider and main-loop session usage "
+                        "are terminal-only; no early identity or live usage. "
                         "Installed shims may not be runnable."
                     ),
                     sources=(
