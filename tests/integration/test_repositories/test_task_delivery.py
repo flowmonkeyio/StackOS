@@ -4690,6 +4690,153 @@ def test_operator_adopts_legacy_dirty_work_without_replacing_original_baseline(t
             task_delivery._launch_baseline(str(tmp_path), key, evidence, phase, native)
 
 
+@pytest.mark.parametrize("host", ["claude-code", "grok"])
+def test_messages_native_identity_resume_usage_and_rebuilt_statistics(
+    native_task_session, project_id, tmp_path, tmp_path_factory, monkeypatch, host
+):
+    """Real Messages process -> durable role session -> resume -> canonical reader."""
+    from sqlalchemy import delete
+
+    from stackos import task_delivery
+    from stackos.db.models import TrackerReceiptProjection, TrackerTicket
+    from stackos.host_mcp import service
+    from stackos.host_mcp.adapters import claude_code, grok
+    from stackos.repositories.tracker.receipt_projection import sync_receipt_projection
+
+    session = native_task_session
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Messages")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 2}}},
+    )
+    scratch = tmp_path_factory.mktemp("messages-native")
+    gate, calls_path = scratch / "release", scratch / "calls.json"
+    executable = scratch / "native"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import json,sys,time\nfrom pathlib import Path\n"
+        "if '--version' in sys.argv: print('2.1.330'); sys.exit(0)\n"
+        "text = (sys.argv[sys.argv.index('--single')+1] "
+        "if '--single' in sys.argv else sys.stdin.read())\n"
+        "packet = json.JSONDecoder().raw_decode(text)[0]\nphase = packet['phase']\n"
+        f"calls_path = Path({str(calls_path)!r})\n"
+        "calls = json.loads(calls_path.read_text()) if calls_path.exists() else []\n"
+        "resumed = sys.argv[sys.argv.index('--resume')+1] if '--resume' in sys.argv else None\n"
+        "calls.append([phase,resumed]); calls_path.write_text(json.dumps(calls))\n"
+        "sid = 'messages-' + phase\n"
+        "print(json.dumps({'type':'system','subtype':'init','session_id':sid,"
+        "'model':'native-observed'}),flush=True)\n"
+        "if len(calls)==1:\n"
+        f" gate=Path({str(gate)!r})\n"
+        " while not gate.exists(): time.sleep(.01)\n sys.exit(3)\n"
+        "count = 150 if len(calls)==3 else 100\n"
+        "outcome={'status':'blocked' if len(calls)==2 else 'success','summary':'Checked',"
+        "'outputs':'{}','followups':[]}\n"
+        "print(json.dumps({'type':'result','subtype':'success','session_id':sid,"
+        "'stop_reason':'end_turn','is_error':False,'structured_output':outcome,"
+        "'result':json.dumps(outcome),'usage':{'input_tokens':count,"
+        "'cache_read_input_tokens':0,'cache_creation_input_tokens':0,'output_tokens':0},"
+        "'modelUsage':{'native-observed':{'inputTokens':count,'cacheReadInputTokens':0,"
+        "'cacheCreationInputTokens':0,'outputTokens':0}}}),flush=True)\n"
+    )
+    executable.chmod(0o700)
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: str(executable))
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _: str(executable))
+    monkeypatch.setattr(
+        service,
+        "execution_catalog",
+        lambda definition, **_: {**service.asdict(definition.policy.agent_execution)},
+    )
+    monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
+    announced = Event()
+    attach = service._attach_session
+
+    def attached(*args, **kwargs):
+        attach(*args, **kwargs)
+        announced.set()
+
+    monkeypatch.setattr(service, "_attach_session", attached)
+    scheduler = QueuedScheduler()
+
+    def handoff():
+        submit(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            host_key=host,
+            delivery_agent={"name": "builder", "host_key": host, "instructions": "Build"},
+            review_agent={"name": "reviewer", "host_key": host, "instructions": "Review"},
+        )
+
+    handoff()
+    with ThreadPoolExecutor(1) as pool:
+        work = pool.submit(scheduler.run)
+        try:
+            assert announced.wait(10)
+            with Session(session.get_bind()) as reader:
+                early = (
+                    TrackerRepository(reader)
+                    .brief(project_id=project_id, ticket_key="first")
+                    .ticket.completion_evidence_json["automatic_delivery"]
+                )
+            retained = deepcopy(early["sessions"]["delivery"])
+            assert retained["thread_id"] == "messages-delivery"
+            assert early["repair_count"] == 2 and "exit_code" not in early["delivery"]
+            assert not work.done()
+        finally:
+            gate.touch()
+        work.result(timeout=10)
+    # Explicit fixture-only recovery; production task lifecycle is untouched.
+    for _ in range(2):
+        repo.update_ticket(
+            project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
+        )
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"status": "not-started", "blocker_reason": None},
+        )
+        handoff()
+        scheduler.run()
+        session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    assert ticket.status == "complete", ticket.outcome
+    assert evidence["repair_count"] == 2
+    assert evidence["sessions"]["delivery"] == retained
+    assert evidence["sessions"]["review"]["thread_id"] == "messages-review"
+    assert json.loads(calls_path.read_text()) == [
+        ["delivery", None],
+        ["delivery", "messages-delivery"],
+        ["delivery", "messages-delivery"],
+        ["review", None],
+    ]
+    assert evidence["delivery"]["model_observation"]["model"] == "native-observed"
+    assert evidence["delivery"]["usage"]["measured"]["total"] == (
+        50 if host == "claude-code" else 150
+    )
+    expected = 150 if host == "claude-code" else 350
+
+    def check_statistics():
+        rows = repo.agent_stats(project_id=project_id, group_by="model").rows
+        row = next(row for row in rows if row.model == "native-observed")
+        assert row.model_basis == "observed"
+        assert row.reported_usage.total == expected
+
+    check_statistics()
+    session.execute(delete(TrackerReceiptProjection))
+    for recorded in session.exec(select(TrackerTicket)).all():
+        sync_receipt_projection(
+            session.connection(), recorded.id, recorded.completion_evidence_json
+        )
+    session.commit()
+    check_statistics()
+
+
 def test_observed_model_native_to_live_final_resume_and_rebuilt_statistics(
     session, project_id, tmp_path, tmp_path_factory, monkeypatch
 ):
@@ -8345,13 +8492,15 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
     + [("codex", "native-success"), ("codex", "native-blocked"), ("codex", "handoff")],
 )
 def test_native_collector_failure_persists_session_and_available_usage(
-    session, project_id, tmp_path, monkeypatch, host, fault
+    native_task_session, project_id, tmp_path, monkeypatch, host, fault
 ):
     """Actual native adapter -> normalizer -> tracker receipt on failed output."""
     from stackos import task_delivery
     from stackos.host_mcp import progress
     from stackos.host_mcp.adapters import codex, grok
+    from tests.helpers.native_messages import messages_output
 
+    session = native_task_session
     if fault == "handoff":
         transition = task_delivery._record_execution_transition
 
@@ -8391,7 +8540,8 @@ def test_native_collector_failure_persists_session_and_available_usage(
                 events.append({"type": "turn.failed", "error": "denied"})
             stdout = "\n".join(map(json.dumps, events))
         else:
-            stdout = json.dumps(
+            stdout = messages_output(
+                "grok",
                 {
                     "sessionId": "native-session",
                     "stopReason": "end_turn",
@@ -8405,7 +8555,7 @@ def test_native_collector_failure_persists_session_and_available_usage(
                         "reasoning_tokens": 52,
                         "total_tokens": 15709,
                     },
-                }
+                },
             )
         return subprocess.CompletedProcess(command, int(native_failure), stdout, "")
 
@@ -8413,36 +8563,21 @@ def test_native_collector_failure_persists_session_and_available_usage(
 
     real_popen = subprocess.Popen
 
-    class NativeProcess:
-        def __init__(self, command, **kwargs):
-            self.command = command
-            self.returncode = None
-            # Keep the simulated Grok response, but back ownership/retirement
-            # with a real harmless child instead of an incomplete Popen double.
-            self._owned = real_popen(
-                [sys.executable, "-c", f"raise SystemExit({int(native_failure)})"]
+    def spawn(command, **kwargs):
+        if command[0] == "/fake/grok":
+            completed = execute(command)
+            return real_popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; "
+                    f"sys.stdout.write({completed.stdout!r}); sys.exit({completed.returncode})",
+                ],
+                **kwargs,
             )
-            self.pid = self._owned.pid
+        return real_popen(command, **kwargs)
 
-        def poll(self):
-            self.returncode = self._owned.poll()
-            return self.returncode
-
-        def communicate(self, prompt):
-            self._owned.wait(timeout=3)
-            completed = execute(self.command, input=prompt)
-            self.returncode = completed.returncode
-            return completed.stdout, completed.stderr
-
-    monkeypatch.setattr(
-        subprocess,
-        "Popen",
-        lambda command, **kwargs: (
-            NativeProcess(command, **kwargs)
-            if command[0] == "/fake/grok"
-            else real_popen(command, **kwargs)
-        ),
-    )
+    monkeypatch.setattr(subprocess, "Popen", spawn)
 
     def stream(command, *, on_session, **kwargs):
         on_session("native-session")

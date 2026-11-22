@@ -12,6 +12,7 @@ import pytest
 from stackos.host_mcp import AgentRunResult, run_agent, service
 from stackos.host_mcp.adapters import antigravity_execution, claude_code, codex, grok, hermes
 from stackos.host_mcp.result import validate_agent_result
+from tests.helpers.native_messages import messages_output
 
 
 @pytest.mark.parametrize("resume", [None, "exact-thread"])
@@ -53,6 +54,8 @@ def test_setup_reasoning_reaches_native_command(
                     "text": '{"summary":"checked"}',
                 }
             )
+        if host in {"claude-code", "grok"}:
+            output = messages_output(host, json.loads(output))
         return subprocess.CompletedProcess(command, 0, output, "")
 
     monkeypatch.setattr(subprocess, "run", execute)
@@ -67,7 +70,7 @@ def test_setup_reasoning_reaches_native_command(
         resume_thread_id=resume,
     )
     assert result.ok, result.error
-    command = calls[0]
+    command = next(command for command in calls if "--version" not in command)
     assert command[command.index("--model") + 1] == model
     if host == "codex":
         assert f'model_reasoning_effort="{effort}"' in command
@@ -557,7 +560,7 @@ def test_native_exact_resume(project, monkeypatch, host, model, provider, envelo
         if host == "hermes":
             assert command[command.index("--provider") + 1] == provider
             assert command[command.index("--profile") + 1] == "work"
-        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -716,7 +719,7 @@ def test_native_command_and_structured_result(
             assert "--no-auto-update" in command
             assert command[command.index("--sandbox") + 1] == "workspace"
             assert command[command.index("--permission-mode") + 1] == "auto"
-        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -775,7 +778,7 @@ def test_normal_review_uses_native_permissions_and_review_schema(project, monkey
             assert "--oneshot" in command
             assert command[command.index("--format") + 1] == "stream-json"
             envelope = {"type": "result", "exit_code": 0, "text": json.dumps(value)}
-        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     mode = service.agent_review_sandbox(host)
@@ -811,7 +814,7 @@ def test_native_review_controls(project, monkeypatch, host):
         else:
             assert command[command.index("--sandbox") + 1] == "read-only"
             envelope = NATIVE_CASES[3][3]
-        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     assert run_agent(host, project, "Review", "packet", SCHEMA, sandbox="read-only").ok
@@ -833,7 +836,12 @@ def test_native_stdout_failure_stops_without_retry(project, monkeypatch, host, p
 
     def execute(command, **kwargs):
         calls.append(command)
-        return subprocess.CompletedProcess(command, exit_code, json.dumps(payload), "")
+        native_payload = payload
+        if host in {"claude-code", "grok"}:
+            native_payload = {**payload, "session_id": "failed", "sessionId": "failed"}
+        return subprocess.CompletedProcess(
+            command, exit_code, messages_output(host, native_payload), ""
+        )
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -1529,7 +1537,9 @@ def test_native_results_share_schema_validation(
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda command, **kw: subprocess.CompletedProcess(command, 0, json.dumps(value), ""),
+        lambda command, **kw: subprocess.CompletedProcess(
+            command, 0, messages_output(host, value), ""
+        ),
     )
     result = run_agent(
         host, project, "Instructions", "packet", SCHEMA, model=model, provider=provider

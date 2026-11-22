@@ -1135,6 +1135,28 @@ Native detail mappings (same scope and basis as their parent counters):
 | Gemini CLI (historical) | Sum `stats.models.*.tokens.cached`, only when every model reports a valid subset of its prompt | Unavailable | Sum `stats.models.*.tokens.thoughts`, already included in output; nested roles are not added |
 | Hermes | Unavailable | Unavailable | Unavailable |
 
+Claude and Grok managed calls consume native Messages streams (`stream-json
+--verbose` and `streaming-messages-json`, respectively). Only the native
+`system/init` establishes early session identity; startup hooks, requested IDs
+and a terminal ID without init do not. The shared process/observation boundary
+persists that identity before exit and retains it on interruption. Exact resume,
+ownership and persistence failures remain failures, with no replacement session.
+Native init/assistant models provide early observation. A single terminal
+`modelUsage` key identifies the model for its aggregate; multiple models remain
+ambiguous. This preserves native alias differences without changing selection.
+
+Aggregate usage becomes observable when the native result event arrives, before
+process exit. Earlier partial/message counters cannot establish complete session
+or invocation totals and remain unknown. Claude retains its versioned cumulative
+basis. Grok Messages totals sum the three disjoint input buckets and output once
+per invocation, including on resume. This format omits reasoning detail; it stays
+unknown. Grok zero-fills missing/incomplete usage and warns on stderr, so any
+stderr diagnostic conservatively withholds its usage without turning a warning
+into execution failure. All-zero Grok Messages counters are unknown. Captured
+Claude 2.1.330/Grok 1.0.92 fresh/resume projections are maintained in
+`tests/fixtures/claude_grok_streams_20261122.json`; their completed calls do not
+claim native first-call interruption or installed StackOS activation.
+
 Claude, Grok and current Antigravity headless accounting require their native
 cache buckets to compute valid full input; an absent bucket cannot be assumed
 zero. For Antigravity, an incomplete usage-bearing completed step invalidates the invocation
@@ -2797,7 +2819,9 @@ payload text never establishes the record type or model.
 Without per-model counters, mixed totals cannot be allocated to one model.
 Resumes require new context after their cursor rather than inheriting model
 evidence from the old prefix. Other hosts supply no model observation through
-this reader. Final handoff, retained receipt indexing and index rebuild preserve
+this reader. Claude/Grok use the existing stream callback boundary instead,
+with `source="claude.messages"` or `source="grok.messages"` and the same exact
+session/host validation. Final handoff, retained receipt indexing and index rebuild preserve
 this evidence without changing counter normalization or deduplication. This
 adds no native-session scan, poller, ledger or historical repair.
 

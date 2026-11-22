@@ -11,7 +11,7 @@ import os
 import re
 import subprocess
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -30,10 +30,12 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
+from stackos.host_mcp.progress import MessagesStream
 from stackos.host_mcp.result import (
     AgentRunResult,
     AgentSandbox,
     HostMcpResult,
+    ModelObservation,
     looks_secretish,
     usage_snapshot,
 )
@@ -65,6 +67,9 @@ def run_agent(
     profile: str | None = None,
     resume_thread_id: str | None = None,
     process_control: ManagedProcessControl | None = None,
+    on_session: Callable[[str], None] | None = None,
+    on_usage: Callable[[dict[str, Any] | None], None] | None = None,
+    on_model: Callable[[ModelObservation], None] | None = None,
 ) -> AgentRunResult:
     cli = resolve_grok_bin(Path.home())
     if cli is None:
@@ -77,7 +82,7 @@ def run_agent(
         "--single",
         structured_prompt(prompt, output_schema),
         "--output-format",
-        "json",
+        "streaming-messages-json",
         "--rules",
         instructions,
         "--sandbox",
@@ -91,15 +96,67 @@ def run_agent(
         command += ["--reasoning-effort", model_reasoning_effort]
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
-    return execute_json_agent(
+    stream = MessagesStream(
+        HOST_KEY, _message_result, on_session=on_session, on_usage=on_usage, on_model=on_model
+    )
+    diagnostics = False
+
+    def diagnostic(stderr: str) -> None:
+        nonlocal diagnostics
+        # Messages zero-fills incomplete/absent counters and warns on stderr.
+        # Conservatively withhold accounting on any diagnostic, including on
+        # failure. Do not turn an informational warning into execution failure.
+        diagnostics = bool(stderr.strip())
+
+    result = execute_json_agent(
         command,
         project_dir,
         "",
         output_schema,
         "Grok",
-        _agent_result,
+        lambda stdout: MessagesStream(HOST_KEY, _message_result).decode_output(stdout),
         process_control=process_control,
+        stderr_error=diagnostic,
+        on_output_line=stream.feed
+        if on_session is not None or on_usage is not None or on_model is not None
+        else None,
     )
+    if diagnostics:
+        if on_usage is not None:
+            on_usage(None)
+        return replace(result, usage=None)
+    return result
+
+
+def _message_result(stdout: str) -> AgentRunResult:
+    value = json_object(stdout)
+    counters = value.get("usage")
+    usage = None
+    if isinstance(counters, dict) and not value.get("usage_is_incomplete"):
+        counts: list[Any] = [
+            counters.get(k)
+            for k in (
+                "input_tokens",
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+                "output_tokens",
+            )
+        ]
+        if all(type(n) is int and n >= 0 for n in counts) and sum(counts) > 0:
+            usage = _agent_usage({"usage": {**counters, "total_tokens": sum(counts)}})
+    native = _agent_result(
+        json.dumps(
+            {
+                "sessionId": value.get("session_id"),
+                "stopReason": value.get("stop_reason"),
+                "text": value.get("result"),
+                "error": (value.get("errors") or "Grok failed.")
+                if value.get("is_error") or str(value.get("subtype", "")).startswith("error")
+                else None,
+            }
+        )
+    )
+    return replace(native, usage=usage)
 
 
 def _agent_result(stdout: str) -> AgentRunResult:

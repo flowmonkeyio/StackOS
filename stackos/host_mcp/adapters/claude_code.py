@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,10 +17,12 @@ from stackos.host_mcp.bridge import (
     resolve_bridge_command,
 )
 from stackos.host_mcp.discovery import subprocess_env_for_cli
+from stackos.host_mcp.progress import MessagesStream
 from stackos.host_mcp.result import (
     AgentRunResult,
     AgentSandbox,
     HostMcpResult,
+    ModelObservation,
     looks_secretish,
     usage_snapshot,
 )
@@ -41,6 +44,9 @@ def run_agent(
     profile: str | None = None,
     resume_thread_id: str | None = None,
     process_control: ManagedProcessControl | None = None,
+    on_session: Callable[[str], None] | None = None,
+    on_usage: Callable[[dict[str, Any] | None], None] | None = None,
+    on_model: Callable[[ModelObservation], None] | None = None,
 ) -> AgentRunResult:
     cli = claude_mcp.resolve_claude_bin()
     if cli is None:
@@ -57,7 +63,8 @@ def run_agent(
         cli,
         "-p",
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
         "--json-schema",
         json.dumps(output_schema),
         "--append-system-prompt",
@@ -73,14 +80,25 @@ def run_agent(
         command += ["--effort", model_reasoning_effort]
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
+    native_version = _native_version(cli, project_dir)
+
+    def decode(stdout: str) -> AgentRunResult:
+        return _agent_result(stdout, native_version=native_version)
+
+    stream = MessagesStream(
+        HOST_KEY, decode, on_session=on_session, on_usage=on_usage, on_model=on_model
+    )
     return execute_json_agent(
         command,
         project_dir,
         prompt,
         output_schema,
         "Claude Code",
-        lambda stdout: _agent_result(stdout, native_version=_native_version(cli, project_dir)),
+        lambda stdout: MessagesStream(HOST_KEY, decode).decode_output(stdout),
         process_control=process_control,
+        on_output_line=stream.feed
+        if on_session is not None or on_usage is not None or on_model is not None
+        else None,
     )
 
 

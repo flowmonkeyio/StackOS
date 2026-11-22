@@ -1,0 +1,215 @@
+{
+  "captured_on": "2026-11-22",
+  "scope": "Owned harmless native fresh/exact-resume calls. Projection retains native session, model and accounting fields; tool lists, hooks, paths, message content and cost metadata removed. No first-call interruption claimed by these completed captures.",
+  "hosts": {
+    "claude": {
+      "version": "2.1.330",
+      "source": "https://code.claude.com/docs/en/headless",
+      "runs": [
+        {
+          "phase": "fresh",
+          "exit_code": 0,
+          "stderr": "",
+          "events": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "model": "claude-opus-5-5"
+            },
+            {
+              "type": "assistant",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "message": {
+                "model": "claude-opus-5-5"
+              }
+            },
+            {
+              "type": "assistant",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "message": {
+                "model": "claude-opus-5-5"
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "is_error": false,
+              "stop_reason": "tool_use",
+              "structured_output": {
+                "summary": "H4 harmless native protocol confirmation"
+              },
+              "result": "{\"summary\":\"H4 harmless native protocol confirmation\"}",
+              "usage": {
+                "input_tokens": 2,
+                "cache_creation_input_tokens": 1955,
+                "cache_read_input_tokens": 1079,
+                "output_tokens": 146
+              },
+              "modelUsage": {
+                "claude-opus-5-5": {
+                  "inputTokens": 2,
+                  "outputTokens": 146,
+                  "cacheReadInputTokens": 1079,
+                  "cacheCreationInputTokens": 1955,
+                  "thinkingTokens": 80
+                }
+              }
+            }
+          ]
+        },
+        {
+          "phase": "resume",
+          "exit_code": 0,
+          "stderr": "",
+          "events": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "model": "claude-opus-5-5"
+            },
+            {
+              "type": "assistant",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "message": {
+                "model": "claude-opus-5-5"
+              }
+            },
+            {
+              "type": "assistant",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "message": {
+                "model": "claude-opus-5-5"
+              }
+            },
+            {
+              "type": "assistant",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "message": {
+                "model": "claude-opus-5-5"
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "session_id": "5e223390-e0eb-471d-baa9-28234bcdbeb9",
+              "is_error": false,
+              "stop_reason": "tool_use",
+              "structured_output": {
+                "summary": "H4 harmless native protocol confirmation"
+              },
+              "result": "{\"summary\":\"H4 harmless native protocol confirmation\"}",
+              "usage": {
+                "input_tokens": 8,
+                "cache_creation_input_tokens": 263,
+                "cache_read_input_tokens": 6265,
+                "output_tokens": 160
+              },
+              "modelUsage": {
+                "claude-opus-5-5": {
+                  "inputTokens": 10,
+                  "outputTokens": 306,
+                  "thinkingTokens": 150,
+                  "cacheReadInputTokens": 7344,
+                  "cacheCreationInputTokens": 2218
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "grok": {
+      "version": "1.0.92",
+      "source": "https://docs.x.ai/build/cli/headless-scripting",
+      "runs": [
+        {
+          "phase": "fresh",
+          "exit_code": 0,
+          "stderr": "",
+          "events": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "01a203ce-20e0-7793-9298-cd0315d00330",
+              "model": "grok-4.7"
+            },
+            {
+              "type": "assistant",
+              "session_id": "01a203ce-20e0-7793-9298-cd0315d00330",
+              "message": {
+                "model": "grok-4.7"
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "session_id": "01a203ce-20e0-7793-9298-cd0315d00330",
+              "is_error": false,
+              "stop_reason": "end_turn",
+              "result": "{\"summary\":\"H4 harmless native protocol confirmation\"}",
+              "usage": {
+                "input_tokens": 11555,
+                "output_tokens": 67,
+                "cache_read_input_tokens": 7040,
+                "cache_creation_input_tokens": 0
+              },
+              "modelUsage": {
+                "grok-4.7-build": {
+                  "inputTokens": 11555,
+                  "outputTokens": 67,
+                  "cacheReadInputTokens": 7040,
+                  "cacheCreationInputTokens": 0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "phase": "resume",
+          "exit_code": 0,
+          "stderr": "",
+          "events": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "01a203ce-20e0-7793-9298-cd0315d00330",
+              "model": "grok-4.7"
+            },
+            {
+              "type": "assistant",
+              "session_id": "01a203ce-20e0-7793-9298-cd0315d00330",
+              "message": {
+                "model": "grok-4.7"
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "session_id": "01a203ce-20e0-7793-9298-cd0315d00330",
+              "is_error": false,
+              "stop_reason": "end_turn",
+              "result": "{\"summary\":\"H4 harmless native protocol confirmation\"}",
+              "usage": {
+                "input_tokens": 11731,
+                "output_tokens": 40,
+                "cache_read_input_tokens": 7040,
+                "cache_creation_input_tokens": 0
+              },
+              "modelUsage": {
+                "grok-4.7-build": {
+                  "inputTokens": 11731,
+                  "outputTokens": 40,
+                  "cacheReadInputTokens": 7040,
+                  "cacheCreationInputTokens": 0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -78,17 +78,25 @@ def _store(session, project_id, key, automatic):
         ("unsupported-host", None, None),
         ("conflicting-handoff", None, None),
         ("malformed", None, None),
+        ("foreign-source", None, None),
+        ("foreign-host", None, None),
     ],
 )
+@pytest.mark.parametrize("host", ["codex", "claude-code", "grok"])
 def test_model_attribution_keeps_selection_separate_and_rejects_unproven_evidence(
-    session, project_id, case, expected, basis
+    session, project_id, case, expected, basis, host
 ):
     value = _receipt(model=None if case == "inherited" else "requested")
+    value["launch"]["host_key"] = host
     value["thread_id"] = "exact-native-session"
     observation = {
         "status": "observed",
         "model": "native-model",
-        "source": "codex.turn_context",
+        "source": {
+            "codex": "codex.turn_context",
+            "claude-code": "claude.messages",
+            "grok": "grok.messages",
+        }[host],
         "session_id": value["thread_id"],
     }
     if case not in {"inherited", "selected"}:
@@ -101,12 +109,22 @@ def test_model_attribution_keeps_selection_separate_and_rejects_unproven_evidenc
         value["launch"]["host_key"] = "gemini-cli"
     elif case == "conflicting-handoff":
         value["execution"] = {
-            "host_key": "codex",
+            "host_key": host,
             "thread_id": value["thread_id"],
             "model_observation": {**observation, "model": "different-native-model"},
         }
     elif case == "malformed":
         value["model_observation"] = {"status": "observed", "model": "guessed"}
+    elif case == "foreign-source":
+        value["model_observation"]["source"] = (
+            "grok.messages" if host != "grok" else "claude.messages"
+        )
+    elif case == "foreign-host":
+        value["execution"] = {
+            "host_key": "grok" if host != "grok" else "claude-code",
+            "thread_id": value["thread_id"],
+            "model_observation": deepcopy(observation),
+        }
     _store(session, project_id, "model-proof", {"attempt": 1, "delivery": value})
     repo = TrackerRepository(session)
     for group_by in ("model", "agent_model"):

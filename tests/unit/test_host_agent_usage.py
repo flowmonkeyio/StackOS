@@ -14,6 +14,7 @@ import pytest
 from stackos.host_mcp import run_agent
 from stackos.host_mcp.adapters import claude_code, codex, grok, hermes
 from stackos.host_mcp.result import normalize_usage, usage_snapshot
+from tests.helpers.native_messages import messages_output
 
 SCHEMA = {"type": "object", "required": ["summary"]}
 # Minimal native counters captured 2026-11-06 in the approved usage probe.
@@ -131,7 +132,7 @@ def test_captured_grok_1077_invocation_usage(tmp_path, monkeypatch):
             # Same native facts in another projection must not be added twice.
             "modelUsage": {"grok-4.7-build": {"inputTokens": 999999}},
         }
-        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+        return subprocess.CompletedProcess(command, 0, messages_output("grok", envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     previous = None
@@ -219,7 +220,7 @@ def test_grok_usage_survives_result_errors(tmp_path, monkeypatch, fault):
         subprocess,
         "run",
         lambda command, **_: subprocess.CompletedProcess(
-            command, int(fault == "exit"), json.dumps(value), ""
+            command, int(fault == "exit"), messages_output("grok", value), ""
         ),
     )
     result = run_agent(
@@ -316,7 +317,7 @@ def test_claude_native_version_proves_resumed_usage_basis(
                 }
             },
         }
-        return subprocess.CompletedProcess(command, 0, json.dumps(value), "")
+        return subprocess.CompletedProcess(command, 0, messages_output("claude-code", value), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     previous = None
@@ -369,7 +370,9 @@ def test_claude_version_probe_failure_cannot_change_native_result(
             )
         launches.append(command)
         value = {**CLAUDE, "is_error": native_failure, "errors": ["native denied"]}
-        return subprocess.CompletedProcess(command, int(native_failure), json.dumps(value), "")
+        return subprocess.CompletedProcess(
+            command, int(native_failure), messages_output("claude-code", value), ""
+        )
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent("claude-code", tmp_path, "Instructions", "Work", SCHEMA)
@@ -692,7 +695,7 @@ def test_native_usage_survives_common_error_paths(
         if command == ["/fake/claude", "--version"]:
             return subprocess.CompletedProcess(command, 0, "2.1.277 (Claude Code)", "")
         return subprocess.CompletedProcess(
-            command, 1 if fault == "exit" else 0, json.dumps(value), ""
+            command, 1 if fault == "exit" else 0, messages_output(host, value), ""
         )
 
     monkeypatch.setattr(subprocess, "run", execute)

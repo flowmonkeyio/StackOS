@@ -1179,11 +1179,11 @@ def _model_identity(
     if not observations:
         selected = _text(launch.get("model"))
         return selected, "selected" if selected else None
-    if launch.get("host_key") != "codex":
+    if any(host is not None and host != launch.get("host_key") for _, _, host in observations):
         return None, None
     normalized = [
-        normalize_model_observation(value, session_id=sid, host_key=host or launch.get("host_key"))
-        for value, sid, host in observations
+        normalize_model_observation(value, session_id=sid, host_key=launch.get("host_key"))
+        for value, sid, _ in observations
     ]
     observed = normalized[0]
     if (

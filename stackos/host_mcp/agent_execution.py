@@ -257,14 +257,18 @@ def execute_json_agent(
     except (ValueError, KeyError, TypeError) as exc:
         detail = process.stderr.strip() or process.stdout.strip() or str(exc)
         return AgentRunResult(process.returncode, error=f"Invalid {host} result: {detail}")
+    # A host may use this hook to revoke unsupported counters even when another
+    # error already explains the result. Diagnostics must always be consumed.
+    diagnostic_error = stderr_error(process.stderr) if stderr_error is not None else None
     result = AgentRunResult(
         process.returncode,
         thread_id=native.thread_id,
         result=native.result,
         usage=native.usage,
+        model_observation=native.model_observation,
         error=process_error
         or native.error
-        or (stderr_error(process.stderr) if stderr_error is not None else None)
+        or diagnostic_error
         or (
             process.stderr.strip() or process.stdout.strip() or f"{host} exited unsuccessfully."
             if process.returncode

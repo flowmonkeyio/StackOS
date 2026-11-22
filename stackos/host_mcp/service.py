@@ -990,12 +990,14 @@ def _run_agent_once(
     result: AgentRunResult | None = None
     registered = False
     request_admitted = False
-    if call is not None and host_key in {"codex", "antigravity"}:
+    if call is not None and host_key in {"codex", "antigravity", "claude-code", "grok"}:
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
             call, session_id, Path(project_dir), resume_thread_id, on_session_attached
         )
-        if host_key == "antigravity":
+        if host_key in {"antigravity", "claude-code", "grok"}:
             progress_kwargs["on_usage"] = lambda usage: _observe_usage(call, usage)
+        if host_key in {"claude-code", "grok"}:
+            progress_kwargs["on_model"] = lambda observed: _observe_model(call, observed)
     if call is not None:
         progress_kwargs["process_control"] = call.process_control
     try:
@@ -1205,6 +1207,20 @@ def _observe_usage(call: ActiveInvocation, raw: dict[str, Any] | None) -> None:
         call.usage = usage
         call.measured_at = datetime.now(UTC).isoformat()
         call.samples.append({"at": call.measured_at, "source": "native", **usage["measured"]})
+
+
+def _observe_model(call: ActiveInvocation, raw: ModelObservation) -> None:
+    with _active_invocations_lock:
+        if (
+            _active_invocations.get(call.invocation_id) is not call
+            or call.finished
+            or call.cancelled.is_set()
+            or call.session_error is not None
+        ):
+            return
+        call.model_observation = normalize_model_observation(
+            raw, session_id=call.session_id, host_key=call.host_key
+        )
 
 
 def effective_agent_sandbox(

@@ -9,6 +9,7 @@ from typing import Any, Literal, TypedDict
 from jsonschema import ValidationError, validate
 
 AgentSandbox = Literal["read-only", "workspace-write", "normal"]
+ModelObservationSource = Literal["codex.turn_context", "claude.messages", "grok.messages"]
 
 
 class ModelObservation(TypedDict):
@@ -21,7 +22,7 @@ class ModelObservation(TypedDict):
 
     status: Literal["observed", "ambiguous"]
     model: str | None
-    source: Literal["codex.turn_context"]
+    source: ModelObservationSource
     session_id: str
 
 
@@ -29,12 +30,17 @@ def normalize_model_observation(
     value: Any, *, session_id: str | None, host_key: str | None
 ) -> ModelObservation | None:
     """Allowlist structured evidence only; a requested model cannot supply it."""
+    sources: dict[str, ModelObservationSource] = {
+        "codex": "codex.turn_context",
+        "claude-code": "claude.messages",
+        "grok": "grok.messages",
+    }
     if (
         not isinstance(value, dict)
-        or host_key != "codex"
+        or host_key not in sources
         or not session_id
         or value.get("session_id") != session_id
-        or value.get("source") != "codex.turn_context"
+        or value.get("source") != sources[host_key]
         or value.get("status") not in ("observed", "ambiguous")
     ):
         return None
@@ -51,7 +57,7 @@ def normalize_model_observation(
     return {
         "status": value["status"],
         "model": model,
-        "source": "codex.turn_context",
+        "source": sources[host_key],
         "session_id": session_id,
     }
 

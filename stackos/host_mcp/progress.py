@@ -17,7 +17,149 @@ from typing import Any, BinaryIO
 from uuid import UUID
 
 from stackos.host_mcp.agent_execution import ManagedProcessControl
-from stackos.host_mcp.result import ModelObservation, normalize_model_observation, usage_snapshot
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    ModelObservation,
+    normalize_model_observation,
+    usage_snapshot,
+)
+
+
+class MessagesStream:
+    """The native Messages envelope shared by Claude and Grok, not agent text.
+
+    Adapters still own terminal validation and accounting. Only init establishes
+    a session; hook IDs, requested IDs and terminal-only IDs cannot substitute.
+    Aggregate usage is available at result, before process exit. Per-message
+    partial counters cannot establish the full invocation/session scope.
+    """
+
+    def __init__(
+        self,
+        host_key: str,
+        decode: Callable[[str], AgentRunResult],
+        *,
+        on_session: Callable[[str], None] | None = None,
+        on_usage: Callable[[dict[str, Any] | None], None] | None = None,
+        on_model: Callable[[ModelObservation], None] | None = None,
+    ):
+        self.host_key = host_key
+        self.decode = decode
+        self.on_session = on_session
+        self.on_usage = on_usage
+        self.on_model = on_model
+        self.session: str | None = None
+        self.terminal: AgentRunResult | None = None
+        self.error: str | None = None
+        self.model: ModelObservation | None = None
+
+    def _fail(self, error: str) -> None:
+        self.error = self.error or error
+        if self.on_usage is not None:
+            self.on_usage(None)
+
+    def _model(self, model: Any) -> None:
+        source = "claude.messages" if self.host_key == "claude-code" else "grok.messages"
+        observed = normalize_model_observation(
+            {"status": "observed", "model": model, "source": source, "session_id": self.session},
+            session_id=self.session,
+            host_key=self.host_key,
+        )
+        if observed is None or (self.model is not None and self.model != observed):
+            observed = normalize_model_observation(
+                {
+                    "status": "ambiguous",
+                    "model": None,
+                    "source": source,
+                    "session_id": self.session,
+                },
+                session_id=self.session,
+                host_key=self.host_key,
+            )
+        self.model = observed
+        if observed is not None and self.on_model is not None:
+            self.on_model(observed)
+
+    def feed(self, line: str) -> None:
+        if not line.strip():
+            return
+        try:
+            event = json.loads(line)
+        except ValueError:
+            self._fail(f"Invalid native Messages stream: {line.strip()[:500]}")
+            return
+        if not isinstance(event, dict):
+            self._fail("Invalid native Messages event")
+            return
+        if self.terminal is not None:
+            self._fail("Native Messages event after terminal result")
+            return
+        if self.error:
+            return
+        kind = event.get("type")
+        if kind == "error":
+            self._fail(str(event.get("error") or event.get("message") or "Native stream error"))
+            return
+        identity = event.get("session_id")
+        if kind == "system" and event.get("subtype") == "init":
+            if (
+                not isinstance(identity, str)
+                or not identity.strip()
+                or identity != identity.strip()
+                or identity.startswith("-")
+            ):
+                self._fail("Missing native init session identity")
+                return
+            if self.session is not None and identity != self.session:
+                self._fail("Native session identity mismatch")
+                return
+            if self.session is None:
+                self.session = identity
+                if self.on_session is not None:
+                    self.on_session(identity)
+            self._model(event.get("model"))
+            return
+        if self.session is not None and identity is not None and identity != self.session:
+            self._fail("Native session identity mismatch")
+            return
+        if kind == "assistant" and self.session is not None:
+            message = event.get("message")
+            self._model(message.get("model") if isinstance(message, dict) else None)
+        if kind == "result":
+            if self.session is None or identity != self.session:
+                self._fail("Missing or mismatched native init/result session identity")
+                return
+            models = event.get("modelUsage")
+            if isinstance(models, dict) and len(models) == 1:
+                # Native init/message models can be aliases (captured Grok
+                # 1.0.92: grok-4.7 -> modelUsage grok-4.7-build). The terminal
+                # ledger names the model for the aggregate being measured.
+                self.model = None
+                self._model(next(iter(models)))
+            elif models:
+                self._model(None)
+            self.terminal = self.decode(json.dumps(event))
+            if self.on_usage is not None:
+                self.on_usage(self.terminal.usage)
+
+    def result(self) -> AgentRunResult:
+        from dataclasses import replace
+
+        result = self.terminal or AgentRunResult(
+            0, thread_id=self.session, error="Missing native terminal result"
+        )
+        return replace(
+            result,
+            thread_id=self.session,
+            model_observation=self.model,
+            error=self.error or result.error,
+            usage=None if self.error else result.usage,
+        )
+
+    def decode_output(self, text: str) -> AgentRunResult:
+        for line in text.splitlines():
+            self.feed(line)
+        return self.result()
 
 
 def _non_context_record(prefix: bytes) -> bool:
