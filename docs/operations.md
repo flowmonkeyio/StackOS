@@ -1351,6 +1351,14 @@ extension `agent_assignment` supplies mirror defaults and explicit entries win.
 Otherwise admission uses the unique applicable selected declared workflow role;
 ambiguity rejects. Ordinary tickets retain a separate independent reviewer.
 
+New handoffs also persist bounded
+[ordinary restart/missed-launch continuation intent](task-tracker.md#ordinary-restart-and-missed-launch-continuation)
+in existing metadata and phase receipts. Startup and missed queued launches reuse
+the existing queue/checkpoint owner, with exact retained sessions and process
+retirement checks. Historical admissions, stops/failures, denial and unknown or
+surviving owners retain their recovery fences. This does not retry completed
+scheduled occurrences or replace managed-upgrade finish authority.
+
 Each role can declare `execution_requirements: {"filesystem_write": true}`.
 Requirements are typed assignment needs, separate from native authority. They
 survive saved/default/task round trips; false or omitted permits inspection-only

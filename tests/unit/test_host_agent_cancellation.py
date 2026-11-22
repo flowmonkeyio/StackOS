@@ -40,6 +40,55 @@ def process_stop_boundary(monkeypatch):
     return control, process, clock
 
 
+def test_recovered_identity_holds_surviving_child_without_signalling_it():
+    control = ManagedProcessControl()
+    child = control.spawn(
+        [
+            sys.executable,
+            "-c",
+            "import subprocess,sys,time; "
+            "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'], "
+            "stdout=subprocess.DEVNULL); print(p.pid, flush=True); time.sleep(.3)",
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert control.identity is not None
+        descendant = int(child.stdout.readline())
+        child.stdout.close()
+        child.wait(timeout=3)
+        assert ManagedProcessControl.observe_identity(control.identity) == "surviving_native_group"
+        os.kill(descendant, 0)
+    finally:
+        control.stop()
+
+
+def test_spawn_receipt_failure_retires_its_actual_process():
+    def fail():
+        raise RuntimeError("receipt commit failed")
+
+    control = ManagedProcessControl(on_spawn=fail)
+    with pytest.raises(RuntimeError, match="receipt commit failed"):
+        control.spawn([sys.executable, "-c", "import time;time.sleep(30)"])
+    assert control.retirement_status() == "stopped"
+    assert ManagedProcessControl.observe_identity(control.identity) == "stopped"
+
+
+def test_recovered_identity_never_trusts_reused_pid_or_unknown_probe(monkeypatch):
+    identity = {"schema_version": 1, "pid": 12345, "pgid": 12345, "started": "original"}
+    probes = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: probes.append((pid, sig)))
+    monkeypatch.setattr(
+        ManagedProcessControl,
+        "_identity",
+        staticmethod(lambda _pid: {**identity, "started": "new"}),
+    )
+    assert ManagedProcessControl.observe_identity(identity) == "changed_native_owner"
+    assert probes == [(12345, 0)]
+    assert ManagedProcessControl.observe_identity(None) == "unknown_native_owner"
+
+
 @pytest.mark.parametrize("retiring_signal", [signal.SIGTERM, signal.SIGKILL])
 def test_stop_confirms_group_after_transient_probe_denial(
     process_stop_boundary, monkeypatch, retiring_signal

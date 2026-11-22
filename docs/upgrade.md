@@ -147,8 +147,12 @@ exclusion. Delivery, repair, independent review and workflow mirrors retain thei
 original phase/session/settings; resuming review never replays accepted delivery.
 Unsafe checkpoints return held repair context while unrelated stops, failures,
 aborts, deferred work and manual work remain untouched. Repeating finish is safe.
-An ordinary restart, source edit or wheel swap alone supplies no continuation
-authority. These operations do not attest a signed desktop update or make an older
+New authorized delivery handoffs carry bounded
+[ordinary restart/missed-launch intent](task-tracker.md#ordinary-restart-and-missed-launch-continuation).
+Startup may reconsider those queued or safely retired phases through the existing
+queue, without reviving historical stops/failures or consuming managed-upgrade
+checkpoints. An ordinary restart, source edit or wheel swap alone supplies no
+managed-upgrade continuation authority. These operations do not attest a signed desktop update or make an older
 source daemon support the handshake; caller capability probing and actual package
 installation remain separate lifecycle obligations.
 

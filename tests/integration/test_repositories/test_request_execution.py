@@ -61,7 +61,10 @@ def owner(session, project_id, key="scheduled"):
 
 def launch(monkeypatch, tmp_path, execution, runner, observer=None, *, output_schema=None):
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    # Keep the real host contract, controlling only the paid native edge. This
+    # lifetime fixture does not refresh provider/account model catalogs.
+    definition = replace(service._definition_by_key("codex"), run_agent=runner, native_models=None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: definition)
     return service.run_agent(
         "codex",
         tmp_path,

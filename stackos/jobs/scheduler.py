@@ -120,10 +120,11 @@ def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
         job_defaults=job_defaults,
         timezone="UTC",
     )
-    from stackos.task_delivery import drain_delivery, missed_delivery_job
+    from stackos.task_delivery import continue_delivery, drain_delivery, missed_delivery_job
 
     def started(_event):
         scheduler.task_delivery_started = True
+        continue_delivery(session_factory=lambda: Session(engine), scheduler=scheduler)
 
     scheduler.add_listener(started, EVENT_SCHEDULER_STARTED)
 

@@ -27,30 +27,99 @@ class InvocationCancelled(Exception):
 class ManagedProcessControl:
     """Private handle for one scoped launch; never reconstruct ownership from a PID."""
 
-    def __init__(self, launch_allowed: Callable[[], bool] | None = None):
+    def __init__(
+        self,
+        launch_allowed: Callable[[], bool] | None = None,
+        on_spawn: Callable[[], None] | None = None,
+    ):
         self.cancelled = Event()
         self._closed = Event()
         self.account_switch = False
         self._process: subprocess.Popen[str] | None = None
         self._launch_allowed = launch_allowed
+        self._on_spawn = on_spawn
+        self.identity: dict[str, Any] | None = None
         self._stop_lock = RLock()
         self.stop_error: str | None = None
 
     def spawn(self, command: list[str], **kwargs: Any) -> subprocess.Popen[str]:
-        with managed_launch_lock:
-            if (
-                self.cancelled.is_set()
-                or self._closed.is_set()
-                or (self._launch_allowed is not None and not self._launch_allowed())
-            ):
-                self.cancelled.set()
-                raise InvocationCancelled("Invocation cancelled before launch")
-            if self._process is not None:
-                raise RuntimeError("Managed invocation already launched")
-            self._process = subprocess.Popen(
-                command, start_new_session=os.name == "posix", **kwargs
+        spawned = False
+        try:
+            with managed_launch_lock:
+                if (
+                    self.cancelled.is_set()
+                    or self._closed.is_set()
+                    or (self._launch_allowed is not None and not self._launch_allowed())
+                ):
+                    self.cancelled.set()
+                    raise InvocationCancelled("Invocation cancelled before launch")
+                if self._process is not None:
+                    raise RuntimeError("Managed invocation already launched")
+                self._process = subprocess.Popen(
+                    command, start_new_session=os.name == "posix", **kwargs
+                )
+                spawned = True
+                self.identity = self._identity(self._process.pid)
+                if self._on_spawn is not None:
+                    self._on_spawn()
+                return self._process
+        except BaseException:
+            # Stop takes its retirement lock before the launch lock. Release
+            # launch ownership before cleanup to preserve that lock ordering.
+            if spawned:
+                self.stop()
+            raise
+
+    @staticmethod
+    def _identity(pid: int) -> dict[str, Any] | None:
+        """No argv/env in receipts. Recovery observes identity; it never signals a PID."""
+        if os.name != "posix":
+            return None
+        try:
+            result = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "pgid=,lstart="],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
             )
-            return self._process
+            group, started = result.stdout.strip().split(maxsplit=1)
+            if result.returncode or int(group) != pid:
+                return None
+            return {"schema_version": 1, "pid": pid, "pgid": pid, "started": started}
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return None
+
+    @classmethod
+    def observe_identity(cls, identity: Any) -> str:
+        """Fail closed on PID reuse, missing identity, or a surviving descendant."""
+        if (
+            os.name != "posix"
+            or not isinstance(identity, dict)
+            or identity.get("schema_version") != 1
+            or type(identity.get("pid")) is not int
+            or identity["pid"] <= 0
+            or identity.get("pgid") != identity["pid"]
+            or not identity.get("started")
+        ):
+            return "unknown_native_owner"
+        try:
+            os.kill(identity["pid"], 0)
+        except ProcessLookupError:
+            try:
+                os.killpg(identity["pgid"], 0)
+            except ProcessLookupError:
+                return "stopped"
+            except OSError:
+                return "unknown_native_owner"
+            return "surviving_native_group"
+        except OSError:
+            return "unknown_native_owner"
+        return (
+            "surviving_native_owner"
+            if cls._identity(identity["pid"]) == identity
+            else "changed_native_owner"
+        )
 
     @staticmethod
     def _group_exit_observation(process: subprocess.Popen[str]) -> tuple[bool, str | None]:

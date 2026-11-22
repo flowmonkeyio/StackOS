@@ -156,6 +156,9 @@ def test_capacity_raise_lower_drain_cross_project_and_preserve_evidence(
 
 
 def test_concurrent_admission_is_bounded_across_projects(delivery_engine, project_id, tmp_path):
+    # The existing Codex fixture gives every concurrent tree its own source.
+    # A shared synthetic Antigravity HOME would race native route writes and
+    # test that fixture's last writer instead of the capacity owner.
     scheduler = QueuedScheduler()
     with Session(delivery_engine) as session:
         other = (
@@ -180,7 +183,7 @@ def test_concurrent_admission_is_bounded_across_projects(delivery_engine, projec
                 tmp_path / str(index),
                 scheduler,
                 task_key=f"work-{index}",
-                host_key="antigravity",
+                host_key="codex",
                 delivery_agent={"name": "inert", "instructions": "Fixture"},
                 review_agent={"name": "reviewer", "instructions": "Fixture"},
             )
@@ -322,7 +325,7 @@ def test_saturated_backup_pool_does_not_consume_task_slots(
                         tmp_path / f"pool-{index}",
                         scheduler,
                         task_key=f"pool-{index}",
-                        host_key="antigravity",
+                        host_key="codex",
                         delivery_agent={"name": "inert", "instructions": "Fixture"},
                         review_agent={"name": "reviewer", "instructions": "Fixture"},
                     )

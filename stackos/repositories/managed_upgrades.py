@@ -90,9 +90,17 @@ class ManagedUpgradeRepository:
             )
             if stopped and not issues:
                 issues = ["Continuation stopped; reconcile the original delivery owner"]
-            settled = state.get("handoff_id") == checkpoint.get("continuation_handoff_id") and (
-                task.status in TERMINAL_TRACKER_STATUSES
-                or (dispatched is True and cursor.get("handoff_id") != state.get("handoff_id"))
+            settled = (
+                dispatched is True
+                and bool(checkpoint.get("continuation_settled_handoff_id"))
+                and checkpoint["continuation_settled_handoff_id"]
+                == checkpoint.get("continuation_handoff_id")
+            ) or (
+                state.get("handoff_id") == checkpoint.get("continuation_handoff_id")
+                and (
+                    task.status in TERMINAL_TRACKER_STATUSES
+                    or (dispatched is True and cursor.get("handoff_id") != state.get("handoff_id"))
+                )
             )
             continuation = {
                 "continuation_state": "settled"

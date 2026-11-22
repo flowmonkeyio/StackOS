@@ -5255,6 +5255,7 @@ def test_role_host_model_provider_reach_launch_and_receipt(
         assert "no control over the current task, production state" in packet["lifecycle"]
         assert callable(selection.pop("on_execution_change"))
         assert callable(selection.pop("on_session_attached"))
+        assert callable(selection.pop("on_process_started"))
         assert selection.pop("launch_allowed")()
         route = selection.pop("mcp_route_identity")
         assert route["host_key"] == host and route["project_dir"] == str(tmp_path)
@@ -5404,6 +5405,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
         selection.pop("execution_scope")
         selection.pop("on_execution_change")
         assert callable(selection.pop("on_session_attached"))
+        assert callable(selection.pop("on_process_started"))
         assert selection.pop("launch_allowed")()
         route = selection.pop("mcp_route_identity")
         assert (
@@ -8718,10 +8720,10 @@ def test_native_collector_failure_persists_session_and_available_usage(
     if fault == "handoff":
         transition = task_delivery._record_execution_transition
 
-        def fail_notification(session_factory, call, active):
+        def fail_notification(session_factory, call, active, **kwargs):
             if not active:
                 raise RuntimeError("optional transition notification failed")
-            transition(session_factory, call, active)
+            transition(session_factory, call, active, **kwargs)
 
         monkeypatch.setattr(task_delivery, "_record_execution_transition", fail_notification)
 

@@ -145,6 +145,10 @@ class ActiveInvocation:
             "host_key": self.host_key,
             "model": self.model,
             "thread_id": self.thread_id,
+            "process_identity": deepcopy(self.process_control.identity),
+            "process_retirement": deepcopy(self.process_retirement),
+            "cancelled": self.cancelled.is_set() or self.process_control.cancelled.is_set(),
+            "finished": self.finished,
             **({"restart_of": self.restart_of} if self.restart_of else {}),
             "model_observation": deepcopy(self.model_observation),
             "started_at": self.started_at,
@@ -942,6 +946,7 @@ def run_agent(
     execution_scope: AgentExecutionScope | None = None,
     on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
     on_session_attached: Callable[[ActiveInvocation], None] | None = None,
+    on_process_started: Callable[[ActiveInvocation], None] | None = None,
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
     mcp_route_identity: dict[str, str] | None = None,
@@ -978,6 +983,7 @@ def run_agent(
             execution_scope=execution_scope,
             on_execution_change=execution_changed,
             on_session_attached=on_session_attached,
+            on_process_started=on_process_started,
             previous_usage=previous_usage,
             mcp_config_ref=mcp_config_ref,
             mcp_route_identity=mcp_route_identity,
@@ -1021,6 +1027,7 @@ def _run_agent_once(
     execution_scope: AgentExecutionScope | None = None,
     on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
     on_session_attached: Callable[[ActiveInvocation], None] | None = None,
+    on_process_started: Callable[[ActiveInvocation], None] | None = None,
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
     mcp_route_identity: dict[str, str] | None = None,
@@ -1118,6 +1125,10 @@ def _run_agent_once(
         else None
     )
     progress_kwargs: dict[str, Any] = {}
+    if call is not None and on_process_started is not None:
+        # Persist our actual group before native output can announce a session.
+        # A persistence failure retires this handle rather than leaving an orphan.
+        call.process_control._on_spawn = lambda: on_process_started(call)
     if model_reasoning_effort is not None:
         if host_key == "codex":
             native_settings = {

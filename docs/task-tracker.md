@@ -611,8 +611,41 @@ cancellation. A stopped handoff with an outstanding reservation in this daemon
 cannot be replaced or share its working directory; inspect its delivery state
 and retry after that reservation is released. Retired handoffs release only
 their own reservation, so a late return cannot release a replacement's slot.
-Daemon restart does not automatically resume old handoffs; normal explicit
-recovery/rehandoff authority still applies.
+Historical handoffs without continuation intent retain explicit recovery/rehandoff
+requirements. Newly authorized handoffs follow the bounded continuation below.
+
+### Ordinary restart and missed launch continuation
+
+New `tracker.startDelivery` handoffs persist versioned continuation intent in the
+existing delivery metadata. Each native phase retains its frozen settings,
+authority and source fingerprint, attempt, candidate, and observed native session.
+The existing invocation receipt records the actual owned PID, process group and
+process start identity before consuming native output; it contains no argv or
+environment. No historical admission or stopped/failed task is migrated.
+
+The existing scheduler startup entrypoint considers eligible prior-generation
+queued/running handoffs once. A missed queued launch after sleep uses the same
+validation. Valid unstarted work re-enters the existing queue. An interrupted
+phase requires its exact retained session and read-only confirmation that both
+its original process and group are absent. A surviving descendant, reused PID,
+unknown owner, missing session, changed frozen settings/authority or source,
+unresolved result/failure, denial, exhausted repair allowance, Stop or abort
+holds the work with a reason. Recovery never signals a reconstructed PID.
+Uncertain owners retain capacity and directory exclusion until reconciled.
+
+Continuation rotates the handoff/callback fence before registration, preserving
+original refs in metadata and interrupted receipts. Repeated startup or an old
+missed-job notification cannot dispatch that cursor twice; late callbacks cannot
+replace the new decision. Project capacity, prerequisites, accepted delivery,
+phase/session and consumed repairs remain authoritative. Review continuation
+does not replay delivery. Attributed dirty delivery work may resume from its
+recorded clean launch baseline; unattributed source changes hold.
+
+This is bounded admission at existing entrypoints, without a watchdog, polling
+loop, new scheduler/table or retry-all-failures policy. Completed scheduled
+occurrences are not replayed. Managed-upgrade checkpoints and their explicit
+finish/postflight protocol retain their own authority and retry refs. General
+stopped-work recovery still requires explicit authorization and rehandoff.
 
 ### Task-local native tool routing
 
@@ -819,7 +852,9 @@ the current handoff, ticket, attempt, phase and invocation receipt; stale or
 terminal receipts cannot be replaced. Persistence runs outside the invocation
 registry lock and emits no extra start event. A failed identity commit stops the
 native process and remains failed proof. Explicit recovery reuses this session;
-it does not automatically restart work. Hosts without an early identity event
+early identity alone grants no continuation authority. New handoffs also require
+the [ordinary continuation intent](#ordinary-restart-and-missed-launch-continuation).
+Hosts without an early identity event
 retain their existing terminal session handling.
 
 After native, session, schema and applicable candidate validation, an ordinary
@@ -1801,8 +1836,11 @@ does not launch an extra retry or replace the session. No credential setup is
 performed.
 
 Ordinary automatic review allows up to three durable scoped repair passes above;
-dependency-driven corrections preserve that consumed allowance. Delivery does
-not resume an interrupted job after daemon restart. `tracker.execute` remains a read-only
+dependency-driven corrections preserve that consumed allowance. Delivery
+resumes after daemon restart only under the
+[new-handoff continuation contract](#ordinary-restart-and-missed-launch-continuation).
+Historical handoffs and unresolved failures still require explicit recovery.
+`tracker.execute` remains a read-only
 brief operation. Explicit taskwide handoff delegates mechanical mirror progression; agents retain
 domain judgment and final integrated proof obligations.
 

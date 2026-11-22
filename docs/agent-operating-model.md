@@ -155,7 +155,12 @@ activation explicitly included in the current outcome must finish there rather t
 being deferred until closure. Source changes never refresh active
 or historical snapshots. Explicit
 rehandoff after a completed/stopped job resolves current defaults and preserves
-ticket sessions, receipts and repair allowance. Jobs do not resume after daemon restart. The shared
+ticket sessions, receipts and repair allowance. New authorized handoffs carry
+bounded [ordinary restart/missed-launch intent](task-tracker.md#ordinary-restart-and-missed-launch-continuation).
+Startup reconsiders eligible queued work or safely retired exact sessions once
+through the existing controller. Historical stops/failures, uncertain surviving
+owners and changed authority remain held; general stopped-work recovery still
+requires explicit authorization. The shared
 host capability owner selects review mode; Antigravity and Hermes use normal native
 sessions with review-only instructions and no enforced read-only isolation.
 Native read-only controls remain where supported. See
