@@ -33,6 +33,16 @@ const catalogHost: DesktopMcpHostStatus = {
 }
 
 describe('home host status transport', () => {
+  it('keeps a current doctor snapshot when an older refresh completes', async () => {
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const state = useHomeAgentHostStatuses(false)
+    const pending = state.loadHostStatuses()
+    state.applyHostStatuses({ ok: true, items: [{ ...catalogHost, message: 'Current doctor capability' }] })
+    finish({ items: [{ ...catalogHost, message: 'Older refresh capability' }] })
+    await pending
+    expect(state.hostStatuses.value.items[0]?.message).toBe('Current doctor capability')
+  })
   it('keeps the latest refresh when older success or failure finishes late', async () => {
     let finish!: (value: unknown) => void
     let fail!: (error: Error) => void

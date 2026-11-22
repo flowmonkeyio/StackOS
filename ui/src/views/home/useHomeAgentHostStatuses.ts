@@ -54,6 +54,7 @@ export function useHomeAgentHostStatuses(isShell: boolean) {
 
   function applyHostStatuses(result: DesktopDoctorResult | DesktopHostStatusesResult | null): void {
     if (disposed) return
+    request++ // A newer Doctor/IPC observation also retires pending readers.
     const hosts =
       'items' in (result ?? {})
         ? (result as DesktopHostStatusesResult).items
