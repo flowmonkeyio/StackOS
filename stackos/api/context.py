@@ -354,7 +354,12 @@ def _timeline_stream(
                             if pid in projects
                         }
                     )
-                    scopes = _ui_usage_updates(session, projects, current_demand)
+                    scopes = _ui_usage_updates(
+                        session,
+                        projects,
+                        current_demand,
+                        include_tasks=bool(demand.projects),
+                    )
                     updates = {
                         # A changing source during this poll cannot acknowledge
                         # a concurrent Home read. Null keeps normal invalidation.
@@ -468,7 +473,13 @@ def _timeline_stream(
     )
 
 
-def _ui_usage_updates(session, projects, demand: TrackerUsageDemand) -> list[dict[str, Any]]:
+def _ui_usage_updates(
+    session,
+    projects,
+    demand: TrackerUsageDemand,
+    *,
+    include_tasks: bool | None = None,
+) -> list[dict[str, Any]]:
     """One authorized receipt batch across the global stream's composite demand."""
     from sqlalchemy import false, or_
     from sqlmodel import col, select
@@ -476,6 +487,32 @@ def _ui_usage_updates(session, projects, demand: TrackerUsageDemand) -> list[dic
     from stackos.db.models import TaskTracker, TrackerTask, TrackerTicket
     from stackos.repositories.tracker.agent_stats import ReceiptProjection
     from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
+
+    if not projects:
+        return []
+    should_include_tasks = bool(demand.projects) if include_tasks is None else include_tasks
+    if not should_include_tasks:
+        # Empty UI demand (Home/Work invalidation transport) only needs each
+        # project's current tracker revision; task/ticket hydration is skipped.
+        revs = dict(
+            session.exec(
+                select(TaskTracker.project_id, TaskTracker.rev).where(
+                    TaskTracker.key == DEFAULT_TRACKER_KEY,
+                    col(TaskTracker.project_id).in_(projects),
+                )
+            ).all()
+        )
+        empty_demand = TrackerMetricDemand().model_dump(mode="json")
+        return [
+            {
+                "project_id": pid,
+                "rev": revs.get(pid, 0),
+                "metric_demand": empty_demand,
+                "tasks": [],
+                "tickets": [],
+            }
+            for pid in projects
+        ]
 
     task_ids = (
         set(

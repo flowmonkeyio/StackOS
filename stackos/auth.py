@@ -154,7 +154,9 @@ def _allows_ui_read(path: str, method: str) -> bool:
     return path == "/api/v1" or path.startswith("/api/v1/")
 
 
-def _allows_ui_read_operation_call(path: str, method: str) -> bool:
+def _allows_ui_read_operation_call(
+    path: str, method: str, *, registry: object | None = None
+) -> bool:
     """Return True for POST transport calls whose operation spec is read-only."""
     if method.upper() != "POST":
         return False
@@ -167,17 +169,22 @@ def _allows_ui_read_operation_call(path: str, method: str) -> bool:
     ):
         return False
 
-    from stackos.operations.registry import build_operation_registry
+    from stackos.operations.registry import OperationRegistry, build_operation_registry
     from stackos.repositories.base import NotFoundError
 
+    active_registry = (
+        registry if isinstance(registry, OperationRegistry) else build_operation_registry()
+    )
     try:
-        spec = build_operation_registry().get(segments[3], surface="rest")
+        spec = active_registry.get(segments[3], surface="rest")
     except NotFoundError:
         return False
     return spec.read_only
 
 
-def _allows_ui_console_operation_call(path: str, method: str) -> bool:
+def _allows_ui_console_operation_call(
+    path: str, method: str, *, registry: object | None = None
+) -> bool:
     """Return True when the operation's REST contract is explicitly browser-safe."""
     if method.upper() != "POST":
         return False
@@ -189,11 +196,14 @@ def _allows_ui_console_operation_call(path: str, method: str) -> bool:
         or not segments[3]
     ):
         return False
-    from stackos.operations.registry import build_operation_registry
+    from stackos.operations.registry import OperationRegistry, build_operation_registry
     from stackos.repositories.base import NotFoundError
 
+    active_registry = (
+        registry if isinstance(registry, OperationRegistry) else build_operation_registry()
+    )
     try:
-        spec = build_operation_registry().get(segments[3], surface="rest")
+        spec = active_registry.get(segments[3], surface="rest")
     except NotFoundError:
         return False
     return spec.surfaces.rest.browser_safe
@@ -258,12 +268,12 @@ def _allows_ui_plugin_enable(path: str, method: str) -> bool:
     )
 
 
-def _ui_scope_for_request(path: str, method: str) -> str | None:
+def _ui_scope_for_request(path: str, method: str, *, registry: object | None = None) -> str | None:
     if _allows_ui_read(path, method):
         return "ui-read"
-    if _allows_ui_read_operation_call(path, method):
+    if _allows_ui_read_operation_call(path, method, registry=registry):
         return "ui-read-operation"
-    if _allows_ui_console_operation_call(path, method):
+    if _allows_ui_console_operation_call(path, method, registry=registry):
         return "ui-console-operation"
     if _allows_ui_project_setup(path, method):
         return "ui-project-setup"
@@ -319,7 +329,8 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         if secrets.compare_digest(value, self._ui_token):
-            scope = _ui_scope_for_request(request.url.path, request.method)
+            registry = getattr(request.app.state, "operation_registry", None)
+            scope = _ui_scope_for_request(request.url.path, request.method, registry=registry)
             if scope is None:
                 return JSONResponse(
                     {

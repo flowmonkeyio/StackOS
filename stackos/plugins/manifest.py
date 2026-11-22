@@ -470,15 +470,18 @@ def _bundled_plugin_manifest_nodes() -> list[Traversable]:
     )
 
 
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
 def load_plugin_manifest_file(path: Path) -> PluginManifest:
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw = yaml.load(path.read_text(encoding="utf-8"), Loader=_YAML_LOADER)
     if not isinstance(raw, dict):
         raise ValueError(f"plugin manifest must be a YAML object: {path}")
     return PluginManifest.model_validate(raw)
 
 
 def _load_plugin_manifest_node(node: Traversable) -> PluginManifest:
-    raw = yaml.safe_load(node.read_text(encoding="utf-8"))
+    raw = yaml.load(node.read_text(encoding="utf-8"), Loader=_YAML_LOADER)
     if not isinstance(raw, dict):
         raise ValueError(f"plugin manifest must be a YAML object: {node}")
     return PluginManifest.model_validate(raw)

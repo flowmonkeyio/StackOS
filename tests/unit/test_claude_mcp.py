@@ -473,7 +473,7 @@ def test_register_discovers_claude_from_user_login_shell(tmp_path: Path, monkeyp
     fake_claude = _write_fake_claude(claude_dir, state_path)
     fake_shell = shell_dir / "zsh"
     fake_shell.write_text(
-        f"#!{sys.executable}\nprint({str(fake_claude)!r})\n",
+        f"#!{sys.executable}\nprint({str(claude_dir)!r})\n",
         encoding="utf-8",
     )
     fake_shell.chmod(0o755)

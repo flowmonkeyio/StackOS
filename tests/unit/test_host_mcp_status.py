@@ -277,3 +277,123 @@ def test_host_status_projects_shared_execution_catalog(monkeypatch: pytest.Monke
         assert row["available"] is False
         assert row["agent_execution"]["credential_status"] == "not_checked"
         assert row["agent_execution"]["model_access"] == "not_checked"
+
+
+def test_resolve_cli_bin_skips_login_shell_when_path_hits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stackos.host_mcp import discovery
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "demo-cli"
+    exe.write_text("#!/bin/sh\nexit 0\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    def forbidden_login_shell(*_args, **_kwargs):
+        raise AssertionError("login shell must not run when PATH already resolves the binary")
+
+    monkeypatch.setattr(discovery, "discover_with_login_shell", forbidden_login_shell)
+    assert discovery.resolve_cli_bin("demo-cli") == str(exe)
+
+
+def test_inspect_all_runs_fresh_inspection_when_refresh_overlaps_earlier_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    calls = 0
+    lock = threading.Lock()
+
+    class ChangingAdapter:
+        HOST_KEY = "codex"
+
+        @staticmethod
+        def inspect(_home: Path) -> HostMcpResult:
+            nonlocal calls
+            with lock:
+                calls += 1
+                current = calls
+            if current == 1:
+                first_entered.set()
+                assert release_first.wait(2.0)
+                return HostMcpResult(
+                    "codex", "fixture", "available_unregistered", "before-change", True, True
+                )
+            return HostMcpResult(
+                "codex", "fixture", "registered_current", "after-change", True, True
+            )
+
+    monkeypatch.setattr(
+        service,
+        "_definitions",
+        lambda: [
+            service.HostMcpDefinition(
+                adapter=ChangingAdapter,
+                policy=service.HostMcpPolicy("codex", "ChatGPT / Codex", "automatic"),
+            )
+        ],
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        earlier = pool.submit(service.inspect_all, home=tmp_path)
+        assert first_entered.wait(2.0)
+        # External registration change happens while `earlier` is still in flight;
+        # a subsequent refresh must run fresh rather than joining `earlier`.
+        refresh = pool.submit(service.inspect_all, home=tmp_path)
+        r_refresh = refresh.result(timeout=5.0)
+        release_first.set()
+        r_earlier = earlier.result(timeout=5.0)
+    assert calls == 2
+    assert r_earlier.results[0].message == "before-change"
+    assert r_refresh.results[0].message == "after-change"
+
+
+def test_unchanged_launcher_script_reprobes_when_backend_changes(tmp_path: Path) -> None:
+    import sys
+
+    from stackos.host_mcp.subscription_claude import read_claude
+
+    backend_state = tmp_path / "backend-state.txt"
+    agy_wrapper = tmp_path / "agy"
+    agy_wrapper.write_text(
+        f"#!{sys.executable}\n"
+        f"import pathlib, sys\n"
+        f"val = pathlib.Path({str(backend_state)!r}).read_text().strip()\n"
+        f"if val == 'ok':\n"
+        f"    print('1.2.3')\n"
+        f"    sys.exit(0)\n"
+        f"sys.exit(1)\n",
+        encoding="utf-8",
+    )
+    agy_wrapper.chmod(0o755)
+    backend_state.write_text("ok", encoding="utf-8")
+    assert antigravity.resolve_antigravity_bin(explicit=str(agy_wrapper)) == str(agy_wrapper)
+    # Backend breaks while wrapper metadata (realpath/mtime/size) stays identical.
+    backend_state.write_text("missing", encoding="utf-8")
+    assert antigravity.resolve_antigravity_bin(explicit=str(agy_wrapper)) is None
+
+    claude_state = tmp_path / "claude-version.txt"
+    claude_wrapper = tmp_path / "claude"
+    claude_wrapper.write_text(
+        f"#!{sys.executable}\n"
+        f"import json, pathlib, sys\n"
+        f"ver = pathlib.Path({str(claude_state)!r}).read_text().strip()\n"
+        f"if sys.argv[1:] == ['--version']:\n"
+        f"    print(ver)\n"
+        f"elif sys.argv[1:3] == ['auth', 'status']:\n"
+        f"    print(json.dumps({{'loggedIn': True, 'authMethod': 'claude.ai',\n"
+        f"                      'subscriptionType': 'pro'}}))\n"
+        f"else:\n"
+        f"    print('')\n",
+        encoding="utf-8",
+    )
+    claude_wrapper.chmod(0o755)
+    claude_state.write_text("2.1.280 (Claude Code)", encoding="utf-8")
+    assert read_claude(str(claude_wrapper)) == {"plan": "Claude Pro", "meters": []}
+    # Wrapper now dispatches to an unsupported older Claude backend without changing wrapper stat.
+    claude_state.write_text("2.1.20 (Claude Code)", encoding="utf-8")
+    assert read_claude(str(claude_wrapper)) is None

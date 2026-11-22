@@ -1389,7 +1389,7 @@ use separate index searches. A short report never decodes unrelated raw history.
 snapshot or usage refresh share its selected rows, provisional copy and normalized
 facts. The live copy is captured before fresh scalar SQL; persisted final usage
 and closed timing endpoints still win. Later requests create a new projection.
-At the same statistics owner, bounded in-process LRU reuse (8192 source entries)
+At the same statistics owner, bounded in-process LRU reuse (16384 source entries)
 keys pure decoding/normalization and per-receipt history preparation by the complete
 projected source value and ticket identity where needed. Changed source values
 cannot reuse an older contribution. This cache contains no scoped report result,

@@ -700,14 +700,30 @@ class ProjectSetupRepository:
         *,
         selected_optional_presets: list[str] | None = None,
         _comparison: bool = False,
+        _project: Any | None = None,
+        _source_cache: dict[str, Any] | None = None,
     ) -> list[SetupSource]:
-        project = ProjectRepository(self._s)
-        project.require_available(project_id)
-        root = project.get(project_id).project_dir
+        if _project is None:
+            project = ProjectRepository(self._s)
+            project.require_available(project_id)
+            root = project.get(project_id).project_dir
+        else:
+            root = _project.project_dir
         # Reads must not synchronize the plugin catalog or commit the project
         # availability reservation held by a receipt writer.
-        workflow = WorkflowTemplateLoader(self._s, sync_plugins=False).describe_template(
-            key=workflow_key, project_id=project_id, repo_root=root
+        template_loader = WorkflowTemplateLoader(self._s, sync_plugins=False)
+        template_candidates = _source_cache.get("templates") if _source_cache is not None else None
+        if template_candidates is None:
+            template_candidates = template_loader._load_candidates(
+                project_id=project_id, repo_root=root, plugin_slug=None
+            )
+            if _source_cache is not None:
+                _source_cache["templates"] = template_candidates
+        workflow = template_loader.describe_template(
+            key=workflow_key,
+            project_id=project_id,
+            repo_root=root,
+            _candidates=template_candidates,
         )
         summary = workflow.summary
         origin = f"{summary.source}:{summary.plugin_slug or summary.template_id or ''}"
@@ -736,14 +752,22 @@ class ProjectSetupRepository:
             selected.intersection_update(declared_optional)
         elif selected - declared_optional:
             raise ValidationError("selected optional presets must be declared by the workflow")
+        skill_loader = SkillPresetLoader()
+        skill_candidates = _source_cache.get("skills") if _source_cache is not None else None
         for requirement in workflow.spec.skill_preset_requirements:
             if (
                 requirement.requirement == "optional"
                 and requirement.skill_preset_ref not in selected
             ):
                 continue
-            loaded = SkillPresetLoader().describe_preset(
-                key=requirement.skill_preset_ref, repo_root=root
+            if skill_candidates is None:
+                skill_candidates = skill_loader._load_candidates(repo_root=root, plugin_slug=None)
+                if _source_cache is not None:
+                    _source_cache["skills"] = skill_candidates
+            loaded = skill_loader.describe_preset(
+                key=requirement.skill_preset_ref,
+                repo_root=root,
+                _candidates=skill_candidates,
             )
             sources.append(
                 self._source(
@@ -755,14 +779,22 @@ class ProjectSetupRepository:
                     loaded.preset.model_dump(mode="json"),
                 )
             )
+        agent_loader = AgentPresetLoader()
+        agent_candidates = _source_cache.get("agents") if _source_cache is not None else None
         for agent_requirement in workflow.spec.agent_requirements:
             if (
                 agent_requirement.requirement == "optional"
                 and agent_requirement.agent_preset_ref not in selected
             ):
                 continue
-            loaded_agent = AgentPresetLoader().describe_preset(
-                key=agent_requirement.agent_preset_ref, repo_root=root
+            if agent_candidates is None:
+                agent_candidates = agent_loader._load_candidates(repo_root=root, plugin_slug=None)
+                if _source_cache is not None:
+                    _source_cache["agents"] = agent_candidates
+            loaded_agent = agent_loader.describe_preset(
+                key=agent_requirement.agent_preset_ref,
+                repo_root=root,
+                _candidates=agent_candidates,
             )
             sources.append(
                 self._source(
@@ -1995,7 +2027,13 @@ class ProjectSetupRepository:
         ).first()
 
     def _workflow(
-        self, row: ProjectSetupReceipt | None, project_id: int, workflow_key: str
+        self,
+        row: ProjectSetupReceipt | None,
+        project_id: int,
+        workflow_key: str,
+        *,
+        project: Any | None = None,
+        source_cache: dict[str, Any] | None = None,
     ) -> SetupWorkflowOut:
         out = SetupWorkflowOut(
             workflow_key=workflow_key,
@@ -2021,7 +2059,8 @@ class ProjectSetupRepository:
             elif out.requested_scope == "ready_to_use":
                 out.activation_status = "pending"
                 out.missing_activation_claims = ["saved_defaults", "native_consumption"]
-        project = ProjectRepository(self._s).get(project_id)
+        if project is None:
+            project = ProjectRepository(self._s).get(project_id)
         if project.primary_workspace_binding_id is not None and project.project_dir is None:
             out.status = "source_unavailable"
             out.diagnostic = project.project_folder_issue
@@ -2036,7 +2075,12 @@ class ProjectSetupRepository:
                 else []
             )
             out.available_sources = self.inspect_sources(
-                project_id, workflow_key, selected_optional_presets=optional, _comparison=True
+                project_id,
+                workflow_key,
+                selected_optional_presets=optional,
+                _comparison=True,
+                _project=project,
+                _source_cache=source_cache,
             )
         except (RepositoryError, ValueError, yaml.YAMLError, OSError) as exc:
             out.status = "source_unavailable"
@@ -2130,11 +2174,20 @@ class ProjectSetupRepository:
                 )
             ).all()
         )
+        receipts_by_key = {item.workflow_key: item for item in receipts}
         aggregate_keys = keys.copy()
         if workflow_key:
             keys.add(workflow_key)
+        source_cache: dict[str, Any] = {}
         workflows = [
-            self._workflow(self._row(project_id, key), project_id, key) for key in sorted(keys)
+            self._workflow(
+                receipts_by_key.get(key),
+                project_id,
+                key,
+                project=project,
+                source_cache=source_cache,
+            )
+            for key in sorted(keys)
         ]
         aggregate = [item for item in workflows if item.workflow_key in aggregate_keys]
         configured = sum(item.successful is not None for item in aggregate)

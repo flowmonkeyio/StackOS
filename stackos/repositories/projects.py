@@ -280,7 +280,38 @@ class ProjectRepository:
         row = self._fetch_row(id_or_slug)
         return self._out(row)
 
-    def _out(self, row: Project) -> ProjectOut:
+    def _workspace_binding_index(
+        self,
+    ) -> tuple[dict[int, WorkspaceBinding], set[int], dict[Path, set[int]]]:
+        bindings = self._s.exec(select(WorkspaceBinding)).all()
+        by_id: dict[int, WorkspaceBinding] = {}
+        projects_with_dir: set[int] = set()
+        resolved_cache: dict[str, Path | None] = {}
+        owners_by_root: dict[Path, set[int]] = {}
+        for binding in bindings:
+            if binding.id is not None:
+                by_id[binding.id] = binding
+            raw = binding.last_known_root
+            if not raw:
+                continue
+            projects_with_dir.add(binding.project_id)
+            if raw not in resolved_cache:
+                try:
+                    resolved_cache[raw] = Path(raw).resolve()
+                except (OSError, RuntimeError, ValueError):
+                    resolved_cache[raw] = None
+            resolved = resolved_cache[raw]
+            if resolved is not None:
+                owners_by_root.setdefault(resolved, set()).add(binding.project_id)
+        return by_id, projects_with_dir, owners_by_root
+
+    def _out(
+        self,
+        row: Project,
+        *,
+        _binding_index: tuple[dict[int, WorkspaceBinding], set[int], dict[Path, set[int]]]
+        | None = None,
+    ) -> ProjectOut:
         out = ProjectOut.model_validate(row)
         setup = (
             "Ask your setup agent to select this project's folder once from its existing "
@@ -288,23 +319,30 @@ class ProjectRepository:
             "Projects without a local folder can continue using other features."
         )
         binding = (
-            self._s.get(WorkspaceBinding, row.primary_workspace_binding_id)
+            (
+                _binding_index[0].get(row.primary_workspace_binding_id)
+                if _binding_index is not None
+                else self._s.get(WorkspaceBinding, row.primary_workspace_binding_id)
+            )
             if row.primary_workspace_binding_id
             else None
         )
         if row.primary_workspace_binding_id is None:
-            has_directory = (
-                self._s.exec(
-                    select(WorkspaceBinding.id)
-                    .where(
-                        WorkspaceBinding.project_id == row.id,
-                        col(WorkspaceBinding.last_known_root).is_not(None),
-                        WorkspaceBinding.last_known_root != "",
-                    )
-                    .limit(1)
-                ).first()
-                is not None
-            )
+            if _binding_index is not None:
+                has_directory = row.id in _binding_index[1]
+            else:
+                has_directory = (
+                    self._s.exec(
+                        select(WorkspaceBinding.id)
+                        .where(
+                            WorkspaceBinding.project_id == row.id,
+                            col(WorkspaceBinding.last_known_root).is_not(None),
+                            WorkspaceBinding.last_known_root != "",
+                        )
+                        .limit(1)
+                    ).first()
+                    is not None
+                )
             return out.model_copy(
                 update={
                     "project_folder_status": "missing" if has_directory else "directoryless",
@@ -345,16 +383,19 @@ class ProjectRepository:
             if not root.is_dir() or not root.is_absolute() or root == Path(root.anchor):
                 raise ValueError("unavailable folder")
             # Match the exact project/path association enforced by projectAgent.*.
-            owners = set()
-            for candidate in self._s.exec(select(WorkspaceBinding)).all():
-                try:
-                    if (
-                        candidate.last_known_root
-                        and Path(candidate.last_known_root).resolve() == root
-                    ):
-                        owners.add(candidate.project_id)
-                except (OSError, RuntimeError, ValueError):
-                    continue
+            if _binding_index is not None:
+                owners = _binding_index[2].get(root, set())
+            else:
+                owners = set()
+                for candidate in self._s.exec(select(WorkspaceBinding)).all():
+                    try:
+                        if (
+                            candidate.last_known_root
+                            and Path(candidate.last_known_root).resolve() == root
+                        ):
+                            owners.add(candidate.project_id)
+                    except (OSError, RuntimeError, ValueError):
+                        continue
         except (OSError, RuntimeError, ValueError):
             return out.model_copy(
                 update={
@@ -425,7 +466,9 @@ class ProjectRepository:
         rows = self._s.exec(
             stmt.order_by(col(Project.order_index), col(Project.id)).limit(size + 1)
         ).all()
-        items = [self._out(row) for row in rows[:size]]
+        page_rows = rows[:size]
+        binding_index = self._workspace_binding_index() if page_rows else None
+        items = [self._out(row, _binding_index=binding_index) for row in page_rows]
         return Page(
             items=items,
             next_cursor=items[-1].id if len(rows) > size else None,

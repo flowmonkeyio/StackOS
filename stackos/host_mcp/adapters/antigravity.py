@@ -19,7 +19,7 @@ from stackos.host_mcp.bridge import (
     resolve_bridge_command,
     token_preflight,
 )
-from stackos.host_mcp.discovery import resolve_cli_bins, subprocess_env_for_cli
+from stackos.host_mcp.discovery import iter_cli_bins, subprocess_env_for_cli
 from stackos.host_mcp.json_config import (
     CONFIG_CHANGED,
     JsonConfigRead,
@@ -47,7 +47,7 @@ def resolve_antigravity_bin(explicit: str | None = None) -> str | None:
     Otherwise use shared PATH, known-install and login-shell candidate ordering.
     A bounded, noninteractive --version probe must return the native version.
     """
-    for candidate in resolve_cli_bins(
+    for candidate in iter_cli_bins(
         "agy",
         env_var=ANTIGRAVITY_BIN_ENV,
         explicit=explicit,

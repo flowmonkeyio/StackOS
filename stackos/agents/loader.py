@@ -136,8 +136,13 @@ class AgentPresetLoader:
         repo_root: str | None = None,
         plugin_slug: str | None = None,
         source: str | None = None,
+        _candidates: list[_Candidate] | None = None,
     ) -> LoadedAgentPreset:
-        candidates = self._load_candidates(repo_root=repo_root, plugin_slug=plugin_slug)
+        candidates = (
+            _candidates
+            if _candidates is not None
+            else self._load_candidates(repo_root=repo_root, plugin_slug=plugin_slug)
+        )
         # Every source is read/validated before filtering; unrelated malformed
         # sources still reject, but point lookup only copies matching presets.
         resolved = self._resolve_candidates(
@@ -213,14 +218,18 @@ class AgentPresetLoader:
         loaded: list[LoadedAgentPreset] = []
         seen_paths: set[str] = set()
         clone_root = _clone_plugins_root()
-        if clone_root is not None:
-            for path in _iter_yaml_paths(clone_root):
-                if "/agent-presets/" not in path.as_posix():
+        if clone_root is not None and clone_root.is_dir():
+            for plugin_dir in sorted(clone_root.iterdir()):
+                if plugin_dir.is_symlink() or not plugin_dir.is_dir():
                     continue
-                if plugin_slug is not None and path.relative_to(clone_root).parts[0] != plugin_slug:
+                if plugin_slug is not None and plugin_dir.name != plugin_slug:
                     continue
-                seen_paths.add(path.resolve().as_posix())
-                loaded.extend(self._loaded_from_file_path(path, clone_root=clone_root))
+                presets_dir = plugin_dir / "agent-presets"
+                if presets_dir.is_symlink() or not presets_dir.is_dir():
+                    continue
+                for path in _iter_yaml_paths(presets_dir):
+                    seen_paths.add(path.resolve().as_posix())
+                    loaded.extend(self._loaded_from_file_path(path, clone_root=clone_root))
         bundled_root = _bundled_plugins_root()
         if bundled_root is not None:
             for node in _iter_traversable_yaml(bundled_root):

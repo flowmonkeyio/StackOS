@@ -122,6 +122,20 @@ describe('HomeView', () => {
       '/api/v1/operations/hostMcp.status/call',
       expect.anything(),
     )
+    const urls = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => String(url))
+    const subscriptionsIndex = urls.indexOf('/api/v1/operations/hostMcp.subscriptions/call')
+    expect(subscriptionsIndex).toBeGreaterThan(-1)
+    for (const fastPath of [
+      '/api/v1/operations/tracker.activeTasksAll/call',
+      '/api/v1/operations/tracker.agentStatsAll/call',
+      '/api/v1/health',
+      '/api/v1/auth/accounts?summary_only=true',
+      '/api/v1/operations/hostMcp.status/call',
+    ]) {
+      const fastIndex = urls.indexOf(fastPath)
+      expect(fastIndex).toBeGreaterThan(-1)
+      expect(fastIndex).toBeLessThan(subscriptionsIndex)
+    }
     const guide = wrapper.get('a[href="https://stackos.flowmonkey.io/getting-started"]')
     expect(guide.text()).toContain('Getting started')
     expect(guide.attributes('target')).toBe('_blank')

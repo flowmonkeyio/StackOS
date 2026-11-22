@@ -18,6 +18,8 @@ from pydantic import (
 
 from stackos.artifacts import redact_secret_text
 
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 AGENT_PRESET_SCHEMA_VERSION = "stackos.agent-preset.v1"
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
@@ -226,7 +228,7 @@ def parse_agent_preset_obj(data: dict[str, Any]) -> AgentPresetSpec:
 
 
 def parse_agent_preset_yaml(text: str) -> AgentPresetSpec:
-    loaded = yaml.safe_load(text)
+    loaded = yaml.load(text, Loader=_YAML_LOADER)
     if not isinstance(loaded, dict):
         raise ValueError("agent preset YAML must contain an object")
     return parse_agent_preset_obj(loaded)
@@ -239,7 +241,7 @@ def parse_agent_preset_bundle_obj(data: dict[str, Any]) -> list[AgentPresetSpec]
 
 
 def parse_agent_preset_bundle_yaml(text: str) -> list[AgentPresetSpec]:
-    loaded = yaml.safe_load(text)
+    loaded = yaml.load(text, Loader=_YAML_LOADER)
     if not isinstance(loaded, dict):
         raise ValueError("agent preset YAML must contain an object")
     return parse_agent_preset_bundle_obj(loaded)
@@ -271,7 +273,7 @@ def validate_agent_preset_obj(data: dict[str, Any]) -> AgentPresetValidationOut:
 
 def validate_agent_preset_yaml(text: str) -> AgentPresetValidationOut:
     try:
-        loaded = yaml.safe_load(text)
+        loaded = yaml.load(text, Loader=_YAML_LOADER)
     except yaml.YAMLError as exc:
         return AgentPresetValidationOut(
             valid=False,

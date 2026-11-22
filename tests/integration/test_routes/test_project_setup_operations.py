@@ -694,3 +694,110 @@ def test_source_parse_errors_keep_registered_read_and_reminder_responses_truthfu
     assert reminder.json()["data"]["setup_reminder_dismissed_at"]
     assert reminder.json()["data"]["configured_count"] == 1
     assert reminder.json()["data"]["workflows"][0]["status"] == "source_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_project_setup_get_offloads_to_threadpool_and_reuses_source_candidates(
+    api, project_id, settings, tmp_path, monkeypatch
+):
+    import asyncio
+    import threading
+    import time
+
+    import httpx
+
+    from stackos.agents.loader import AgentPresetLoader
+    from stackos.skill_presets.loader import SkillPresetLoader
+    from stackos.workflows.template_loader import WorkflowTemplateLoader
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    with Session(api.app.state.engine) as session:
+        binding = (
+            WorkspaceRepository(session)
+            .connect(
+                project_id=project_id, repo_fingerprint=f"path:{root}", last_known_root=str(root)
+            )
+            .data
+        )
+        ProjectRepository(session).update(project_id, primary_workspace_binding_id=binding.id)
+        repo = ProjectSetupRepository(session)
+        for key in ("engineering.tracked-delivery", "agency.project-setup"):
+            repo.record_result(
+                project_id,
+                key,
+                expected_revision=0,
+                result=verified_result(repo, project_id, key),
+            )
+
+    template_loads = 0
+    skill_loads = 0
+    agent_loads = 0
+    orig_template = WorkflowTemplateLoader._load_candidates
+    orig_skill = SkillPresetLoader._load_candidates
+    orig_agent = AgentPresetLoader._load_candidates
+
+    def count_template(self, *args, **kwargs):
+        nonlocal template_loads
+        template_loads += 1
+        return orig_template(self, *args, **kwargs)
+
+    def count_skill(self, *args, **kwargs):
+        nonlocal skill_loads
+        skill_loads += 1
+        return orig_skill(self, *args, **kwargs)
+
+    def count_agent(self, *args, **kwargs):
+        nonlocal agent_loads
+        agent_loads += 1
+        return orig_agent(self, *args, **kwargs)
+
+    monkeypatch.setattr(WorkflowTemplateLoader, "_load_candidates", count_template)
+    monkeypatch.setattr(SkillPresetLoader, "_load_candidates", count_skill)
+    monkeypatch.setattr(AgentPresetLoader, "_load_candidates", count_agent)
+
+    loop_thread = threading.get_ident()
+    setup_threads: list[int] = []
+    entered = threading.Event()
+    release = threading.Event()
+    orig_get = ProjectSetupRepository.get
+
+    def slow_get(self, *args, **kwargs):
+        setup_threads.append(threading.get_ident())
+        entered.set()
+        assert release.wait(2.0)
+        return orig_get(self, *args, **kwargs)
+
+    monkeypatch.setattr(ProjectSetupRepository, "get", slow_get)
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=api.app),
+        base_url="http://127.0.0.1:5180",
+        headers=ui,
+    ) as client:
+        setup_task = asyncio.create_task(
+            client.post(
+                "/api/v1/operations/projectSetup.get/call",
+                json={"arguments": {"project_id": project_id, "response_mode": "raw"}},
+            )
+        )
+        try:
+            async with asyncio.timeout(2.0):
+                while not entered.is_set():
+                    await asyncio.sleep(0.002)
+            before = time.perf_counter()
+            health = await client.get("/api/v1/health")
+            health_ms = (time.perf_counter() - before) * 1000
+            assert health.status_code == 200
+            assert health_ms < 100
+        finally:
+            release.set()
+        setup_resp = await setup_task
+        assert setup_resp.status_code == 200, setup_resp.text
+        assert setup_resp.json()["configured_count"] == 2
+    assert setup_threads and all(tid != loop_thread for tid in setup_threads)
+    # Multi-workflow get() scans template/skill/agent candidates at most once each.
+    assert template_loads == 1
+    assert skill_loads <= 1
+    assert agent_loads <= 1

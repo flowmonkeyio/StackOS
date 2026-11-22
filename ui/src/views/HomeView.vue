@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell, UiSegmentedControl } from '@/components/ui'
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
@@ -38,12 +38,21 @@ async function refreshHostPanel(): Promise<void> {
 const { health, systemBusy, statusTone, statusLabel, systemFacts, loadHealth, runSystemAction } =
   useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: refreshHostPanel })
 
+let unmounted = false
+onBeforeUnmount(() => { unmounted = true })
+
 onMounted(() => {
+  // Queue fast local reads before slow native-CLI quota probes so HTTP/1.1
+  // connection slots are not held ahead of primary Overview data. Active-task
+  // and usage readers coalesce synchronous mount callers across one microtask,
+  // so queue quotas after that microtask boundary with zero timer delay.
   void agents.load()
   void loadHealth()
-  void loadHostStatuses()
-  void quotas.load()
   void catalog.refreshHomeAccounts()
+  void loadHostStatuses()
+  queueMicrotask(() => {
+    if (!unmounted) void quotas.load()
+  })
 })
 
 const refreshing = ref(false)

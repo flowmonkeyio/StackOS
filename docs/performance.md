@@ -97,10 +97,28 @@ requests instead.
 
 Response filtering must reduce database work as well as payload size. Tracker
 list reads bulk-hydrate task, parent, dependency, reference, and link state;
-never reintroduce per-ticket relation queries. Synchronous SQLite-backed reads
-used by async operation routes must run outside the event-loop thread so one
-large local read cannot make unrelated health, shell, or status requests queue
-behind it.
+never reintroduce per-ticket relation queries. Auth account summaries and
+project listings bulk-load bindings, scopes, project attachments, and latest
+usage events instead of issuing per-row queries. Synchronous SQLite-backed and
+filesystem-backed reads used by async operation and REST routes (including
+`projectSetup.get`, project/plugin listings, account summaries, and tracker
+reads) must run outside the event-loop thread so one local read cannot make
+unrelated health, shell, or status requests queue behind it.
+
+Delivery trend timing queries combine per-ticket inventory counters and in-range
+receipt selections via `UNION ALL` in a single statement rather than joining two
+derived subqueries without an index. Request routes and UI bearer-token checks
+reuse each FastAPI app's isolated `app.state.operation_registry` rather than
+rebuilding the operation catalog per request. Host inspection avoids login-shell
+forks when `PATH`, common paths, or app bundles already locate a binary, caches
+login-shell `PATH` briefly, runs fresh parallel adapter inspections without
+caching mutable launcher probes or coalescing across registrations, and reuses
+the warm daemon's `hostMcp.status` operation from the desktop shell before
+falling back to a cold CLI subprocess. Overview queues fast local reads ahead of
+slow native-CLI `hostMcp.subscriptions` probes so HTTP/1.1 connection slots stay
+available for primary supervision widgets. Empty-demand `ui_demand={"projects":{}}`
+SSE transports query tracker revisions directly without hydrating full
+task/ticket UI snapshots.
 
 These are regression budgets, not permission to make small local datasets wait
 for the full budget.

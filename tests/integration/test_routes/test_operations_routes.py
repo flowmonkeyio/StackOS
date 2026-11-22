@@ -1431,7 +1431,7 @@ def test_handler_owned_idempotency_revalidates_every_attempt(
     # Exercise the declared policy against the old dispatcher for a semantic red.
     object.__setattr__(spec, "idempotency_policy", "handler")
     object.__setattr__(spec, "handler", checked_handler)
-    monkeypatch.setattr("stackos.api.operations.build_operation_registry", lambda: registry)
+    monkeypatch.setattr(api.app.state, "operation_registry", registry)
     arguments = {
         "project_id": project_id,
         "thread_key": "handler-replay",

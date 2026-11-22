@@ -1360,7 +1360,7 @@ def test_misclassified_registered_policy_never_creates_console_authority(
                 spec.surfaces, rest=replace(spec.surfaces.rest, path="/api/v1/operations/fake/call")
             ),
         )
-    monkeypatch.setattr("stackos.api.operations.build_operation_registry", lambda: registry)
+    monkeypatch.setattr(api.app.state, "operation_registry", registry)
     assert call(api, "finance.query", {**finance["common"], **QUERY}).status_code == 403
 
 
