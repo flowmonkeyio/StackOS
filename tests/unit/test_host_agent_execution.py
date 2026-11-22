@@ -156,6 +156,36 @@ def test_shared_selection_validation_matches_native_rejection(
     assert result.error == error and result.exit_code is None
 
 
+@pytest.mark.parametrize("host", ["codex", "claude-code", "grok", "antigravity", "hermes"])
+def test_preparation_context_capability_keeps_new_and_retained_assignments_distinct(
+    host, monkeypatch
+):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: pytest.fail("context decision must not probe native history"),
+    )
+    definition = service._definition_by_key(host)
+    assert definition.policy.agent_execution.preparation_context_reuse == "unsupported"
+    select = service.preparation_context_decision
+    assert select(host, has_parent=True, resume_thread_id=None, independent_review=False) == {
+        "mode": "fresh",
+        "reason": "unsupported",
+    }
+    assert select(host, has_parent=False, resume_thread_id=None, independent_review=False) == {
+        "mode": "fresh",
+        "reason": "absent",
+    }
+    assert select(host, has_parent=True, resume_thread_id=None, independent_review=True) == {
+        "mode": "fresh",
+        "reason": "independent_review",
+    }
+    assert select(host, has_parent=True, resume_thread_id="exact", independent_review=True) == {
+        "mode": "resume",
+        "reason": "retained_session",
+    }
+
+
 def test_native_source_validation_preserves_inherited_model_and_settings():
     settings = {"model_reasoning_effort": "minimal", "features": {"apps": False}}
     before = json.loads(json.dumps(settings))

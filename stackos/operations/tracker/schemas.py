@@ -16,6 +16,7 @@ from pydantic import (
     StrictBool,
     StrictInt,
     StrictStr,
+    field_validator,
     model_validator,
 )
 
@@ -203,11 +204,41 @@ class ReviewReplacement(BaseModel):
     reviewer_source: ReviewReplacementSource | None = None
 
 
+class PreparationParentRef(BaseModel):
+    """Main's explicit admission of one existing read-only preparation outcome."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    kind: Literal["task_phase"]
+    project_id: int = Field(gt=0)
+    task_id: int = Field(gt=0)
+    ticket_id: int = Field(gt=0)
+    attempt: int = Field(gt=0)
+    phase: Literal["delivery"]
+    invocation_id: str = Field(min_length=1, max_length=200)
+    thread_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+    outcome_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preparation_only: Literal[True]
+
+    @field_validator("preparation_only", mode="before")
+    @classmethod
+    def explicit_preparation_admission(cls, value):
+        if value is not True:
+            raise ValueError("preparation_only requires an explicit true admission")
+        return value
+
+
 class TrackerStartDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     project_id: int
     task_key: str = Field(min_length=1)
     project_dir: str = Field(min_length=1)
+    preparation_parent: PreparationParentRef | None = Field(
+        default=None,
+        description="Explicit completed read-only task-phase receipt, admitted by main as "
+        "preparation only. Pins the outcome and frozen native session; grants no history "
+        "reuse. Current safe context reuse is unsupported; NEW assignments start fresh.",
+    )
     mcp_config_ref: TaskMcpConfigRef | None = Field(
         default=None,
         description=(
@@ -244,6 +275,7 @@ class TrackerStartDeliveryInput(MCPInput):
                 self.review_agent,
                 self.agents,
                 self.agent_assignments,
+                self.preparation_parent,
             )
         ):
             raise ValueError(

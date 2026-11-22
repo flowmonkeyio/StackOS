@@ -816,6 +816,8 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         if data.get("review_replacement"):
             # The owner emits only bounded target/candidate/snapshot refs here.
             out["review_replacement"] = copy.deepcopy(data["review_replacement"])
+        if data.get("preparation_parent"):
+            out["preparation_parent"] = copy.deepcopy(data["preparation_parent"])
         return out
     if operation_name == "workspace.startSession":
         out = _compact_mapping(data)

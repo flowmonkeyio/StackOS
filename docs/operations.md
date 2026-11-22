@@ -1276,6 +1276,15 @@ execution. Clear private search text and apply filters before analysis; read
 
 ## Automated delivery results and manual instruction adoption
 
+`tracker.startDelivery` accepts the typed optional
+[`preparation_parent` reference](task-tracker.md#preparation-references-and-fresh-execution)
+through its existing MCP, REST and CLI contract. Admission validates an explicitly
+selected completed read-only receipt before native preflight. Compact/raw receipts
+retain its bounded identity; occurrence evidence records fresh unsupported/absent,
+independent review or exact retained-session resume. Current hosts declare safe
+preparation-context reuse unsupported. No transcript or native fork is launched
+from this reference, and execution failures never become fresh retries.
+
 `tracker.startDelivery` accepts operator-authorized `replace_review` through the
 shared typed MCP, REST and CLI contract. See
 [review-only replacement](task-tracker.md#explicit-review-only-replacement) for

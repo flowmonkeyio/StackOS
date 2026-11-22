@@ -647,6 +647,50 @@ occurrences are not replayed. Managed-upgrade checkpoints and their explicit
 finish/postflight protocol retain their own authority and retry refs. General
 stopped-work recovery still requires explicit authorization and rehandoff.
 
+### Preparation references and fresh execution
+
+Main may explicitly admit a completed read-only preparation receipt with
+`tracker.startDelivery(preparation_parent=...)`. This task-only reference uses
+the existing task-phase evidence owner:
+
+```json
+{
+  "kind": "task_phase", "project_id": 1, "task_id": 10, "ticket_id": 20,
+  "attempt": 1, "phase": "delivery", "invocation_id": "exact-invocation",
+  "thread_id": "exact-native-session", "outcome_digest": "<64 lowercase hex>",
+  "snapshot_digest": "<64 lowercase hex>", "preparation_only": true
+}
+```
+
+Select the completed successful delivery receipt from `automatic_delivery` or
+its retained `attempts`, and the exact `sessions.delivery` snapshot. Digests are
+SHA256 of UTF-8 `json.dumps(value, sort_keys=True, separators=(",", ":"))`:
+`outcome_digest` covers the phase's `result`, and `snapshot_digest` covers the
+whole native session including `agent_snapshot`. IDs, invocation, project/root,
+source, host/provider/profile/settings and native identity must agree. The
+parent task and ticket must be complete and its launch must be read-only.
+Read-only execution alone does not establish preparation-only applicability;
+main admits that applicability explicitly. Malformed, forged or foreign input
+rejects before native access. StackOS does not scan history or infer safe content.
+The reference is frozen at handoff; omission on rehandoff retains it.
+
+All currently observed hosts declare `preparation_context_reuse: unsupported`.
+Codex 0.171's zero-turn fork succeeded with a distinct child and unchanged parent,
+but both bounded child-role replacement checks failed. Those observations remain
+capability evidence; raw fork syntax does not establish safe context reuse.
+Future activation requires demonstrated safe role replacement and a separate
+reviewed change. There is no dormant fork executor or native upgrade here.
+
+NEW assignments use the existing compact fresh launch under their admitted
+role/settings/route. Each occurrence records `preparation_context` with mode
+`fresh` and reason `unsupported` for an admitted reference, or `absent` without
+one. A previously admitted reference can remain provenance if it later becomes
+ineligible; it supplies no inherited content. Independent review records
+`independent_review` and receives no preparation history. Recovery records mode
+`resume`/reason `retained_session` and resumes the exact existing identity.
+Missing identity, denial, partial execution or failed resume never triggers a
+fresh retry. This creates no context store, parent search, seed call or savings claim.
+
 ### Task-local native tool routing
 
 For a task in a separate working tree, pass optional task-only

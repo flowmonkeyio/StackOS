@@ -8,7 +8,7 @@ PENDING_PRESET_ADOPTIONS = {
     "stackos.sdlc.test-designer": ("0.6.12", "0.6.14"),
     "stackos.sdlc.delivery": ("0.7.26", "0.7.27"),
     "stackos.sdlc.delivery-reviewer": ("0.6.27", "0.6.28"),
-    "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.32"),
+    "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.33"),
     "branding.evidence-curator": ("0.2.2", "0.2.3"),
     "branding.narrative-writer": ("0.1.6", "0.1.7"),
     "branding.channel-strategist": ("0.1.6", "0.1.7"),

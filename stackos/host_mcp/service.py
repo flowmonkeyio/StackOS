@@ -930,6 +930,27 @@ class HostMcpAggregate:
         ]
 
 
+def preparation_context_decision(
+    host_key: str, *, has_parent: bool, resume_thread_id: str | None, independent_review: bool
+) -> dict[str, str]:
+    """Select before execution; errors/denials never turn into a fresh retry.
+
+    All observed hosts lack demonstrated safe preparation-role replacement,
+    including Codex 0.171 despite its successful zero-turn fork.
+    """
+    if resume_thread_id is not None:
+        return {"mode": "resume", "reason": "retained_session"}
+    if independent_review:
+        return {"mode": "fresh", "reason": "independent_review"}
+    definition = _definition_by_key(host_key)
+    capability = (
+        definition.policy.agent_execution.preparation_context_reuse
+        if definition is not None
+        else "unsupported"
+    )
+    return {"mode": "fresh", "reason": capability if has_parent else "absent"}
+
+
 def run_agent(
     host_key: str,
     project_dir: str | Path,

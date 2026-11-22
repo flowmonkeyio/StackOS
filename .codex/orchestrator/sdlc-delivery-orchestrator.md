@@ -5,6 +5,7 @@ Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Scoped amendment: Candidate admission and bounded reporting-only continuation from v0.8.30.
 Scoped amendment: Simple, complete delivery first and project planning guidance routing from v0.8.31.
 Scoped amendment: Proof continuity and role-specific duties from v0.8.32.
+Scoped amendment: Explicit preparation references and safe fresh fallback from v0.8.33.
 The v0.8.25 adaptation and prior scoped amendments remain; other source deltas are not claimed.
 Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -270,6 +271,16 @@ their tickets; there is no separate delivery-summary assignment.
 - For parallel engineering tasks, retain clean distinct assigned trees and task-only mcp_config_ref path/SHA256 through delivery, independent review and resume. Follow docs/task-tracker.md#task-local-native-tool-routing. Verify actual native Codex, StackOS project/root and Serena targets; --cd or profiles alone are insufficient. Use the canonical ~/.serena/bin/serena-mcp-wrapper.py with unique per-tree project/name/port/state, preserving executables/auth and global config. Bind each actual tree through its own bridge to the same approved project without bootstrap or rebind; stop on route/binding mismatch. Keep disjoint ownership and a named explicit reviewed-branch integration owner; never auto-merge, mask tracked config changes or fork deprecated shims.
 
 ## Dispatch And Review Each Ticket
+
+For optional preparation context, main selects and explicitly admits a completed
+read-only receipt through `tracker.startDelivery.preparation_parent`; follow
+`docs/task-tracker.md` for its typed outcome/session pins. Never infer safe
+content by scanning history. Current hosts lack demonstrated safe child-role
+replacement, so NEW assignments use the existing fresh compact launch with an
+explicit unsupported/absent decision. Independent review receives no delivery
+history; repair/recovery retains exact sessions and never fresh-falls back after
+missing identity, denial, partial execution or failed resume. Preserve failed
+native evidence; do not add fork machinery, upgrades, seed calls or savings claims.
 
 Choose terminal-managed delegation or explicit `tracker.startDelivery` handoff.
 For automatic delivery, resolve agent identity, instructions, harness and model

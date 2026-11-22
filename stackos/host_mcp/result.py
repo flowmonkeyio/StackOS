@@ -257,6 +257,8 @@ class AgentCapabilities:
     profile_selection: bool = False
     requires_provider_model: bool = False
     mcp_routing: Literal["unsupported", "per-call", "workspace", "profile"] = "unsupported"
+    # Raw fork syntax does not prove safe replacement of inherited role authority.
+    preparation_context_reuse: Literal["unsupported"] = "unsupported"
     auth_status_command: tuple[str, ...] = ()
     notes: str = "Headless agent execution is unsupported."
     sources: tuple[str, ...] = ()

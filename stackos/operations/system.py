@@ -55,6 +55,7 @@ class HostMcpAgentExecutionOut(BaseModel):
     provider_selection: bool
     profile_selection: bool
     mcp_routing: Literal["unsupported", "per-call", "workspace", "profile"] = "unsupported"
+    preparation_context_reuse: Literal["unsupported"] = "unsupported"
     requires_provider_model: bool = Field(
         description="Requires explicit provider and model; otherwise native defaults are allowed."
     )
@@ -257,6 +258,8 @@ def operation_specs():
                 "neither guarantees a model invocation or another account's entitlement.",
                 "mcp_routing declares per-call, workspace, profile or unsupported native routing; "
                 "it does not prove a connected project or successful native tool consumption.",
+                "preparation_context_reuse is unsupported on observed hosts; raw fork "
+                "syntax alone does not prove safe replacement of inherited role authority.",
             ),
             mutating=False,
             grant_policy="local-admin-read",
