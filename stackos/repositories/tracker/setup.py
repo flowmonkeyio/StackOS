@@ -150,7 +150,16 @@ class TrackerSetupMixin:
         }
         if preview:
             return receipt
-        tracker = tracker or self.ensure_tracker(project_id=project_id)
+        if tracker is None:
+            from stackos.repositories.projects import ProjectRepository
+
+            # Reserve only the short creation/write transition, after native
+            # validation. A first save must not adopt a tracker another writer
+            # created while this request resolved its launch choices.
+            ProjectRepository(self._s).require_available(project_id, reserve=True)
+            if self._tracker_or_none(project_id=project_id) is not None:
+                raise ConflictError("Role settings changed; reload and reconcile the draft")
+            tracker = self.ensure_tracker(project_id=project_id)
         original = deepcopy(tracker.config_json)
         after = {**(original or {}), "delivery": proposed}
         # Compare-and-swap before the revision writer; a concurrent console save

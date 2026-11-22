@@ -432,6 +432,46 @@ def test_console_main_role_patch_uses_main_preferences_resolver(api, project_id,
     assert response.json()["data"]["role_settings"]["effective"] == effective
 
 
+@pytest.mark.parametrize("concurrent_create", [False, True])
+def test_console_first_role_save_guards_tracker_creation(
+    api, project_id, tmp_path, monkeypatch, concurrent_create
+):
+    from stackos import project_setup_execution
+    from stackos.repositories.tracker import TrackerRepository
+    from tests.integration.test_routes.test_project_agent_operations import bind
+
+    scope = bind(api, project_id, tmp_path / "first-role-race")
+    original = project_setup_execution.resolve_preferences
+    concurrent = {"host_key": "claude-code"}
+
+    def competing_save(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if concurrent_create:
+            with Session(api.app.state.engine) as other:
+                TrackerRepository(other).configure_delivery(
+                    project_id=project_id, delivery=concurrent
+                )
+        return result
+
+    monkeypatch.setattr(project_setup_execution, "resolve_preferences", competing_save)
+    response = api.post(
+        "/api/v1/operations/tracker.configureDelivery/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "project_dir": scope["project_dir"],
+                "expected_revision": 0,
+                "role_patch": {"role": "main_agent", "settings": {"host_key": "codex"}},
+            }
+        },
+    )
+    assert response.status_code == (409 if concurrent_create else 200), response.text
+    with Session(api.app.state.engine) as session:
+        assert TrackerRepository(session).delivery_defaults(project_id=project_id) == (
+            concurrent if concurrent_create else {"main_agent": {"host_key": "codex"}}
+        )
+
+
 def test_console_role_patch_reports_source_precedence_over_saved_fallback(
     api, project_id, tmp_path
 ):
