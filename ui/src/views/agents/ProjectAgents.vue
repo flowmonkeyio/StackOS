@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref, toRef } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, toRef } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, routerKey } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { reasoningOptions, reconcileReasoning } from '@/components/domain/agentSelection'
@@ -13,6 +13,7 @@ import ProjectRoleSettings from './ProjectRoleSettings.vue'
 
 const props = defineProps<{ projectId: number; standalone?: boolean }>()
 const codexLogo = resolveAgentHostLogo('codex')
+const roleSettings = ref<InstanceType<typeof ProjectRoleSettings> | null>(null)
 let reloadAgents = () => {}
 const { projectDir, folderIssue, folderReady, folderStatus, folderTitle, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'), () => reloadAgents())
 const search = ref('')
@@ -31,7 +32,7 @@ function resetEditorOptions(fields: AgentFields | null) {
   }
 }
 const { items, diagnostics, nativeReasoningEfforts, loading, loaded, ready, reading, saving, error, errorContext, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions, folderReady)
-reloadAgents = () => { void refresh() }
+reloadAgents = () => { void refresh(); void nextTick(() => roleSettings.value?.refresh()) }
 const visible = computed(() => items.value.filter(item => `${item.source_ref.native_name} ${item.fields?.description ?? ''} ${item.source_ref.source_path}`.toLowerCase().includes(search.value.toLowerCase())))
 const title = (name: string) => name.replace(/[_-]/g, ' ').replace(/^./, value => value.toUpperCase()).replace(/\bseo\b/gi, 'SEO')
 type PendingAction = { action: () => void; kind: 'refresh' | 'discard' }
@@ -99,7 +100,8 @@ if (inject(routerKey, null)) {
   onBeforeRouteUpdate(protectNavigation)
 }
 function guarded(action: () => void, kind: PendingAction['kind'] = 'discard') { if (saving.value) return; if (optionsDirty.value && !dirty.value) pending.value = { action, kind }; else protect(action, kind) }
-function guardedRefresh() { guarded(() => { void refreshFolder() }, 'refresh') }
+function refreshFolderSafely() { if (!roleSettings.value?.saving) void refreshFolder() }
+function guardedRefresh() { guarded(refreshFolderSafely, 'refresh') }
 const settings: { key: 'model_reasoning_summary' | 'model_verbosity'; label: string; values: string[] }[] = [
   { key: 'model_reasoning_summary', label: 'Reasoning summary', values: ['auto', 'concise', 'detailed', 'none'] },
   { key: 'model_verbosity', label: 'Verbosity', values: ['low', 'medium', 'high'] },
@@ -127,7 +129,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
       <template #actions>
         <UiButton
           icon-left="refresh"
-          :disabled="loading || folderLoading || reading || saving || !projectDir"
+          :disabled="loading || folderLoading || reading || saving || roleSettings?.saving || !projectDir"
           @click="guardedRefresh"
         >
           Refresh
@@ -143,11 +145,12 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
       </template>
     </ProjectPageHeader>
     <ProjectRoleSettings
-      v-if="folderReady && projectDir"
-      :key="`${projectId}:${projectDir}`"
+      :key="projectId"
+      ref="roleSettings"
       :project-id="projectId"
       :project-dir="projectDir"
       :sources="items"
+      :folder-ready="folderReady"
     />
     <div
       class="flex flex-wrap items-start justify-between gap-3"
@@ -167,7 +170,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
       >
         <UiButton
           icon-left="refresh"
-          :disabled="loading || folderLoading || reading || saving || !projectDir"
+          :disabled="loading || folderLoading || reading || saving || roleSettings?.saving || !projectDir"
           @click="guardedRefresh"
         >
           Refresh
@@ -193,7 +196,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
     >
       {{ folderIssue }}
       <UiButton
-        @click="guarded(() => { void refreshFolder() })"
+        @click="guarded(refreshFolderSafely)"
       >
         Retry project folder
       </UiButton>

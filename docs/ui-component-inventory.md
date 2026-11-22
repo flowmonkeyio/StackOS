@@ -102,7 +102,10 @@ Agents retains its Codex native definition editor and adds `ProjectRoleSettings`
 with `useRoleSettings` for delivery/review/main defaults through the existing
 `tracker.configureDelivery` operation. The form uses shared controls and the
 host capability catalog, labels effective saved source/inheritance, and keeps
-role/host drafts across selection changes. Stale/failed saves require explicit
+role/host drafts across selection changes and ordinary or failed folder refreshes.
+Folder validation disables role writes, and in-flight role saves disable page
+refresh. A changed folder retains drafts without granting write authority;
+leaving the project still requires explicit discard. Stale/failed saves require explicit
 reload while retaining edited fields; project/role response identities fence
 late reads. Main edits launch choices; its contract stays with setup/automation.
 

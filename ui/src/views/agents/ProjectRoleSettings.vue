@@ -8,10 +8,10 @@ import { useHomeAgentHostStatuses } from '@/views/home/useHomeAgentHostStatuses'
 import { agentIdentity, type AgentSummary } from './useProjectAgents'
 import { useRoleSettings, type HarnessRole } from './useRoleSettings'
 
-const props = defineProps<{ projectId: number; projectDir: string; sources: AgentSummary[] }>()
+const props = withDefaults(defineProps<{ projectId: number; projectDir: string; sources: AgentSummary[]; folderReady?: boolean }>(), { folderReady: true })
 const opened = ref(false)
-const settings = useRoleSettings(toRef(props, 'projectId'), toRef(props, 'projectDir'))
-const { role, defaults, draft, effective, effectiveError, dirty, roleDirty, ready, loading, saving, checking, error, message } = settings
+const settings = useRoleSettings(toRef(props, 'projectId'), toRef(props, 'projectDir'), toRef(props, 'folderReady'))
+const { role, defaults, draft, effective, effectiveError, dirty, roleDirty, ready, scopeChanged, loading, saving, checking, error, message } = settings
 const { hostStatuses, loadHostStatuses } = useHomeAgentHostStatuses(isDesktopShell())
 const hostKey = computed(() => draft.value.host_key || defaults.value.host_key || (role.value === 'main_agent' ? effective.value.main_agent?.host_key : null) || 'codex')
 const host = computed(() => hostStatuses.value.items.find(item => item.host_key === hostKey.value))
@@ -37,7 +37,7 @@ const sourceOptions = computed(() => [
   ...props.sources.filter(item => item.source_ref.host_key === 'codex').map(item => ({ value: agentIdentity(item.source_ref), label: item.source_ref.native_name })),
 ])
 const selectedSource = computed(() => draft.value.source_ref ? agentIdentity(draft.value.source_ref) : '')
-const current = computed(() => effective.value[role.value])
+const current = computed(() => props.folderReady && !scopeChanged.value ? effective.value[role.value] : undefined)
 const effectiveText = computed(() => {
   const value = current.value
   if (!value) return ''
@@ -46,6 +46,8 @@ const effectiveText = computed(() => {
   return `${value.host_key} · Model: ${value.model || 'native default'} (${origin('model')}) · Reasoning: ${effort || 'native default'} (${origin('model_reasoning_effort')})`
 })
 async function open() { opened.value = true; await Promise.all([settings.load(), loadHostStatuses()]) }
+function refresh() { if (opened.value) return settings.load() }
+defineExpose({ saving, refresh })
 function selectRole(value: string | number | null) { customModel.value = false; settings.selectRole(value as HarnessRole) }
 function changeHost(value: string | number | null) { customModel.value = false; settings.changeHost(String(value ?? '')); }
 function changeModel(value: string | number | null) {
@@ -73,6 +75,7 @@ onBeforeUnmount(() => { navigation?.(false); window.removeEventListener('beforeu
 
 <template>
   <section
+    v-show="folderReady || opened"
     aria-label="Role defaults"
     class="rounded-lg border border-default bg-bg-surface p-4"
   >
@@ -87,11 +90,26 @@ onBeforeUnmount(() => { navigation?.(false); window.removeEventListener('beforeu
       </div>
       <UiButton
         v-if="!opened"
+        :disabled="!folderReady || scopeChanged"
         @click="open"
       >
         Configure roles
       </UiButton>
     </div>
+    <UiCallout
+      v-if="opened && !folderReady"
+      tone="warning"
+      class="mt-3"
+    >
+      The project folder is being checked or is unavailable. Your role drafts are retained. Refresh the folder before saving.
+    </UiCallout>
+    <UiCallout
+      v-else-if="opened && scopeChanged"
+      tone="warning"
+      class="mt-3"
+    >
+      The project folder changed. Your role drafts are retained. Leave this page and reopen Agents to use the selected folder.
+    </UiCallout>
     <form
       v-if="opened"
       class="mt-4 space-y-3"
@@ -101,7 +119,7 @@ onBeforeUnmount(() => { navigation?.(false); window.removeEventListener('beforeu
       <UiFormField label="Role">
         <UiSelect
           :model-value="role"
-          :disabled="saving || loading"
+          :disabled="saving || loading || !folderReady || scopeChanged"
           :options="[{ value: 'delivery_agent', label: 'Delivery' }, { value: 'review_agent', label: 'Review' }, { value: 'main_agent', label: 'Main' }]"
           @update:model-value="selectRole"
         />
@@ -252,7 +270,7 @@ onBeforeUnmount(() => { navigation?.(false); window.removeEventListener('beforeu
           {{ error }}
         </UiCallout>
         <p
-          v-if="message"
+          v-if="message && ready"
           role="status"
           class="text-xs text-success-fg"
         >
@@ -268,7 +286,7 @@ onBeforeUnmount(() => { navigation?.(false); window.removeEventListener('beforeu
             Save role
           </UiButton>
           <UiButton
-            :disabled="loading || saving"
+            :disabled="loading || saving || !folderReady || scopeChanged"
             @click="settings.load"
           >
             {{ dirty ? 'Reload and retain edits' : 'Reload saved settings' }}

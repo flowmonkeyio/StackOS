@@ -19,8 +19,8 @@ const changes = (before: RoleFields, after: RoleFields): RoleFields => Object.fr
   }),
 )
 
-export function useRoleSettings(projectId: Ref<number>, projectDir: Ref<string>) {
-  const scope = { project_id: projectId.value, project_dir: projectDir.value }
+export function useRoleSettings(projectId: Ref<number>, projectDir: Ref<string>, folderReady?: Ref<boolean>) {
+  const scope = ref({ project_id: projectId.value, project_dir: projectDir.value })
   const role = ref<HarnessRole>('delivery_agent')
   const defaults = ref<Defaults>({})
   const revision = ref<number | null>(null)
@@ -37,8 +37,9 @@ export function useRoleSettings(projectId: Ref<number>, projectDir: Ref<string>)
   let disposed = false
   let generation = 0
   let previewGeneration = 0
-  const ownsScope = () => !disposed && scope.project_id === projectId.value && scope.project_dir === projectDir.value
-  const ready = computed(() => ownsScope() && authorized.value && revision.value !== null && !loading.value && !saving.value)
+  const ownsScope = () => !disposed && scope.value.project_id === projectId.value && scope.value.project_dir === projectDir.value
+  const scopeChanged = computed(() => !!scope.value.project_dir && !ownsScope())
+  const ready = computed(() => folderReady?.value !== false && ownsScope() && authorized.value && revision.value !== null && !loading.value && !saving.value)
   const draft = computed<RoleFields>(() => drafts.value[role.value] ?? {})
   const dirty = computed(() => Object.entries(drafts.value).some(([key, value]) => Object.keys(changes(originals.value[key as HarnessRole] ?? {}, value)).length > 0))
   const roleDirty = computed(() => Object.keys(changes(originals.value[role.value] ?? {}, draft.value)).length > 0)
@@ -56,10 +57,10 @@ export function useRoleSettings(projectId: Ref<number>, projectDir: Ref<string>)
     delete effective.value[selected]
     try {
       const result = await callOperation<{ data: Receipt; project_id: number }>('tracker.configureDelivery', {
-        ...scope, expected_revision: basis, role_patch: { role: selected, settings: {} }, preview: true,
+        ...scope.value, expected_revision: basis, role_patch: { role: selected, settings: {} }, preview: true,
       })
       if (!ownsScope() || request !== previewGeneration || basis !== revision.value) return
-      if (result.project_id !== scope.project_id || result.data.role_settings.role !== selected || result.data.role_settings.project_dir !== scope.project_dir) throw new Error('Effective settings belong to another project or role.')
+      if (result.project_id !== scope.value.project_id || result.data.role_settings.role !== selected || result.data.role_settings.project_dir !== scope.value.project_dir) throw new Error('Effective settings belong to another project or role.')
       effective.value[selected] = result.data.role_settings.effective
     } catch (cause) {
       if (ownsScope() && request === previewGeneration) {
@@ -69,15 +70,19 @@ export function useRoleSettings(projectId: Ref<number>, projectDir: Ref<string>)
     } finally { if (request === previewGeneration) checking.value = false }
   }
   async function load() {
+    if (folderReady?.value === false || !projectDir.value) return
+    // Mount with the project, then bind once its first folder lookup completes.
+    // Retain that identity and drafts through later failed refreshes.
+    if (!scope.value.project_dir && scope.value.project_id === projectId.value) scope.value = { project_id: projectId.value, project_dir: projectDir.value }
     if (!ownsScope() || loading.value || saving.value) return
     const request = ++generation
     loading.value = true; error.value = ''; message.value = ''; rejectAuthority()
     try {
       const result = await callOperation<{ tracker: Tracker }>('tracker.get', {
-        project_id: scope.project_id, response_mode: 'raw', task_index_only: true, include_graph: false,
+        project_id: scope.value.project_id, response_mode: 'raw', task_index_only: true, include_graph: false,
       })
       if (!ownsScope() || request !== generation) return
-      if (result.tracker.project_id !== scope.project_id || !Number.isInteger(result.tracker.rev)) throw new Error('Settings readback belongs to another project.')
+      if (result.tracker.project_id !== scope.value.project_id || !Number.isInteger(result.tracker.rev)) throw new Error('Settings readback belongs to another project.')
       const next = (result.tracker.config_json?.delivery ?? {}) as Defaults
       for (const selected of ['delivery_agent', 'review_agent', 'main_agent'] as const) {
         // An explicit reload rebases only edited fields; late reads never erase a draft.
@@ -113,10 +118,10 @@ export function useRoleSettings(projectId: Ref<number>, projectDir: Ref<string>)
     saving.value = true; error.value = ''; message.value = ''; ++previewGeneration; checking.value = false
     try {
       const result = await callOperation<{ data: Tracker & Receipt; project_id: number }>('tracker.configureDelivery', {
-        ...scope, expected_revision: revision.value, role_patch: { role: selected, settings: patch },
+        ...scope.value, expected_revision: revision.value, role_patch: { role: selected, settings: patch },
       })
       if (!ownsScope() || request !== generation) return
-      if (result.project_id !== scope.project_id || result.data.project_id !== scope.project_id || result.data.role_settings.role !== selected || result.data.role_settings.project_dir !== scope.project_dir || !Number.isInteger(result.data.rev)) throw new Error('Save readback is unavailable. Reload and reconcile your draft.')
+      if (result.project_id !== scope.value.project_id || result.data.project_id !== scope.value.project_id || result.data.role_settings.role !== selected || result.data.role_settings.project_dir !== scope.value.project_dir || !Number.isInteger(result.data.rev)) throw new Error('Save readback is unavailable. Reload and reconcile your draft.')
       const next = result.data.config_json?.delivery as Defaults | undefined
       if (!next) throw new Error('Saved role settings are unavailable.')
       const readback = saved(next, selected)
@@ -132,5 +137,5 @@ export function useRoleSettings(projectId: Ref<number>, projectDir: Ref<string>)
     } finally { if (request === generation) saving.value = false }
   }
   onBeforeUnmount(() => { disposed = true; ++generation; ++previewGeneration })
-  return { role, defaults, draft, effective, effectiveError, dirty, roleDirty, ready, loading, saving, checking, error, message, load, selectRole, set, changeHost, save }
+  return { role, defaults, draft, effective, effectiveError, dirty, roleDirty, ready, scopeChanged, loading, saving, checking, error, message, load, selectRole, set, changeHost, save }
 }

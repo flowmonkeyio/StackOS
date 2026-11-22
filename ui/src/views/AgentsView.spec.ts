@@ -8,7 +8,7 @@ import { UiFormField, UiInput, UiSelect, UiTextarea } from '@/components/ui'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
-vi.mock('./agents/ProjectRoleSettings.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('./agents/ProjectRoleSettings.vue', () => ({ default: { template: '<div />', setup: () => ({ saving: false, refresh: () => undefined }) } }))
 let wrapper: VueWrapper | undefined
 const row = { project_id: 1, project_dir: '/fixture/project', source_ref: { host_key: 'codex', native_name: 'seo_keyword_research', source_path: '.codex/agents/seo-keyword-research.toml' }, digest: 'a'.repeat(64), registration_digest: null, fields: { ...blankAgent(), name: 'seo_keyword_research', description: 'Find opportunities', developer_instructions: 'Full native instructions' }, capabilities: { edit: true }, inherited_fields: ['model'], unsupported_fields: ['future_native'] }
 const catalog = { ok: true, items: [
