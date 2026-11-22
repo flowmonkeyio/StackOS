@@ -12,6 +12,7 @@ import pytest
 from stackos.host_mcp import discovery, service
 from stackos.host_mcp.adapters import antigravity
 from stackos.host_mcp.bridge import resolve_bridge_command
+from stackos.install import copy_managed_stackos_skill_to
 
 POLICY = service.HostMcpPolicy("antigravity", "Antigravity", "automatic")
 
@@ -137,6 +138,7 @@ def test_owned_context_mismatch_is_actionable_and_repairable(native_home, change
 
 
 def test_explicit_canonical_defaults_do_not_cause_rewrite(native_home):
+    copy_managed_stackos_skill_to(antigravity.skills_root(native_home))
     command = resolve_bridge_command(runtime="antigravity")
     command += [
         "--host",
@@ -249,7 +251,9 @@ def test_registration_requires_token_and_handles_write_failure_safely(native_hom
 @pytest.mark.parametrize(
     "kind", ["missing", "dangling", "nonexecutable", "broken-shim", "empty-shim"]
 )
-def test_unrunnable_override_is_advisory_and_does_not_touch_config(native_home, monkeypatch, kind):
+def test_unrunnable_override_skips_registration_but_allows_owned_cleanup(
+    native_home, monkeypatch, kind
+):
     candidate = native_home / "candidate-agy"
     if kind == "dangling":
         candidate.symlink_to(native_home / "missing")
@@ -258,14 +262,20 @@ def test_unrunnable_override_is_advisory_and_does_not_touch_config(native_home, 
     elif kind.endswith("shim"):
         _executable(candidate, "exit 127\n" if kind == "broken-shim" else "exit 0\n")
     monkeypatch.setenv("STACKOS_ANTIGRAVITY_BIN", str(candidate))
-    path = _config(native_home, {"mcpServers": {"stackos": _entry(["/old/stackos", "mcp-bridge"])}})
+    sibling = {"command": "keep"}
+    path = _config(
+        native_home,
+        {"mcpServers": {"stackos": _entry(["/old/stackos", "mcp-bridge"]), "sibling": sibling}},
+    )
     before = path.read_bytes(), path.stat().st_mtime_ns
     assert antigravity.resolve_antigravity_bin() is None
-    for action in (antigravity.inspect, antigravity.register, antigravity.remove):
+    for action in (antigravity.inspect, antigravity.register):
         result = service.normalize_result(action(native_home), POLICY)
         assert result.connection_state == "unavailable"
         assert result.advisory and not result.blocking and service.host_installation_ok(result)
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    assert antigravity.remove(native_home).status == "removed"
+    assert json.loads(path.read_text()) == {"mcpServers": {"sibling": sibling}}
 
 
 def test_discovery_skips_broken_path_shim_for_runnable_known_candidate(native_home, monkeypatch):

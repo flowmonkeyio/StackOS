@@ -671,6 +671,45 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
     assert "learning.update" not in names
 
 
+@pytest.mark.parametrize("runtime", ["antigravity", "codex", "claude-code", "grok", "hermes"])
+def test_bridge_antigravity_aliases_public_tools_only(
+    monkeypatch: pytest.MonkeyPatch, runtime: str
+) -> None:
+    daemon_tools = [_tool(name, operation_name=name) for name in _AGENT_VISIBLE_TOOL_ORDER]
+    daemon_response = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"tools": daemon_tools}})
+    baseline = json.loads(_bridge_filter_tool_list_response(daemon_response))["result"]["tools"]
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={}, runtime=runtime)
+    monkeypatch.setattr(proxy, "request_daemon", lambda _client, _body: daemon_response)
+    payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+
+    response = proxy.handle(None, payload=payload, line=json.dumps(payload), request_id=1)
+    actual = json.loads(response)["result"]["tools"]
+    if runtime == "antigravity":
+        for tool in baseline:
+            tool["name"] = tool["name"].replace(".", "_")
+        assert all(tool["name"].replace("_", "").isalnum() for tool in actual)
+    assert actual == baseline  # Only public names change; schemas and metadata stay canonical.
+    assert len({tool["name"] for tool in actual}) == len(actual)
+    assert proxy.tool_catalog == {tool["name"]: tool for tool in daemon_tools}
+
+
+@pytest.mark.parametrize("runtime", ["codex", "claude-code", "grok", "hermes"])
+def test_bridge_antigravity_alias_is_not_enabled_for_other_hosts(runtime: str) -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={}, runtime=runtime)
+    client = _FakeClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "workspace_startSession", "arguments": {}},
+    }
+    result = json.loads(
+        proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=1)
+    )
+    assert result["result"]["isError"] is True
+    assert client.calls == []
+
+
 def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     catalog = {
         name: _tool(name)

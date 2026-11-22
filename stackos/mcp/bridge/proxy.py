@@ -181,11 +181,20 @@ class AgentBridgeProxy:
                 scoped_project_id=self.scoped_project_id,
                 injected_fields=self._injected_fields(),
                 global_session=self.global_session is True,
+                runtime=self.runtime,
             )
         if payload.get("method") != "tools/call":
             return self.request_daemon(client, line)
 
         tool_name = _bridge_tool_call_name(payload)
+        if self.runtime == "antigravity" and tool_name is not None:
+            aliases = {
+                name.replace(".", "_"): name
+                for name in _AGENT_VISIBLE_TOOL_NAMES | _TOOLBOX_TOOL_NAMES
+            }
+            if canonical_name := aliases.get(tool_name):
+                tool_name = canonical_name
+                payload = {**payload, "params": {**payload["params"], "name": tool_name}}
         arguments = _bridge_tool_call_arguments(payload)
         self._ensure_workspace_scope(client)
         if tool_name == "workspace.startSession":

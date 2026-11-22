@@ -114,6 +114,7 @@ def _bridge_filter_tool_list_response(
     scoped_project_id: int | None = None,
     injected_fields: set[str] | frozenset[str] | None = None,
     global_session: bool = False,
+    runtime: str | None = None,
 ) -> str:
     """Filter daemon ``tools/list`` down to the agent-facing bridge surface."""
     try:
@@ -143,6 +144,10 @@ def _bridge_filter_tool_list_response(
         for tool in filtered
     ]
     filtered.extend(_bridge_toolbox_specs())
+    if runtime == "antigravity":
+        # Antigravity's function-name validator rejects dots in public MCP names.
+        for tool in filtered:
+            tool["name"] = tool["name"].replace(".", "_")
     result["tools"] = filtered
     return json.dumps(envelope, default=str)
 

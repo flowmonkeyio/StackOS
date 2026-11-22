@@ -1,4 +1,4 @@
-"""Antigravity CLI discovery and user-scoped MCP lifecycle.
+"""Antigravity CLI discovery, user-scoped MCP and StackOS skill lifecycle.
 
 The CLI reads ~/.gemini/config/mcp_config.json (https://antigravity.google/docs/mcp/).
 Use the shared JSON owner rather than native add/remove, which can overwrite a
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 from stackos.host_mcp.bridge import (
@@ -76,26 +77,63 @@ def config_path(home: Path) -> Path:
     return home / ".gemini" / "config" / "mcp_config.json"
 
 
+def skills_root(home: Path) -> Path:
+    return config_path(home).parent / "skills"
+
+
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     return _inspect_snapshot(home, server_name=server_name)[0]
 
 
-def _inspect_snapshot(
-    home: Path, *, server_name: str
-) -> tuple[HostMcpResult, JsonConfigRead | None]:
-    path = config_path(home)
+def _inspect_snapshot(home: Path, *, server_name: str) -> tuple[HostMcpResult, JsonConfigRead]:
+    loaded = read_json_object(config_path(home))
+    current = _inspect_assets(home, loaded, server_name=server_name)
     if resolve_antigravity_bin() is None:
-        return HostMcpResult(
-            host_key=HOST_KEY,
-            surface=SURFACE,
+        return replace(
+            current,
             status="absent",
             message="Runnable Antigravity CLI (agy) not found; skipped optional MCP integration.",
             ok=True,
             available=False,
             advisory=True,
-        ), None
-    loaded = read_json_object(path)
-    return _inspect_config(home, loaded, server_name=server_name), loaded
+            blocking=False,
+        ), loaded
+    return current, loaded
+
+
+def _inspect_assets(home: Path, loaded: JsonConfigRead, *, server_name: str) -> HostMcpResult:
+    from stackos.install import stackos_skill_is_current, stackos_skill_is_owned
+
+    current = _inspect_config(home, loaded, server_name=server_name)
+    root = skills_root(home)
+    target = root / "stackos"
+    receipt_owned = stackos_skill_is_owned(root)
+    skill_current = stackos_skill_is_current(root, allow_extra=receipt_owned)
+    owned = receipt_owned or skill_current
+    if current.status in {"config_unreadable", "registered_unsafe", "registered_unmanaged"}:
+        # Skill receipts remain independently removable after MCP config changes.
+        return replace(current, managed=owned)
+    if root.is_symlink() or target.is_symlink() or (target.exists() and not owned):
+        return replace(
+            current,
+            status="registered_unmanaged",
+            message="Antigravity has an unmanaged StackOS skill; it was left unchanged.",
+            ok=False,
+            blocking=True,
+            repair="Review ~/.gemini/config/skills/stackos before connecting StackOS.",
+        )
+    if current.status == "available_unregistered" and owned:
+        current = replace(current, selected=True, managed=True)
+    if current.status == "registered_current" and (not skill_current or not receipt_owned):
+        return replace(
+            current,
+            status="registered_stale",
+            message="Antigravity MCP is connected, but its StackOS skill needs repair.",
+            ok=False,
+            blocking=True,
+            repair=REPAIR,
+        )
+    return current
 
 
 def _inspect_config(home: Path, loaded: JsonConfigRead, *, server_name: str) -> HostMcpResult:
@@ -194,7 +232,7 @@ def _inspect_config(home: Path, loaded: JsonConfigRead, *, server_name: str) -> 
 
 def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     current, loaded = _inspect_snapshot(home, server_name=server_name)
-    if loaded is None or current.status not in {"available_unregistered", "registered_stale"}:
+    if current.status not in {"available_unregistered", "registered_stale"}:
         return current
     token_error = token_preflight(home)
     if token_error:
@@ -210,29 +248,67 @@ def register(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult
         )
     path = config_path(home)
     command = resolve_bridge_command(runtime=HOST_KEY)
+    native = _inspect_config(home, loaded, server_name=server_name)
+    if native.status != "registered_current":
+        try:
+            ok, _error = upsert_mcp_server(
+                path,
+                server_name,
+                {"command": command[0], "args": command[1:]},
+                expected_entry=loaded.data.get("mcpServers", {}).get(server_name),
+            )
+        except OSError:
+            ok, _error = False, None
+        if not ok:
+            return _config_error(path, status="register_failed", changed=_error == CONFIG_CHANGED)
+    from stackos.install import copy_managed_stackos_skill_to
+
     try:
-        ok, _error = upsert_mcp_server(
-            path,
-            server_name,
-            {"command": command[0], "args": command[1:]},
-            expected_entry=loaded.data.get("mcpServers", {}).get(server_name),
-        )
+        copy_managed_stackos_skill_to(skills_root(home))
     except OSError:
-        ok, _error = False, None
-    if not ok:
-        return _config_error(path, status="register_failed", changed=_error == CONFIG_CHANGED)
+        return replace(
+            current,
+            status="register_failed",
+            message="Antigravity MCP is connected, but its StackOS skill could not be installed.",
+            ok=False,
+            blocking=True,
+            selected=True,
+            managed=True,
+            repair=REPAIR,
+        )
     return inspect(home, server_name=server_name)
 
 
 def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
-    current, loaded = _inspect_snapshot(home, server_name=server_name)
-    if loaded is None or current.status not in {
+    from stackos.install import remove_managed_stackos_skill_from
+
+    path = config_path(home)
+    loaded = read_json_object(path)
+    current = _inspect_assets(home, loaded, server_name=server_name)
+    native = _inspect_config(home, loaded, server_name=server_name)
+    if not current.managed and current.status != "available_unregistered":
+        return current
+    if not remove_managed_stackos_skill_from(skills_root(home)):
+        return replace(
+            current,
+            status="remove_failed",
+            message="Antigravity's managed StackOS skill could not be removed safely.",
+            ok=False,
+            blocking=True,
+            repair="Check the StackOS skill ownership record and folder permissions, then retry.",
+        )
+    if native.status not in {
         "available_unregistered",
         "registered_current",
         "registered_stale",
     }:
-        return current
-    path = config_path(home)
+        return replace(
+            native,
+            warnings=[
+                *native.warnings,
+                "Owned StackOS skill files were cleaned; config was preserved.",
+            ],
+        )
     try:
         ok, _error, _removed = remove_mcp_server(
             path, server_name, expected_entry=loaded.data.get("mcpServers", {}).get(server_name)
@@ -245,7 +321,7 @@ def remove(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
         host_key=HOST_KEY,
         surface=SURFACE,
         status="removed",
-        message="StackOS MCP entry removed from Antigravity; unrelated settings were preserved.",
+        message="Removed Antigravity's StackOS MCP entry and managed skill; kept unrelated files.",
         ok=True,
         available=True,
         config_path=str(path),

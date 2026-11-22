@@ -346,6 +346,21 @@ with `--runtime antigravity` and the selected daemon context. It preserves
 foreign entries and malformed files for review. An executable shim alone does
 not prove that Antigravity is installed; discovery requires a successful bounded
 native version probe. See the [native MCP contract](https://antigravity.google/docs/mcp/).
+The bridge exposes underscore tool names to Antigravity (for example,
+`workspace_startSession` and `toolbox_call`) because its native tool-name
+validator rejects dots. It accepts both spellings at that boundary; operation
+refs inside toolbox arguments remain canonical, such as `project.get`.
+Install/repair also mirrors the canonical StackOS mechanics skill into
+`~/.gemini/config/skills/stackos/`, the
+[shared app and CLI skill location](https://antigravity.google/docs/customization-discovery/).
+The existing managed-skill owner records its files in
+`~/.gemini/config/skills/.stackos-ownership.json`; repair refreshes a missing or
+outdated owned skill even when MCP is already current. Uninstall removes only
+owned files, including when the CLI is no longer installed, and preserves user
+additions and sibling skills. An unowned conflicting skill is preserved for
+review. A fresh conversation loads the skill; an existing CLI conversation can
+use `/skills reload`. Project workflow guidance and specialist roles still use
+the normal project setup process rather than global installation.
 Gemini CLI is retired as a StackOS host. Lifecycle cleanup removes only a
 positively identified obsolete StackOS entry in `~/.gemini/settings.json`;
 foreign settings and Google/Gemini API consumers remain intact. Historical

@@ -1459,6 +1459,53 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "tool_names" in describe_tool["inputSchema"]["properties"]
 
 
+@pytest.mark.parametrize("use_alias", [False, True])
+def test_antigravity_public_names_use_canonical_dispatch(
+    mcp_client: MCPClient, use_alias: bool
+) -> None:
+    project = _create_project(mcp_client, "antigravity-wire-names")
+    proxy, client = _bridge(mcp_client)
+    proxy.runtime = "antigravity"
+    _initialize(proxy, client)
+
+    def call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return _tool_call(proxy, client, name.replace(".", "_") if use_alias else name, arguments)
+
+    started = call("workspace.startSession", {"global_session": True, "project_id": project})
+    assert not started["result"].get("isError"), started
+    assert proxy.global_session is True and proxy.scoped_project_id is None
+
+    listed = _send(proxy, client, method="tools/list")["result"]["tools"]
+    assert [tool["name"] for tool in listed] == [
+        name.replace(".", "_")
+        for name in (*_AGENT_VISIBLE_TOOL_ORDER, "toolbox.describe", "toolbox.call")
+    ]
+    browser_schema = next(tool for tool in listed if tool["name"] == "browser_profile_list")
+    assert "project_id" in browser_schema["inputSchema"]["required"]
+
+    described = call("toolbox.describe", {"tool_names": ["project.get"], "include_schemas": True})
+    assert _structured(described)["described_tools"][0]["name"] == "project.get"
+    result = call(
+        "toolbox.call", {"tool_name": "project.get", "arguments": {"project_id": project}}
+    )
+    assert _operation_data(_structured(result))["id"] == project
+    profiles = call("browser.profile.list", {"project_id": project, "response_mode": "raw"})
+    assert _operation_data(_structured(profiles))["items"] == []
+    assert _is_bridge_scope_error(call("browser.profile.list", {}))
+
+    # Aliases cannot expose hidden operations or turn underscored inner names into grants.
+    for name in ("project_get", "unknown_tool"):
+        assert _is_bridge_scope_error(_tool_call(proxy, client, name, {"project_id": project}))
+    denied_inner = call(
+        "toolbox.call", {"tool_name": "project_get", "arguments": {"project_id": project}}
+    )
+    assert denied_inner["result"]["isError"] is True
+    denied_write = call(
+        "toolbox.call", {"tool_name": "resource.upsert", "arguments": {"project_id": project}}
+    )
+    assert denied_write["result"]["isError"] is True
+
+
 def test_bridge_native_browser_status_exposes_handoff_without_relay(
     mcp_client: MCPClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

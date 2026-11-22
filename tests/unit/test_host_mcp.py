@@ -139,7 +139,7 @@ def test_bridge_command_equivalence_preserves_identity_and_custom_context(
 def test_selected_optional_host_config_uses_shared_default_equivalence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, host: str
 ) -> None:
-    from stackos.install import copy_stackos_skill_to
+    from stackos.install import copy_managed_stackos_skill_to, copy_stackos_skill_to
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("STACKOS_WORKSPACE_ROOT", raising=False)
@@ -150,6 +150,7 @@ def test_selected_optional_host_config_uses_shared_default_equivalence(
         path = tmp_path / ".gemini/config/mcp_config.json"
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({"mcpServers": {"stackos": entry}}))
+        copy_managed_stackos_skill_to(path.parent / "skills")
         monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: "/fixture/gemini")
 
     else:

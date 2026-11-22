@@ -1443,7 +1443,9 @@ def test_cli_install_mcp_only_registers_claude_with_fake_cli(
     assert not (sandbox / ".claude" / "mcp.json").exists()
 
 
-@pytest.mark.parametrize(("host", "profile"), [("hermes", "work"), ("grok", None)])
+@pytest.mark.parametrize(
+    ("host", "profile"), [("hermes", "work"), ("grok", None), ("antigravity", None)]
+)
 def test_cli_install_targets_one_host(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
