@@ -390,6 +390,14 @@ def test_fence_denies_new_setup_and_continuation_before_any_mutation(session, pr
             **common, mode="setup", workflow_keys=["engineering.tracked-delivery"]
         ),
         lambda: continue_managed(request_id=999, expected_revision=1, **common),
+        lambda: continue_managed(
+            request_id=999,
+            expected_revision=1,
+            question_id="pending-question",
+            question_revision=1,
+            answer="Continue setup",
+            **common,
+        ),
     ):
         with pytest.raises(ConflictError, match="fenced"):
             operation()

@@ -281,6 +281,8 @@ def validate_setup_replay(
     cached: dict[str, Any],
 ) -> dict[str, Any]:
     """Reauthorize before exposing any cached token or reporting success."""
+    from stackos.project_setup_execution import attempt_projection
+
     if isinstance(inp, ProjectSetupCancelInput):
         _require_console(ctx)
         if cached.get(SETUP_REPLAY_DIGEST_FIELD) != setup_request_digest(inp):
@@ -297,6 +299,8 @@ def validate_setup_replay(
             or saved.attempt_ref != cancelled_current.attempt_ref
         ):
             raise ConflictError("cancellation retry target changed; inspect setup")
+        if cancelled_current.workflow_admission:
+            cancelled_current, _ = attempt_projection(ctx.session, cancelled_current)
         return {
             key: value
             for key, value in {**cached, "data": cancelled_current.model_dump(mode="json")}.items()
@@ -319,15 +323,13 @@ def validate_setup_replay(
             (row.metadata_json or {}).get("project_setup")
         )
         if predecessor.workflow_admission:
-            from stackos.project_setup_execution import work_projection
-
-            work_projection(ctx.session, predecessor)
             if (
                 continuation_current.request_id != predecessor.request_id
                 or continuation_current.workflow_admission != predecessor.workflow_admission
                 or continuation_saved.attempt.attempt_ref != predecessor.attempt_ref
             ):
                 raise ConflictError("continuation retry target changed; inspect setup")
+            continuation_current, _ = attempt_projection(ctx.session, continuation_current)
         elif (
             predecessor.successor_request_id != continuation_current.request_id
             or continuation_current.predecessor_request_id != inp.request_id
@@ -349,7 +351,7 @@ def validate_setup_replay(
         current = ProjectSetupRepository(ctx.session)._current_attempt(inp.project_id)
         if current is None or current.request_id != managed_saved.attempt.request_id:
             raise ConflictError("cached setup attempt is no longer current; inspect setup")
-        managed_saved.attempt = current
+        managed_saved.attempt = attempt_projection(ctx.session, current)[0]
         managed_saved.claim_token = None
         return {
             key: value

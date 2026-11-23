@@ -750,15 +750,50 @@ def test_console_managed_start_duplicate_cancel_and_preferences(
         {"project_id": project + 1000, "request_id": data["attempt"]["request_id"]},
     )
     assert foreign.status_code == 404, foreign.text
-    cancelled = call(
-        "projectSetup.cancel", {"project_id": project, "request_id": data["attempt"]["request_id"]}
-    )
+    cancel_args = {
+        "project_id": project,
+        "request_id": data["attempt"]["request_id"],
+        "idempotency_key": "console-cancel",
+        "response_mode": "raw",
+    }
+    cancelled = call("projectSetup.cancel", cancel_args)
     assert cancelled.status_code == 200, cancelled.text
     assert cancelled.json()["data"]["status"] == "cancelled"
     assert not scheduler.jobs
     read = call("projectSetup.get", {"project_id": project, "response_mode": "raw"})
     assert read.json()["current_attempt"]["status"] == "cancelled"
     assert read.json()["launch_preferences"] == {"host_key": "codex", "model": "gpt-6.1-sol"}
+    replay = call("projectSetup.cancel", cancel_args)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"] == read.json()["current_attempt"]
+    start_replay = call("projectSetup.start", arguments)
+    assert start_replay.status_code == 200, start_replay.text
+    assert start_replay.json()["data"]["attempt"] == read.json()["current_attempt"]
+
+    continue_args = {
+        "project_id": project,
+        "request_id": data["attempt"]["request_id"],
+        "expected_revision": read.json()["current_attempt"]["revision"],
+        "idempotency_key": "console-continue",
+        "response_mode": "raw",
+    }
+    continued = call("projectSetup.continue", continue_args)
+    assert continued.status_code == 200, continued.text
+    assert continued.json()["data"]["task_key"] == data["task_key"]
+    # Replaying an older cancel observes the now-current work without cancelling it.
+    cancel_replay = call("projectSetup.cancel", cancel_args)
+    assert cancel_replay.status_code == 200, cancel_replay.text
+    assert cancel_replay.json()["data"] == continued.json()["data"]["attempt"]
+    assert len(scheduler.jobs) == 1
+
+    second_cancel = call(
+        "projectSetup.cancel", {**cancel_args, "idempotency_key": "console-cancel-again"}
+    )
+    assert second_cancel.status_code == 200, second_cancel.text
+    continue_replay = call("projectSetup.continue", continue_args)
+    assert continue_replay.status_code == 200, continue_replay.text
+    assert continue_replay.json()["data"]["attempt"] == second_cancel.json()["data"]
+    assert not scheduler.jobs
 
 
 def test_console_answer_scope_replay_and_continuation(api, settings, tmp_path, monkeypatch):

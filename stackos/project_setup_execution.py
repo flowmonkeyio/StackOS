@@ -607,11 +607,13 @@ def continue_managed(
 ):
     from stackos.project_setup_workflow import load_admission
     from stackos.repositories.agent_requests import AgentRequestRepository
+    from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
     from stackos.repositories.project_setup import SetupAnswer, SetupAttempt
     from stackos.repositories.run_plans import RunPlanRepository
     from stackos.task_delivery import start_delivery
 
     with managed_launch_lock, session_factory() as session:
+        ManagedUpgradeRepository(session).require_unfenced()
         row = AgentRequestRepository(session)._fetch(project_id=project_id, request_id=request_id)
         current = SetupAttempt.model_validate((row.metadata_json or {}).get("project_setup"))
         link = current.workflow_admission

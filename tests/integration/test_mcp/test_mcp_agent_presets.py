@@ -304,13 +304,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert (
         raw_recommended["stackos.sdlc.test-designer"]["preset"]["summary"]["version"]
         == compact_recommended["stackos.sdlc.test-designer"]["preset"]["version"]
-        == "0.6.14"
+        == "0.6.15"
     )
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.6.8",
-        "stackos.sdlc.planning": "0.7.30",
-        "stackos.sdlc.delivery": "0.7.27",
-        "stackos.sdlc.delivery-reviewer": "0.6.29",
+        "stackos.sdlc.requirements-flow-definer": "0.6.9",
+        "stackos.sdlc.planning": "0.7.31",
+        "stackos.sdlc.delivery": "0.7.28",
+        "stackos.sdlc.delivery-reviewer": "0.6.30",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -424,7 +424,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert (
         compact_skill["key"] == full_skill["summary"]["key"] == "stackos.sdlc.delivery-orchestrator"
     )
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.34"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.35"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
@@ -659,7 +659,7 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )
-    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.7"
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.8"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []
 
@@ -690,7 +690,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert raw["unresolved_skill_preset_requirements"] == []
         raw_summary = raw["required_skill_presets"][0]["preset"]["summary"]
         assert raw_summary["key"] == "stackos.workflow-orchestrator"
-        assert raw_summary["version"] == "0.1.7"
+        assert raw_summary["version"] == "0.1.8"
         assert raw_summary["generic_preset"] is True
         assert raw_summary["adaptation_required"] is True
         assert compact["required_agents"] == []
@@ -698,7 +698,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert compact["required_skill_presets"][0]["preset"]["key"] == (
             "stackos.workflow-orchestrator"
         )
-        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.7"
+        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.8"
 
 
 def test_finance_workflow_presets_resolve_end_to_end(mcp_client: MCPClient) -> None:
