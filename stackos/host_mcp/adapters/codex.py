@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,7 +23,7 @@ from stackos.host_mcp.bridge import (
     resolve_bridge_command,
     token_preflight,
 )
-from stackos.host_mcp.discovery import resolve_cli_bins, subprocess_env_for_cli
+from stackos.host_mcp.discovery import iter_cli_bins, resolve_cli_bins, subprocess_env_for_cli
 from stackos.host_mcp.result import (
     AgentRunResult,
     AgentSandbox,
@@ -458,17 +458,23 @@ def task_mcp_overrides(
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
     del home
-    codex_bins = resolve_codex_bins()
-    if not codex_bins:
-        return _absent()
-    command = resolve_bridge_command(runtime=HOST_KEY)
+    candidates = (
+        _iter_codex_bins()
+        if resolve_codex_bins is _DEFAULT_RESOLVE_CODEX_BINS
+        else resolve_codex_bins()
+    )
+    command: list[str] | None = None
     unsupported: HostMcpResult | None = None
-    for codex_bin in codex_bins:
+    found_any = False
+    for codex_bin in candidates:
+        found_any = True
+        if command is None:
+            command = resolve_bridge_command(runtime=HOST_KEY)
         result = _inspect_with_bin(codex_bin, command, server_name)
         if result.status != "unsupported_host_version":
             return result
         unsupported = result
-    return unsupported or _absent()
+    return unsupported if found_any and unsupported is not None else _absent()
 
 
 def _inspect_with_bin(
@@ -697,7 +703,22 @@ def _absent(
     )
 
 
+def _iter_codex_bins(codex_bin: str | None = None) -> Iterator[str]:
+    return iter_cli_bins(
+        "codex",
+        explicit=codex_bin,
+        env_var=CODEX_BIN_ENV,
+        preferred_candidates=(MACOS_CHATGPT_BUNDLE_CANDIDATES if sys.platform == "darwin" else ()),
+        common_candidates=COMMON_CODEX_CLI_CANDIDATES,
+        app_bundle_candidates=(
+            MACOS_CODEX_APP_BUNDLE_CANDIDATES if sys.platform == "darwin" else ()
+        ),
+    )
+
+
 def resolve_codex_bin(codex_bin: str | None = None) -> str | None:
+    if resolve_codex_bins is _DEFAULT_RESOLVE_CODEX_BINS:
+        return next(_iter_codex_bins(codex_bin), None)
     candidates = resolve_codex_bins(codex_bin)
     return candidates[0] if candidates else None
 
@@ -718,10 +739,18 @@ def resolve_codex_bins(codex_bin: str | None = None) -> list[str]:
     )
 
 
+_DEFAULT_RESOLVE_CODEX_BINS = resolve_codex_bins
+
+
 def _select_codex_bin() -> str | None:
     """Return the first preferred Codex executable whose MCP surface responds."""
 
-    for candidate in resolve_codex_bins():
+    candidates = (
+        _iter_codex_bins()
+        if resolve_codex_bins is _DEFAULT_RESOLVE_CODEX_BINS
+        else resolve_codex_bins()
+    )
+    for candidate in candidates:
         if _run_codex(candidate, ["mcp", "list"]).returncode == 0:
             return candidate
     return None

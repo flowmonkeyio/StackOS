@@ -53,7 +53,10 @@ async def _dispatch_auth_operation(
 ) -> dict[str, Any]:
     """Execute an exact auth REST route through its registered operation contract."""
 
-    result = await OperationDispatcher(build_operation_registry()).dispatch(
+    registry = session.info.get("operation_registry")
+    if registry is None:
+        registry = build_operation_registry()
+    result = await OperationDispatcher(registry).dispatch(
         name,
         {**arguments, "response_mode": "raw"},
         session=session,

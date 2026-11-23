@@ -282,3 +282,18 @@ def test_cached_source_keeps_project_extensions_independent_and_current(
     )
     assert loader.describe_template(key="sample.review").spec.description == ""
     assert parsed_sources == [TEMPLATE]
+
+
+def test_plugin_slug_cannot_escape_clone_root_and_preserves_symlink_boundary(loader, tmp_path):
+    _write(tmp_path / "plugins/engineering/workflows/review.yaml")
+    external = tmp_path / "external"
+    _write(external / "workflows/escaped.yaml", TEMPLATE.replace("sample.review", "external.leak"))
+    (tmp_path / "plugins/linked-plugin").symlink_to(external, target_is_directory=True)
+    nested = tmp_path / "plugins/with-linked-workflows"
+    nested.mkdir(parents=True)
+    (nested / "workflows").symlink_to(external / "workflows", target_is_directory=True)
+
+    escaped = loader.list_templates(plugin_slug="engineering/../../external").templates
+    assert escaped == []
+    all_keys = {item.key for item in loader.list_templates().templates}
+    assert all_keys == {"sample.review"}

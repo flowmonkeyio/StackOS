@@ -760,7 +760,7 @@ def test_unreadable_bounded_context_prevents_whole_invocation_attribution(
         reader.close()
 
 
-@pytest.mark.parametrize("event_type", ["response_item", "event_msg"])
+@pytest.mark.parametrize("event_type", ["response_item", "event_msg", "compacted"])
 @pytest.mark.parametrize("context_first", [True, False])
 def test_large_output_preserves_model_and_following_counters(
     tmp_path, model_rollout, event_type, context_first
@@ -771,12 +771,19 @@ def test_large_output_preserves_model_and_following_counters(
         if context_first:
             append()
             reader.read()
+        payload = (
+            {"type": "additional_tools", "tools": ['"turn_context" ' + "€" * 50000]}
+            if event_type == "response_item"
+            else {"replacement_history": ['"turn_context" ' + "€" * 50000]}
+            if event_type == "compacted"
+            else {"type": "item_completed", "output": '"turn_context" ' + "€" * 50000}
+        )
         record = json.dumps(
             {
                 "timestamp": "2026-11-08T01:00:10Z",
                 "ordinal": 42,
                 "type": event_type,
-                "payload": {"type": "item_completed", "output": '"turn_context" ' + "€" * 50000},
+                "payload": payload,
             },
             ensure_ascii=False,
         ).encode()
@@ -785,7 +792,12 @@ def test_large_output_preserves_model_and_following_counters(
             out.write(record[:70000])
         reader.read()
         assert len(reader.pending) < 64 * 1024
-        assert reader.model_observation["status"] == ("observed" if context_first else "ambiguous")
+        if context_first:
+            assert reader.model_observation["status"] == "observed"
+        elif event_type == "response_item":
+            assert reader.model_observation is None
+        else:
+            assert reader.model_observation["status"] == "ambiguous"
         with path.open("ab") as out:
             out.write(record[70000:] + b"\n")
         append()
@@ -805,6 +817,7 @@ def test_large_output_preserves_model_and_following_counters(
             )
         samples = reader.read()
         assert len(samples) == 1 and samples[0][1]["snapshot"]["total"] == 12
+        preserves = context_first or event_type == "response_item"
         assert _model_identity(
             receipt_input(
                 {
@@ -813,8 +826,184 @@ def test_large_output_preserves_model_and_following_counters(
                     "model_observation": reader.model_observation,
                 }
             )
-        ) == (("observed-native", "observed") if context_first else (None, None))
+        ) == (("observed-native", "observed") if preserves else (None, None))
         assert reader.cursor == path.stat().st_size and not reader.pending
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "pre-turn-oversized",
+        "pre-turn-bounded",
+        "pre-turn-escaped-bounded",
+        "pre-turn-malformed",
+        "pre-turn-escaped-malformed",
+        "mid-turn-same-model",
+        "mid-turn-model-change",
+        "post-context-escaped-turn-context",
+        "unknown-oversized",
+        "duplicate-header-key",
+        "duplicate-type-after-first",
+        "duplicate-type-before-context",
+    ],
+)
+def test_compacted_and_oversized_header_classification_on_resumed_invocations(
+    tmp_path, model_rollout, case
+):
+    sid, path, append = model_rollout
+    # Prior invocation context before the resume cursor must never attribute this call.
+    append("previous-native")
+    reader = CodexCounterReader(sid, tmp_path, home=tmp_path, resumed=True)
+    try:
+        if case in {
+            "mid-turn-same-model",
+            "mid-turn-model-change",
+            "post-context-escaped-turn-context",
+            "unknown-oversized",
+            "duplicate-header-key",
+            "duplicate-type-after-first",
+        }:
+            append("current-native")
+            reader.read()
+            assert reader.model_observation["model"] == "current-native"
+        with path.open("ab") as out:
+            if case == "pre-turn-bounded":
+                out.write(
+                    json.dumps(
+                        {
+                            "timestamp": "2026-11-22T01:00:10Z",
+                            "ordinal": 10,
+                            "type": "compacted",
+                            "payload": {"replacement_history": []},
+                        }
+                    ).encode()
+                    + b"\n"
+                )
+            elif case == "pre-turn-escaped-bounded":
+                out.write(
+                    b'{"timestamp":"2026-11-22T01:00:10Z","ordinal":10,'
+                    b'"type":"compact\\u0065d","payload":{"replacement_history":[]}}\n'
+                )
+            elif case == "pre-turn-malformed":
+                out.write(b'{"type":"compacted","payload":\n')
+            elif case == "pre-turn-escaped-malformed":
+                out.write(b'{"type":"compact\\u0065d","payload":\n')
+            elif case == "post-context-escaped-turn-context":
+                out.write(
+                    (
+                        '{"type":"turn_cont\\u0065xt","payload":'
+                        + json.dumps({"cwd": str(tmp_path), "model": "different-native"})
+                        + "}\n"
+                    ).encode()
+                )
+            elif case == "duplicate-header-key":
+                out.write(
+                    (
+                        '{"timestamp":"2026-11-22T01:00:10Z","timestamp":"2026-11-22T01:00:10Z",'
+                        '"type":"response_item","payload":{"padding":"'
+                        + "x" * (64 * 1024)
+                        + '"}}\n'
+                    ).encode()
+                )
+            elif case in {"duplicate-type-after-first", "duplicate-type-before-context"}:
+                out.write(
+                    (
+                        '{"type":"response_item","type":"turn_context","payload":{"padding":"'
+                        + "x" * (64 * 1024)
+                        + '"}}\n'
+                    ).encode()
+                )
+            else:
+                record_type = "unknown_record" if case == "unknown-oversized" else "compacted"
+                out.write(
+                    json.dumps(
+                        {
+                            "timestamp": "2026-11-22T01:00:10Z",
+                            "ordinal": 10,
+                            "type": record_type,
+                            "payload": {"replacement_history": ["x" * (64 * 1024)]},
+                        }
+                    ).encode()
+                    + b"\n"
+                )
+        reader.read()
+        append("different-native" if case == "mid-turn-model-change" else "current-native")
+        reader.read()
+        expected = ("current-native", "observed") if case == "mid-turn-same-model" else (None, None)
+        assert reader.model_observation["status"] == (
+            "observed" if case == "mid-turn-same-model" else "ambiguous"
+        )
+        assert (
+            _model_identity(
+                receipt_input(
+                    {
+                        "launch": {"host_key": "codex", "model": "requested"},
+                        "thread_id": sid,
+                        "model_observation": reader.model_observation,
+                    }
+                )
+            )
+            == expected
+        )
+    finally:
+        reader.close()
+
+
+def test_pre_context_response_item_preserves_unattributed_usage_and_sticky_ambiguity(
+    tmp_path, model_rollout
+):
+    sid, path, append = model_rollout
+    # Earlier unattributed token_count still makes the invocation ambiguous even
+    # when an oversized response_item appears before the first turn_context.
+    reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
+    try:
+        with path.open("a") as out:
+            out.write(
+                json.dumps(
+                    {
+                        "type": "event_msg",
+                        "timestamp": "2026-11-22T01:00:10Z",
+                        "payload": {
+                            "type": "token_count",
+                            "info": {"total_token_usage": {"input_tokens": 10, "output_tokens": 0}},
+                        },
+                    }
+                )
+                + "\n"
+            )
+            out.write(
+                json.dumps(
+                    {
+                        "timestamp": "2026-11-22T01:00:11Z",
+                        "ordinal": 3,
+                        "type": "response_item",
+                        "payload": {"type": "additional_tools", "tools": ["x" * (64 * 1024)]},
+                    }
+                )
+                + "\n"
+            )
+        reader.read()
+        assert reader.model_observation is None
+        append("observed-native")
+        reader.read()
+        assert reader.model_observation["status"] == "ambiguous"
+        # Oversized response_item or compacted records never clear sticky ambiguity.
+        with path.open("a") as out:
+            out.write(
+                json.dumps(
+                    {
+                        "timestamp": "2026-11-22T01:00:12Z",
+                        "ordinal": 4,
+                        "type": "compacted",
+                        "payload": {"replacement_history": ["x" * (64 * 1024)]},
+                    }
+                )
+                + "\n"
+            )
+        reader.read()
+        assert reader.model_observation["status"] == "ambiguous"
     finally:
         reader.close()
 
@@ -859,7 +1048,8 @@ def test_final_read_retains_observation_without_a_live_counter_poll(
 
 
 @pytest.mark.parametrize(
-    "loss", ["none", "large-output", "malformed-context", "reader-error", "truncated-context"]
+    "loss",
+    ["none", "large-output", "compacted", "malformed-context", "reader-error", "truncated-context"],
 )
 def test_context_loss_stays_ambiguous_through_live_final_and_retained_attribution(
     tmp_path, model_rollout, monkeypatch, loss
@@ -909,6 +1099,20 @@ def test_context_loss_stays_ambiguous_through_live_final_and_retained_attributio
                     )
                     + "\n"
                 )
+        elif loss == "compacted":
+            with path.open("a") as out:
+                out.write(
+                    json.dumps(
+                        {
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "ordinal": 20,
+                            "type": "compacted",
+                            "payload": {"replacement_history": ["x" * 70000]},
+                        }
+                    )
+                    + "\n"
+                )
+            append("model-a")
         service._sample_invocations()
         live.append(deepcopy(service.usage_executions(1)[0]))
         # A later valid context must not erase the gap.
@@ -938,7 +1142,7 @@ def test_context_loss_stays_ambiguous_through_live_final_and_retained_attributio
     assert result.ok and result.usage["snapshot"]["total"] == 30
     assert live[0]["model_observation"]["model"] == "model-a"
     assert live[1]["live_usage"]["usage"]["measured"]["total"] == 10
-    expected_status = "observed" if loss in {"none", "large-output"} else "ambiguous"
+    expected_status = "observed" if loss in {"none", "large-output", "compacted"} else "ambiguous"
     assert live[1]["model_observation"]["status"] == (
         "observed" if loss == "truncated-context" else expected_status
     )  # An incomplete live line can still complete before native exit.

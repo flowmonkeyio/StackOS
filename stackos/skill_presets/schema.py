@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from stackos.artifacts import redact_secret_text
 
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 SKILL_PRESET_SCHEMA_VERSION = "stackos.skill-preset.v1"
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
@@ -209,7 +211,7 @@ def parse_skill_preset_obj(data: dict[str, Any]) -> SkillPresetSpec:
 
 
 def parse_skill_preset_yaml(text: str) -> SkillPresetSpec:
-    loaded = yaml.safe_load(text)
+    loaded = yaml.load(text, Loader=_YAML_LOADER)
     if not isinstance(loaded, dict):
         raise ValueError("skill preset YAML must contain an object")
     return parse_skill_preset_obj(loaded)
@@ -222,7 +224,7 @@ def parse_skill_preset_bundle_obj(data: dict[str, Any]) -> list[SkillPresetSpec]
 
 
 def parse_skill_preset_bundle_yaml(text: str) -> list[SkillPresetSpec]:
-    loaded = yaml.safe_load(text)
+    loaded = yaml.load(text, Loader=_YAML_LOADER)
     if not isinstance(loaded, dict):
         raise ValueError("skill preset YAML must contain an object")
     return parse_skill_preset_bundle_obj(loaded)
@@ -254,7 +256,7 @@ def validate_skill_preset_obj(data: dict[str, Any]) -> SkillPresetValidationOut:
 
 def validate_skill_preset_yaml(text: str) -> SkillPresetValidationOut:
     try:
-        loaded = yaml.safe_load(text)
+        loaded = yaml.load(text, Loader=_YAML_LOADER)
     except yaml.YAMLError as exc:
         return SkillPresetValidationOut(
             valid=False,

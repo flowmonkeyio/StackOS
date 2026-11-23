@@ -145,3 +145,22 @@ def test_preset_precedence_and_unrelated_source_validation_remain_live(family, t
     _write(plugin.with_name("invalid.yaml"), unrelated)
     with pytest.raises(ValidationError, match="generic_preset=true"):
         loader.describe_preset(key="demo.review")
+
+
+def test_plugin_slug_cannot_escape_clone_root_and_preserves_symlink_boundary(family, tmp_path):
+    kind, _module, loader = family
+    subdir = f"{kind}-presets"
+    _write(tmp_path / "plugins/engineering" / subdir / "review.yaml", _payload(kind))
+    external = tmp_path / "external"
+    _write(
+        external / subdir / "escaped.yaml",
+        {**_payload(kind), "key": "external.leak"},
+    )
+    (tmp_path / "plugins/linked-plugin").symlink_to(external, target_is_directory=True)
+    nested = tmp_path / "plugins/with-linked-presets"
+    nested.mkdir(parents=True)
+    (nested / subdir).symlink_to(external / subdir, target_is_directory=True)
+
+    assert loader.list_presets(plugin_slug="engineering/../../external").presets == []
+    all_keys = {item.key for item in loader.list_presets().presets}
+    assert all_keys == {"demo.review"}

@@ -162,39 +162,51 @@ class MessagesStream:
         return self.result()
 
 
-def _non_context_record(prefix: bytes) -> bool:
-    """Recognize only the native envelope header, never types inside its payload."""
+def _envelope_type(prefix: bytes, *, require_payload: bool = True) -> str | None:
+    """Read only the native envelope's top-level type, never nested payload keys."""
     try:
         # The bounded read can end inside a UTF-8 character in a large payload.
         text = codecs.utf_8_decode(prefix, "strict", False)[0].lstrip()
         if not text.startswith("{"):
-            return False
+            return None
         text = text[1:].lstrip()
         decoder = json.JSONDecoder()
-        # Native records put type after optional timestamp/ordinal fields. An unknown
-        # layout stays uncertain rather than searching arbitrary transcript data.
-        for _ in range(3):
+        seen: set[str] = set()
+        record_type: str | None = None
+        # Native records put unique timestamp/ordinal/type headers before payload.
+        # Continue through payload so duplicate top-level headers after type (such
+        # as a second "type") stay ambiguous rather than returning early.
+        for _ in range(4):
             key, end = decoder.raw_decode(text)
             text = text[end:].lstrip()
             if not text.startswith(":"):
-                return False
+                return None
             text = text[1:].lstrip()
+            if not isinstance(key, str) or key in seen:
+                return None
+            seen.add(key)
+            if key == "payload":
+                return record_type if (not require_payload or text.startswith("{")) else None
             if key not in ("timestamp", "ordinal", "type"):
-                return False
+                return None
             value, end = decoder.raw_decode(text)
             text = text[end:].lstrip()
-            if not text.startswith(","):
-                return False
             if key == "type":
-                return value in ("event_msg", "response_item")
-            if (key == "timestamp" and not isinstance(value, str)) or (
+                if not isinstance(value, str):
+                    return None
+                record_type = value
+                if not require_payload and not text.startswith(","):
+                    return record_type
+            elif (key == "timestamp" and not isinstance(value, str)) or (
                 key == "ordinal" and type(value) is not int
             ):
-                return False
+                return None
+            if not text.startswith(","):
+                return None
             text = text[1:].lstrip()
     except (ValueError, RecursionError):
         pass
-    return False
+    return None
 
 
 class CodexCounterReader:
@@ -292,29 +304,49 @@ class CodexCounterReader:
             line = self.pending + chunk
             self.pending = b""
             if len(line) > 64 * 1024 or (len(line) == 64 * 1024 and not chunk.endswith(b"\n")):
-                # Large tool output is unrelated to model context. Unreadable
-                # context or an unrecognized envelope still leaves a real gap.
-                if self.model_observation is None or not _non_context_record(line):
-                    # Before the first context even an ordinary event could
-                    # hide earlier usage; preserve that attribution gap.
+                record_type = _envelope_type(line)
+                # response_item carries neither turn_context nor token_count, even
+                # before the first context (for example initial tool definitions).
+                # event_msg and compacted are safe to discard only after this
+                # invocation observed context: before context, an event_msg can hide
+                # token_count usage and pre-turn compaction can run on a previous
+                # model rather than the following turn_context.
+                safe_oversized = record_type == "response_item" or (
+                    self.model_observation is not None and record_type in ("event_msg", "compacted")
+                )
+                if not safe_oversized:
                     self._observe_model({})
                 self.discard_line = not chunk.endswith(b"\n")
                 continue
             if not chunk.endswith(b"\n"):
                 self.pending = line
                 break
-            if b'"token_count"' not in line and b'"turn_context"' not in line:
+            if (
+                self.model_observation is not None
+                and b'"token_count"' not in line
+                and b'"turn_context"' not in line
+                and b"\\u" not in line
+            ):
                 continue
             try:
                 event = json.loads(line)
-                payload = event.get("payload", {})
-                if event.get("type") == "turn_context":
-                    self._observe_model(payload)
+                if not isinstance(event, dict):
+                    raise TypeError("expected rollout object")
+                record_type = event.get("type")
+                if record_type == "turn_context":
+                    self._observe_model(event.get("payload", {}))
                     continue
-                if event.get("type") != "event_msg" or payload.get("type") != "token_count":
+                if record_type == "compacted":
+                    if self.model_observation is None:
+                        self._observe_model({})
+                    continue
+                payload = event.get("payload", {})
+                if record_type != "event_msg" or payload.get("type") != "token_count":
                     continue
                 counters = payload.get("info", {}).get("total_token_usage", {})
                 stamp = event.get("timestamp")
+                if not isinstance(stamp, str):
+                    continue
                 measured_at = datetime.fromisoformat(stamp)
                 if measured_at.utcoffset() is None:
                     continue
@@ -339,9 +371,18 @@ class CodexCounterReader:
                     samples.sort(key=lambda point: datetime.fromisoformat(point[0]))
                     del samples[:-120]
             except (ValueError, TypeError, AttributeError):
-                if b'"turn_context"' in line:
-                    # A complete but unreadable context record can hide a
-                    # model change. Later valid contexts cannot fill that gap.
+                header_type = _envelope_type(line, require_payload=False)
+                if (
+                    b'"turn_context"' in line
+                    or header_type == "turn_context"
+                    or (
+                        self.model_observation is None
+                        and (b'"compacted"' in line or header_type == "compacted")
+                    )
+                ):
+                    # A complete but unreadable context or pre-context compaction
+                    # record can hide a model change. Later valid contexts cannot
+                    # fill that gap.
                     self._observe_model({})
                 continue
         return samples

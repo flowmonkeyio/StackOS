@@ -20,6 +20,16 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
 from stackos.config import Settings
+from stackos.operations.registry import OperationRegistry, build_operation_registry
+
+
+def get_operation_registry(request: Request) -> OperationRegistry:
+    """Resolve the per-app ``OperationRegistry`` from ``app.state``."""
+    registry: OperationRegistry | None = getattr(request.app.state, "operation_registry", None)
+    if registry is None:
+        registry = build_operation_registry()
+        request.app.state.operation_registry = registry
+    return registry
 
 
 def get_settings(request: Request) -> Settings:
@@ -59,6 +69,7 @@ def get_session(request: Request, engine: Engine = Depends(get_engine)) -> Itera
     """
     with Session(engine) as session:
         session.info["operation_services"] = getattr(request.app.state, "operation_services", {})
+        session.info["operation_registry"] = getattr(request.app.state, "operation_registry", None)
         yield session
 
 
@@ -74,6 +85,7 @@ def get_if_match(if_match: Annotated[str | None, Header(alias="If-Match")] = Non
 __all__ = [
     "get_engine",
     "get_if_match",
+    "get_operation_registry",
     "get_session",
     "get_settings",
 ]

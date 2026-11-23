@@ -24,6 +24,8 @@ from pydantic import (
 from stackos.artifacts import redact_secret_text
 from stackos.workflows.secret_policy import is_operator_authorization_metadata
 
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 WORKFLOW_TEMPLATE_SCHEMA_VERSION = "stackos.workflow-template.v1"
 MAX_TEMPLATE_CONTEXT_ITEMS = 50
 ALLOWED_CONTEXT_SOURCES = frozenset(
@@ -720,7 +722,7 @@ def parse_workflow_template_obj(data: dict[str, Any]) -> WorkflowTemplateSpec:
 
 
 def parse_workflow_template_yaml(text: str) -> WorkflowTemplateSpec:
-    loaded = yaml.safe_load(text)
+    loaded = yaml.load(text, Loader=_YAML_LOADER)
     if not isinstance(loaded, dict):
         raise ValueError("workflow template YAML must contain an object")
     return parse_workflow_template_obj(loaded)
@@ -752,7 +754,7 @@ def validate_workflow_template_obj(data: dict[str, Any]) -> WorkflowTemplateVali
 
 def validate_workflow_template_yaml(text: str) -> WorkflowTemplateValidationOut:
     try:
-        loaded = yaml.safe_load(text)
+        loaded = yaml.load(text, Loader=_YAML_LOADER)
     except yaml.YAMLError as exc:
         return WorkflowTemplateValidationOut(
             valid=False,

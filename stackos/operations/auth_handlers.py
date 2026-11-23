@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from stackos_connectors.connectors.telegram.tdlib.native import TelegramTdlibNativeError
 from stackos_connectors.connectors.telegram.tdlib.sessions import TelegramTdlibSessionError
+from starlette.concurrency import run_in_threadpool
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import (
@@ -429,7 +430,8 @@ async def account_list(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> AuthStatusOut:
-    return AuthRepository(ctx.session).status(
+    return await run_in_threadpool(
+        AuthRepository(ctx.session).status,
         project_id=None,
         provider_key=inp.provider_key,
         summary_only=inp.summary_only,
@@ -442,7 +444,7 @@ async def telegram_application_status(
     _emitter: ProgressEmitter,
 ) -> TelegramApplicationStatusOut:
     return TelegramApplicationStatusOut(
-        configured=TelegramApplicationRepository(ctx.session).configured()
+        configured=await run_in_threadpool(TelegramApplicationRepository(ctx.session).configured)
     )
 
 
@@ -451,7 +453,8 @@ async def connection_list(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> AuthStatusOut:
-    return AuthRepository(ctx.session).status(
+    return await run_in_threadpool(
+        AuthRepository(ctx.session).status,
         project_id=inp.project_id,
         provider_key=inp.provider_key,
         summary_only=inp.summary_only,

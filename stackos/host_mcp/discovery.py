@@ -5,14 +5,18 @@ from __future__ import annotations
 import glob
 import os
 import re
-import shlex
 import shutil
 import subprocess
-from collections.abc import Iterable
+import time
+from collections.abc import Iterable, Iterator
 from pathlib import Path
+from threading import Lock
 
 SHELL_DISCOVERY_TIMEOUT_SECONDS = 3
 SUPPORTED_LOGIN_SHELLS = {"bash", "sh", "zsh"}
+_LOGIN_SHELL_PATH_TTL_SECONDS = 30.0
+_login_shell_path_lock = Lock()
+_login_shell_path_cache: dict[tuple[str, str, str], tuple[float, str | None]] = {}
 
 
 def resolve_cli_bin(
@@ -25,14 +29,76 @@ def resolve_cli_bin(
 ) -> str | None:
     """Find a host CLI from the current PATH, known installs, or a login shell."""
 
-    candidates = resolve_cli_bins(
-        command_name,
-        env_var=env_var,
-        explicit=explicit,
-        common_candidates=common_candidates,
-        app_bundle_candidates=app_bundle_candidates,
+    return next(
+        iter_cli_bins(
+            command_name,
+            env_var=env_var,
+            explicit=explicit,
+            common_candidates=common_candidates,
+            app_bundle_candidates=app_bundle_candidates,
+        ),
+        None,
     )
-    return candidates[0] if candidates else None
+
+
+def iter_cli_bins(
+    command_name: str,
+    *,
+    env_var: str | None = None,
+    explicit: str | None = None,
+    preferred_candidates: Iterable[str] = (),
+    common_candidates: Iterable[str] = (),
+    app_bundle_candidates: Iterable[str] = (),
+) -> Iterator[str]:
+    """Yield ordered, deduplicated executable candidates lazily.
+
+    Login-shell discovery only runs if the caller exhausts earlier PATH,
+    known-install, and app-bundle candidates.
+    """
+
+    if explicit is not None:
+        resolved = executable_path_or_none(explicit)
+        if resolved:
+            yield resolved
+        return
+
+    if env_var:
+        override = os.environ.get(env_var)
+        if override is not None:
+            resolved = executable_path_or_none(override)
+            if resolved:
+                yield resolved
+            return
+
+    seen: set[str] = set()
+
+    def maybe(candidate: str | None) -> str | None:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            return candidate
+        return None
+
+    for candidate in expand_candidate_paths(preferred_candidates):
+        found = maybe(executable_path_or_none(candidate))
+        if found:
+            yield found
+    found = maybe(shutil.which(command_name))
+    if found:
+        yield found
+
+    for candidate in expand_candidate_paths(common_candidates):
+        found = maybe(executable_path_or_none(candidate))
+        if found:
+            yield found
+
+    for candidate in expand_candidate_paths(app_bundle_candidates):
+        found = maybe(executable_path_or_none(candidate))
+        if found:
+            yield found
+
+    found = maybe(discover_with_login_shell(command_name))
+    if found:
+        yield found
 
 
 def resolve_cli_bins(
@@ -46,38 +112,16 @@ def resolve_cli_bins(
 ) -> list[str]:
     """Return ordered, deduplicated executable candidates for a host CLI."""
 
-    if explicit is not None:
-        resolved = executable_path_or_none(explicit)
-        return [resolved] if resolved else []
-
-    if env_var:
-        override = os.environ.get(env_var)
-        if override is not None:
-            resolved = executable_path_or_none(override)
-            return [resolved] if resolved else []
-
-    ordered: list[str] = []
-    seen: set[str] = set()
-
-    def add(candidate: str | None) -> None:
-        if candidate and candidate not in seen:
-            seen.add(candidate)
-            ordered.append(candidate)
-
-    for candidate in expand_candidate_paths(preferred_candidates):
-        add(executable_path_or_none(candidate))
-    from_path = shutil.which(command_name)
-    add(from_path)
-
-    for candidate in expand_candidate_paths(common_candidates):
-        add(executable_path_or_none(candidate))
-
-    for candidate in expand_candidate_paths(app_bundle_candidates):
-        add(executable_path_or_none(candidate))
-
-    from_login_shell = discover_with_login_shell(command_name)
-    add(from_login_shell)
-    return ordered
+    return list(
+        iter_cli_bins(
+            command_name,
+            env_var=env_var,
+            explicit=explicit,
+            preferred_candidates=preferred_candidates,
+            common_candidates=common_candidates,
+            app_bundle_candidates=app_bundle_candidates,
+        )
+    )
 
 
 def subprocess_env_for_cli(cli_bin: str) -> dict[str, str]:
@@ -122,16 +166,17 @@ def probe_cli_version(cli_bin: str) -> tuple[str, str | None]:
     return "available", version[0] if version else None
 
 
-def discover_with_login_shell(command_name: str) -> str | None:
-    shell = os.environ.get("SHELL")
-    if not shell:
-        return None
-    shell_name = Path(shell).name
-    if shell_name not in SUPPORTED_LOGIN_SHELLS:
-        return None
+
+def _login_shell_path(shell: str) -> str | None:
+    key = (shell, os.environ.get("PATH", ""), os.environ.get("HOME", ""))
+    now = time.monotonic()
+    with _login_shell_path_lock:
+        cached = _login_shell_path_cache.get(key)
+        if cached is not None and now - cached[0] < _LOGIN_SHELL_PATH_TTL_SECONDS:
+            return cached[1]
     try:
         result = subprocess.run(
-            [shell, "-lc", f"command -v {shlex.quote(command_name)}"],
+            [shell, "-lc", 'printf "%s" "$PATH"'],
             capture_output=True,
             text=True,
             check=False,
@@ -139,12 +184,26 @@ def discover_with_login_shell(command_name: str) -> str | None:
         )
     except Exception:
         return None
-    if result.returncode != 0:
+    resolved = result.stdout.strip() if result.returncode == 0 else ""
+    value = resolved or None
+    with _login_shell_path_lock:
+        _login_shell_path_cache[key] = (time.monotonic(), value)
+    return value
+
+
+def discover_with_login_shell(command_name: str) -> str | None:
+    shell = os.environ.get("SHELL")
+    if not shell:
         return None
-    lines = result.stdout.strip().splitlines()
-    if not lines:
+    shell_name = Path(shell).name
+    if shell_name not in SUPPORTED_LOGIN_SHELLS:
         return None
-    return executable_path_or_none(lines[0])
+    login_path = _login_shell_path(shell)
+    if login_path:
+        found = shutil.which(command_name, path=login_path)
+        if found:
+            return executable_path_or_none(found)
+    return None
 
 
 def expand_candidate_paths(candidates: Iterable[str]) -> list[Path]:

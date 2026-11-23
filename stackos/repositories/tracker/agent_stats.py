@@ -504,13 +504,40 @@ class ReceiptFact:
     receipt: dict[str, Any]
     measured: dict[str, Any] | None
     eligible: bool
+    classified: bool = field(init=False)
+    role: str | None = field(init=False)
+    outcome: Any = field(init=False)
+    agent: str | None = field(init=False)
+    host_key: str | None = field(init=False)
+    model: str | None = field(init=False)
+    model_basis: Literal["observed", "selected"] | None = field(init=False)
+    launch_instant: datetime | None = field(init=False)
+
+    def __post_init__(self) -> None:
+        receipt = self.receipt
+        self.classified = classification_known(receipt) if self.eligible else False
+        raw_role = receipt.get("selected_role")
+        self.role = raw_role if isinstance(raw_role, str) else None
+        self.outcome = receipt.get("validated_outcome")
+        launch = receipt.get("launch")
+        if isinstance(launch, dict):
+            self.agent = _text(launch.get("agent")) or _text(receipt.get("agent"))
+            self.host_key = _text(launch.get("host_key"))
+            self.model, self.model_basis = _model_identity(receipt)
+            self.launch_instant = _instant(launch.get("started_at"))
+        else:
+            self.agent = _text(receipt.get("agent"))
+            self.host_key = None
+            self.model = None
+            self.model_basis = None
+            self.launch_instant = None
 
     @cached_property
     def events(self) -> list[tuple[datetime, dict[str, Any], UsageIntervalOut]] | None:
         return _receipt_events(self)
 
 
-@lru_cache(maxsize=8192)
+@lru_cache(maxsize=16384)
 def _normalized_receipt(source_revision: str, ticket_key: str | None) -> ReceiptFact:
     receipt = {**decode_receipt(source_revision)}
     if ticket_key is not None:
@@ -680,65 +707,86 @@ class ReceiptMetrics:
         self.review_outcomes: dict[str, int] = defaultdict(int)
 
     def add(self, fact: ReceiptFact) -> None:
-        receipt = fact.receipt
         if not fact.eligible:
             return
         self.total += 1
         measured = fact.measured
         if measured is not None:
             self.measured_count += 1
-            for key in self.usage:
-                if measured[key] is not None:
-                    self.usage[key] += measured[key]
-                    self.known[key] += 1
-            if measured["cache_read"] is not None:
-                self.remaining += measured["input"] - measured["cache_read"]
+            usage = self.usage
+            known = self.known
+            inp = measured["input"]
+            out = measured["output"]
+            tot = measured["total"]
+            usage["input"] += inp
+            known["input"] += 1
+            usage["output"] += out
+            known["output"] += 1
+            usage["total"] += tot
+            known["total"] += 1
+            cache_read = measured["cache_read"]
+            if cache_read is not None:
+                usage["cache_read"] += cache_read
+                known["cache_read"] += 1
+                self.remaining += inp - cache_read
             else:
-                self.unknown_cache_input += measured["input"]
-        role = receipt.get("selected_role")
-        outcome = receipt.get("validated_outcome")
-        if classification_known(receipt):
+                self.unknown_cache_input += inp
+            cache_write = measured["cache_write"]
+            if cache_write is not None:
+                usage["cache_write"] += cache_write
+                known["cache_write"] += 1
+            reasoning = measured["reasoning"]
+            if reasoning is not None:
+                usage["reasoning"] += reasoning
+                known["reasoning"] += 1
+        if fact.classified:
             self.classified += 1
-            self.rejects += int(role == "review_agent" and outcome == "repair")
-            if role == "review_agent":
+            if fact.role == "review_agent":
+                outcome = fact.outcome
+                if outcome == "repair":
+                    self.rejects += 1
                 self.review_outcomes[outcome or "validation_failed"] += 1
 
-    def output(self) -> AgentStatsMetricsOut:
-        return AgentStatsMetricsOut(
-            launch_attempts=self.total,
-            recorded_reviewer_rejects=self.rejects,
-            review_outcomes=dict(self.review_outcomes),
-            reported_usage=AgentStatsUsageOut.model_validate(
-                {
-                    **{
-                        key: value if self.known[key] or not self.total else None
-                        for key, value in self.usage.items()
-                    },
-                    "remaining_input": self.remaining
-                    if self.known["cache_read"] or not self.total
-                    else None,
-                    "input_with_unknown_cache": self.unknown_cache_input
-                    if self.measured_count or not self.total
-                    else None,
-                }
+    def _output_fields(self) -> dict[str, Any]:
+        total = self.total
+        usage = self.usage
+        known = self.known
+        return {
+            "launch_attempts": total,
+            "recorded_reviewer_rejects": self.rejects,
+            "review_outcomes": dict(self.review_outcomes),
+            "reported_usage": AgentStatsUsageOut(
+                input=usage["input"] if known["input"] or not total else None,
+                output=usage["output"] if known["output"] or not total else None,
+                total=usage["total"] if known["total"] or not total else None,
+                cache_read=usage["cache_read"] if known["cache_read"] or not total else None,
+                cache_write=usage["cache_write"] if known["cache_write"] or not total else None,
+                reasoning=usage["reasoning"] if known["reasoning"] or not total else None,
+                remaining_input=self.remaining if known["cache_read"] or not total else None,
+                input_with_unknown_cache=(
+                    self.unknown_cache_input if self.measured_count or not total else None
+                ),
             ),
-            coverage=AgentStatsCoverageOut(
+            "coverage": AgentStatsCoverageOut(
                 usage_measured_attempts=self.measured_count,
-                usage_unavailable_attempts=self.total - self.measured_count,
+                usage_unavailable_attempts=total - self.measured_count,
                 classification_known_attempts=self.classified,
-                classification_unknown_attempts=self.total - self.classified,
-                usage_status=_coverage(self.measured_count, self.total),
-                classification_status=_coverage(self.classified, self.total),
+                classification_unknown_attempts=total - self.classified,
+                usage_status=_coverage(self.measured_count, total),
+                classification_status=_coverage(self.classified, total),
                 fields={
                     key: AgentStatsFieldCoverageOut(
-                        measured_attempts=known,
-                        unavailable_attempts=self.total - known,
-                        status=_coverage(known, self.total),
+                        measured_attempts=count,
+                        unavailable_attempts=total - count,
+                        status=_coverage(count, total),
                     )
-                    for key, known in self.known.items()
+                    for key, count in known.items()
                 },
             ),
-        )
+        }
+
+    def output(self) -> AgentStatsMetricsOut:
+        return AgentStatsMetricsOut(**self._output_fields())
 
 
 def summarize_receipts(
@@ -1224,10 +1272,8 @@ def _add_group(
     slug: str,
     fact: ReceiptFact,
 ) -> None:
-    receipt = fact.receipt
-    launch = receipt["launch"]
-    agent = _text(launch.get("agent")) or _text(receipt.get("agent"))
-    model, model_basis = _model_identity(receipt)
+    agent = fact.agent
+    model = fact.model
     identity: tuple[Any, ...] = (model,) if group_by == "model" else (pid, agent)
     if group_by == "agent_model":
         identity += (model,)
@@ -1236,11 +1282,10 @@ def _add_group(
         group = groups[identity] = GroupMetrics()
     group.metrics.add(fact)
     group.projects.add((pid, name, slug))
-    role = receipt.get("selected_role")
-    group.roles.add(role if isinstance(role, str) else None)
-    group.hosts.add(_text(launch.get("host_key")))
+    group.roles.add(fact.role)
+    group.hosts.add(fact.host_key)
     group.models.add(model)
-    group.model_bases.add(model_basis)
+    group.model_bases.add(fact.model_basis)
 
 
 def _group_rows(
@@ -1267,7 +1312,7 @@ def _group_rows(
                 model_basis=(
                     next(iter(group.model_bases)) if len(group.model_bases) == 1 else "mixed"
                 ),
-                **group.metrics.output().model_dump(),
+                **group.metrics._output_fields(),
             )
         )
     return rows
@@ -1335,10 +1380,11 @@ def query_agent_stats(
     by_day: dict[date, ReceiptMetrics] = defaultdict(ReceiptMetrics)
     daily_groups: dict[tuple[date, str], dict[tuple, GroupMetrics]] = defaultdict(dict)
     undated = ReceiptMetrics()
+    has_provisional = bool(provisional)
+    has_range = start_date is not None and end_date is not None
     for pid, name, slug, ticket_key, attempt, phase, current, source in session.execute(selected):
-        receipt = decode_receipt(source)
-        receipts = [receipt]
-        if current and (pid, ticket_key) in provisional:
+        if has_provisional and current and (pid, ticket_key) in provisional:
+            receipt = decode_receipt(source)
             receipts = provisional_receipt(
                 pid,
                 ticket_key,
@@ -1350,24 +1396,32 @@ def query_agent_stats(
                 },
                 provisional,
             )
-        for item in receipts:
-            fact = _normalized_receipt(source, None) if item is receipt else _fact(item)
-            receipt = fact.receipt
-            if not isinstance(receipt.get("launch"), dict) or not fact.eligible:
+            facts = [
+                _normalized_receipt(source, None) if item is receipt else _fact(item)
+                for item in receipts
+            ]
+        else:
+            facts = [_normalized_receipt(source, None)]
+        for fact in facts:
+            if not fact.eligible or not isinstance(fact.receipt.get("launch"), dict):
                 continue
-            day = _launch_day(receipt, zone)
+            instant = fact.launch_instant
+            day = instant.astimezone(zone).date() if instant is not None else None
             if day is None:
                 undated.add(fact)
-            if start_date is not None and end_date is not None:
+            if has_range:
+                assert start_date is not None and end_date is not None
                 if day is None or not start_date <= day <= end_date:
                     continue
                 by_day[day].add(fact)
-                for grouping in ("agent", "model", "agent_model"):
-                    _add_group(daily_groups[day, grouping], grouping, pid, name, slug, fact)
+                _add_group(daily_groups[day, "agent"], "agent", pid, name, slug, fact)
+                _add_group(daily_groups[day, "model"], "model", pid, name, slug, fact)
+                _add_group(daily_groups[day, "agent_model"], "agent_model", pid, name, slug, fact)
             totals.add(fact)
             _add_group(groups, group_by, pid, name, slug, fact)
     daily = []
-    if start_date is not None and end_date is not None:
+    if has_range:
+        assert start_date is not None and end_date is not None
         for offset in range((end_date - start_date).days + 1):
             day = start_date + timedelta(days=offset)
             daily.append(
@@ -1376,7 +1430,7 @@ def query_agent_stats(
                     by_agent=_group_rows(daily_groups[day, "agent"], "agent"),
                     by_model=_group_rows(daily_groups[day, "model"], "model"),
                     by_agent_model=_group_rows(daily_groups[day, "agent_model"], "agent_model"),
-                    **by_day[day].output().model_dump(),
+                    **by_day[day]._output_fields(),
                 )
             )
     from stackos.repositories.tracker.delivery_stats import query_delivery_trends

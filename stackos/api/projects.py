@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 from stackos_connectors.connectors.sitemap.integration import fetch_sitemap_entries
+from starlette.concurrency import run_in_threadpool
 
 from stackos.api.deps import get_session
 from stackos.api.envelopes import WriteResponse, write_response
@@ -100,7 +101,8 @@ async def list_projects(
     session: Session = Depends(get_session),
 ) -> PageResponse[ProjectOut]:
     return page_response(
-        ProjectRepository(session).list(
+        await run_in_threadpool(
+            ProjectRepository(session).list,
             active_only=active_only,
             limit=page.limit,
             after_id=page.after,
@@ -118,7 +120,7 @@ async def create_project(
 
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(project_id: int, session: Session = Depends(get_session)) -> ProjectOut:
-    return ProjectRepository(session).get(project_id)
+    return await run_in_threadpool(ProjectRepository(session).get, project_id)
 
 
 @router.patch("/{project_id}", response_model=WriteResponse[ProjectOut])

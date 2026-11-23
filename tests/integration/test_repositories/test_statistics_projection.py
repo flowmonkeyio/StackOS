@@ -459,3 +459,31 @@ def test_equal_receipt_values_do_not_make_archived_live_timing_current(session, 
     )
     assert durations[ids[0]].total_seconds is None
     assert durations[ids[0]].unavailable_intervals == 2
+
+
+def test_delivery_trends_timing_query_avoids_nested_loop_scan(session, project_id):
+    seed_statistics_workload(session, project_id, tasks=4, receipts=24)
+    engine = session.get_bind()
+    plans: list[str] = []
+
+    def observe(connection, _cursor, sql, params, _execution, _many):
+        if sql.lstrip().upper().startswith("EXPLAIN"):
+            return
+        if "UNION ALL" in sql or "timing_selection" in sql:
+            rows = connection.exec_driver_sql("EXPLAIN QUERY PLAN " + sql, params).all()
+            plans.extend(row[3] for row in rows)
+
+    event.listen(engine, "before_cursor_execute", observe)
+    try:
+        result = TrackerRepository(session).agent_stats(
+            project_id=project_id,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 31),
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", observe)
+    assert plans, "expected compound timing query plan"
+    assert any("UNION ALL" in detail for detail in plans), plans
+    assert not any("SCAN timing_selection" in detail for detail in plans), plans
+    assert result.delivery_trends.totals.work_time.total_seconds == 240
+    assert result.delivery_trends.totals.work_time.coverage.status == "complete"

@@ -629,3 +629,59 @@ def test_home_account_summary_retains_status_fields_and_attachment_owner(
     assert "fc-secret" not in response.text
     global_summary = api.get("/api/v1/auth/accounts", params={"summary_only": True}).json()
     assert len(global_summary["accounts"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_empty_ui_demand_stream_skips_ui_snapshot_while_keeping_revisions_and_read_token(
+    api, project_id, monkeypatch
+):
+    from stackos.api import context
+
+    foreign = seed(api, project_id)
+
+    def forbidden_refresh(*_args, **_kwargs):
+        raise AssertionError("Empty ui_demand transport must not run usage_refresh()")
+
+    monkeypatch.setattr(context, "usage_refresh", forbidden_refresh)
+
+    async def connected():
+        return False
+
+    empty_demand = json.dumps({"projects": {}})
+    for is_global in (True, False):
+        response = (
+            await context.global_context_timeline_stream(
+                SimpleNamespace(is_disconnected=connected),
+                after=None,
+                ui_demand=empty_demand,
+                engine=api.app.state.engine,
+            )
+            if is_global
+            else await context.context_timeline_stream(
+                project_id,
+                SimpleNamespace(is_disconnected=connected),
+                task_key=None,
+                after=None,
+                limit=25,
+                poll_ms=1000,
+                heartbeat_ms=15_000,
+                max_events=None,
+                replay=False,
+                ui_demand=empty_demand,
+                engine=api.app.state.engine,
+            )
+        )
+        try:
+            frame = await anext(response.body_iterator)
+            payload = parse_usage(frame)
+            updates = payload["updates"]
+            assert updates["read_token"]
+            assert updates["tasks"] == []
+            assert updates["tickets"] == []
+            returned_ids = {item["project_id"] for item in updates["projects"]}
+            if is_global:
+                assert {project_id, foreign}.issubset(returned_ids)
+            else:
+                assert returned_ids == {project_id}
+        finally:
+            await response.body_iterator.aclose()

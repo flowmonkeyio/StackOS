@@ -11,11 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as PydanticValidationError
 from sqlmodel import Session
 
-from stackos.api.deps import get_session, get_settings
+from stackos.api.deps import get_operation_registry, get_session, get_settings
 from stackos.config import Settings
 from stackos.logging import get_logger
 from stackos.operations.dispatcher import OperationDispatcher
-from stackos.operations.registry import build_operation_registry
+from stackos.operations.registry import OperationRegistry
 from stackos.operations.spec import OperationDescribeOut, OperationListOut
 from stackos.repositories.base import ValidationError
 from stackos.validation_errors import safe_validation_errors
@@ -42,16 +42,20 @@ class OperationCallIn(BaseModel):
 
 
 @router.get("", response_model=OperationListOut)
-async def list_operations(surface: str | None = None) -> OperationListOut:
+async def list_operations(
+    surface: str | None = None,
+    registry: OperationRegistry = Depends(get_operation_registry),
+) -> OperationListOut:
     """List registered StackOS operations with surface and policy metadata."""
-    registry = build_operation_registry()
     return registry.list_out(surface=surface)
 
 
 @router.get("/{operation_name}", response_model=OperationDescribeOut)
-async def describe_operation(operation_name: str) -> OperationDescribeOut:
+async def describe_operation(
+    operation_name: str,
+    registry: OperationRegistry = Depends(get_operation_registry),
+) -> OperationDescribeOut:
     """Describe one operation with schemas, examples, and agent guidance."""
-    registry = build_operation_registry()
     return registry.get(operation_name).describe_out()
 
 
@@ -63,9 +67,9 @@ async def call_operation(
     client_surface: str | None = Header(default=None, alias="X-StackOS-Client-Surface"),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    registry: OperationRegistry = Depends(get_operation_registry),
 ) -> JSONResponse:
     """Call one REST-enabled operation through the shared dispatcher."""
-    registry = build_operation_registry()
     spec = registry.get(operation_name, surface="rest")
     normalized_client_surface = (
         client_surface.strip().lower() if isinstance(client_surface, str) else None

@@ -6,16 +6,16 @@ from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import StreamingResponse
 from starlette.types import Receive, Scope, Send
 
+from stackos.api.deps import get_operation_registry
 from stackos.jobs.workflow_schedules import WorkflowScheduleRuntime
 from stackos.operations.desktop import AVAILABILITY_PATH
-from stackos.operations.registry import build_operation_registry
 
 router = APIRouter(tags=["desktop"])
 
 
 @router.post(AVAILABILITY_PATH)
 async def native_availability(request: Request) -> StreamingResponse:
-    build_operation_registry().get("desktop.availability", surface="rest")
+    get_operation_registry(request).get("desktop.availability", surface="rest")
     if getattr(request.state, "auth_scope", None) != "daemon-admin":
         raise HTTPException(403, "Native desktop availability requires daemon authentication.")
     runtime: WorkflowScheduleRuntime = request.app.state.workflow_schedules

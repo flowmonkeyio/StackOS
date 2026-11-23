@@ -127,3 +127,33 @@ def test_apps_share_one_registry_with_their_dispatcher_and_keep_catalog_mutation
         app.state.settings = object()
         assert app.state.mcp_dispatcher._engine_resolver() is app.state.engine
         assert app.state.mcp_dispatcher._settings_resolver() is app.state.settings
+
+
+def test_rest_routes_and_ui_auth_reuse_app_state_operation_registry(registry_builds):
+    from starlette.testclient import TestClient
+
+    from stackos.api.operations import router as operations_router
+    from stackos.auth import BearerTokenMiddleware, derive_ui_token
+
+    app = FastAPI()
+    token = "test-daemon-token"
+    ui_token = derive_ui_token(token)
+    app.add_middleware(BearerTokenMiddleware, token=token, ui_token=ui_token)
+    app.include_router(operations_router)
+    register_mcp(app)
+    assert len(registry_builds) == 1
+
+    with TestClient(app) as client:
+        ui_headers = {"Authorization": f"Bearer {ui_token}"}
+        listed = client.get("/api/v1/operations", headers=ui_headers)
+        assert listed.status_code == 200
+        described = client.get("/api/v1/operations/meta.enums", headers=ui_headers)
+        assert described.status_code == 200
+        denied = client.post(
+            "/api/v1/operations/nonexistent.op/call",
+            headers=ui_headers,
+            json={"arguments": {}},
+        )
+        assert denied.status_code == 403
+        # Middleware read/console checks + route handlers reuse app.state.operation_registry.
+        assert len(registry_builds) == 1

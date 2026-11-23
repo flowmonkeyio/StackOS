@@ -233,13 +233,18 @@ class WorkflowTemplateLoader:
         plugin_slug: str | None = None,
         source: str | None = None,
         include_extension: bool = True,
+        _candidates: list[_Candidate] | None = None,
     ) -> LoadedWorkflowTemplate:
-        if project_id is not None:
+        if project_id is not None and _candidates is None:
             self._require_project(project_id)
-        candidates = self._load_candidates(
-            project_id=project_id,
-            repo_root=repo_root,
-            plugin_slug=plugin_slug,
+        candidates = (
+            _candidates
+            if _candidates is not None
+            else self._load_candidates(
+                project_id=project_id,
+                repo_root=repo_root,
+                plugin_slug=plugin_slug,
+            )
         )
         # Load and validate every source as before, then copy only this key's
         # candidates. Point lookups do not need owned copies of unrelated specs.
@@ -1185,14 +1190,18 @@ class WorkflowTemplateLoader:
         loaded: list[LoadedWorkflowTemplate] = []
         seen_paths: set[str] = set()
         clone_root = _clone_plugins_root()
-        if clone_root is not None:
-            for path in _iter_yaml_paths(clone_root):
-                if "/workflows/" not in path.as_posix():
+        if clone_root is not None and clone_root.is_dir():
+            for plugin_dir in sorted(clone_root.iterdir()):
+                if plugin_dir.is_symlink() or not plugin_dir.is_dir():
                     continue
-                if plugin_slug is not None and path.relative_to(clone_root).parts[0] != plugin_slug:
+                if plugin_slug is not None and plugin_dir.name != plugin_slug:
                     continue
-                seen_paths.add(path.resolve().as_posix())
-                loaded.append(self._loaded_from_file_path(path, clone_root=clone_root))
+                workflows_dir = plugin_dir / "workflows"
+                if workflows_dir.is_symlink() or not workflows_dir.is_dir():
+                    continue
+                for path in _iter_yaml_paths(workflows_dir):
+                    seen_paths.add(path.resolve().as_posix())
+                    loaded.append(self._loaded_from_file_path(path, clone_root=clone_root))
         bundled_root = _bundled_plugins_root()
         if bundled_root is not None:
             for node in _iter_traversable_yaml(bundled_root):

@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 
 from stackos.api.deps import get_session
 from stackos.api.envelopes import WriteResponse, write_response
@@ -39,7 +40,11 @@ async def list_plugins(
     session: Session = Depends(get_session),
 ) -> list[PluginOut]:
     """List installed plugins, optionally annotated with project enablement."""
-    return PluginRepository(session).list_plugins(project_id=project_id, compact=compact)
+    return await run_in_threadpool(
+        PluginRepository(session).list_plugins,
+        project_id=project_id,
+        compact=compact,
+    )
 
 
 @router.get("/plugins/{plugin_slug}", response_model=PluginOut)

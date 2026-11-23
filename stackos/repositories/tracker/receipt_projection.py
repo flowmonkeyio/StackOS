@@ -324,7 +324,7 @@ def sync_sqlite_receipt_projection(
         )
 
 
-@lru_cache(maxsize=8192)
+@lru_cache(maxsize=16384)
 def decode_receipt(source_revision: str) -> dict[str, Any]:
     """Bounded pure reuse keyed by the complete projected source, never live counters."""
     return json.loads(source_revision)

@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, literal, null, or_, select, union_all
 from sqlmodel import Session, col
 
 from stackos.db.models import (
@@ -282,64 +282,73 @@ def query_delivery_trends(
         col(table.finished_at).is_not(None),
         col(table.finished_at) <= observed.replace(tzinfo=None),
     )
-    inventory = (
-        _scope(
-            _join_scope(
-                select(
-                    col(TrackerTicket.id).label("ticket_id"),
-                    col(TrackerTicket.task_id).label("task_id"),
-                    func.sum(case((col(table.timing).is_(True), 1), else_=0)).label("timing_count"),
-                    func.sum(case((valid_closed, 1), else_=0)).label("valid_count"),
-                    func.sum(
-                        case(
-                            (
-                                or_(
-                                    and_(
-                                        col(table.inventory) == "usage",
-                                        col(table.review_outcome) == "unclassified",
-                                    ),
-                                    and_(
-                                        col(table.inventory) == "timing",
-                                        col(table.review_outcome).in_(("success", "repair")),
-                                    ),
+    inventory_branch = _scope(
+        _join_scope(
+            select(
+                literal(0).label("row_kind"),
+                col(TrackerTicket.id).label("ticket_id"),
+                col(TrackerTicket.task_id).label("task_id"),
+                func.sum(case((col(table.timing).is_(True), 1), else_=0)).label("timing_count"),
+                func.sum(case((valid_closed, 1), else_=0)).label("valid_count"),
+                func.sum(
+                    case(
+                        (
+                            or_(
+                                and_(
+                                    col(table.inventory) == "usage",
+                                    col(table.review_outcome) == "unclassified",
                                 ),
-                                1,
+                                and_(
+                                    col(table.inventory) == "timing",
+                                    col(table.review_outcome).in_(("success", "repair")),
+                                ),
                             ),
-                            else_=0,
-                        )
-                    ).label("unclassified"),
-                    func.sum(case((and_(repair, usable_verdict), 1), else_=0)).label(
-                        "known_repairs"
-                    ),
-                    func.sum(case((and_(repair, ~usable_verdict), 1), else_=0)).label(
-                        "missing_repairs"
-                    ),
-                )
-                .select_from(TrackerTicket)
-                .outerjoin(
-                    table,
-                    col(table.ticket_id) == col(TrackerTicket.id),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("unclassified"),
+                func.sum(case((and_(repair, usable_verdict), 1), else_=0)).label("known_repairs"),
+                func.sum(case((and_(repair, ~usable_verdict), 1), else_=0)).label(
+                    "missing_repairs"
                 ),
-                TrackerTicket,
+                null().label("project_id"),
+                null().label("ticket_key"),
+                null().label("attempt"),
+                null().label("phase"),
+                null().label("observation_key"),
+                null().label("current"),
+                null().label("receipt_json"),
+                null().label("counted"),
+            )
+            .select_from(TrackerTicket)
+            .outerjoin(
+                table,
+                col(table.ticket_id) == col(TrackerTicket.id),
             ),
-            project_id,
-            is_active,
-        )
-        .group_by(col(TrackerTicket.id))
-        .subquery("timing_inventory")
-    )
+            TrackerTicket,
+        ),
+        project_id,
+        is_active,
+    ).group_by(col(TrackerTicket.id))
     selected_timing = _scope(
         _join_scope(
             select(
+                literal(1).label("row_kind"),
                 col(TrackerTicket.id).label("ticket_id"),
-                col(TrackerTicket.task_id),
-                col(TrackerTicket.project_id),
-                col(TrackerTicket.key),
-                col(table.attempt),
-                col(table.phase),
-                col(table.observation_key),
-                col(table.current),
-                col(table.receipt_json),
+                col(TrackerTicket.task_id).label("task_id"),
+                null().label("timing_count"),
+                null().label("valid_count"),
+                null().label("unclassified"),
+                null().label("known_repairs"),
+                null().label("missing_repairs"),
+                col(TrackerTicket.project_id).label("project_id"),
+                col(TrackerTicket.key).label("ticket_key"),
+                col(table.attempt).label("attempt"),
+                col(table.phase).label("phase"),
+                col(table.observation_key).label("observation_key"),
+                col(table.current).label("current"),
+                col(table.receipt_json).label("receipt_json"),
                 valid_closed.label("counted"),
             )
             .select_from(table)
@@ -362,25 +371,19 @@ def query_delivery_trends(
     evidence: dict[int, dict[str, Any]] = {}
     identities = {}
     already_counted: dict[int, int] = defaultdict(int)
-    selected_timing = selected_timing.subquery("timing_selection")
-    # Coverage totals and selected receipts must share one SQL snapshot. A
-    # native final receipt can commit after any earlier read; a later row must
-    # never be subtracted as already counted by an earlier inventory.
-    timing_rows = session.execute(
-        select(inventory, selected_timing)
-        .select_from(inventory)
-        .outerjoin(selected_timing, inventory.c.ticket_id == selected_timing.c.ticket_id)
-    ).all()
+    # Coverage totals and selected receipts must share one SQL snapshot. UNION ALL
+    # keeps one atomic read while avoiding SQLite's O(N*M) unindexed outer join.
+    timing_rows = session.execute(union_all(inventory_branch, selected_timing)).all()
     # A real native exit can land during the earlier report reductions. Validate
     # fresh final rows against the time after their read; the earlier owned live
     # copy still bounds any invocation without a durable finish.
     observed = datetime.now(UTC)
     recorded = missing = 0
     ticket_tasks = set()
-    included_tickets = set()
     unknown_classification = 0
     repair_known = repair_missing = 0
     for (
+        row_kind,
         tid,
         task_id,
         count,
@@ -388,8 +391,6 @@ def query_delivery_trends(
         unclassified,
         known_repairs,
         missing_repairs,
-        selected_tid,
-        _selected_task,
         pid,
         key,
         attempt,
@@ -399,8 +400,7 @@ def query_delivery_trends(
         source,
         counted,
     ) in timing_rows:
-        if tid not in included_tickets:
-            included_tickets.add(tid)
+        if row_kind == 0:
             ticket_tasks.add(task_id)
             recorded += valid or 0
             unknown_classification += unclassified or 0
@@ -408,7 +408,6 @@ def query_delivery_trends(
             repair_missing += missing_repairs or 0
             if not count:
                 missing += 1
-        if selected_tid is None:
             continue
         identities[tid] = task_id, pid, key
         already_counted[tid] += bool(counted)
@@ -445,11 +444,14 @@ def query_delivery_trends(
             )
     by_task: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
     issues = {"no_recorded_invocations"} if missing else set()
+    timing_by_project: dict[Any, list[dict[str, Any]]] = defaultdict(list)
+    for call in timing:
+        timing_by_project[call.get("project_id")].append(call)
     for tid, source in evidence.items():
         task_id, pid, key = identities[tid]
         intervals, _live, absent, invalid = work_intervals(
             [(key, source)],
-            live_calls=[call for call in timing if call.get("project_id") == pid],
+            live_calls=timing_by_project.get(pid) or [],
             observed_at=observed,
         )
         by_task[task_id].extend(intervals)

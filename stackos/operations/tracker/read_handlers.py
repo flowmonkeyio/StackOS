@@ -169,7 +169,8 @@ async def tracker_next(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerNextOut:
-    return TrackerRepository(ctx.session).next(
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).next,
         project_id=inp.project_id,
         limit=inp.limit,
         assignee=inp.assignee,
@@ -182,7 +183,10 @@ async def tracker_blockers(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerNextOut:
-    return TrackerRepository(ctx.session).blockers(project_id=inp.project_id)
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).blockers,
+        project_id=inp.project_id,
+    )
 
 
 async def tracker_brief(
@@ -190,7 +194,8 @@ async def tracker_brief(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerBriefOut:
-    return TrackerRepository(ctx.session).brief(
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).brief,
         project_id=inp.project_id,
         ticket_key=inp.ticket_key,
     )
@@ -201,7 +206,8 @@ async def tracker_why(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerBriefOut:
-    return TrackerRepository(ctx.session).brief(
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).brief,
         project_id=inp.project_id,
         ticket_key=inp.ticket_key,
     )
@@ -212,7 +218,8 @@ async def tracker_execute(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerBriefOut:
-    return TrackerRepository(ctx.session).brief(
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).brief,
         project_id=inp.project_id,
         ticket_key=inp.ticket_key,
     )
@@ -223,7 +230,8 @@ async def tracker_verify(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerVerifyOut:
-    return TrackerRepository(ctx.session).verify(
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).verify,
         project_id=inp.project_id,
         ticket_key=inp.ticket_key,
     )
@@ -234,7 +242,8 @@ async def tracker_history(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> Page[TrackerHistoryOut]:
-    return TrackerRepository(ctx.session).history(
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).history,
         project_id=inp.project_id,
         limit=inp.limit,
         after_id=inp.after_id,
@@ -246,7 +255,8 @@ async def tracker_changed(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerChangedOut | TrackerNotificationChangesOut:
-    return TrackerRepository(ctx.session).changed(
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).changed,
         project_id=inp.project_id,
         since_rev=inp.since_rev,
         limit=inp.limit,
@@ -259,7 +269,8 @@ async def tracker_search(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> TrackerSearchOut:
-    return TrackerRepository(ctx.session).search(
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).search,
         project_id=inp.project_id,
         query=inp.query,
         limit=inp.limit,

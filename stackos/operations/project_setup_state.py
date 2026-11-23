@@ -424,12 +424,16 @@ def validate_setup_replay(
 async def project_setup_get(
     inp: ProjectSetupGetInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> ProjectSetupOut:
+    from starlette.concurrency import run_in_threadpool
+
     if inp.resolve_launch_preferences:
         _require_console(ctx, require_executor=False)
-    state = ProjectSetupRepository(ctx.session).get(inp.project_id, workflow_key=inp.workflow_key)
+    state = await run_in_threadpool(
+        ProjectSetupRepository(ctx.session).get,
+        inp.project_id,
+        workflow_key=inp.workflow_key,
+    )
     if inp.resolve_launch_preferences:
-        from starlette.concurrency import run_in_threadpool
-
         from stackos.project_setup_execution import resolve_preferences
 
         state.launch_preferences = await run_in_threadpool(

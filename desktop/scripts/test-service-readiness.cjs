@@ -80,29 +80,57 @@ console.log("desktop service readiness test ok");
 
 async function installReadiness() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-install-readiness-"));
-  const server = http.createServer((_req, res) => {
+  let daemonHostStatusMode = "ok";
+  let daemonHostStatusHits = 0;
+  let cliHostStatusHits = 0;
+  const server = http.createServer((req, res) => {
+    if (req.url === "/api/v1/operations/hostMcp.status/call" && req.method === "POST") {
+      daemonHostStatusHits += 1;
+      if (daemonHostStatusMode === "ok" && req.headers.authorization === "Bearer test-daemon-token") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          ok: true,
+          items: [{ host_key: "codex", status: "registered_current", ok: true, available: true }]
+        }));
+        return;
+      }
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end('{"detail":"unavailable"}');
+      return;
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end('{"ok":true}');
   });
   const savedEnv = { ...process.env };
   try {
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const tokenFile = path.join(root, "state", "auth.token");
+    fs.mkdirSync(path.dirname(tokenFile), { recursive: true });
+    fs.writeFileSync(tokenFile, "test-daemon-token\n", { mode: 0o600 });
     Object.assign(process.env, {
       HOME: root,
       STACKOS_HOME: root,
       STACKOS_DATA_DIR: path.join(root, "data"),
       STACKOS_STATE_DIR: path.join(root, "state"),
+      STACKOS_DESKTOP_AUTH_TOKEN_PATH: tokenFile,
       STACKOS_DESKTOP_DAEMON_HOST: "127.0.0.1",
       STACKOS_DESKTOP_DAEMON_PORT: String(server.address().port)
     });
     const cli = path.join(root, "stackos");
     const fixture = path.join(root, "result.json");
+    const cliMarker = path.join(root, "cli-host-status.hits");
     const restartIndex = process.argv.indexOf("--restart-report");
     const restart = restartIndex < 0 ? null : JSON.parse(fs.readFileSync(process.argv[restartIndex + 1], "utf8"));
     fs.writeFileSync(cli, `#!${process.execPath}
 const fs = require("node:fs");
-const result = JSON.parse(fs.readFileSync(${JSON.stringify(fixture)}, "utf8"));
 const command = process.argv[2];
+if (command === "mcp-host-status") {
+  fs.appendFileSync(${JSON.stringify(cliMarker)}, "hit\\n");
+  console.log(JSON.stringify({ ok: true, hosts: [{ host_key: "codex", status: "registered_current", ok: true, available: true, from: "cli" }] }));
+  process.exitCode = 0;
+  return;
+}
+const result = JSON.parse(fs.readFileSync(${JSON.stringify(fixture)}, "utf8"));
 if (command === "doctor") {
   console.log(typeof result.payload === "string" ? result.payload : JSON.stringify(result.payload));
   process.exitCode = result.exitCode;
@@ -118,6 +146,22 @@ if (command === "doctor") {
     process.env.STACKOS_DESKTOP_CLI = cli;
     delete require.cache[require.resolve("../src/service")];
     const lifecycleService = require("../src/service");
+    const fromDaemon = await lifecycleService.inspectMcpHosts();
+    assert.equal(fromDaemon.ok, true);
+    assert.equal(fromDaemon.source, "daemon");
+    assert.equal(fromDaemon.items.length, 1);
+    assert.equal(fromDaemon.items[0].host_key, "codex");
+    assert.equal(daemonHostStatusHits, 1);
+    assert.equal(fs.existsSync(cliMarker), false);
+
+    daemonHostStatusMode = "error";
+    const fromCliFallback = await lifecycleService.inspectMcpHosts();
+    assert.equal(fromCliFallback.ok, true);
+    assert.equal(fromCliFallback.items.length, 1);
+    assert.equal(fromCliFallback.items[0].from, "cli");
+    assert.equal(daemonHostStatusHits, 2);
+    cliHostStatusHits = fs.readFileSync(cliMarker, "utf8").trim().split("\n").length;
+    assert.equal(cliHostStatusHits, 1);
     const reportIndex = process.argv.indexOf("--doctor-report");
     const emitted = reportIndex < 0 ? null : JSON.parse(fs.readFileSync(process.argv[reportIndex + 1], "utf8"));
     const emittedExpected = !process.argv.includes("--expect-install-failure");
