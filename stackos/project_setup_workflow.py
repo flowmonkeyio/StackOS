@@ -176,9 +176,39 @@ def read_admission(
     row = session.get(AgentRequest, request_id, populate_existing=True)
     plan = session.get(RunPlan, run_plan_id, populate_existing=True)
     task = session.get(TrackerTask, task_id, populate_existing=True)
-    if row is None or row.project_id != project_id or row.source_kind != SETUP_NAMESPACE:
+    return validate_admission(
+        row=row,
+        current=None,
+        plan=plan,
+        task=task,
+        project_id=project_id,
+        request_id=request_id,
+        run_plan_id=run_plan_id,
+        task_id=task_id,
+    )
+
+
+def validate_admission(
+    *,
+    row: AgentRequest | None,
+    current: SetupAttempt | None,
+    plan: RunPlan | None,
+    task: TrackerTask | None,
+    project_id: int,
+    request_id: int,
+    run_plan_id: int,
+    task_id: int,
+) -> tuple[AgentRequest, SetupAttempt]:
+    """Validate already-loaded linkage; current, when supplied, is parsed from row."""
+    if (
+        row is None
+        or row.id != request_id
+        or row.project_id != project_id
+        or row.source_kind != SETUP_NAMESPACE
+    ):
         raise ConflictError("setup admission is not owned by this project")
-    current = SetupAttempt.model_validate((row.metadata_json or {}).get(SETUP_NAMESPACE))
+    if current is None:
+        current = SetupAttempt.model_validate((row.metadata_json or {}).get(SETUP_NAMESPACE))
     admission = current.workflow_admission
     if (
         admission is None

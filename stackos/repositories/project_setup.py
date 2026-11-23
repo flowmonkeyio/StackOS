@@ -944,6 +944,7 @@ class ProjectSetupRepository:
                 ),
             )
             .order_by(col(AgentRequest.id).desc())
+            .execution_options(populate_existing=True)
         ).all()
         attempts = []
         for row in rows:
@@ -970,20 +971,50 @@ class ProjectSetupRepository:
 
     def _current_attempt(self, project_id: int) -> SetupAttempt | None:
         attempts = self._attempts(project_id)
+        admissions = [
+            attempt.workflow_admission for _, attempt in attempts if attempt.workflow_admission
+        ]
+        plans = (
+            {
+                plan.id: plan
+                for plan in self._s.exec(
+                    select(RunPlan)
+                    .where(col(RunPlan.id).in_({item.run_plan_id for item in admissions}))
+                    .execution_options(populate_existing=True)
+                ).all()
+            }
+            if admissions
+            else {}
+        )
+        tasks = (
+            {
+                task.id: task
+                for task in self._s.exec(
+                    select(TrackerTask)
+                    .where(col(TrackerTask.id).in_({item.task_id for item in admissions}))
+                    .execution_options(populate_existing=True)
+                ).all()
+            }
+            if admissions
+            else {}
+        )
         active = []
-        for _, attempt in attempts:
+        for row, attempt in attempts:
             if admission := attempt.workflow_admission:
-                from stackos.project_setup_workflow import read_admission
+                from stackos.project_setup_workflow import validate_admission
 
-                read_admission(
-                    self._s,
+                plan = plans.get(admission.run_plan_id)
+                task = tasks.get(admission.task_id)
+                validate_admission(
+                    row=row,
+                    current=attempt,
+                    plan=plan,
+                    task=task,
                     project_id=project_id,
                     request_id=attempt.request_id,
                     run_plan_id=admission.run_plan_id,
                     task_id=admission.task_id,
                 )
-                plan = self._s.get(RunPlan, admission.run_plan_id)
-                task = self._s.get(TrackerTask, admission.task_id)
                 assert plan is not None and task is not None
                 is_active = plan.status.value in {"draft", "started"} or bool(
                     (task.metadata_json or {}).get("delivery", {}).get("slot_reserved")

@@ -11,9 +11,13 @@ import copy
 import json
 
 import pytest
-from sqlmodel import select
+from sqlalchemy import event
+from sqlmodel import Session, select
 
 from stackos.db.models import (
+    AgentRequest,
+    RunPlan,
+    RunPlanStatus,
     RunPlanStep,
     RunPlanStepStatus,
     TrackerTask,
@@ -303,6 +307,72 @@ def test_tracked_admission_is_protected_and_matches_exact_run(attempt, session):
             run_plan_id=plan.id,
             task_id=task.id,
         )
+
+
+def test_current_admission_batches_history_and_refreshes_linked_owners(attempt, session):
+    project, _, repo = attempt
+    history = []
+    for _ in range(4):
+        plan, task, opened = tracked_setup(attempt, session)
+        history.append((plan, task, opened))
+        RunPlanRepository(session).abort(
+            run_plan_id=plan.id, project_id=project, reason="Fixture history"
+        )
+    current_plan, _, current = tracked_setup(attempt, session)
+    old_plan, old_task, old_attempt = history[0]
+    # Hold loaded identities so a batch query cannot accidentally rely on
+    # the identity map instead of refreshing another writer's saved changes.
+    retained = (
+        session.get(RunPlan, old_plan.id),
+        session.get(TrackerTask, old_task.id),
+        session.get(AgentRequest, old_attempt.request_id),
+    )
+    statements = []
+
+    def capture(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        assert repo._current_attempt(project).request_id == current.request_id
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert len(statements) <= 3
+    assert all(statement.lstrip().upper().startswith("SELECT") for statement in statements)
+
+    with Session(engine) as writer:
+        plan = writer.get(RunPlan, old_plan.id)
+        plan.status = RunPlanStatus.STARTED
+        writer.add(plan)
+        writer.commit()
+    with pytest.raises(ConflictError, match="multiple setup writers"):
+        repo._current_attempt(project)
+
+    with Session(engine) as writer:
+        plan = writer.get(RunPlan, old_plan.id)
+        plan.status = RunPlanStatus.ABORTED
+        task = writer.get(TrackerTask, old_task.id)
+        task.metadata_json = {"delivery": {"slot_reserved": True}}
+        writer.add(plan)
+        writer.add(task)
+        writer.commit()
+    with pytest.raises(ConflictError, match="multiple setup writers"):
+        repo._current_attempt(project)
+
+    with Session(engine) as writer:
+        task = writer.get(TrackerTask, old_task.id)
+        task.metadata_json = {"delivery": {"slot_reserved": False}}
+        request = writer.get(AgentRequest, old_attempt.request_id)
+        metadata = copy.deepcopy(request.metadata_json)
+        metadata["project_setup"]["workflow_admission"]["run_plan_id"] = current_plan.id
+        request.metadata_json = metadata
+        writer.add(task)
+        writer.add(request)
+        writer.commit()
+    with pytest.raises(ConflictError, match="workflow binding"):
+        repo._current_attempt(project)
+    assert retained  # Keep identities alive throughout the cross-session checks.
 
 
 def test_tracked_acceptance_and_step_roll_back_together_then_replay_once(attempt, session):
