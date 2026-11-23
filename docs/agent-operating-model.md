@@ -107,9 +107,9 @@ placement before queue metadata changes the projection; preserve valid workflow
 first handoffs and invocation history. Stopped work needs explicit authorized
 recovery and rehandoff with sessions, receipts, attempts and repair allowance
 intact. Each project has an independent persisted task limit (default 3,
-range 1..32), shared with its managed setup requests through the existing owner.
-Setup has no tracker Todo requirement. No aggregate global project-task cap is
-added. Lowering a limit affects future admissions only; admitted/running work
+range 1..32). Managed Setup/Update uses normal tracked task admission through
+`core.project-setup`; genuine legacy request owners remain protected. No aggregate
+global project-task cap is added. Lowering a limit affects future admissions only; admitted/running work
 continues unchanged even above the limit, with truthful counts and no automatic
 stop, abort, cancellation, restart or eviction. Other projects are unaffected.
 Host child/reviewer slots and the terminal-managed default of three active
@@ -228,14 +228,15 @@ root guidance; registration creates no parallel root instruction file. A named
 workflow setup can adapt the resolved presets into `.grok/agents/` using Grok's
 host-local format, with the same source provenance and project scope.
 
-Workflow infrastructure setup is not workflow execution. Select
+Workflow infrastructure setup does not run the configured business workflow. Select
 `setup_existing` from `workflowTemplate.authoringGuide`, resolve the effective
 workflow and exact role topology, materialize required roles and recommended
 roles by default, check structural readiness, and use structural plus strict
 read-only `runPlan.validate` calls. A strict missing-input result is the named
-prerequisite gate. Do not call `runPlan.create` or create tracker work until a
-concrete operation request supplies the required inputs and passes execution
-readiness.
+prerequisite gate. Managed setup records this work in its admitted
+`core.project-setup` run with normal delivery; existing-agent reporting stays in
+its session. Starting the configured business workflow still needs concrete
+operation inputs and execution readiness.
 
 When a host supports skills, workflow templates may recommend `stackos:stackos`.
 That skill teaches agents how to use StackOS MCP, operations, workflow

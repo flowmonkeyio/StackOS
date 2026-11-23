@@ -589,14 +589,16 @@ Historical setup records and host or browser references are navigation aids, not
 current binding, readiness, or authority proof.
 Prove readiness with structural and strict read-only `runPlan.validate` calls;
 return the guide's complete setup proof, including deferred inputs and exact
-preset mappings. Do not create a run plan, workflow tracker work or business
-output as setup proof.
+preset mappings. Managed Setup/Update records this work in its admitted
+`core.project-setup` control run. Do not start the configured business workflow
+or create an additional proof workflow.
 
 Ordinary Setup and Update request `ready_to_use`, including adaptation, canonical
 configuration and verified activation. Only explicit `infrastructure_only` stops
-at preparation; that invocation creates no execution state and gains no execution
-authority. Missing local-admin capability remains an actionable gap for the
-authorized owner, never a silent scope downgrade. Resolve the safe activation
+at preparation. Its managed control run contains one `prepare` mirror;
+`ready_to_use` contains `prepare` and `activate-verify`. This tracking grants no
+business execution authority. Missing local-admin capability remains an actionable
+gap for the authorized owner, never a silent scope downgrade. Resolve the safe activation
 method from the effective workflow/presets. Engineering's method lives in the
 `setup_activation_method` policy of `engineering.tracked-delivery` and its presets.
 Inspect saved defaults, exact role bindings and local lifecycle rules at their
@@ -608,10 +610,10 @@ First reuse actual completed delivery, independent review and closeout evidence
 only for claims covered at the current project/source/default/native/environment
 basis. Record covered and missing claims, then execute only missing or invalidated
 small harmless native/configuration/behavior checks within the existing owning
-setup/task. Use existing setup/native continuation when fresh loading is needed.
-Do not automatically create a separate full verification task/workflow, tracker
-parent or review workflow merely to establish readiness, or nested queue/wait/drain
-machinery solely for proof. Existing product/adaptation tasks retain independent
+setup/task. The canonical setup method binds only never-started verification
+work to newly adopted sources; resumed sessions stay frozen. Do not create a
+competing setup/proof workflow or nested queue/wait/drain machinery.
+Existing product/adaptation tasks retain independent
 review; standalone setup follows its effective method and genuine current evidence.
 Aborted, incomplete, simulated or another project's evidence cannot become completed
 activation. Distinguish prepared files, saved readback, actual native consumption,
@@ -632,7 +634,7 @@ project-selected representative tool/scratch/isolated-fixture check using the
 selected native settings and normal approvals. A successful generic conversation
 or a setup coordinator's `verification_status` cannot establish that capability.
 Keep the observation in the existing setup receipt and native result; do not add a
-separate proof task, receipt store, full workflow canary or all-host launch matrix.
+competing proof workflow, receipt store, full workflow canary or all-host launch matrix.
 An inspection-only project adaptation must explicitly select its applicable method
 and claim coverage; core never infers capability requirements from shell commands.
 
@@ -653,19 +655,22 @@ or workflow result does not acquire reviewer identity by assertion. A role-beari
 `native_request` is accepted only with the actual specialist's frozen source,
 settings, instructions, native session, invocation and retired logical outcome.
 
-Fresh managed setup needs no prior reviewer task. Its verification coordinator
-returns one `role_verification_request` containing `role`, exact missing `claims`,
-project-selected bounded `instructions`, `environment_ref` and `evidence_ref`.
-The existing setup owner resolves and freezes that selected specialist, then uses
-its finite request continuation for a `role_verification` turn in a distinct
-native session. The native request records the real role snapshot and observations.
-After retirement the original coordinator session resumes with
-`completed_role_verifications`, including the canonical reference and execution
-binding. Completion combines this evidence with covered generic verification in
-the existing workflow receipt. Matching completed evidence is reused instead.
-Failed/cancelled/stale/wrong-role checks cannot complete setup; explicit recovery
-resumes the same frozen specialist and returns to the retained coordinator.
-This adds no proof task, workflow, evidence store or replacement runner.
+Fresh managed setup needs no preseeded reviewer task. Preparation returns selected
+missing `workflow_checks`, with actual role, exact claims, bounded instructions,
+`environment_ref` and `evidence_ref`. One missing role uses the never-started
+verification mirror; multiple distinct roles use ordinary children with normal
+delivery and independent review, followed by Main aggregation. A child's actual
+delivery and review phases may cover different selected claims. No role alias
+turns delivery into independent review.
+
+The adapter preserves native output unchanged and derives completed `task_phase`
+references from its actual invocation/receipt. It fills only matching predeclared
+check slots; agents never manufacture their own unfinished reference. Existing
+activation validators bind proof to current source/settings and observed claims.
+Readiness receipts, defaults adoption and canonical step acceptance commit
+atomically. Failed, cancelled, stale or wrong-role proof cannot complete setup.
+Recovery uses canonical run/task/session owners and retains accepted preparation.
+There is no successor-request dispatcher or extra completion-only native turn.
 
 The reviewer records an observation in its JSON-encoded `outputs`:
 
@@ -745,7 +750,8 @@ attach to the same owner without receiving writer authority; stale/foreign repor
 cannot change receipts. Attempt success rechecks source and receipt freshness.
 Existing-session questions and answers stay in that session. The shared
 `projectSetup.get` state is also consumed by Home; no external conversation navigation,
-business run or tracker delivery task is invented for infrastructure setup. See the
+business run or managed delivery task is silently started for this external
+entrypoint. See the
 [operation contract](operations.md#project-setup-receipts-and-reminders) for admission,
 ownership and response details.
 
@@ -758,27 +764,27 @@ confirmation. The cancelled record remains visible; **Set up again** is a separa
 deliberate launch, with normal source and receipt validation. No session takeover,
 rebinding or automatic replacement occurs.
 
-Home's managed entry invokes one request-native coordinator with the same
-`workflowTemplate.authoringGuide` setup-method reference. It freezes the supported
-project agent selection and folder association, queues through shared task capacity,
-and records native session/usage alongside setup reports. Closing Home does not
-cancel work. Cancellation fences the owning invocation and preserves successful
-workflow receipts and partial reports; unknown native retirement stays explicit.
-Managed launch does not create a business workflow run or delivery task.
+Home's managed entry creates or attaches to one real `core.project-setup` run
+and mirrored Work task, using the same authoring method. Main preferences and
+folder association feed normal task-delivery admission. A protected setup record
+links the run/task and source/adoption authority; it is not another native owner.
+Native sessions, usage, queueing and recovery stay with task delivery. Closing
+Home does not cancel work. Setup keeps readiness and questions visible and links
+**View work** to the actual task.
 
-Managed questions are answered through revision-checked `projectSetup.answer` in
-the console. The answer links a successor request under the same attempt and
-resumes the exact native session only after the previous invocation retires.
-`projectSetup.continue` recovers remaining partial, failed, interrupted or cancelled
-work with the same frozen selection. Confirmed never-started cancelled/missed
-launches use an explicit Start again/Retry setup action: the same owner links one
-first-launch successor only when no callback, native evidence, resume identity or
-possible edits exist. Unknown or possibly started work still requires confirmed
-retirement and the exact native session; missing identity never permits fallback.
-Prior execution/usage and successful workflow
-receipts remain intact; changed source/receipt evidence requires revalidation.
-Recovery reports possible partial edits and never invents rollback or launches a
-competing session. Existing-session questions continue in their original agent.
+Managed questions use revision-checked `projectSetup.answer`; continuation uses
+`projectSetup.continue`. Both delegate to canonical recovery/rehandoff for the same
+run/tickets after retirement, preserving exact sessions, frozen settings and
+successful preparation. Confirmed never-started work can retry its first launch;
+unknown or possibly started work cannot bypass native identity/retirement checks.
+Cancellation delegates to the existing run abort owner, retaining successful
+receipts and possible edits. No action invents rollback or a competing session.
+Completed control runs remain history; a new Update admits new work.
+Existing-agent questions continue in their original session. Genuine legacy
+native owners must retire before new tracked work; history is not backfilled.
+Legacy managed questions remain readable without Answer/Continue controls.
+Use explicit cancellation where available, then start new tracked remaining work
+after confirmed retirement; the removed coordinator is never resumed.
 
 Failed/unfinished results retain the previous successful sources and separately
 record possible partial edits. They can still be recorded when the selected folder

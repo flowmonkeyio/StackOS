@@ -266,8 +266,8 @@ and `native_consumption` are minimum coverage; workflow method may require more.
 Simulation cannot cover required claims. Deferred per-run inputs remain in the
 separate readiness tuple.
 
-Checks reference an exact existing native request/invocation or completed
-workflow/step and the canonical JSON digest of its result. The receipt owner
+Checks reference an exact completed task/ticket phase, native request/invocation
+or workflow/step and the canonical JSON digest of its result. The receipt owner
 rechecks project, observed outcome, source/default basis and completion; failed,
 cancelled, live, foreign or changed evidence cannot receive positive coverage.
 Native coverage requires canonical request resolution, a result validated against
@@ -277,8 +277,9 @@ missing outcomes can be retained as failed checks without covering activation.
 This validates reference integrity. The workflow's agent and independent review
 still judge what the underlying evidence actually covers, including loaded source
 and environment.
-A new workflow is not required. A ready-to-use attempt cannot report final
-success until every selected workflow has current verified activation coverage
+No additional proof workflow is required beyond managed setup's control run.
+A ready-to-use attempt cannot report final success until every selected workflow
+has current verified activation coverage
 and observed loading. Missing coverage returns `complete_activation` with the
 workflow and missing claims. Preparation results and other completed workflows
 remain inspectable while required activation is pending or blocked.
@@ -297,62 +298,52 @@ existing managed/defaults owners. Compact workflow reads include requested scope
 activation status and missing claims; raw receipts retain detailed proof.
 
 Authenticated managed `ready_to_use` admission retains narrow adoption authority
-on its setup request. After preparation retires, the managed owner rechecks its
-current claim, folder/binding, proposal sources and saved-default digest, then
-uses canonical adoption preview/write/readback. The defaults write and adopted
-digest receipt commit together. Compatible role preferences, explicit nulls and
-unrelated settings remain intact; queued/running task snapshots are untouched.
-This does not expose `tracker.configureDelivery` over MCP or CLI.
+in one protected `AgentRequest.metadata_json.project_setup.workflow_admission`.
+The row links the actual `core.project-setup` run and task; it is an admission/source
+record, not an execution owner. Public run/task metadata is only a locator and
+cannot grant bootstrap or adoption authority. Generic request mutations and the
+legacy `projectSetup.report` writer cannot operate on this tracked admission.
+
+At accepted preparation, the setup adapter rechecks the protected admission,
+folder/binding, actual native receipt, proposal sources and saved-default digest.
+It composes canonical adoption/readback, pending verification bindings, setup
+receipts and run-plan step acceptance in one transaction. Failure rolls them all
+back before safe failure evidence is retained. Compatible role preferences,
+explicit nulls and unrelated settings remain intact; queued/running snapshots
+are untouched. This does not expose `tracker.configureDelivery` over MCP or CLI.
 Configured delivery hosts are checked against saved role/project inheritance
 before proposal overrides, independently of the setup agent's host. Matching
 inline updates retain omitted role hosts so future project-host changes still
 inherit; a conflicting proposal cannot silently replace that preference.
 
-When bounded verification is still missing, the existing managed continuation
-links a successor with a new claim after predecessor retirement and capacity
-release. Its prompt includes the canonical resolved role readback and current
-scope. A verification turn can return `verification_status: "passed"` alongside
-a partial setup report, recording successful bounded checks without asserting
-overall readiness. Only that authorized verification phase can produce this
-logical check outcome. One completion continuation receives the exact retired
-request/invocation/result digest and validates the final workflow receipts;
-it reuses the completed checks. Missing, failed or blocked checks never advance
-automatically to completion. Current matching evidence may complete directly.
-There is no separate verification workflow/task or linked-run waiting lifecycle.
-Cancellation fences only current setup ownership; recovery retains evidence and
-revalidates changed sources/defaults before consumption or final success.
-An unfinished workflow receipt may have `verification: null`. A selected role's
-callback validates its exact retired native reference, current execution binding
-and bounded observation independently of that aggregate proof, retaining the
-role request once before resuming the same coordinator with
-`completed_role_verifications`. This does not complete setup: the coordinator
-must still supply complete current `VerifiedSetup` and activation coverage.
-Rejected role evidence rolls back promotion; duplicate callbacks and completion
-recovery preserve the retained native sessions and evidence.
-Confirmed failures before entering the native executor retain an explicit
-preflight marker, allowing exact-session recovery after the basis is restored;
-unknown native retirement still blocks recovery. Native final reports reconcile
-earlier progress, retaining failures. Exact report digests allow identical final
-replay without duplicate receipt writes while rechecking final success.
+Managed native results use the normal status/summary/outputs/followups envelope.
+JSON-encoded `outputs` contains `setup_report` and, for an assigned check,
+`setup_activation_checks`. Preparation records selected missing `workflow_checks`.
+The canonical method binds a never-started verification mirror to one missing role,
+or uses normal children for multiple distinct roles and final Main aggregation.
+The owner derives exact completed `task_phase` references from unchanged native
+receipts, fills only matching predeclared slots and applies existing activation
+validation. Generic success never establishes a missing specialist claim. There
+is no completion-only native turn, successor-request chain or second proof store.
 
 The agent chooses workflows under the shared guide and inspects unknown legacy
-adaptations before deciding what to change. `start` serializes admission with the
-project owner and returns one typed `AgentRequest.metadata_json.project_setup`
-namespace (schema version 1). It records mode, entry kind, stable attempt/root
-request refs, current request/predecessor refs, session/runtime/thread lineage,
-selected workflows, observed receipt revisions, progress, outcomes and question.
-No alternate queue, workflow run or native launch is created. Generic request
+adaptations before deciding what to change. Admission is serialized with the
+project owner. Its protected, versioned setup namespace retains selected workflows,
+observed receipt revisions, progress, outcomes and questions. Generic request
 create/claim/release/prepare/link/complete/ignore operations cannot own this namespace.
-Unknown legacy setup requests require inspection, rather than being presumed absent.
+Unknown legacy native ownership remains a blocker until explicitly reconciled;
+historical records are not backfilled with invented tracker work.
 
-The first start returns a claim token for its executing session. Keep it private
-in that session; do not put it in artifacts or guidance. Use a stable idempotency
+For `existing_agent`, the first start returns a private claim token for its
+executing session. Do not put it in artifacts or guidance. Use a stable idempotency
 key to recover the original response after an uncertain retry. A concurrent start
 attaches as an observer to the existing attempt and receives no writer token.
 Attach does not replace the owner, change its workflow selection or grant report
-authority. There is no expired-lease takeover of setup work.
+authority. There is no expired-lease takeover. Managed start instead returns real
+`run_plan_id`, `run_id` and `task_key` references with no worker claim token.
 
-Setup replay rechecks the bound session and original normalized request before
+Existing-agent setup replay rechecks the bound session and original normalized
+request before
 returning any cached response. The key binds the session, attempt, token, expected
 revision and complete report; changing only `response_mode` preserves an exact
 retry, including compact-to-raw recovery. Foreign or changed-intent reuse returns
@@ -362,7 +353,8 @@ retries return that historical request without restoring its claim or changing a
 successor; cached running progress cannot represent a finished attempt. Older cache
 entries lacking original-intent evidence reject for inspection.
 
-`projectSetup.report` requires that session, token, `request_id` and the expected
+`projectSetup.report` is for existing-agent attempts and requires that session,
+token, `request_id` and the expected
 attempt revision. Its typed `report` includes a status, bounded progress message
 and evidence ref, optional checked workflow results, and a concrete question only
 for `needs_input`. Each workflow result carries `workflow_key`, its expected receipt
@@ -423,34 +415,27 @@ readiness. Task admission verifies the intended root/project and freezes route
 identity through the existing delivery owner; a declared mode does not prove that
 native tools loaded or ran. See [task-local routing](task-tracker.md#task-local-native-tool-routing).
 
-One managed attempt creates one request-native coordinator, consuming the same
-authoring-guide reference and project setup method as existing-session entry.
-Start/return attaches to active work without exposing its writer token, replacing
-its selection or cancelling it on navigation. The frozen request contains the exact
-folder/binding and host choices. Invalid/missing hosts or unavailable/mismatched
-folders fail before native spawn; no host/model fallback is performed. Managed work
-queues through the existing shared task capacity drain and executor. Native identity,
-usage, immutable execution evidence and checked workflow reports remain on AgentRequest;
-infrastructure setup creates no business run or tracker task.
+One managed attempt creates or attaches to one `core.project-setup` control run
+and its real mirrored Work task. Explicit `infrastructure_only` composes one
+`prepare` ticket; ordinary `ready_to_use` adds `activate-verify`. Both use the
+canonical task-delivery queue, native session/usage receipts, cancellation and
+recovery. Navigation does not cancel work. `projectSetup.get.work` projects actual
+run/delivery state and available controls; setup receipts separately prove readiness.
 
-The coordinator receives a private request claim token. Managed progress reports
-also require its project bridge session, active native invocation and expected
-attempt revision. The first authorized report binds that session; observers and
-foreign/stale/cancelled reports cannot change receipts. Final native output supplies
-a JSON-encoded `SetupReport` through `report_json`; all receipt validation stays with
-the existing setup repository. A finished invocation asking a question releases its
-slot and retains its exact native identity for the continuation owner.
+The bootstrap Main snapshot comes from the shared authoring method and saved
+Main preferences. It works before project role files exist without relaxing
+ordinary source-backed Codex admission. Invalid hosts or unavailable/mismatched
+folders fail before native spawn, without host/model fallback. After accepted
+adoption, only never-started verification bindings may consume newly selected
+sources; active and resumed sessions remain frozen. A first scheduling failure
+retains truthful stopped work for explicit recovery, not a fabricated session.
 
-Console-only `projectSetup.cancel({"project_id":1,"request_id":123})` fences a
-managed request through the existing native cancellation owner. Queued work can be
-cancelled before spawn. Running cancellation remains pending until actual native
-retirement; callback lifetime retains the reservation, completed workflow receipts
-and partial-change reports. A timeout, missing in-memory handle or daemon restart
-does not establish exit. Unconfirmed prior-daemon invocations retain their reservation
-and actionable reconciliation diagnostic instead of silently launching replacements.
-The canonical project cleanup guard also retains these managed reservations after
-request lease expiry; confirmed deletion cannot race an unconfirmed native writer.
-Terminal reports revoke writer authority and preserve attempt history.
+Managed cancellation uses canonical `runPlan.abort`; `projectSetup.cancel` is a
+bounded console adapter to the same owner. It cancels queued work before spawn and
+keeps native ownership until retirement. Late results cannot restore authority.
+Completed workflow receipts and evidence of possible edits remain visible; no
+rollback is implied. Unconfirmed legacy native work still blocks competing
+admission and cleanup. Cancelling does not launch replacement work.
 
 For an `existing_agent` attempt, the same console operation requires the exact
 `expected_revision` and strict boolean `external_work_stopped: true`. Stop the
@@ -466,32 +451,34 @@ Home keeps the cancelled record inspectable even when retained receipts are curr
 **Set up again** opens a separate launch decision; cancellation never starts it.
 MCP, CLI and run-step authority cannot cancel setup.
 
-Console-only `projectSetup.answer` takes `project_id`, the current `request_id`,
+Console-only `projectSetup.answer` takes `project_id`, current `request_id`,
 `expected_revision`, `question_id`, `question_revision` and a bounded `answer`.
-It consumes that pending question once and admits one linked successor request
-only after the prior invocation and its callback have retired. Existing-agent
-questions must be answered in their original session. Stale, foreign, duplicate,
-missing-session and unconfirmed-exit inputs return repair context without consuming
-an answer or launching work. A stable idempotency key supports exact response replay;
-changed answers under the same key reject. Both compact and raw retain lineage;
-neither exposes the coordinator's claim token. These writes are unavailable via
-agent MCP and CLI.
+It validates the protected run/task and pending question, records the answer once,
+then uses canonical recovery and rehandoff after retirement. Existing-agent questions
+stay in their original session. Stale, foreign or duplicate input rejects without
+launching work. Stable idempotency keys support exact response replay; changed
+intent under the same key rejects. Compact/raw retain real work refs and repair
+context, never a worker token. MCP and CLI cannot invoke these console controls.
 
-Console-only `projectSetup.continue` takes the same project/request/revision fields
-without question/answer fields. It continues partial, failed, interrupted or explicitly
-cancelled work in the exact recorded native session with frozen host/model/provider/
-profile, reasoning and folder. A pending question requires `answer` instead. Each invocation
-has its own immutable request execution and usage receipt under the stable attempt;
-the predecessor retains its answered question and successor ref. Missing native
-identity, unsupported selection or resume failure is actionable failure, never a
-fresh-session fallback. Reconnect preserves pending answers and unconfirmed live work.
+`projectSetup.continue` takes the same project/request/revision fields without an
+answer. It recovers remaining stopped work in the same run/tickets, preserving
+accepted preparation, receipts and exact retained sessions/settings. A pending
+question requires `answer`. Confirmed never-started work can retry its first launch;
+possibly started work cannot bypass missing native identity or uncertain retirement.
+Source/default changes require current validation and cannot relabel frozen proof.
+A completed control run is not reattached as new work: a later Setup/Update gets a
+new run while preserving earlier per-workflow evidence.
 
-Continuation retains successful workflow outcomes and compares their current receipt
-revisions and source evidence. Its prompt names remaining workflows and changed
-successes requiring revalidation; receipt advancement still requires checked reports.
-It warns of possible partial file edits and implies no rollback. A changed source
-cannot pass final completion using an older success receipt. Browser rendering and
-integrated setup journeys consume this shared state through `projectSetup.get`.
+These managed answer/continue controls require tracked work. Legacy managed
+questions remain readable; their live owner can be explicitly cancelled, and
+confirmed retired work can start a new tracked setup. The removed coordinator
+does not resume. Existing-agent reporting and cancellation keep their separate
+session/acknowledgement contract.
+
+Continuation and cancellation retain successful workflow outcomes and possible
+partial edits. Readiness still requires current checked reports; task completion
+alone is insufficient. Browser rendering and setup journeys consume the shared
+`projectSetup.get` work projection and per-workflow receipts.
 
 Both operations support compact/raw and refuse ack. Compact retains claim/attempt
 refs, revision, outcomes, question and repair context; raw also retains report history.
@@ -680,9 +667,10 @@ ack mode. Neither accepts workflow run-token authority. Read with `{}` for all
 projects or `{"project_id": 7}` for one project. Both return `scope: "project"`,
 `projects`, `supported_min: 1` and `supported_max: 32`. Each project row preserves
 `project_id`, `project_name`, `project_slug`, `configured_limit`, `running_count`
-and `queued_count`. Running includes admitted task callbacks and managed setup
-reservations through retirement, even above a lowered limit. Waiting counts
-current-daemon queued work without a reservation, including managed setup.
+and `queued_count`. Running includes admitted task callbacks through retirement,
+including tracked setup tasks, plus genuine legacy setup reservations; it can
+exceed a lowered limit. Waiting counts current-daemon queued tasks without a
+reservation. A tracked setup admission row is not counted again as a native owner.
 
 Save with `{"updates": [{"project_id": 7, "max_concurrent_tasks": 6}]}`. The array
 accepts 1..100 distinct positive project IDs and strict integer limits 1..32.
@@ -1092,7 +1080,7 @@ then resumes the same conversation with `proceed`. Delivery/review phase, settin
 remain unchanged, and interrupted invocation usage stays recorded. Work already
 stopped or cancelled is not restarted. New managed launches for the selected host
 wait for the switch to finish. A worker without a resumable session, including an
-active setup request, prevents switching before credentials change.
+legacy request-owned setup invocation, prevents switching before credentials change.
 
 Personal terminals and other independently started processes must be
 restarted manually, then resumed in their original conversation. The console

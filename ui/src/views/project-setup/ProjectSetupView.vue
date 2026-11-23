@@ -5,6 +5,8 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { DataTableColumn } from '@/components/types'
 import { ProjectPageHeader } from '@/components/domain'
+import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+import RunAbortDialog from '@/components/domain/RunAbortDialog.vue'
 import { UiButton, UiCard, UiCheckbox, UiDialog, UiPageShell } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { resolveStatus } from '@/design/status'
@@ -15,30 +17,34 @@ import ProjectSetupLaunchDialog from './ProjectSetupLaunchDialog.vue'
 
 const { projectId } = useProjectRouteScope()
 const setup = useProjectSetup(projectId)
-const { state, attempt, ready, preparationOnly, attemptStatus, neverStarted, error, writing, running, refresh } = setup
+const { state, attempt, work, workLink, ready, preparationOnly, attemptStatus, error, writing, running, refresh } = setup
 const recoveryStates = ['partial', 'failed', 'interrupted', 'cancelled']
 const heading = computed(() => {
   if (state.value?.folder_status === 'unavailable') return 'Project folder unavailable'
   if (ready.value) return 'Your project is ready'
-  if (attempt.value?.status === 'success' && preparationOnly.value) return 'Project preparation is complete'
+  if (attemptStatus.value === 'prepared') return 'Project preparation is complete'
   if (attemptStatus.value === 'verifying') return 'Your agent is verifying workflow readiness'
   const headings: Record<string, string> = {
-    queued: 'Setup is queued', running: 'Your agent is preparing the project', needs_input: 'Your agent needs your input',
-    success: 'Workflow readiness needs attention', partial: 'Setup is partly complete', failed: 'Setup could not finish',
-    interrupted: 'Setup was interrupted', cancelled: 'Setup was cancelled',
+    queued: 'Setup is queued', running: 'Setup is running', preparing: 'Your agent is preparing the project', needs_input: 'Your agent needs your input',
+    unfinished: 'Workflow readiness needs attention', partial: 'Setup is partly complete', failed: 'Setup could not finish',
+    interrupted: 'Setup stopped', cancelled: 'Setup was cancelled', ready: 'Your project is ready',
   }
-  return headings[attempt.value?.status ?? ''] ?? 'Project setup'
+  return headings[attemptStatus.value] ?? 'Project setup'
 })
 const pendingQuestion = computed(() => attempt.value?.question?.answer_state === 'pending'
   && !(attempt.value.entry_kind === 'existing_agent' && attempt.value.status === 'cancelled')
   && ['needs_input', ...recoveryStates].includes(attempt.value.status) ? attempt.value.question : null)
 const managed = computed(() => attempt.value?.entry_kind === 'managed_ui')
 const available = computed(() => state.value?.folder_status === 'available')
-const retiring = computed(() => !!attempt.value?.managed?.slot_reserved)
-const canContinue = computed(() => managed.value && available.value && (!!attempt.value?.thread_id || neverStarted.value) && !retiring.value && !writing.value)
-const recoveryLabel = computed(() => neverStarted.value
-  ? attempt.value?.status === 'failed' ? 'Retry setup' : 'Start again'
-  : ({ failed: 'Retry remaining', interrupted: 'Resume setup', cancelled: 'Start again' } as Record<string, string>)[attempt.value?.status ?? ''] ?? 'Continue remaining')
+const retiring = computed(() => work.value ? work.value.busy : !!attempt.value?.managed?.slot_reserved)
+const canContinue = computed(() => !!work.value?.can_continue && available.value && !writing.value)
+const canAnswer = computed(() => !!work.value?.can_answer && available.value && !writing.value)
+const recoveryLabel = computed(() => attemptStatus.value === 'cancelled' ? 'Resume setup' : 'Continue remaining')
+const abortTarget = computed(() => work.value?.can_cancel ? {
+  projectId: projectId.value, runPlanId: work.value.run_plan_id,
+  title: attempt.value?.mode === 'update' ? 'Project workflow update' : 'Project setup',
+  status: work.value.run_status, automated: true,
+} : null)
 const cancelTarget = ref<SchemaSetupAttempt | null>(null)
 const externalWorkStopped = ref(false)
 const launchOpen = ref(false)
@@ -181,6 +187,21 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
         >
           {{ state.attempt_diagnostic }}
         </p>
+        <div
+          v-if="workLink"
+          class="flex items-center gap-2"
+        >
+          <RouterLink
+            :to="workLink"
+            class="focus-ring text-sm font-medium text-fg-link"
+          >
+            View work →
+          </RouterLink>
+          <RunAbortAction
+            :target="abortTarget"
+            @refresh="refresh"
+          />
+        </div>
         <p
           v-if="ready"
           class="text-fg-muted"
@@ -200,7 +221,7 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           Completed results are retained. Review the remaining verification gaps below, then return to Home to continue setup.
         </p>
         <p
-          v-if="attempt?.status === 'queued'"
+          v-if="attemptStatus === 'queued'"
           class="text-fg-muted"
         >
           Waiting for available agent capacity. This attempt will start when a slot is free.
@@ -237,13 +258,13 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           Before continuing, the agent will check for partial file changes. This is a precaution, not confirmation that files changed. Completed workflow results are kept; no rollback is implied.
         </p>
         <p
-          v-if="attempt?.managed?.diagnostic"
+          v-if="work?.reason || (!work && attempt?.managed?.diagnostic)"
           class="text-fg-muted"
         >
-          Agent execution: {{ attempt.managed.diagnostic }}
+          {{ work?.reason || attempt?.managed?.diagnostic }}
         </p>
         <p
-          v-if="attempt && ['queued', 'running'].includes(attempt.status)"
+          v-if="attempt && ['queued', 'running', 'preparing', 'verifying'].includes(attemptStatus)"
           class="text-xs text-fg-muted"
         >
           You can leave this page. Closing it does not stop setup.
@@ -347,16 +368,17 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
               The agent is finishing its previous turn. Check again before sending.
             </p>
             <p
-              v-else-if="!attempt.thread_id"
+              v-else-if="!work"
               class="text-xs text-fg-muted"
             >
-              The original agent session is unavailable. Refresh to check recovery; an answer cannot start a replacement session.
+              This earlier setup cannot continue here. Its recorded results are retained; check the recovery information above.
             </p>
             <SetupQuestionForm
+              v-if="work"
               :key="questionKey"
               :attempt="attempt"
               :pending="writing"
-              :disabled="!canContinue"
+              :disabled="!canAnswer"
               :submit="sendAnswer"
             />
           </template>
@@ -368,21 +390,21 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
         class="flex flex-wrap items-center justify-between gap-3"
       >
         <p
-          v-if="recoveryStates.includes(attempt.status)"
+          v-if="recoveryStates.includes(attemptStatus)"
           class="max-w-2xl text-sm text-fg-muted"
         >
-          {{ neverStarted ? 'Setup stopped before the agent started. Try again with the same agent settings; completed workflow results are kept.' : managed ? 'Continue only remaining work. The agent will recheck completed workflows if their guidance has changed.' : attempt.status === 'cancelled' ? 'Completed results are kept. Files may already have changed. Set up again when you are ready; the agent will check the current guidance.' : 'Continue in the agent session where you started setup.' }}
+          {{ work ? 'Continue only remaining work. The agent will recheck completed workflows if their guidance has changed.' : attempt.status === 'cancelled' ? 'Completed results are kept. Files may already have changed. Set up again when you are ready; the agent will check the current guidance.' : managed ? 'This earlier setup is retained as history. Review its recovery information before starting new setup.' : 'Continue in the agent session where you started setup.' }}
         </p>
         <div class="ml-auto flex flex-wrap gap-2">
           <UiButton
-            v-if="['queued', 'running', 'needs_input'].includes(attempt.status) && !attempt.managed?.cancel_requested"
+            v-if="!work && (['queued', 'running', 'needs_input'].includes(attempt.status) || attempt.managed?.slot_reserved) && !attempt.managed?.cancel_requested"
             :disabled="writing"
             @click="confirmCancellation"
           >
             Cancel setup
           </UiButton>
           <UiButton
-            v-if="!managed && attempt.status === 'cancelled'"
+            v-if="!work && (attempt.status === 'cancelled' || (managed && recoveryStates.includes(attempt.status) && attempt.managed?.slot_reserved === false)) && !retiring"
             variant="primary"
             :disabled="writing || !available"
             @click="launchOpen = true"
@@ -390,7 +412,7 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
             Set up again
           </UiButton>
           <UiButton
-            v-if="managed && recoveryStates.includes(attempt.status) && !pendingQuestion"
+            v-if="work && recoveryStates.includes(attemptStatus) && !pendingQuestion"
             variant="primary"
             :disabled="!canContinue"
             :loading="writing"
@@ -400,7 +422,7 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           </UiButton>
         </div>
         <p
-          v-if="managed && recoveryStates.includes(attempt.status) && !pendingQuestion && !canContinue && !writing"
+          v-if="work && recoveryStates.includes(attemptStatus) && !pendingQuestion && !canContinue && !writing"
           class="w-full text-xs text-fg-muted"
         >
           {{ retiring ? 'Waiting for the previous invocation to retire. Refresh before continuing.' : !available ? 'Restore access to the project folder before continuing.' : 'Exact agent-session recovery is unavailable. Refresh to check the recorded recovery condition.' }}
@@ -429,6 +451,7 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
       @close="closeLaunch"
       @started="startedAgain"
     />
+    <RunAbortDialog />
     <UiDialog
       :model-value="!!cancelTarget"
       title="Stop project setup?"

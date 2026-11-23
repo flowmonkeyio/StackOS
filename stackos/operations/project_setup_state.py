@@ -495,13 +495,15 @@ def operation_specs() -> list[OperationSpec]:
                     "No filesystem authority is granted.",
                 ),
                 returns=(
-                    "Keep the initial claim token in the executing session; "
+                    "For existing_agent, keep the initial claim token in the executing session; "
                     "attached observers receive no writer token.",
                     "Compact retains attempt/revision, workflow outcomes, "
                     "requested scope, activation coverage, question and repair context. "
                     "Raw retains report history.",
                     "managed_ui creates a core.project-setup run and real work tickets through "
                     "task delivery; run_plan_id, run_id and task_key identify that work. "
+                    "projectSetup.get.work owns execution state and available recovery actions; "
+                    "current_attempt and workflow receipts retain setup/readiness evidence. "
                     "existing_agent remains external and creates no native delivery. "
                     "Neither entry starts the selected business workflow.",
                     "ready_to_use success requires current saved-default/native coverage. "
@@ -604,7 +606,7 @@ def operation_specs() -> list[OperationSpec]:
                 ),
                 (
                     "projectSetup.continue",
-                    "Recover remaining setup, or retry confirmed never-started work "
+                    "Recover remaining tracked setup, or retry confirmed never-started work "
                     "with its frozen settings.",
                     ProjectSetupContinueInput,
                     {"project_id": 1, "request_id": 123, "expected_revision": 2},
@@ -631,8 +633,10 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
             purpose=(
-                "Fence managed work until native retirement, or revoke an existing-agent "
-                "claim after exact-revision operator acknowledgement. Preserve results."
+                "Tracked setup delegates to runPlan.abort; the console uses that canonical "
+                "run control. Retained legacy managed work is fenced until retirement; "
+                "existing-agent claims require exact-revision operator acknowledgement. "
+                "Preserve results and possible file changes."
             ),
             examples=(
                 OperationExample(

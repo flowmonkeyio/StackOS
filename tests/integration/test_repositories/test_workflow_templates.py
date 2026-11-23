@@ -113,7 +113,10 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         plugin_slug="branding",
     )
 
-    assert [item.key for item in listing.templates] == ["core.project-memory-review"]
+    assert [item.key for item in listing.templates] == [
+        "core.project-memory-review",
+        "core.project-setup",
+    ]
     assert described.summary.source == "plugin"
     assert described.spec.context_requirements
     assert described.spec.agent_requirements[0].agent_preset_ref == (
@@ -671,7 +674,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         "audit-tracker",
         "release-closeout",
     ]
-    assert spec.version == "0.8.7"
+    assert spec.version == "0.8.8"
     assert [step.id for step in spec.steps] == expected_order
     assert spec.metadata_json["step_ids"] == expected_order
     assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
@@ -722,7 +725,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     validation = validate_run_plan_obj(plan.model_dump(mode="json"))
     assert validation.valid, validation.errors
     assert validation.warnings == []
-    assert plan.template_version == "0.8.7"
+    assert plan.template_version == "0.8.8"
     assert [step.id for step in plan.steps] == expected_order
     assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
     derived_verify = next(step for step in plan.steps if step.id == "verify-delivery")

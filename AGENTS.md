@@ -246,9 +246,11 @@ Project-local main-agent mappings:
   protocol, materialization policy and completion contract rather than copying
   another checklist here. Infrastructure setup binds the workspace, resolves the
   effective workflow and adapted roles, checks readiness and uses structural plus
-  strict read-only `runPlan.validate`; it creates no run plan, workflow tracker
-  work or business output. Prerequisite setup saves only applicable durable
-  inputs through their declared owner. Operation uses concrete inputs, strict
+  strict read-only `runPlan.validate` for the configured business workflow.
+  Managed Setup/Update tracks this work in its admitted `core.project-setup` run;
+  existing-agent setup retains session-owned reporting. Neither launches the
+  configured business workflow or creates its output. Prerequisite setup saves
+  only applicable durable inputs through their declared owner. Operation uses concrete inputs, strict
   validation, active grants and approvals. Host files hold versioned execution
   guidance, not project state, prerequisites or secrets. See
   [workflow setup lifecycle](./docs/workflow-templates.md#agent-workflow-setup-lifecycle).

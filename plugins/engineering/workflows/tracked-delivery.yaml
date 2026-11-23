@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.8.7
+version: 0.8.8
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -229,10 +229,13 @@ policies:
       check for reviewer_verification, bound to actual role, source/settings, invocation
       and environment in the existing setup receipt. Generic native conversation success
       is insufficient. Reuse valid completed coverage and execute only missing checks
-      under normal approvals; no extra proof task, global trust change or host matrix.
+      under normal approvals; no competing proof workflow, global trust change or host matrix.
       Ordinary ready_to_use Setup/Update includes adaptation, canonical saved-default
       adoption/readback and actual native consumption; only explicit infrastructure_only
-      stops at preparation and creates no execution state. Inspect exact role sources
+      stops at preparation. Follow workflowTemplate.authoringGuide.project_setup_method:
+      managed work uses the admitted core.project-setup run with one preparation mirror
+      for infrastructure_only or preparation and activation verification for ready_to_use.
+      Existing-agent setup retains its session/report owner. Inspect exact role sources
       and reconcile local manual/automatic lifecycle rules through their existing owners.
       Task overrides cannot prove missing project defaults. Preserve compatible local
       customization, supported host/model/provider preferences and frozen live snapshots.
@@ -241,10 +244,10 @@ policies:
       saved-default, native-session and environment basis. Record covered and missing
       claims explicitly. Execute only missing or invalidated small harmless native,
       configuration or behavior checks within the existing owning setup/task, using
-      existing setup/native continuation if fresh post-adoption loading is needed.
-      Do not automatically create a separate full verification task/workflow, tracker
-      parent or review workflow merely to establish readiness, or nested queue/wait/drain
-      machinery solely for proof. Existing product/adaptation tasks retain their
+      the canonical method for fresh post-adoption roles and completed task_phase proof.
+      Only selected distinct missing role checks add ordinary children to the admitted run.
+      Do not create a competing setup/proof workflow or nested queue/wait/drain machinery.
+      Existing product/adaptation tasks retain their
       independent review; standalone Setup/Update follows this method and genuine current
       evidence. Aborted, incomplete, simulated or foreign-project evidence is not completed
       activation. Record source preparation, saved readback, actual consumed source/snapshot
@@ -309,9 +312,9 @@ policies:
       Stopped work requires explicit authorized recovery and rehandoff, retaining
       sessions, receipts, attempts and consumed repair allowance.
       Each project has its own persisted task limit (default 3, range 1..32),
-      without an aggregate global project-task cap. Managed setup shares its
-      project's capacity owner without a tracker Todo requirement; directory
-      exclusion and callback retirement fences remain intact.
+      without an aggregate global project-task cap. Managed setup uses normal
+      tracked task admission; genuine legacy setup owners remain protected;
+      directory exclusion and callback retirement fences remain intact.
       Lowering a limit affects future admissions only: every admitted/running
       task continues unchanged, actual counts may exceed the limit, and new
       admission waits for room. Never stop, abort, cancel, restart or evict work

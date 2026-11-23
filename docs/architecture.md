@@ -134,6 +134,13 @@ final claims; terminal-managed delivery keeps its sole-writer contract.
 
 ## Request-Owned Native Execution
 
+Managed project Setup/Update uses the normal run-plan/task-delivery path through
+`core.project-setup`. Its protected setup request is an admission/source record,
+not a native owner; actual sessions, usage, queueing and recovery belong to the
+tracked task. Existing external-session setup reporting and historical native
+request evidence remain valid under their original owners. They are not backfilled
+or silently converted into managed tasks.
+
 `host_mcp.service.run_agent` accepts either project/task/ticket attribution or
 project/request attribution, exclusively. Request-only execution uses
 `AgentRequestExecution` with a daemon-held claim token and session factory; it

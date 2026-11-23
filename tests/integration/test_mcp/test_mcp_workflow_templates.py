@@ -128,7 +128,7 @@ outputs:
 
     assert authoring_guide["project_setup_method"] == project_setup_method().model_dump()
     method = authoring_guide["project_setup_method"]
-    assert method["version"] == "2"
+    assert method["version"] == "3"
     for obligation in (
         "not an exact catalog operation name",
         "does not require executing a full delivery or build",
@@ -150,8 +150,14 @@ outputs:
         "required_role_claims",
         "setup_activation_checks",
         "Missing required proof leaves ready_to_use unfinished",
+        "core.project-setup control workflow",
+        "infrastructure_only has one prepare mirror",
+        "ready_to_use has prepare and activate-verify mirrors",
+        "Existing-agent setup retains its session-owned start/report protocol",
     ):
         assert obligation in method["shared_prompt"]
+    assert "role_verification_request" not in method["shared_prompt"]
+    assert "completed_role_verifications" not in method["shared_prompt"]
     method_ref = compact_authoring_guide["project_setup_method"]
     assert set(method_ref["modes"]) == {"setup", "update"}
     assert method_ref["guidance_ref"]["arguments"] == {"response_mode": "raw"}
@@ -197,7 +203,7 @@ outputs:
     setup_phases = {item["key"]: item for item in authoring_guide["workflow_setup_protocol"]}
     assert set(setup_phases) == {"infrastructure", "prerequisites", "operation"}
     assert any(
-        "Do not call runPlan.create" in item
+        "Do not create/start the configured business workflow" in item
         for item in setup_phases["infrastructure"]["prohibited_actions"]
     )
     assert any(
@@ -220,7 +226,10 @@ outputs:
         "deduplicated union by preset key" in item
         for item in authoring_guide["agent_materialization_policy"]
     )
-    assert any("no run plan" in item for item in authoring_guide["setup_completion_contract"])
+    assert any(
+        "no configured business run" in item
+        for item in authoring_guide["setup_completion_contract"]
+    )
     canonical_operation_names = {item["name"] for item in authoring_guide["canonical_operations"]}
     assert {
         "workflowTemplate.validate",

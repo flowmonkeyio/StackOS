@@ -4,6 +4,38 @@ name: Project Setup and Update
 version: 0.1.0
 description: Prepare selected project workflows and verify their readiness through tracked delivery.
 domain: core
+owner:
+  team: StackOS
+experience:
+  problem: Project setup and guidance updates need visible work, evidence and recovery.
+  outcome: Selected workflows have checked guidance and current readiness evidence.
+  operator_path:
+    - Start Setup or Update in the project console.
+    - Follow the linked Work task and answer any bounded setup question.
+    - Inspect each workflow's readiness before starting its business work.
+  agent_path:
+    - Follow the canonical project_setup_method for the admitted scope.
+    - Preserve compatible local choices while preparing the selected workflows.
+    - Verify only missing current claims and return evidence through the owning tickets.
+public:
+  audience: Operators setting up or updating a project's workflow guidance
+  setup: available
+  prerequisites:
+    - An existing project with an available selected folder
+    - An authorized console Setup or Update request
+  proof:
+    - The actual setup run, task and native receipts
+    - Current per-workflow preparation and activation evidence
+  featured: false
+when_to_use:
+  - The project console admits managed Setup or Update through this control run.
+when_not_to_use:
+  - Do not select this as a project's business workflow to adapt or execute.
+  - Do not start another copy inside an already admitted setup run.
+skill_preset_requirements:
+  - skill_preset_ref: stackos.workflow-orchestrator
+    requirement: required
+    purpose: Retain canonical workflow ownership and bounded handoffs while the project_setup_method owns setup behavior.
 steps:
   - id: prepare
     title: Prepare project workflows

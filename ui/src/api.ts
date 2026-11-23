@@ -7527,6 +7527,8 @@ export interface components {
              * @default null
              */
             update_reminder_dismissed_at: string | null;
+            /** @default null */
+            work: components["schemas"]["SetupWorkOut"] | null;
             /** Workflows */
             workflows?: components["schemas"]["SetupWorkflowOut"][];
         };
@@ -8707,10 +8709,19 @@ export interface components {
          * @description Versioned AgentRequest metadata; native execution evidence stays alongside it.
          */
         SetupAttempt: {
+            /**
+             * Adopted Delivery Digest
+             * @default null
+             */
+            adopted_delivery_digest: string | null;
             /** @default null */
             adoption_proposal: components["schemas"]["SetupAdoptionProposal"] | null;
             /** Answers */
             answers?: components["schemas"]["SetupAnswer"][];
+            /** Applied Workflow Results */
+            applied_workflow_results?: {
+                [key: string]: string;
+            };
             /** Attempt Ref */
             attempt_ref: string;
             /**
@@ -8801,6 +8812,12 @@ export interface components {
              * @default null
              */
             thread_id: string | null;
+            /** @default null */
+            workflow_admission: components["schemas"]["SetupWorkflowAdmission"] | null;
+            /** Workflow Checks */
+            workflow_checks?: {
+                [key: string]: components["schemas"]["SetupRoleCheckRequest"][];
+            };
             /** Workflow Keys */
             workflow_keys: string[];
         };
@@ -9048,6 +9065,71 @@ export interface components {
             };
             /** Next Action */
             next_action: string;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+            /**
+             * Run Plan Id
+             * @default null
+             */
+            run_plan_id: number | null;
+            /**
+             * Task Key
+             * @default null
+             */
+            task_key: string | null;
+        };
+        /** SetupWorkOut */
+        SetupWorkOut: {
+            /** Busy */
+            busy: boolean;
+            /** Can Answer */
+            can_answer: boolean;
+            /** Can Cancel */
+            can_cancel: boolean;
+            /** Can Continue */
+            can_continue: boolean;
+            /** Delivery Status */
+            delivery_status: SetupWorkOutDelivery_statusAnyOf0 | null;
+            /** Reason */
+            reason: string | null;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number;
+            /**
+             * Run Status
+             * @enum {string}
+             */
+            run_status: SetupWorkOutRun_status;
+            /** Task Key */
+            task_key: string;
+        };
+        /**
+         * SetupWorkflowAdmission
+         * @description Protected console admission; execution remains owned by its run and task.
+         */
+        SetupWorkflowAdmission: {
+            /** Binding Id */
+            binding_id: number;
+            /**
+             * Bootstrap
+             * @default core.project-setup
+             * @constant
+             */
+            bootstrap: "core.project-setup";
+            /** Preferences */
+            preferences: {
+                [key: string]: unknown;
+            };
+            /** Project Dir */
+            project_dir: string;
+            /** Run Plan Id */
+            run_plan_id: number;
+            /** Task Id */
+            task_id: number;
         };
         /** SetupWorkflowOut */
         SetupWorkflowOut: {
@@ -12312,6 +12394,8 @@ export type SchemaSetupRoleCheckRequest = components['schemas']['SetupRoleCheckR
 export type SchemaSetupRoleProposal = components['schemas']['SetupRoleProposal'];
 export type SchemaSetupSource = components['schemas']['SetupSource'];
 export type SchemaSetupStartOut = components['schemas']['SetupStartOut'];
+export type SchemaSetupWorkOut = components['schemas']['SetupWorkOut'];
+export type SchemaSetupWorkflowAdmission = components['schemas']['SetupWorkflowAdmission'];
 export type SchemaSetupWorkflowOut = components['schemas']['SetupWorkflowOut'];
 export type SchemaSetupWorkflowOutcome = components['schemas']['SetupWorkflowOutcome'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
@@ -16257,6 +16341,19 @@ export enum SetupSourceKind {
     main_agent = "main_agent",
     specialist = "specialist",
     override = "override"
+}
+export enum SetupWorkOutDelivery_statusAnyOf0 {
+    queued = "queued",
+    running = "running",
+    stopped = "stopped",
+    complete = "complete"
+}
+export enum SetupWorkOutRun_status {
+    draft = "draft",
+    started = "started",
+    completed = "completed",
+    failed = "failed",
+    aborted = "aborted"
 }
 export enum SetupWorkflowOutActivation_status {
     unknown = "unknown",

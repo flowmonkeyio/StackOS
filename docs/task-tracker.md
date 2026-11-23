@@ -75,8 +75,9 @@ task references, separate from tracker/workflow lifecycle. In one SQLite writer
 transaction preparation fences admission/dispatch and checkpoints eligible
 authorized queued/running delivery handoffs across projects. Stopped, failed,
 aborted, complete and manual work is not captured. Invalid/foreign-generation
-ownership refuses preparation before interruption. Active managed setup or native
-owners outside the eligible delivery scopes must retire first; they are not
+ownership refuses preparation before interruption. Tracked setup uses ordinary
+delivery eligibility. Legacy setup or other native owners outside those scopes
+must retire first; they are not
 implicitly checkpointed. The same fence guards shared-capacity setup admissions,
 native request admission and scheduled main-agent dispatch. It adds no queue or
 new tracker status and startup does not clear it or launch work.
@@ -317,14 +318,15 @@ For ready-to-use Setup/Update, the effective workflow method first reuses actual
 completed delivery/review/closeout evidence only for covered claims at the current
 project/source/default/native/environment basis. Record covered/missing claims and
 run only missing or invalidated harmless bounded checks in the existing owning
-setup/task. Do not automatically create a separate full verification task/workflow,
-tracker parent or review workflow merely for readiness, or nested queue/wait/drain
-machinery solely for proof. Existing product/adaptation tasks retain independent
-review; standalone setup follows its effective method and genuine evidence.
+setup/task. Managed work uses its admitted `core.project-setup` run, with normal
+bounded children only for selected distinct missing role checks. Do not create a
+competing proof workflow or nested queue/wait/drain machinery. Existing
+product/adaptation tasks retain independent review; standalone setup follows its effective method and genuine evidence.
 Aborted, incomplete, simulated or another project's evidence is not completed
 activation. Task overrides cannot hide missing project defaults. Explicit
-infrastructure-only preparation creates no execution state. Missing authority or
-required proof stays unfinished; source edits neither adopt defaults nor refresh
+infrastructure-only scope has one preparation mirror; `ready_to_use` adds activation
+verification. Existing-agent reporting retains its external session owner. Missing
+authority or required proof stays unfinished; source edits neither adopt defaults nor refresh
 active native sessions.
 
 The handoff is task-level; role objects and their fields can be omitted when
@@ -545,20 +547,21 @@ is performed by the runner.
 
 ### Project task capacity
 
-Managed project setup requests use their project's same capacity preference,
-launch lock, memory executor and drain, without a tracker Todo requirement.
-Counts include their queued work and admitted
-callbacks through retirement. They do not create tracker tasks or business runs.
-Setup cancellation and unconfirmed prior-daemon invocations retain their slots
-until the existing native owner establishes retirement; an elapsed timeout is
-insufficient. Completed receipt/report history survives cancellation.
+Managed project Setup/Update uses real `core.project-setup` runs and mirrored tasks,
+admitted through normal task delivery and the project's capacity preference.
+Queueing, callback retirement, cancellation and usage have the same owners as
+other tracked work. The protected setup admission row is not a second slot.
+Genuine legacy request-owned setup still holds capacity/directory ownership until
+retirement is established; an elapsed timeout is insufficient. Completed setup
+receipts and possible-edit evidence survive cancellation. Setup grants no business
+workflow execution authority.
 
 `TaskTracker.config_json.delivery.main_agent` stores typed project launch choices
 (`host_key`, `model`, `model_reasoning_effort`, `provider`, `profile`)
 independently of specialist contracts.
 Authenticated local-admin REST `tracker.configureDelivery` accepts `main_agent`
 alone to merge those choices without replacing other defaults. This affects future
-managed setup and scheduled main-agent admissions; queued/running request snapshots
+managed setup and scheduled main-agent admissions; queued/running native snapshots
 and setup continuations remain frozen. Setup and automation reuse
 `project_setup_execution.resolve_preferences`: omitted launch fields inherit saved
 main choices, explicit null clears a choice for that launch, and an explicit host

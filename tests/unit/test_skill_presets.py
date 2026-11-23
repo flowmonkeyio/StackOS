@@ -53,9 +53,11 @@ def test_generic_workflow_orchestrator_keeps_the_normal_loop_small() -> None:
     ).lower()
 
     assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True
-    assert loaded.preset.version == "0.1.7"
-    assert len(loaded.preset.applies_to_workflows) == 23
-    assert {"agency.setup", "agency.project-setup"} <= set(loaded.preset.applies_to_workflows)
+    assert loaded.preset.version == "0.1.8"
+    assert len(loaded.preset.applies_to_workflows) == 24
+    assert {"agency.setup", "agency.project-setup", "core.project-setup"} <= set(
+        loaded.preset.applies_to_workflows
+    )
     assert "seo.website-analysis" in loaded.preset.applies_to_workflows
     assert "structural, context, provider-route, and execution readiness" in text
     assert "prefer one ready provider route" in text
@@ -74,7 +76,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.34"
+    assert loaded.preset.version == "0.8.35"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -241,7 +243,8 @@ def test_codex_sdlc_orchestrator_preserves_local_execution_boundaries() -> None:
     assert "main thread's model and reasoning settings" in text
     assert "not child acceptance" in text
     assert "preserve" in text.lower() and "step `result_json`" in text
-    assert "setup_existing" in text and "no execution-state creation" in text
+    assert "setup_existing" in text and "configured business workflow" in text
+    assert "core.project-setup" in text and "existing-agent reporting" in text
     assert "frozen order, grants and output schemas" in text
     assert "provisional breakdown" in text
     assert "do not require proof from a future step" in text

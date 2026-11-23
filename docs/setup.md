@@ -533,13 +533,15 @@ strategy and passes explicit inputs.
 ## Agent Setup From Any Repo
 
 Ordinary workflow Setup/Update targets `ready_to_use`; only an explicit
-`infrastructure_only` request stops after preparation without execution state.
+`infrastructure_only` request stops after preparation. Managed work uses one
+`core.project-setup` run: one preparation ticket for that explicit scope, or
+preparation and activation verification for `ready_to_use`, through normal delivery.
 The [canonical setup method](workflow-templates.md#agent-workflow-setup-lifecycle)
 selects proof from the effective workflow/presets: canonical configuration/readback,
 actual native consumption, reuse of current covered completed evidence, then only
 missing or invalidated small harmless checks inside the owning setup/task. It does
-not automatically create a separate full verification task/workflow or tracker
-parent merely for readiness. Existing parent review remains independent; standalone
+not create a competing proof workflow or start the configured business workflow.
+Existing-agent reporting retains its external session. Existing parent review remains independent; standalone
 setup follows its method and genuine evidence. Prepared files, task overrides,
 aborted/incomplete/simulated evidence and `activation_pending` cannot establish
 ready-to-use activation. Missing authority or safe proof stays explicit, while

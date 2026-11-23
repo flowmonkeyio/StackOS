@@ -159,13 +159,15 @@ primitive.
   setup/update mode instructions, compact notices, concrete questions and result
   wording. Use those instructions together with the guide's three-phase protocol,
   materialization policy and completion contract; do not maintain another prompt.
-  Inspect before `projectSetup.start`; adopt verified legacy setup without invented
-  versions or forced rewrites. Compare previous applied sources, current local
+  Existing-agent entry inspects before `projectSetup.start`; managed assignments
+  already belong to their admitted `core.project-setup` run. Adopt verified legacy
+  setup without invented versions or forced rewrites. Compare previous applied sources, current local
   choices and new effective sources on update. Preserve compatible overrides and
   the full applicable source obligations, mapping roles/rules to exact targets and
   evidence. Material unresolved loss cannot complete. Keep independent successes
-  and partial edits truthful through `projectSetup.report`; source changes do not
-  prove installed or loaded activation. A startup notice is advisory and does not
+  and partial edits truthful: existing-agent entry uses `projectSetup.report`,
+  while managed native outputs carry `setup_report` through normal task delivery.
+  Source changes do not prove installed or loaded activation. A startup notice is advisory and does not
   block an ordinary question or authorize setup writes/business execution.
 - Person asks what to do after installation: call `toolbox.call` for
   `guide.gettingStarted` with `response_mode=raw`. This global read is allowed
@@ -469,9 +471,9 @@ primitive.
   Stopped work requires explicit authorized recovery and rehandoff, retaining
   sessions, receipts, attempts and consumed repair allowance.
   Each project has its own persisted task limit (default 3, range 1..32),
-  without an aggregate global project-task cap. Managed setup shares its
-  project's capacity owner without a tracker Todo requirement; directory
-  exclusion and callback retirement fences remain intact.
+  without an aggregate global project-task cap. Managed setup uses normal
+  tracked task admission; genuine legacy setup owners remain protected;
+  directory exclusion and callback retirement fences remain intact.
   Lowering a limit affects future admissions only: every admitted/running
   task continues unchanged, actual counts may exceed the limit, and new
   admission waits for room. Never stop, abort, cancel, restart or evict work

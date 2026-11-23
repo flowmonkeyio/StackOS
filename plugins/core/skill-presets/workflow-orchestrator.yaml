@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.workflow-orchestrator
     name: Workflow Orchestrator
-    version: 0.1.7
+    version: 0.1.8
     description: Main-agent operating loop for workflows that do not need a domain-specific orchestrator.
     domain: core
     skill_type: main-agent-orchestration
@@ -16,6 +16,7 @@ presets:
       - communications.outbound-notification
       - communications.rich-telegram-reply
       - core.project-memory-review
+      - core.project-setup
       - gtm.account-research
       - gtm.crm-hygiene-pass
       - gtm.lead-enrichment-scoring

@@ -5,12 +5,12 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, ref } from 'vue'
 import { callOperation } from '@/lib/operations'
 import { ApiError, apiFetch } from '@/lib/client'
-import { ProjectSetupOutFolder_status, ProjectSetupOutStatus, SetupAttemptEntry_kind, SetupAttemptStatus, SetupManagedExecutionPhase, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
+import { ProjectSetupOutFolder_status, ProjectSetupOutStatus, SetupAttemptEntry_kind, SetupAttemptStatus, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
 import HomeConsoleView from '../HomeConsoleView.vue'
 import ProjectSetupView from './ProjectSetupView.vue'
 import ProjectSetupLaunchDialog from './ProjectSetupLaunchDialog.vue'
 import { useProjectSetup } from './useProjectSetup'
-import { attemptFixture, setupFixture, setupHosts } from './setupFixtures'
+import { attemptFixture, setupFixture, setupHosts, workFixture } from './setupFixtures'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async original => ({ ...await original<object>(), apiFetch: vi.fn() }))
@@ -29,8 +29,8 @@ beforeEach(() => {
       return { project_id: 1, data: state }
     }
     if (name === 'projectSetup.start') {
-      state = { ...state, current_attempt: attemptFixture() }
-      return { project_id: 1, data: { attempt: state.current_attempt, attached: false } }
+      state = { ...state, current_attempt: attemptFixture(), work: workFixture() }
+      return { project_id: 1, run_id: 51, data: { attempt: state.current_attempt, attached: false, run_plan_id: 42, run_id: 51, task_key: 'workflow-42' } }
     }
     if (name === 'project.portfolio') return { items: [] }
     return {}
@@ -68,14 +68,15 @@ describe('Home project setup', () => {
     expect(wrapper!.find('[role="dialog"]').exists()).toBe(false)
     expect(writes()).toHaveLength(0)
   })
-  it.each(['cancelled', 'failed'] as const)('opens actionable pre-launch %s recovery without a new agent picker', async status => {
-    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, coordinator_thread_id: null, role_check: null, diagnostic: null, phase: SetupManagedExecutionPhase.preparation, adoption_authorized: false, adopted_delivery_digest: null, verification_request_id: null, preflight_failed: false } })
+  it.each(['cancelled', 'failed'] as const)('opens canonical %s recovery without a new agent picker', async status => {
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status] })
+    state.work = workFixture({ run_status: (status === 'cancelled' ? 'aborted' : 'failed') as NonNullable<typeof state.work>['run_status'], delivery_status: 'stopped' as NonNullable<typeof state.work>['delivery_status'], busy: false, can_continue: true, can_cancel: false })
     state.launch_preferences = { host_key: 'codex', model: 'newer-saved-model' }
     const router = await home()
     await button('View setup').trigger('click'); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/projects/1/setup')
     expect(wrapper!.find('[role="dialog"]').exists()).toBe(false)
-    expect(button(status === 'failed' ? 'Retry setup' : 'Start again').attributes('disabled')).toBeUndefined()
+    expect(button(status === 'failed' ? 'Continue remaining' : 'Resume setup').attributes('disabled')).toBeUndefined()
     expect(writes()).toHaveLength(0)
   })
   it('excludes directoryless projects, including prompts, actions and counts', async () => {
@@ -118,6 +119,7 @@ describe('Home project setup', () => {
     expect(callOperation).toHaveBeenCalledWith('projectSetup.start', { project_id: 1, entry_kind: 'managed_ui', mode: 'setup', requested_scope: 'ready_to_use', preferences: { host_key: 'codex', model: 'catalog-model', model_reasoning_effort: null, provider: null, profile: null } })
     expect(router.currentRoute.value.path).toBe('/projects/1/setup')
     expect(wrapper!.text()).toContain('Setup is queued')
+    expect(wrapper!.get('a[href="/projects/1/tasks?view=graph&task=workflow-42"]').text()).toContain('View work')
     await router.push('/projects/1'); await flushPromises()
     await button('View setup').trigger('click'); await flushPromises()
     expect(writes()).toHaveLength(1)
@@ -201,7 +203,7 @@ describe('Home project setup', () => {
     expect(wrapper!.get('[role="alert"]').text()).toContain('Selected model needs authentication')
     expect(wrapper!.get('[role="alert"]').text()).not.toContain('repair_agent_auth')
     expect(wrapper!.get('[role="alert"]').text()).not.toContain('request-fixture')
-    state = { ...state, current_attempt: attemptFixture({ status: SetupAttemptStatus.needs_input, question: { question_id: 'q1', revision: 1, prompt: 'What do you want to accomplish?', workflow_keys: [], response_channel: SetupQuestionResponse_channel.managed_ui, answer_state: SetupQuestionAnswer_state.pending } }) }
+    state = { ...state, work: workFixture({ busy: false, can_answer: true }), current_attempt: attemptFixture({ status: SetupAttemptStatus.needs_input, question: { question_id: 'q1', revision: 1, prompt: 'What do you want to accomplish?', workflow_keys: [], response_channel: SetupQuestionResponse_channel.managed_ui, answer_state: SetupQuestionAnswer_state.pending } }) }
     await router.push('/projects/1/setup'); await router.push('/projects/1'); await flushPromises()
     await button('Answer question').trigger('click'); await flushPromises()
     expect(wrapper!.text()).toContain('What do you want to accomplish?')
@@ -223,5 +225,45 @@ describe('Home project setup', () => {
     wrapper.unmount(); wrapper = undefined
     finish(setupFixture({ update_count: 99 })); await lateRead
     expect(controller.state.value?.update_count).toBe(0)
+  })
+
+  it.each(['start', 'dismiss'] as const)('does not apply a late %s response or work controls to another project', async action => {
+    const projectId = ref(1)
+    let controller!: ReturnType<typeof useProjectSetup>
+    wrapper = mount(defineComponent({ setup() { controller = useProjectSetup(projectId); return () => null } }))
+    await flushPromises()
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = action === 'start' ? controller.start({ host_key: 'codex', model: null, model_reasoning_effort: null, provider: null, profile: null }) : controller.dismiss('setup')
+    projectId.value = 2
+    expect(controller.state.value).toBeNull()
+    state = setupFixture({ project_id: 2 })
+    finish(action === 'start'
+      ? { data: { attempt: attemptFixture(), run_plan_id: 42, run_id: 51, task_key: 'workflow-42' } }
+      : { data: setupFixture({ setup_reminder_dismissed_at: '2026-11-23T00:00:00Z' }) })
+    await pending
+    await controller.refresh()
+    expect(controller.state.value?.project_id).toBe(2)
+    expect(controller.state.value?.setup_reminder_dismissed_at).toBeNull()
+    expect(controller.workLink.value).toBeNull()
+    expect(controller.attempt.value).toBeNull()
+  })
+
+  it('hides controls from a held old-project read after the project changes', async () => {
+    const projectId = ref(1)
+    let controller!: ReturnType<typeof useProjectSetup>
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    wrapper = mount(defineComponent({ setup() { controller = useProjectSetup(projectId); return () => null } }))
+    projectId.value = 2
+    state = setupFixture({ project_id: 2 })
+    // The polling owner coalesces overlapping refreshes. Complete the old read
+    // before the next refresh; it must not expose the old project's controls.
+    finish(setupFixture({ work: workFixture(), current_attempt: attemptFixture() }))
+    await flushPromises()
+    expect(controller.state.value).toBeNull()
+    await controller.refresh()
+    expect(controller.state.value?.project_id).toBe(2)
+    expect(controller.workLink.value).toBeNull()
   })
 })

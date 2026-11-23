@@ -6,8 +6,9 @@ Scoped amendment: Candidate admission and bounded reporting-only continuation fr
 Scoped amendment: Simple, complete delivery first and project planning guidance routing from v0.8.31.
 Scoped amendment: Proof continuity and role-specific duties from v0.8.32.
 Scoped amendment: Remove unavailable Hermes review execution from v0.8.34.
+Scoped amendment: Tracked managed setup through the canonical project setup method from v0.8.35.
 The v0.8.25 adaptation and prior scoped amendments remain; other source deltas are not claimed.
-Workflow: `engineering.tracked-delivery` v0.8.7 source contract
+Workflow: `engineering.tracked-delivery` v0.8.8 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -97,7 +98,7 @@ review, repair allowance and automatic/terminal-managed writer boundaries remain
 unchanged. Source-only guidance changes do not refresh frozen native sessions;
 saved adoption and installed activation retain their separate main-owned proof.
 
-Apply prepared Todo admission and independent project task limits. Backlog is unscheduled; Todo placement alone grants no execution authority. Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue. Check saved placement before queue metadata can change its projection; preserve valid first workflow handoffs and prior invocation history. Stopped work requires explicit authorized recovery and rehandoff, retaining sessions, receipts, attempts and consumed repair allowance. Each project has its own persisted task limit (default 3, range 1..32), without an aggregate global project-task cap. Managed setup shares its project's capacity owner without a tracker Todo requirement; directory exclusion and callback retirement fences remain intact. Lowering a limit affects future admissions only: every admitted/running task continues unchanged, actual counts may exceed the limit, and new admission waits for room. Never stop, abort, cancel, restart or evict work because a limit decreased. Other projects are unaffected. Host child/reviewer slots and the terminal-managed default of three active ticket assignments are separate from project task limits.
+Apply prepared Todo admission and independent project task limits. Backlog is unscheduled; Todo placement alone grants no execution authority. Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue. Check saved placement before queue metadata can change its projection; preserve valid first workflow handoffs and prior invocation history. Stopped work requires explicit authorized recovery and rehandoff, retaining sessions, receipts, attempts and consumed repair allowance. Each project has its own persisted task limit (default 3, range 1..32), without an aggregate global project-task cap. Managed setup uses normal tracked task admission; genuine legacy setup owners remain protected; directory exclusion and callback retirement fences remain intact. Lowering a limit affects future admissions only: every admitted/running task continues unchanged, actual counts may exceed the limit, and new admission waits for room. Never stop, abort, cancel, restart or evict work because a limit decreased. Other projects are unaffected. Host child/reviewer slots and the terminal-managed default of three active ticket assignments are separate from project task limits.
 
 ## Project Boundaries And Calibration
 
@@ -145,7 +146,9 @@ Python/pytest, Vue/Vite UI and Electron desktop checks follow the affected docs;
 
 For workflow infrastructure/local-agent setup, follow
 `workflowTemplate.authoringGuide` in `setup_existing` mode, using read-only
-validation and no execution-state creation. For concrete engineering execution,
+validation for the configured business workflow. Managed Setup/Update uses its
+admitted `core.project-setup` control run; existing-agent reporting keeps its
+session owner and launches no managed work. For concrete engineering execution,
 resolve or create the workflow-backed run before tracker tickets. Direct
 tracker work applies only when no workflow lifecycle was invoked.
 
@@ -588,12 +591,13 @@ unsupported frozen/live jobs; manual reviewed adoption remains separate.
 
 ## Explicit Current-Project Source Adoption
 
-For engineering ready_to_use setup, consume the effective method's required_role_claims, including reviewer_verification bound to review_agent when review requires tools, scratch writes or isolated fixtures. Save execution_requirements.filesystem_write=true for test/scratch-running reviewers through the canonical defaults owner; preserve explicit false for inspection-only review. The selected reviewer itself executes one project-selected bounded representative check under its actual native snapshot and normal approvals. Generic native success or coordinator verification_status cannot prove reviewer capability. Record claims, status, environment_ref and evidence_ref in setup_activation_checks in the reviewer's native outputs; the evidence ref retains command, exit status and observed results. The existing setup receipt binds completed task_phase evidence (task_id, ticket_id, attempt, phase, invocation_id, outcome_digest), or a setup-owned native_request carrying the actual frozen specialist snapshot and retired outcome, to current project/binding, role/host, source ref/digest when source-backed, resolved settings and environment. Inline hosts retain their actual snapshot without invented refs. Reuse valid completed coverage, including retained attempts; changed relevant source/settings/capability or environment invalidates only affected claims. For fresh managed setup, verification reports one role_verification_request with role, exact missing claims, project-selected bounded instructions, environment_ref and evidence_ref. The existing owner runs that selected specialist in a distinct native session through its finite request continuation, then resumes the retained coordinator with completed_role_verifications. Explicit recovery retains both actual sessions. Run only missing harmless checks in the existing authorized setup/task; no new receipt store, whole-workflow canary, separate proof task or all-host matrix. A denial stops that write and dependent proof; continue authorized alternatives and unrelated work, leaving required unavailable proof unfinished. Preserve infrastructure_only preparation and frozen sessions. Explicit replace_review recovery requires operator authorization and a quiescent stopped review, preserves candidate/delivery/failed reviewer history and consumed repair allowance, and never implies automatic retry, global trust changes or installed activation.
+For engineering ready_to_use setup, consume required_role_claims from the effective setup_activation_method and workflowTemplate.authoringGuide.project_setup_method. When reviewer_verification applies, the selected review_agent performs the missing bounded check under its actual native settings and normal approvals; generic coordinator success cannot prove reviewer capability. Save execution_requirements.filesystem_write=true for test/scratch-running reviewers through canonical defaults adoption and preserve explicit false for inspection-only review. Return setup_activation_checks with claims, status, environment_ref and evidence_ref naming command, exit and observed results. The canonical method owns actual completed task_phase references, role binding, proof reuse and recovery. Managed work remains in its admitted core.project-setup run; existing-agent reporting remains session-owned. Do not launch a business workflow, all-host matrix or competing proof workflow.
 
 For ordinary `ready_to_use` Setup/Update or explicit automatic-delivery activation,
 apply the effective `engineering.tracked-delivery` `setup_activation_method` policy.
-Only explicit `infrastructure_only` stops at preparation and creates no execution
-state. Inspect `tracker.get` raw defaults and exact project role sources; reconcile
+Only explicit `infrastructure_only` stops at preparation. Managed setup has one
+preparation mirror for that scope, or preparation and activation verification for
+`ready_to_use`, in the admitted `core.project-setup` run. Inspect `tracker.get` raw defaults and exact project role sources; reconcile
 local manual/automatic lifecycle rules before canonical authorized
 `tracker.configureDelivery` preview/write/readback. A worker report cannot supply
 missing local-admin authority. Preserve compatible customization, intended supported
@@ -603,10 +607,10 @@ First reuse actual completed native delivery, distinct independent review and
 workflow closeout evidence only for claims covered at the current
 project/source/default/native/environment basis. Record covered and missing claims;
 execute only missing or invalidated small harmless native/configuration/behavior
-checks within the existing owning setup/task. Use existing setup/native continuation
-if fresh post-adoption loading is required. Do not automatically create a separate
-full verification task/workflow, tracker parent or review workflow merely for
-readiness, or nested queue/wait/drain machinery solely for proof. Existing
+checks within the existing owning setup/task. Follow the canonical project setup method for fresh post-adoption role binding
+and completed task-phase proof. Reuse the admitted run and selected bounded
+children; do not create a competing setup/proof workflow or nested queue/wait/drain
+machinery. Existing
 product/adaptation tasks retain independent review; standalone Setup/Update follows
 its method and genuine current evidence. Aborted, incomplete, simulated or
 foreign-project evidence cannot become completed activation.

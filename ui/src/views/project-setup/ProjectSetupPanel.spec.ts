@@ -4,12 +4,12 @@ import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, ref } from 'vue'
 import type { SchemaSetupAttempt, SchemaSetupWorkflowOut } from '@/api'
-import { SetupAttemptRequested_scope, SetupAttemptStatus, SetupManagedExecutionPhase, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
+import { SetupAttemptRequested_scope, SetupAttemptStatus, SetupManagedExecutionPhase, SetupQuestionAnswer_state, SetupQuestionResponse_channel, SetupWorkOutDelivery_statusAnyOf0 as SetupWorkOutDelivery_status, SetupWorkOutRun_status } from '@/api'
 import { ApiError, apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import ProjectSetupView from './ProjectSetupView.vue'
 import { useProjectSetup } from './useProjectSetup'
-import { attemptFixture, setupFixture, setupHosts } from './setupFixtures'
+import { attemptFixture, setupFixture, setupHosts, workFixture } from './setupFixtures'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async original => ({ ...await original<object>(), apiFetch: vi.fn() }))
@@ -22,7 +22,7 @@ function workflow(key: string, patch: Partial<SchemaSetupWorkflowOut> = {}): Sch
   return { workflow_key: key, status: 'current', requested_scope: 'ready_to_use', activation_status: 'verified', missing_activation_claims: [], receipt_id: 1, revision: 1, successful: { verification: { sources: [{ kind: 'template', version: 'v1' }] } }, latest_result: { changes: ['Compatible local instructions kept.'] }, latest_status: 'success', partial_changes: false, diagnostic: null, attempt_ref: null, result_ref: null, ...patch } as SchemaSetupWorkflowOut
 }
 beforeEach(() => {
-  state = setupFixture({ current_attempt: asking() })
+  state = setupFixture({ current_attempt: asking(), work: workFixture({ delivery_status: SetupWorkOutDelivery_status.stopped, busy: false, can_continue: true, can_answer: true }) })
   vi.mocked(apiFetch).mockResolvedValue({ items: [] })
   vi.mocked(callOperation).mockReset()
   vi.mocked(callOperation).mockImplementation(async (name, args) => {
@@ -30,12 +30,16 @@ beforeEach(() => {
       ? { ...state, launch_preferences: { host_key: 'codex', ...state.launch_preferences } } : state
     if (name === 'hostMcp.status') return setupHosts
     if (name === 'projectSetup.answer' || name === 'projectSetup.continue') {
-      state = { ...state, current_attempt: attemptFixture({ managed, request_id: 11, revision: 8, predecessor_request_id: 10, thread_id: 'native-exact' }) }
-      return { data: { attempt: state.current_attempt, attached: false }, project_id: 1 }
+      state = { ...state, current_attempt: attemptFixture({ revision: 8, thread_id: 'native-exact' }), work: workFixture() }
+      return { data: { attempt: state.current_attempt, attached: false, run_plan_id: 42, run_id: 51, task_key: 'workflow-42' }, project_id: 1 }
     }
     if (name === 'projectSetup.cancel') {
       state = { ...state, current_attempt: attemptFixture({ managed, status: SetupAttemptStatus.cancelled }) }
       return { data: state.current_attempt, project_id: 1 }
+    }
+    if (name === 'runPlan.abort') {
+      state = { ...state, work: workFixture({ run_status: SetupWorkOutRun_status.aborted, delivery_status: SetupWorkOutDelivery_status.stopped, busy: false, can_cancel: false, can_continue: true }) }
+      return { data: { cancellation: { status: 'managed_stopped' } } }
     }
     return {}
   })
@@ -52,23 +56,25 @@ async function panel() {
   return router
 }
 function button(label: string) { return wrapper!.findAll('button').find(item => item.text() === label)! }
-const writes = () => vi.mocked(callOperation).mock.calls.filter(([name]) => ['projectSetup.answer', 'projectSetup.continue', 'projectSetup.cancel'].includes(name))
+const writes = () => vi.mocked(callOperation).mock.calls.filter(([name]) => ['projectSetup.answer', 'projectSetup.continue', 'projectSetup.cancel', 'runPlan.abort'].includes(name))
 
 describe('setup detail questions and recovery', () => {
-  it.each(['cancelled', 'failed'] as const)('can retry confirmed never-started %s work without changing settings', async status => {
-    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { ...managed, callback_started: false }, thread_id: null })
+  it.each(['cancelled', 'failed'] as const)('continues the same %s work using backend recovery authority without native-thread inference', async status => {
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], thread_id: null })
+    state.work = workFixture({ run_status: status === 'cancelled' ? SetupWorkOutRun_status.aborted : SetupWorkOutRun_status.failed, delivery_status: SetupWorkOutDelivery_status.stopped, busy: false, can_continue: true, can_cancel: false })
     await panel()
-    const retry = button(status === 'failed' ? 'Retry setup' : 'Start again')
+    const retry = button(status === 'failed' ? 'Continue remaining' : 'Resume setup')
     expect(retry.attributes('disabled')).toBeUndefined()
-    expect(wrapper!.text()).toContain('before the agent started')
+    expect(wrapper!.text()).toContain('Continue only remaining work')
     await Promise.all([retry.trigger('click'), retry.trigger('click')]); await flushPromises()
     expect(writes()).toHaveLength(1)
     expect(callOperation).toHaveBeenCalledWith('projectSetup.continue', { project_id: 1, request_id: 10, expected_revision: 1 })
   })
-  it.each(['callback', 'partial', 'resume', 'reserved'] as const)('does not offer a first launch for uncertain %s work', async uncertainty => {
-    state.current_attempt = attemptFixture({ status: SetupAttemptStatus.cancelled, thread_id: null, managed: { ...managed, callback_started: uncertainty === 'callback', slot_reserved: uncertainty === 'reserved', resume_thread_id: uncertainty === 'resume' ? 'prior-native' : null }, partial_changes_possible: uncertainty === 'partial' })
+  it('does not enable recovery from historical native fields when the work owner denies it', async () => {
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus.cancelled, thread_id: 'old-session', managed })
+    state.work = workFixture({ run_status: SetupWorkOutRun_status.aborted, delivery_status: SetupWorkOutDelivery_status.stopped, can_cancel: false })
     await panel()
-    expect(button('Start again').attributes('disabled')).toBeDefined()
+    expect(button('Resume setup').attributes('disabled')).toBeDefined()
     expect(writes()).toHaveLength(0)
   })
   it('focuses the concrete question and sends the rendered identity once through the typed envelope', async () => {
@@ -105,6 +111,7 @@ describe('setup detail questions and recovery', () => {
     expect(writes()).toHaveLength(1)
   })
   it('explains existing-session answers without a form or unsupported host link', async () => {
+    state.work = null
     state.current_attempt = { ...asking(), entry_kind: 'existing_agent', managed: null, question: { ...asking().question!, response_channel: 'existing_agent' } } as SchemaSetupAttempt
     await panel()
     expect(wrapper!.text()).toContain('Answer in the agent session where you started setup.')
@@ -112,7 +119,18 @@ describe('setup detail questions and recovery', () => {
     expect(wrapper!.find('a[href*="conversation"]').exists()).toBe(false)
     expect(button('Cancel setup')).toBeDefined()
   })
+  it('keeps legacy questions readable without offering the removed managed continuation', async () => {
+    state.work = null
+    await panel()
+    expect(wrapper!.text()).toContain(question.prompt)
+    expect(wrapper!.text()).toContain('This earlier setup cannot continue here.')
+    expect(wrapper!.find('textarea').exists()).toBe(false)
+    expect(button('Continue remaining')).toBeUndefined()
+    expect(button('Cancel setup')).toBeDefined()
+    expect(writes()).toHaveLength(0)
+  })
   it('requires a stopped-work acknowledgement for the captured external revision, then offers a separate launch', async () => {
+    state.work = null
     state.current_attempt = { ...asking(), entry_kind: 'existing_agent', managed: null, question: null } as SchemaSetupAttempt
     await panel()
     await button('Cancel setup').trigger('click'); await flushPromises()
@@ -137,6 +155,7 @@ describe('setup detail questions and recovery', () => {
     expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === 'projectSetup.start')).toBe(false)
   })
   it('sends the captured external revision after polling advances, refreshes on 409 and requires a fresh decision', async () => {
+    state.work = null
     let controller!: ReturnType<typeof useProjectSetup>
     state.current_attempt = { ...asking(), entry_kind: 'existing_agent', managed: null } as SchemaSetupAttempt
     wrapper = mount(defineComponent({ setup() { controller = useProjectSetup(ref(1)); return () => null } }))
@@ -151,6 +170,7 @@ describe('setup detail questions and recovery', () => {
     expect(controller.attempt.value?.revision).toBe(8)
   })
   it('retains a cancelled external question as history without asking for an answer on its revoked session', async () => {
+    state.work = null
     state.current_attempt = { ...asking(), entry_kind: 'existing_agent', status: SetupAttemptStatus.cancelled, managed: null } as SchemaSetupAttempt
     await panel()
     expect(wrapper!.text()).not.toContain('Answer in the agent session where you started setup.')
@@ -160,6 +180,7 @@ describe('setup detail questions and recovery', () => {
     expect(state.current_attempt?.question?.prompt).toBe(question.prompt)
   })
   it.each(['queued', 'running', 'needs_input', 'success', 'partial', 'failed', 'interrupted', 'cancelled'] as const)('retains one shell and completed results in %s', async status => {
+    state.work = null // Historical records remain readable without invented tracker work.
     state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], thread_id: 'native-exact', managed, ...(status === 'needs_input' ? { question: asking().question } : {}) })
     state.workflows = [workflow('fixture.first')]
     await panel()
@@ -168,18 +189,20 @@ describe('setup detail questions and recovery', () => {
     expect(writes()).toHaveLength(0)
     expect(wrapper!.text().includes('Closing it does not stop setup.')).toBe(['queued', 'running'].includes(status))
     if (['partial', 'failed', 'interrupted', 'cancelled'].includes(status)) {
-      expect(button(status === 'failed' ? 'Retry remaining' : status === 'interrupted' ? 'Resume setup' : status === 'cancelled' ? 'Start again' : 'Continue remaining')).toBeDefined()
+      expect(button('Continue remaining')).toBeUndefined()
       expect(wrapper!.text()).not.toContain('Your project is ready')
     }
   })
   it('reports mixed outcomes and old verified versions without global readiness or invented override questions', async () => {
     state.current_attempt = attemptFixture({ status: SetupAttemptStatus.partial, managed: { ...managed, diagnostic: 'Native request invocation cancelled' }, thread_id: 'native-exact', partial_changes_possible: true,
       progress: { message: 'VERIFIED: No local build was attempted.', evidence_ref: 'fixture/no-build-attempt' } })
+    state.work = workFixture({ delivery_status: SetupWorkOutDelivery_status.stopped, busy: false, can_continue: true, reason: 'Required verification is incomplete.' })
     state.workflows = [workflow('fixture.first'), workflow('fixture.second', { latest_status: 'failed', status: 'update_available' as SchemaSetupWorkflowOut['status'], partial_changes: true, latest_result: { diagnostics: ['Check conflicting instruction.'], changes: ['Edited local guidance.'] } })]
     await panel()
     expect(wrapper!.text()).toContain('This is a precaution, not confirmation that files changed.')
     expect(wrapper!.get('[role="status"]').text()).toContain('Agent report')
-    expect(wrapper!.text()).toContain('Agent execution: Native request invocation cancelled')
+    expect(wrapper!.text()).toContain('Required verification is incomplete.')
+    expect(wrapper!.text()).not.toContain('Native request invocation cancelled')
     expect(wrapper!.text()).toContain('Last verified setup: v1')
     expect(wrapper!.text()).toContain('Check conflicting instruction.')
     expect(wrapper!.text()).not.toContain('Your project is ready')
@@ -190,21 +213,26 @@ describe('setup detail questions and recovery', () => {
   })
   it('dismisses the page without mutation; cancellation is separately confirmed', async () => {
     state.current_attempt = attemptFixture({ managed, status: SetupAttemptStatus.running })
+    state.work = workFixture({ delivery_status: SetupWorkOutDelivery_status.running })
     const router = await panel()
-    await button('Cancel setup').trigger('click'); await flushPromises()
+    await wrapper!.get('button[aria-label="Run actions for Project setup"]').trigger('click'); await flushPromises()
+    await button('Abort run').trigger('click'); await flushPromises()
     expect(writes()).toHaveLength(0)
-    expect(wrapper!.get('[role="dialog"]').text()).toContain('Completed workflow results are kept')
-    await button('Keep working').trigger('click'); await flushPromises()
+    expect(wrapper!.get('[role="dialog"]').text()).toContain('Completed work is kept')
+    await button('Cancel').trigger('click'); await flushPromises()
     expect(writes()).toHaveLength(0)
     await wrapper!.get('a[href="/projects/1"]').trigger('click'); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/projects/1'); expect(writes()).toHaveLength(0)
     await router.push('/projects/1/setup'); await flushPromises()
-    await button('Cancel setup').trigger('click'); await flushPromises()
-    await button('Stop setup').trigger('click'); await flushPromises()
+    await wrapper!.get('button[aria-label="Run actions for Project setup"]').trigger('click'); await flushPromises()
+    await button('Abort run').trigger('click'); await flushPromises()
+    await button('Abort run').trigger('click'); await flushPromises()
     expect(writes()).toHaveLength(1)
+    expect(callOperation).toHaveBeenCalledWith('runPlan.abort', { project_id: 1, run_plan_id: 42, reason: 'Aborted by operator from the local console.', actor: 'local-console' })
     expect(wrapper!.text()).toContain('Setup was cancelled')
   })
   it('does not claim ready while activation/updates remain or a failed attempt exists', async () => {
+    state.work = workFixture({ run_status: SetupWorkOutRun_status.completed, delivery_status: SetupWorkOutDelivery_status.complete, busy: false, can_cancel: false })
     state.current_attempt = attemptFixture({ status: SetupAttemptStatus.success })
     await panel()
     expect(wrapper!.text()).not.toContain('Your project is ready')
@@ -212,6 +240,22 @@ describe('setup detail questions and recovery', () => {
     await button('Refresh').trigger('click'); await flushPromises()
     expect(wrapper!.text()).toContain('Your project is ready')
     expect(wrapper!.text()).toContain("Your agent will use the project's configured workflows automatically.")
+  })
+  it('requires current readiness proof even when Work is complete, and completed work before readiness', async () => {
+    state = setupFixture({ status: 'current' as typeof state.status,
+      current_attempt: attemptFixture({ status: SetupAttemptStatus.success }), workflows: [workflow('fixture.first')],
+      work: workFixture({ delivery_status: SetupWorkOutDelivery_status.running }),
+    })
+    await panel()
+    expect(wrapper!.text()).toContain('Setup is running')
+    expect(wrapper!.text()).not.toContain('Your project is ready')
+    state = { ...state,
+      work: workFixture({ run_status: SetupWorkOutRun_status.completed, delivery_status: SetupWorkOutDelivery_status.complete, busy: false, can_cancel: false }),
+      workflows: [workflow('fixture.first', { activation_status: 'pending' as SchemaSetupWorkflowOut['activation_status'] })],
+    }
+    await button('Refresh').trigger('click'); await flushPromises()
+    expect(wrapper!.text()).not.toContain('Your project is ready')
+    expect(wrapper!.text()).toContain('Workflow readiness needs attention')
   })
   it('keeps completed copy concise and retains paths and the agent report in details', async () => {
     state = setupFixture({ status: 'current' as typeof state.status,
@@ -226,11 +270,12 @@ describe('setup detail questions and recovery', () => {
   })
   it('does not turn a retained input-needed result into a new unanswered question', async () => {
     state.current_attempt = attemptFixture({ status: SetupAttemptStatus.cancelled, managed, thread_id: 'native-exact', question: null })
+    state.work = workFixture({ run_status: SetupWorkOutRun_status.aborted, delivery_status: SetupWorkOutDelivery_status.stopped, busy: false, can_continue: true, can_cancel: false })
     state.workflows = [workflow('fixture.second', { latest_status: 'needs_input', status: 'update_available' as SchemaSetupWorkflowOut['status'] })]
     await panel()
     expect(wrapper!.text()).not.toContain('waiting for your answer')
     expect(wrapper!.find('textarea').exists()).toBe(false)
-    expect(button('Start again')).toBeDefined()
+    expect(button('Resume setup')).toBeDefined()
   })
   it.each(['pending', 'blocked', 'unknown'] as const)('never labels %s activation ready and shows the missing coverage', async activation => {
     state = setupFixture({ status: 'current' as typeof state.status,
@@ -275,20 +320,23 @@ describe('setup detail questions and recovery', () => {
     expect(wrapper!.text()).not.toContain('Your project is ready')
     expect(wrapper!.text()).toContain('fixture.missing')
   })
-  it('retains results through refresh and advances preparation to verification without a new action', async () => {
+  it('uses work state while preparation is accepted and verification still runs', async () => {
     state.current_attempt = attemptFixture({ status: SetupAttemptStatus.running, managed, requested_scope: SetupAttemptRequested_scope.ready_to_use })
+    state.work = workFixture({ delivery_status: SetupWorkOutDelivery_status.running })
     state.workflows = [workflow('fixture.first')]
     await panel()
-    expect(wrapper!.text()).toContain('Your agent is preparing the project')
+    expect(wrapper!.text()).toContain('Setup is running')
     let finish!: (value: unknown) => void
     vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     await button('Refresh').trigger('click')
     expect(wrapper!.text()).toContain('Compatible local instructions kept.')
     expect(wrapper!.text()).not.toContain('Loading project setup')
-    finish({ ...state, current_attempt: { ...state.current_attempt, revision: 2, managed: { ...managed, phase: 'verification' } } })
+    finish({ ...state, current_attempt: { ...state.current_attempt, status: SetupAttemptStatus.partial, revision: 2, managed: null } })
     await flushPromises()
-    expect(wrapper!.text()).toContain('Your agent is verifying workflow readiness')
-    expect(button('Cancel setup')).toBeDefined()
+    expect(wrapper!.text()).toContain('Setup is running')
+    expect(wrapper!.text()).not.toContain('Setup is partly complete')
+    expect(button('Continue remaining')).toBeUndefined()
+    expect(wrapper!.find('button[aria-label="Run actions for Project setup"]').exists()).toBe(true)
     expect(writes()).toHaveLength(0)
   })
   it('blocks competing actions and ignores a late continuation after disposal', async () => {

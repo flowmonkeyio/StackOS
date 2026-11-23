@@ -1,17 +1,24 @@
-import type { SchemaProjectSetupOut, SchemaSetupAttempt } from '@/api'
+import type { SchemaProjectSetupOut, SchemaSetupAttempt, SchemaSetupWorkOut } from '@/api'
 import { ProjectSetupOutFolder_status, ProjectSetupOutStatus } from '@/api'
 
 export function setupFixture(patch: Partial<SchemaProjectSetupOut> = {}): SchemaProjectSetupOut {
   return {
     project_id: 1, eligible: true, folder_status: ProjectSetupOutFolder_status.available,
     status: ProjectSetupOutStatus.setup_needed, binding_id: 1, project_folder_issue: null,
-    configured_count: 0, unknown_count: 0, update_count: 0, current_attempt: null,
+    configured_count: 0, unknown_count: 0, update_count: 0, current_attempt: null, work: null,
     setup_reminder_dismissed_at: null, update_reminder_dismissed_at: null,
     launch_preferences: {},
     delivery_defaults_digest: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
     workflows: [], detail_ref: {}, next_action: 'inspect_setup',
     notice: 'Set up this project', attempt_diagnostic: null, ...patch,
   }
+}
+
+export function workFixture(patch: Partial<SchemaSetupWorkOut> = {}): SchemaSetupWorkOut {
+  return {
+    run_plan_id: 42, run_id: 51, task_key: 'workflow-42', run_status: 'started', delivery_status: 'queued',
+    busy: true, reason: null, can_continue: false, can_cancel: true, can_answer: false, ...patch,
+  } as SchemaSetupWorkOut
 }
 
 export function attemptFixture(patch: Partial<SchemaSetupAttempt> = {}): SchemaSetupAttempt {

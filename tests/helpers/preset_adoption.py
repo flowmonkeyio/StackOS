@@ -1,14 +1,14 @@
 """Exact source deltas beyond each recorded base adaptation, including scoped amendments."""
 
 PENDING_PRESET_ADOPTIONS = {
-    "stackos.sdlc.requirements-flow-definer": ("0.6.7", "0.6.8"),
-    "stackos.sdlc.codebase-explorer": ("0.6.7", "0.6.8"),
-    "stackos.sdlc.planning": ("0.7.23", "0.7.30"),
-    "stackos.sdlc.architecture": ("0.6.8", "0.6.9"),
-    "stackos.sdlc.test-designer": ("0.6.12", "0.6.14"),
-    "stackos.sdlc.delivery": ("0.7.26", "0.7.27"),
-    "stackos.sdlc.delivery-reviewer": ("0.6.27", "0.6.29"),
-    "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.34"),
+    "stackos.sdlc.requirements-flow-definer": ("0.6.7", "0.6.9"),
+    "stackos.sdlc.codebase-explorer": ("0.6.7", "0.6.9"),
+    "stackos.sdlc.planning": ("0.7.23", "0.7.31"),
+    "stackos.sdlc.architecture": ("0.6.8", "0.6.10"),
+    "stackos.sdlc.test-designer": ("0.6.12", "0.6.15"),
+    "stackos.sdlc.delivery": ("0.7.26", "0.7.28"),
+    "stackos.sdlc.delivery-reviewer": ("0.6.27", "0.6.30"),
+    "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.35"),
     "branding.evidence-curator": ("0.2.2", "0.2.3"),
     "branding.narrative-writer": ("0.1.6", "0.1.7"),
     "branding.channel-strategist": ("0.1.6", "0.1.7"),
@@ -25,7 +25,7 @@ PENDING_PRESET_ADOPTIONS = {
     "stackos.finance.cashflow-preparer": ("0.4.5", "0.4.7"),
     "stackos.finance.tax-preparer": ("0.4.5", "0.4.7"),
     "stackos.finance.control-reviewer": ("0.6.7", "0.6.9"),
-    "stackos.workflow-orchestrator": ("0.1.6", "0.1.7"),
+    "stackos.workflow-orchestrator": ("0.1.6", "0.1.8"),
     "branding.brand-orchestrator": ("0.6.3", "0.6.4"),
     "stackos.finance.department-orchestrator": ("0.8.1", "0.8.3"),
 }

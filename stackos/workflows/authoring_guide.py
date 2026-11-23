@@ -28,7 +28,7 @@ class ProjectSetupMethod(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    version: str = "2"
+    version: str = "3"
     shared_prompt: str
     mode_prompts: dict[str, str]
     inputs: dict[str, str]
@@ -75,7 +75,8 @@ def project_setup_method() -> ProjectSetupMethod:
             "and only omit obligations where the source permits it, citing the policy and reason. "
             "Material unresolved loss prevents that workflow's completion.\n\n"
             "Keep internal setup handoffs concise and sufficient: disposition, actual scope "
-            "and outcome, project/attempt/revision, source-to-target role identities, decisive "
+            "and outcome, project/attempt/revision and actual run/task refs, source-to-target "
+            "role identities, decisive "
             "proof, preserved or unresolved obligations, activation limits and next action. "
             "Put detailed checks and obligation mappings once in the existing setup receipt; "
             "a reference-only outcome is insufficient. Preserve every required report field "
@@ -112,14 +113,22 @@ def project_setup_method() -> ProjectSetupMethod:
             "compatible customization and supported host/model/provider preferences. Task "
             "overrides cannot prove missing project defaults. Missing local-admin capability "
             "stays an actionable required gap for the authorized owner; a worker cannot grant it. "
-            "An infrastructure-only invocation creates no execution state and returns remaining "
-            "activation obligations without acquiring execution authority.\n\n"
+            "Managed console Setup/Update runs the existing core.project-setup control workflow "
+            "through normal task delivery: infrastructure_only has one prepare mirror; "
+            "ready_to_use has prepare and activate-verify mirrors. Work is visible through "
+            "their actual run/task/ticket refs. This control run grants no business execution "
+            "authority. Infrastructure-only scope returns remaining activation obligations "
+            "without adopting execution defaults. Existing-agent setup retains its session-owned "
+            "start/report protocol "
+            "and does not silently launch managed work.\n\n"
             "Keep verification inside the existing owning setup/task. First reuse actual completed "
             "delivery, independent review and closeout evidence only for claims covered at the "
             "current project, source, saved-default, native-session and environment basis. Record "
             "covered and missing claims explicitly; perform only missing or invalidated small "
             "harmless native/configuration/behavior checks through the authorized existing owner. "
-            "Use existing setup/native continuation when fresh loading after adoption is required. "
+            "For managed work, use the admitted run's never-started verification assignment "
+            "for fresh loading "
+            "after accepted adoption; keep already-started and resumed snapshots frozen. "
             "Consume required_role_claims from the effective setup_activation_method. When the "
             "project requires reviewer test/scratch writes, declare execution_requirements."
             "filesystem_write=true through canonical defaults adoption (or the bounded setup "
@@ -133,23 +142,26 @@ def project_setup_method() -> ProjectSetupMethod:
             "environment_ref and evidence_ref pointing to command, exit and observed results. "
             "Reference canonical completed task_phase evidence (task_id, ticket_id, attempt, "
             "phase, invocation_id and outcome_digest), including retained historical attempts. "
-            "Fresh managed setup uses the existing native request continuation: verification "
-            "reports one missing role_verification_request with role, exact claims, bounded "
-            "project-selected instructions, environment_ref and evidence_ref. The owner freezes "
-            "the selected specialist, runs only that missing check in a distinct native session "
-            "under normal permissions, then resumes the retained coordinator with retired "
-            "completed_role_verifications. Bind its actual specialist native_request snapshot "
-            "in the same setup receipt; generic coordinator or workflow success cannot supply "
-            "that role. Explicit recovery retains each actual session; no new task/workflow, "
-            "receipt store, scheduler or fallback is needed. "
+            "In managed prepare, return setup_report with the selected workflows, preparation "
+            "evidence, any adoption_proposal and missing workflow_checks. Each check names its "
+            "actual role, exact claims, bounded project-selected instructions, environment_ref "
+            "and evidence_ref. One missing role uses the verification mirror; multiple distinct "
+            "roles use ordinary children with normal delivery and independent review before "
+            "Main combines their completed references. Reuse both phases when they cover the "
+            "selected claims. Return setup_activation_checks for your assigned check; never "
+            "invent a reference to your own unfinished invocation. The existing owner derives "
+            "that reference from the unchanged completed native receipt and fills only the "
+            "matching predeclared slots. Adoption, readiness evidence and canonical step "
+            "acceptance commit together. Recovery uses the same run/tickets and retained "
+            "native sessions; no setup-only queue, successor dispatcher or receipt store exists. "
             "Reuse unchanged covered claims; changed relevant source/settings/capability or "
             "environment requires only the missing bounded checks. Normal approvals apply; a "
             "denial stops that write and dependent proof, while authorized alternatives and "
             "unaffected work continue. Missing required proof stays unfinished. Explicit stopped "
             "review replacement belongs to the authorized recovery owner, preserving candidate, "
             "delivery and failed reviewer history; never auto-replace or broaden global trust. "
-            "Do not automatically create a separate full verification task/workflow, tracker "
-            "parent or review workflow merely to establish readiness, or add nested "
+            "Do not create a competing setup run, separate full verification workflow or "
+            "business run merely to establish readiness, or add nested "
             "queue/wait/drain machinery solely for proof. Preserve independent review where "
             "applicable; routine standalone setup follows its effective method and genuine current "
             "evidence. Aborted, incomplete, simulated or another project's evidence cannot become "
@@ -214,7 +226,8 @@ def project_setup_method() -> ProjectSetupMethod:
                 "fetch evidence as needed."
             ),
             "attempt": (
-                "Existing attempt/request/session/revision and ownership refs, when admitted; "
+                "Existing attempt/request/session/revision and actual run/task/ticket refs, "
+                "when admitted; "
                 "never expose claim tokens in prose."
             ),
             "workflow_selection": (
@@ -253,12 +266,17 @@ def project_setup_method() -> ProjectSetupMethod:
             ),
         },
         report_guidance=[
-            "Admit/attach through projectSetup.start only after inspection and workflow selection. "
-            "Only the owning session reports; attached callers do not receive writer authority.",
-            "Use projectSetup.report with the admitted session/request/claim, expected attempt "
-            "revision, progress evidence and workflow_results at their observed receipt revisions. "
-            "Keep existing-agent questions/answers in that same session; managed questions use "
-            "the supported attempt continuation.",
+            "Existing-agent entry admits/attaches through projectSetup.start after inspection. "
+            "Only its owning session uses projectSetup.report with the admitted request/claim, "
+            "expected revision and observed workflow receipt revisions. Attached callers gain "
+            "no writer authority; questions/answers remain in that session.",
+            "Managed step mirrors are already admitted to core.project-setup. Return the normal "
+            "native envelope with setup_report in JSON-encoded outputs; do not call the legacy "
+            "report writer, create another run or change task/step lifecycle. A concrete "
+            "needs_input report returns native blocked. Console answer/continue/abort use the "
+            "existing run/task owners, preserving accepted preparation and exact sessions. "
+            "Ordinary proof children return their assigned check outputs through normal "
+            "delivery/review.",
             "For each success supply SetupResult.verification: actual source snapshots/digests, "
             "role_mapping, source obligations and targets/reasons, local_adaptations, "
             "syntax/registration/references/behavior checks, activation evidence and the separate "
@@ -463,8 +481,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                     "The effective workflow and preset topology are resolved, required roles "
                     "are materialized or have an explicit session-only fallback, structural "
                     "validation passes, strict validation reports either success or exact "
-                    "deferred prerequisite keys, and no run plan, tracker work, or workflow "
-                    "output was created."
+                    "deferred prerequisite keys. Managed entry records this work in its admitted "
+                    "core.project-setup run; no configured business run or output was created."
                 ),
                 next_mode="prepare_prerequisites or execute",
             ),
@@ -737,7 +755,9 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                     "then with enforce_required_inputs=true and only known defaults/inputs to "
                     "expose "
                     "the exact deferred prerequisite gate. Both calls are read-only.",
-                    "Return the complete setup_completion_contract and stop before runPlan.create.",
+                    "Return the complete setup_completion_contract without starting the configured "
+                    "business workflow. Managed work returns through its admitted "
+                    "core.project-setup run.",
                 ],
                 allowed_writes=[
                     "The workspace binding created or reused by workspace.startSession after setup "
@@ -748,6 +768,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                     "defaults, "
                     "selected context, guardrails, or workflow-field overrides.",
                     "Useful non-secret workspace profile hints after inspecting the project.",
+                    "The console-admitted core.project-setup control run and its normal tracked "
+                    "work; its existing owner controls lifecycle and acceptance.",
                 ],
                 completion_conditions=[
                     "The project binding and deterministic future binding path are explicit.",
@@ -764,13 +786,15 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
                     "Historical setup records, saved host or browser references, and host-local "
                     "artifacts were used only for navigation; current binding, effective "
                     "configuration, readiness, and authority evidence were re-resolved.",
-                    "No run plan, workflow task/ticket, business output, artifact, resource, "
+                    "No configured business run or ad hoc proof run, business output, artifact, "
+                    "resource, "
                     "decision, "
                     "learning, experiment, communication, or provider side effect was created.",
                 ],
                 prohibited_actions=[
-                    "Do not call runPlan.create, runPlan.start, tracker.createTask, or "
-                    "tracker.createTicket as infrastructure proof.",
+                    "Do not create/start the configured business workflow or competing proof "
+                    "tasks. Managed setup uses only its admitted core.project-setup run and "
+                    "selected bounded checks through the existing owner.",
                     "Do not collect durable domain prerequisites or produce recurring/business "
                     "output.",
                     "Do not create an empty workflow extension or store a literal placeholder such "
@@ -968,8 +992,9 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "infrastructure_only, selected workflow method, intended execution mode and authorized "
             "existing owner. Record covered/missing claims, evidence reused with current "
             "project/source/default/native/environment basis, newly executed bounded checks and "
-            "unresolved required activation obligations. No separate full verification task or "
-            "workflow is required merely for setup proof. An infrastructure "
+            "unresolved required activation obligations. Managed work names its admitted "
+            "core.project-setup run/task; no separate full verification workflow is needed. "
+            "An infrastructure "
             "receipt alone cannot complete a requested operational outcome.",
             "Workspace/project binding and deterministic future binding path.",
             "Workflow key, source, version, and effective extension state; say absent/not_required "
@@ -992,8 +1017,9 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "Allowed setup writes actually performed and any partial-setup/recovery requirement.",
             "Next safe action: prerequisite setup, operator/provider repair, or a future concrete "
             "run.",
-            "Explicit confirmation that infrastructure setup created no run plan, workflow tracker "
-            "task/ticket, business output, or external side effect.",
+            "Explicit confirmation that setup created no configured business run, business output "
+            "or external side effect. Identify managed control work separately; existing-agent "
+            "reporting does not launch managed work.",
         ],
         project_setup_method=project_setup_method(),
         reasoning_gates=[
@@ -1140,7 +1166,8 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "and main-agent preset topology, materialize host execution contracts, check "
             "structural "
             "readiness, run structural and strict read-only validation, report proof, and stop.",
-            "Phase 1 must not call runPlan.create or create tracker work. Strict validation may "
+            "Phase 1 must not create/start the configured business workflow or extra proof work; "
+            "managed entry uses its admitted core.project-setup control run. Strict validation may "
             "intentionally report deferred prerequisite keys; that is a setup gate, not permission "
             "to fabricate inputs or create a draft run.",
             "Phase 2 prerequisites: classify missing values, collect only durable prerequisites, "

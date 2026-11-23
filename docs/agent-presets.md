@@ -399,7 +399,8 @@ without retasking a busy reviewer.
 
 This ticket-assignment default and host child/reviewer slots are separate from
 automatic project task limits (default 3, range 1..32). Each project has its own
-persisted limit, shared with managed setup through the existing capacity owner;
+persisted limit, including managed setup's normal tracked tasks and genuine legacy
+reservations;
 there is no aggregate global project-task cap. Lowering a limit affects future
 admissions only. Every admitted/running task continues unchanged, counts may
 exceed the new limit, and other projects are unaffected. Capacity edits never
@@ -593,7 +594,7 @@ work, checking its saved placement before queue metadata changes the projection.
 Valid workflow first handoffs retain their lifecycle and invocation history;
 Stopped work needs explicit authorized recovery and rehandoff, with native
 sessions, receipts, attempts and consumed repair allowance preserved. Managed
-setup is a separate existing consumer and needs no tracker Todo placement.
+setup uses the same tracked admission and delivery owners through `core.project-setup`.
 Source-ready guidance, saved adoption/readback, actual fresh native consumption
 and installed activation are distinct evidence; never rewrite an admitted
 snapshot to claim a newer source was consumed.
