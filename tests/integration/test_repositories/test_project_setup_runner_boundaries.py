@@ -3,14 +3,16 @@
 # ruff: noqa: F811
 import json
 from copy import deepcopy
+from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import event
 
 from stackos import task_delivery
 from stackos.db.models import AgentRequest, RunPlan, TrackerTask
 from stackos.host_mcp.result import AgentRunResult
 from stackos.repositories.base import ConflictError
-from stackos.repositories.project_setup import ProjectSetupRepository
+from stackos.repositories.project_setup import ProjectSetupRepository, SetupAttempt
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.run_plans import RunPlanRepository
 from tests.helpers.native_task_routes import native_route_defaults  # noqa: F401
@@ -57,6 +59,69 @@ def test_only_validated_admissions_are_outside_legacy_native_capacity(managed, s
         ProjectSetupRepository(session).managed_admissions()
     with pytest.raises(ConflictError):
         task_delivery.delivery_capacity(session, scheduler, project_id=project)
+
+    damaged = deepcopy(row.metadata_json)
+    damaged["project_setup"]["workflow_admission"]["run_plan_id"] = None
+    row.metadata_json = damaged
+    session.add(row)
+    session.commit()
+    with pytest.raises(ConflictError):
+        ProjectSetupRepository(session).managed_admissions()
+
+
+def test_tracked_ownership_does_not_load_retained_history(managed, session, monkeypatch):
+    execution, project, scheduler, factory = managed
+    started = launch(managed, host_key="codex")
+    execution.cancel_setup(
+        project,
+        started.attempt.request_id,
+        expected_revision=started.attempt.revision,
+        external_work_stopped=False,
+        session_factory=factory,
+        scheduler=scheduler,
+    )
+    row = session.get(AgentRequest, started.attempt.request_id)
+    metadata = deepcopy(row.metadata_json)
+    metadata["project_setup"]["answers"] = [
+        {
+            "question_id": f"retained-{index}",
+            "question_revision": 1,
+            "question_request_id": row.id,
+            "answer": "UNNEEDED-RETAINED-ANSWER-" + "x" * 7900,
+            "answered_at": datetime.now(UTC).isoformat(),
+        }
+        for index in range(20)
+    ]
+    SetupAttempt.model_validate(metadata["project_setup"])
+    row.metadata_json = metadata
+    session.add(row)
+    session.commit()
+    session.expunge_all()
+
+    def no_attempt(*args, **kwargs):
+        pytest.fail("ownership must not parse a full retained setup attempt")
+
+    def no_hydration(_session, instance):
+        pytest.fail(f"ownership must not hydrate {type(instance).__name__}")
+
+    execute = session.execute
+    selected_bytes = []
+
+    def bounded_execute(*args, **kwargs):
+        result = execute(*args, **kwargs).freeze()
+        selected_bytes.append(len(json.dumps([list(row) for row in result().all()], default=str)))
+        assert selected_bytes[-1] < 4096
+        return result()
+
+    monkeypatch.setattr(SetupAttempt, "model_validate", no_attempt)
+    monkeypatch.setattr(SetupAttempt, "model_validate_json", no_attempt)
+    monkeypatch.setattr(session, "execute", bounded_execute)
+    event.listen(session, "loaded_as_persistent", no_hydration)
+    try:
+        assert ProjectSetupRepository(session).managed_admissions() == []
+    finally:
+        event.remove(session, "loaded_as_persistent", no_hydration)
+    assert len(selected_bytes) == 1
 
 
 def test_domain_rejection_cannot_persist_secret_native_outputs(managed, session, monkeypatch):

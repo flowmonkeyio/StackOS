@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -210,24 +211,61 @@ def validate_admission(
     if current is None:
         current = SetupAttempt.model_validate((row.metadata_json or {}).get(SETUP_NAMESPACE))
     admission = current.workflow_admission
+    validate_admission_identity(
+        {
+            "project_id": row.project_id,
+            "request_id": row.id,
+            "source_kind": row.source_kind,
+            "request_status": row.status,
+            "run_plan_id": row.run_plan_id,
+            "entry_kind": current.entry_kind,
+            "owner_project_id": current.project_id,
+            "owner_request_id": current.request_id,
+            "admission_run_plan_id": admission.run_plan_id if admission else None,
+            "admission_task_id": admission.task_id if admission else None,
+            "plan_project_id": plan.project_id if plan else None,
+            "task_project_id": task.project_id if task else None,
+            "task_key": task.key if task else None,
+            "task_run_plan_id": (task.source_json or {}).get("run_plan_id") if task else None,
+        },
+        project_id=project_id,
+        request_id=request_id,
+        run_plan_id=run_plan_id,
+        task_id=task_id,
+    )
+    return row, current
+
+
+def validate_admission_identity(
+    identity: Mapping[str, Any],
+    *,
+    project_id: int,
+    request_id: int,
+    run_plan_id: int,
+    task_id: int,
+) -> None:
+    """Check immutable ownership from fresh scalars, without loading retained work."""
     if (
-        admission is None
-        or current.entry_kind != "managed_ui"
-        or current.project_id != project_id
-        or current.request_id != request_id
-        or row.run_plan_id != run_plan_id
-        or admission.run_plan_id != run_plan_id
-        or admission.task_id != task_id
-        or plan is None
-        or plan.project_id != project_id
-        or task is None
-        or task.project_id != project_id
-        or task.key != f"workflow-{run_plan_id}"
-        or (task.source_json or {}).get("run_plan_id") != run_plan_id
-        or row.status != AgentRequestStatus.RUN_CREATED
+        identity["project_id"] != project_id
+        or identity["request_id"] != request_id
+        or identity["source_kind"] != SETUP_NAMESPACE
+        or type(run_plan_id) is not int
+        or run_plan_id <= 0
+        or type(task_id) is not int
+        or task_id <= 0
+        or identity["entry_kind"] != "managed_ui"
+        or identity["owner_project_id"] != project_id
+        or identity["owner_request_id"] != request_id
+        or identity["run_plan_id"] != run_plan_id
+        or identity["admission_run_plan_id"] != run_plan_id
+        or identity["admission_task_id"] != task_id
+        or identity["plan_project_id"] != project_id
+        or identity["task_project_id"] != project_id
+        or identity["task_key"] != f"workflow-{run_plan_id}"
+        or identity["task_run_plan_id"] != run_plan_id
+        or identity["request_status"] != AgentRequestStatus.RUN_CREATED
     ):
         raise ConflictError("setup admission has a stale or foreign workflow binding")
-    return row, current
 
 
 def load_admission(

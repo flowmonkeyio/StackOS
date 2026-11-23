@@ -15,7 +15,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic import ValidationError as ModelValidationError
-from sqlalchemy import case, func, or_
+from sqlalchemy import func, or_
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
@@ -662,6 +662,9 @@ class ProjectSetupRepository:
         managed = func.json_type(metadata, "$.project_setup.managed")
         entry_kind = func.json_extract(metadata, "$.project_setup.entry_kind")
         admission = func.json_extract(metadata, "$.project_setup.managed.admission_id")
+        tracked_admission = func.json_type(metadata, "$.project_setup.workflow_admission")
+        tracked_plan = func.json_extract(metadata, "$.project_setup.workflow_admission.run_plan_id")
+        tracked_task = func.json_extract(metadata, "$.project_setup.workflow_admission.task_id")
         query = (
             sa_select(
                 col(AgentRequest.project_id),
@@ -678,17 +681,19 @@ class ProjectSetupRepository:
                 col(AgentRequest.source_kind).label("source_kind"),
                 col(AgentRequest.status).label("request_status"),
                 col(AgentRequest.run_plan_id).label("run_plan_id"),
-                col(AgentRequest.request_key).label("request_key"),
-                col(AgentRequest.title).label("request_title"),
-                col(AgentRequest.attention_status).label("attention_status"),
-                case(
-                    (
-                        func.json_type(metadata, "$.project_setup.workflow_admission") == "object",
-                        func.json_extract(metadata, "$.project_setup"),
-                    ),
-                    else_=None,
-                ).label("tracked_setup"),
+                tracked_admission.label("tracked_admission"),
+                tracked_plan.label("admission_run_plan_id"),
+                tracked_task.label("admission_task_id"),
+                col(RunPlan.project_id).label("plan_project_id"),
+                col(TrackerTask.project_id).label("task_project_id"),
+                col(TrackerTask.key).label("task_key"),
+                func.json_extract(TrackerTask.source_json, "$.run_plan_id").label(
+                    "task_run_plan_id"
+                ),
             )
+            .select_from(AgentRequest)
+            .outerjoin(RunPlan, col(RunPlan.id) == col(AgentRequest.run_plan_id))
+            .outerjoin(TrackerTask, col(TrackerTask.id) == tracked_task)
             .where(
                 or_(
                     col(AgentRequest.source_kind) == SETUP_NAMESPACE,
@@ -725,85 +730,22 @@ class ProjectSetupRepository:
                 func.json_extract(metadata, "$.project_setup.managed.job_ref") == job_ref
             )
         # Tracked setup has an admission record, not a second native owner.
-        # Validate actual immutable links in batches, including historical rows.
-        from stackos.project_setup_workflow import validate_admission
+        # Validate fresh immutable linkage, including historical rows, without
+        # hydrating reports, answers, native snapshots or task/run payloads.
+        from stackos.project_setup_workflow import validate_admission_identity
 
         rows = [row._asdict() for row in self._s.execute(query).all()]
-        tracked = [item for item in rows if item["tracked_setup"] is not None]
-        if tracked:
-            attempts: dict[int, SetupAttempt] = {}
-            for request in tracked:
-                try:
-                    attempts[request["request_id"]] = SetupAttempt.model_validate_json(
-                        request["tracked_setup"]
-                    )
-                except ModelValidationError as error:
-                    raise ConflictError(
-                        "managed setup ownership is uncertain; "
-                        "inspect before admitting another writer",
-                        data={
-                            "project_id": request["project_id"],
-                            "request_id": request["request_id"],
-                            "next_action": "inspect_request",
-                        },
-                    ) from error
-            links = [
-                item.workflow_admission
-                for item in attempts.values()
-                if item.workflow_admission is not None
-            ]
-            plans = {
-                row.id: row
-                for row in self._s.exec(
-                    select(RunPlan)
-                    .where(col(RunPlan.id).in_({link.run_plan_id for link in links}))
-                    .execution_options(populate_existing=True)
-                ).all()
-            }
-            tasks = {
-                row.id: row
-                for row in self._s.exec(
-                    select(TrackerTask)
-                    .where(col(TrackerTask.id).in_({link.task_id for link in links}))
-                    .execution_options(populate_existing=True)
-                ).all()
-            }
-            for request in tracked:
-                current = attempts[request["request_id"]]
-                link = current.workflow_admission
-                assert link is not None
-                validate_admission(
-                    row=AgentRequest(
-                        id=request["request_id"],
-                        project_id=request["project_id"],
-                        source_kind=request["source_kind"],
-                        status=request["request_status"],
-                        run_plan_id=request["run_plan_id"],
-                        request_key=request["request_key"],
-                        title=request["request_title"],
-                        attention_status=request["attention_status"],
-                    ),
-                    current=current,
-                    plan=plans.get(link.run_plan_id),
-                    task=tasks.get(link.task_id),
-                    project_id=request["project_id"],
-                    request_id=request["request_id"],
-                    run_plan_id=link.run_plan_id,
-                    task_id=link.task_id,
-                )
         states = []
         for values in rows:
-            if values.pop("tracked_setup") is not None:
+            if values["tracked_admission"] == "object":
+                validate_admission_identity(
+                    values,
+                    project_id=values["project_id"],
+                    request_id=values["request_id"],
+                    run_plan_id=values["admission_run_plan_id"],
+                    task_id=values["admission_task_id"],
+                )
                 continue
-            for key in (
-                "source_kind",
-                "request_status",
-                "run_plan_id",
-                "request_key",
-                "request_title",
-                "attention_status",
-            ):
-                values.pop(key)
             owner_project = values.pop("owner_project_id")
             owner_request = values.pop("owner_request_id")
             try:
