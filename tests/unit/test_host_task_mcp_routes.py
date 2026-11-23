@@ -10,23 +10,72 @@ from pathlib import Path
 
 import pytest
 import tomlkit
-import yaml
 
 from stackos.host_mcp import bridge, service
-from stackos.host_mcp.adapters import claude_code
+from stackos.host_mcp.adapters import antigravity_execution, claude_code, grok
 from stackos.host_mcp.result import AgentRunResult
 
 SCHEMA = {"type": "object", "properties": {"summary": {"type": "string"}}}
 
 
-def route_fixture(tmp_path, monkeypatch, host, *, profile=None):
+@pytest.mark.parametrize("host", ["claude-code", "antigravity", "grok"])
+def test_default_registration_route_gets_an_invocation_local_root(tmp_path, monkeypatch, host):
+    from dataclasses import replace
+
+    tree, path, content, encode, _ref = route_fixture(tmp_path, monkeypatch, host)
+    monkeypatch.delenv("STACKOS_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("STACKOS_MCP_BRIDGE_COMMAND", raising=False)
+    command = bridge.resolve_bridge_command(runtime=host)
+    key = "mcpServers" if host in {"claude-code", "antigravity"} else "mcp_servers"
+    content[key]["stackos"] = {"command": command[0], "args": command[1:]}
+    path.write_text(encode(content))
+    before = path.read_bytes()
+    route = service.task_mcp_route(host, tree, None)
+    definition = service._definition_by_key(host)
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, native_models=None)
+    )
+    monkeypatch.setenv("STACKOS_WORKSPACE_ROOT", str(tmp_path / "foreign-ambient"))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "foreign-claude"))
+    monkeypatch.setenv("RETAIN_NATIVE_ENV", "yes")
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fixture/claude")
+    monkeypatch.setattr(claude_code, "_native_version", lambda *a: "2.1.330")
+    monkeypatch.setattr(antigravity_execution, "resolve_antigravity_bin", lambda: "/fixture/agy")
+    monkeypatch.setattr(antigravity_execution, "default_home", lambda: tmp_path / "home")
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fixture/grok")
+    adapter = {"claude-code": claude_code, "antigravity": antigravity_execution, "grok": grok}[host]
+    calls = []
+
+    def execute(command, directory, _prompt, _schema, _host, _decode, env, /, **kwargs):
+        calls.append(command)
+        assert directory == tree
+        assert env["STACKOS_WORKSPACE_ROOT"] == str(tree.resolve())
+        assert env["RETAIN_NATIVE_ENV"] == "yes"
+        return AgentRunResult(0, thread_id="exact-session", result={"summary": "read"})
+
+    monkeypatch.setattr(adapter, "execute_json_agent", execute)
+    for resume in (None, "exact-session"):
+        result = service.run_agent(
+            host,
+            tree,
+            "assigned role",
+            "read",
+            SCHEMA,
+            mcp_route_identity=route,
+            resume_thread_id=resume,
+        )
+        assert result.ok, result.error
+    assert len(calls) == 2
+    assert path.read_bytes() == before
+
+
+def route_fixture(tmp_path, monkeypatch, host):
     home, tree = tmp_path / "home", tmp_path / "tree"
     home.mkdir(exist_ok=True)
     tree.mkdir(exist_ok=True)
     monkeypatch.setattr(service, "default_home", lambda: home)
     monkeypatch.setattr(bridge, "default_home", lambda: home)
     monkeypatch.delenv("GROK_HOME", raising=False)
-    monkeypatch.delenv("HERMES_HOME", raising=False)
     command = bridge.resolve_bridge_command(runtime=host, workspace_root=tree)
     servers = {"stackos": {"command": command[0], "args": command[1:], "cwd": str(tree)}}
     if host == "claude-code":
@@ -42,9 +91,7 @@ def route_fixture(tmp_path, monkeypatch, host, *, profile=None):
         content = {"mcp_servers": servers, "ui": {"theme": "retained"}}
         encode = tomlkit.dumps
     else:
-        path = home / ".hermes" / (f"profiles/{profile}/" if profile else "") / "config.yaml"
-        content = {"mcp_servers": servers, "model": "retained"}
-        encode = yaml.safe_dump
+        raise ValueError(host)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(encode(content))
     fragment = tmp_path / "route.toml"
@@ -53,15 +100,14 @@ def route_fixture(tmp_path, monkeypatch, host, *, profile=None):
     return tree, path, content, encode, ref
 
 
-@pytest.mark.parametrize("host", ["claude-code", "antigravity", "grok", "hermes"])
+@pytest.mark.parametrize("host", ["claude-code", "antigravity", "grok"])
 @pytest.mark.parametrize("resume", [None, "exact-native-session"])
 def test_native_routes_fresh_and_resume_are_verified_and_frozen(
     tmp_path, monkeypatch, host, resume
 ):
-    profile = "chosen" if host == "hermes" else None
-    tree, path, content, encode, ref = route_fixture(tmp_path, monkeypatch, host, profile=profile)
+    tree, path, content, encode, ref = route_fixture(tmp_path, monkeypatch, host)
     before = path.read_bytes()
-    identity = service.task_mcp_route(host, tree, ref, profile=profile)
+    identity = service.task_mcp_route(host, tree, ref)
     definition = service._definition_by_key(host)
     calls = []
 
@@ -79,7 +125,6 @@ def test_native_routes_fresh_and_resume_are_verified_and_frozen(
         "_definition_by_key",
         lambda _: replace(definition, run_agent=execute, native_models=None),
     )
-    selection = {"model": "fixture-model", "provider": "openrouter", "profile": "chosen"}
     result = service.run_agent(
         host,
         tree,
@@ -89,7 +134,6 @@ def test_native_routes_fresh_and_resume_are_verified_and_frozen(
         mcp_config_ref=ref,
         mcp_route_identity=identity,
         resume_thread_id=resume,
-        **(selection if host == "hermes" else {}),
     )
     assert result.ok, result.error
     assert len(calls) == 1
@@ -107,14 +151,13 @@ def test_native_routes_fresh_and_resume_are_verified_and_frozen(
         mcp_config_ref=ref,
         mcp_route_identity=identity,
         resume_thread_id=resume,
-        **(selection if host == "hermes" else {}),
     )
     assert not changed.ok
     assert "Frozen task MCP route changed" in changed.error
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("host", ["claude-code", "antigravity", "grok", "hermes"])
+@pytest.mark.parametrize("host", ["claude-code", "antigravity", "grok"])
 @pytest.mark.parametrize("defect", ["missing", "root", "daemon", "disabled", "serena"])
 def test_native_route_target_controls(tmp_path, monkeypatch, host, defect):
     tree, path, content, encode, ref = route_fixture(tmp_path, monkeypatch, host)
@@ -145,8 +188,8 @@ def test_native_route_target_controls(tmp_path, monkeypatch, host, defect):
         service.task_mcp_route(host, tree, ref)
 
 
-@pytest.mark.parametrize("host", ["antigravity", "grok", "hermes"])
-def test_workspace_profile_routes_do_not_apply_external_overrides(tmp_path, monkeypatch, host):
+@pytest.mark.parametrize("host", ["antigravity", "grok"])
+def test_workspace_routes_do_not_apply_external_overrides(tmp_path, monkeypatch, host):
     tree, path, _, _, ref = route_fixture(tmp_path, monkeypatch, host)
     before = path.read_bytes()
     fragment = Path(ref["path"])
@@ -199,16 +242,10 @@ def test_claude_per_call_route_preserves_commands_and_role(tmp_path, monkeypatch
     assert len(calls) == 1
 
 
-def test_hermes_task_route_does_not_borrow_another_profile(tmp_path, monkeypatch):
-    tree, _, _, _, ref = route_fixture(tmp_path, monkeypatch, "hermes", profile="chosen")
-    service.task_mcp_route("hermes", tree, ref, profile="chosen")
-    with pytest.raises(ValueError, match="selected-profile"):
-        service.task_mcp_route("hermes", tree, ref, profile="other")
-
-
-def test_desktop_has_no_headless_route(tmp_path):
+@pytest.mark.parametrize("host", ["claude-desktop", "hermes"])
+def test_unsupported_host_has_no_task_route(tmp_path, host):
     with pytest.raises(ValueError, match="unsupported"):
-        service.task_mcp_route("claude-desktop", tmp_path, {})
+        service.task_mcp_route(host, tmp_path, {})
 
 
 @pytest.mark.parametrize("resume", [None, "exact-native-session"])

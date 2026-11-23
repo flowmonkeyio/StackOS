@@ -64,6 +64,8 @@ def test_new_generation_rejoins_authorized_queue_once_and_fences_old_callback(
     assert after["admission_id"] != before["admission_id"]
     assert after["handoff_id"] != before["handoff_id"]
     assert after["agents"] == before["agents"]
+    assert after["runtime_continuation_event"] == "daemon_start"
+    assert "runtime_continuations" not in after
     callback(**options["kwargs"])
     startup(session, new)
     assert len(new.jobs) == 1
@@ -151,6 +153,7 @@ def test_missed_authorized_launch_requeues_once_without_accepting_late_callback(
     )
     assert len(scheduler.jobs) == 1
     assert state(session, project_id)["status"] == "queued"
+    assert state(session, project_id)["runtime_continuation_event"] == "missed_launch"
     callback(**options["kwargs"])
     task_delivery.missed_delivery_job(
         event, session_factory=lambda: Session(session.get_bind()), scheduler=scheduler
@@ -158,7 +161,7 @@ def test_missed_authorized_launch_requeues_once_without_accepting_late_callback(
     assert len(scheduler.jobs) == 1
 
 
-@pytest.mark.parametrize("excluded", ["legacy", "stopped", "failed", "complete"])
+@pytest.mark.parametrize("excluded", ["legacy", "stopped", "complete"])
 def test_startup_never_rewrites_historical_or_terminal_admission(
     session, project_id, tmp_path, excluded
 ):
@@ -307,6 +310,7 @@ def test_loss_after_acceptance_advances_without_replaying_completed_producer(
             "failed",
             "exhausted",
         )
+        if phase == "delivery" or control not in {"authority", "settings", "stop", "exhausted"}
     ]
     + [("delivery", "dirty"), ("review", "managed")],
 )

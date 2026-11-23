@@ -92,7 +92,6 @@ def test_setup_reasoning_reaches_native_command(
         ("codex", None, "high"),
         ("claude-code", "claude-opus-5-5", "ultra"),
         ("antigravity", "gemini-3.8-flash-low", "high"),
-        ("hermes", "custom", "high"),
         ("grok", "custom-alias", "high"),
     ],
 )
@@ -107,7 +106,6 @@ def test_unsupported_reasoning_rejects_before_native_execution(
         "prompt",
         SCHEMA,
         model=model,
-        provider="configured" if host == "hermes" else None,
         model_reasoning_effort=effort,
     )
     assert not result.ok and result.exit_code is None
@@ -154,36 +152,6 @@ def test_shared_selection_validation_matches_native_rejection(
     assert error is not None and reason in error
     result = run_agent(host, tmp_path, "source", "prompt", SCHEMA, **selection)
     assert result.error == error and result.exit_code is None
-
-
-@pytest.mark.parametrize("host", ["codex", "claude-code", "grok", "antigravity", "hermes"])
-def test_preparation_context_capability_keeps_new_and_retained_assignments_distinct(
-    host, monkeypatch
-):
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *a, **k: pytest.fail("context decision must not probe native history"),
-    )
-    definition = service._definition_by_key(host)
-    assert definition.policy.agent_execution.preparation_context_reuse == "unsupported"
-    select = service.preparation_context_decision
-    assert select(host, has_parent=True, resume_thread_id=None, independent_review=False) == {
-        "mode": "fresh",
-        "reason": "unsupported",
-    }
-    assert select(host, has_parent=False, resume_thread_id=None, independent_review=False) == {
-        "mode": "fresh",
-        "reason": "absent",
-    }
-    assert select(host, has_parent=True, resume_thread_id=None, independent_review=True) == {
-        "mode": "fresh",
-        "reason": "independent_review",
-    }
-    assert select(host, has_parent=True, resume_thread_id="exact", independent_review=True) == {
-        "mode": "resume",
-        "reason": "retained_session",
-    }
 
 
 def test_native_source_validation_preserves_inherited_model_and_settings():
@@ -499,17 +467,6 @@ NATIVE_CASES = [
         },
     ),
     (
-        "hermes",
-        "provider/model-id",
-        "openrouter",
-        {
-            "session_id": "native-thread",
-            "completed": True,
-            "failed": False,
-            "text": '{"summary":"delivered"}',
-        },
-    ),
-    (
         "grok",
         "grok-build",
         None,
@@ -587,10 +544,7 @@ def test_native_exact_resume(project, monkeypatch, host, model, provider, envelo
         assert command[command.index("--model") + 1] == model
         assert kwargs["cwd"] == project
         assert not any(flag in command for flag in ("--latest", "--last", "--fork"))
-        if host == "hermes":
-            assert command[command.index("--provider") + 1] == provider
-            assert command[command.index("--profile") + 1] == "work"
-        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope, command), "")
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -601,7 +555,6 @@ def test_native_exact_resume(project, monkeypatch, host, model, provider, envelo
         SCHEMA,
         model=model,
         provider=provider,
-        profile="work" if host == "hermes" else None,
         resume_thread_id="native-thread",
     )
     assert result.ok is (returned_id == "native-thread")
@@ -618,7 +571,6 @@ def test_native_exact_resume(project, monkeypatch, host, model, provider, envelo
         ("claude-code", "workspace-write"),
         ("grok", "workspace-write"),
         ("antigravity", "normal"),
-        ("hermes", "normal"),
     ],
 )
 def test_review_mode_permits_executable_specs(host, mode):
@@ -740,19 +692,11 @@ def test_native_command_and_structured_result(
                 json.loads(command[command.index("--settings") + 1])["agentMode"] == "accept-edits"
             )
             assert json.loads(command[command.index("--json-schema") + 1]) == SCHEMA
-        elif host == "hermes":
-            assert command[command.index("--provider") + 1] == provider
-            assert command[command.index("--profile") + 1] == "work"
-            assert "Project instructions" in command[command.index("--query") + 1]
-            assert "--usage-file" in command
-            assert {"chat", "--oneshot", "--quiet"}.issubset(command)
-            assert command[command.index("--format") + 1] == "stream-json"
-            assert not {"-z", "--query-file"}.intersection(command)
         elif host == "grok":
             assert "--no-auto-update" in command
             assert command[command.index("--sandbox") + 1] == "workspace"
             assert command[command.index("--permission-mode") + 1] == "auto"
-        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope, command), "")
+        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
@@ -763,7 +707,6 @@ def test_native_command_and_structured_result(
         SCHEMA,
         model=model,
         provider=provider,
-        profile="work" if host == "hermes" else None,
     )
     assert result.ok, result.error
     assert result.result == {"summary": "delivered"}
@@ -772,7 +715,7 @@ def test_native_command_and_structured_result(
     assert not (project / ".codex").exists()
 
 
-@pytest.mark.parametrize("host", ["antigravity", "hermes", "claude-desktop"])
+@pytest.mark.parametrize("host", ["antigravity", "claude-desktop"])
 def test_unsupported_native_read_only_does_not_launch(project, monkeypatch, host):
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("must not launch"))
     result = run_agent(host, project, "Review", "packet", SCHEMA, sandbox="read-only")
@@ -780,9 +723,8 @@ def test_unsupported_native_read_only_does_not_launch(project, monkeypatch, host
     assert "support" in result.error.lower()
 
 
-@pytest.mark.parametrize("host", ["antigravity", "hermes"])
 @pytest.mark.parametrize("valid", [True, False])
-def test_normal_review_uses_native_permissions_and_review_schema(project, monkeypatch, host, valid):
+def test_normal_review_uses_native_permissions_and_review_schema(project, monkeypatch, valid):
     from stackos import task_delivery
 
     fake_native_discovery(monkeypatch)
@@ -800,35 +742,25 @@ def test_normal_review_uses_native_permissions_and_review_schema(project, monkey
             flag not in command
             for flag in ("--sandbox", "--approval-mode", "--yolo", "--always-approve")
         )
-        if host == "antigravity":
-            assert command[command.index("--output-format") + 1] == "stream-json"
-            envelope = {
-                "conversation_id": "review-session",
-                "status": "SUCCESS",
-                "structured_output": value,
-            }
-        else:
-            assert "chat" in command and "--usage-file" in command
-            assert command[command.index("--format") + 1] == "stream-json"
-            envelope = {
-                "completed": True,
-                "session_id": "review-session",
-                "text": json.dumps(value),
-            }
-        return subprocess.CompletedProcess(command, 0, messages_output(host, envelope, command), "")
+        assert command[command.index("--output-format") + 1] == "stream-json"
+        envelope = {
+            "conversation_id": "review-session",
+            "status": "SUCCESS",
+            "structured_output": value,
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
-    mode = service.agent_review_sandbox(host)
+    mode = service.agent_review_sandbox("antigravity")
     assert mode == "normal"
     result = run_agent(
-        host,
+        "antigravity",
         project,
         "Independent review. Do not change files or commits.",
         "Review the exact committed candidate",
         task_delivery.RESULT_SCHEMA,
         sandbox=mode,
-        model="provider/model-id" if host == "hermes" else "gemini-3.8-flash-high",
-        provider="openrouter" if host == "hermes" else None,
+        model="gemini-3.8-flash-high",
     )
     assert result.ok is valid
     assert len(calls) == 1
@@ -850,7 +782,7 @@ def test_native_review_controls(project, monkeypatch, host):
             envelope = NATIVE_CASES[0][3]
         else:
             assert command[command.index("--sandbox") + 1] == "read-only"
-            envelope = NATIVE_CASES[3][3]
+            envelope = next(case[3] for case in NATIVE_CASES if case[0] == "grok")
         return subprocess.CompletedProcess(command, 0, messages_output(host, envelope), "")
 
     monkeypatch.setattr(subprocess, "run", execute)
@@ -862,7 +794,6 @@ def test_native_review_controls(project, monkeypatch, host):
     [
         ("claude-code", {"is_error": True, "result": "Account has no model access"}),
         ("antigravity", {"error": {"message": "Account has no model access"}}),
-        ("hermes", {"failed": True, "failure": "Account has no model access"}),
         ("grok", {"error": "Account has no model access"}),
     ],
 )
@@ -877,7 +808,7 @@ def test_native_stdout_failure_stops_without_retry(project, monkeypatch, host, p
         if host in {"claude-code", "grok"}:
             native_payload = {**payload, "session_id": "failed", "sessionId": "failed"}
         return subprocess.CompletedProcess(
-            command, exit_code, messages_output(host, native_payload, command), ""
+            command, exit_code, messages_output(host, native_payload), ""
         )
 
     monkeypatch.setattr(subprocess, "run", execute)
@@ -887,8 +818,6 @@ def test_native_stdout_failure_stops_without_retry(project, monkeypatch, host, p
         "Instructions",
         "packet",
         SCHEMA,
-        model="provider/model-id" if host == "hermes" else None,
-        provider="openrouter" if host == "hermes" else None,
     )
     assert not result.ok
     assert "no model access" in result.error
@@ -1542,7 +1471,7 @@ def test_codex_stream_exception_collects_primary_final(
         ("codex", {"model": "invented-model"}, "catalog"),
         ("claude-code", {"provider": "other"}, "provider selector"),
         ("antigravity", {"profile": "work"}, "profile selector"),
-        ("hermes", {}, "explicit provider and model"),
+        ("hermes", {}, "gateway"),
         ("grok", {"model": "--unsafe"}, "not a CLI option"),
     ],
 )
@@ -1563,7 +1492,6 @@ def test_native_results_share_schema_validation(
     field = {
         "claude-code": "structured_output",
         "antigravity": "structured_output",
-        "hermes": "text",
         "grok": "text",
     }[host]
     value[field] = (
@@ -1575,7 +1503,7 @@ def test_native_results_share_schema_validation(
         subprocess,
         "run",
         lambda command, **kw: subprocess.CompletedProcess(
-            command, 0, messages_output(host, value, command), ""
+            command, 0, messages_output(host, value), ""
         ),
     )
     result = run_agent(
@@ -1585,14 +1513,15 @@ def test_native_results_share_schema_validation(
     assert "Invalid" in result.error
 
 
-def test_hermes_discovered_shim_failure_is_actionable(project, monkeypatch):
-    fake_native_discovery(monkeypatch)
+def test_hermes_unscoped_execution_is_unavailable_before_discovery(project, monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unsupported Hermes execution must not discover or submit native work")
+
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", forbidden)
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda command, **kw: subprocess.CompletedProcess(
-            command, 127, "", "hermes: command not found"
-        ),
+        forbidden,
     )
     result = run_agent(
         "hermes",
@@ -1603,8 +1532,8 @@ def test_hermes_discovered_shim_failure_is_actionable(project, monkeypatch):
         provider="openrouter",
         model="provider/model",
     )
-    assert result.exit_code == 127
-    assert "command not found" in result.error
+    assert result.exit_code is None and not result.ok
+    assert "gateway" in result.error
 
 
 def test_native_catalog_id_reaches_actual_caller_and_frozen_resume(project, monkeypatch):
@@ -1693,10 +1622,16 @@ def test_discovery_and_execution_use_same_capability_catalog():
                     is None
                 )
         assert capability["sources"]
-        if definition.run_agent is not None:
+        if key == "hermes":
+            assert not capability["managed_execution"]
+            assert not capability["sandboxes"] and capability["review_sandbox"] is None
+            assert not capability["custom_models"]
+            assert not capability["provider_selection"] and not capability["profile_selection"]
+            assert service.agent_review_sandbox(key) == "read-only"
+        elif definition.run_agent is not None:
             mode = service.agent_review_sandbox(key)
             assert capability["review_sandbox"] == mode
-            assert mode == ("normal" if key in {"antigravity", "hermes"} else "workspace-write")
+            assert mode == ("normal" if key == "antigravity" else "workspace-write")
             if mode == "normal":
                 assert "no enforced read-only isolation" in capability["notes"]
         for model in capability["models"]:
@@ -1704,21 +1639,11 @@ def test_discovery_and_execution_use_same_capability_catalog():
                 service.agent_selection_error(key, sandbox="workspace-write", model=model) is None
             )
         for sandbox in capability["sandboxes"]:
-            selection = (
-                {"provider": "openrouter", "model": "provider/model"} if key == "hermes" else {}
-            )
-            error = service.agent_selection_error(key, sandbox=sandbox, **selection)
-            if key == "hermes":
-                assert not capability["managed_execution"] and "gateway" in error
-                assert (
-                    service.agent_selection_error(key, sandbox=sandbox, managed=False, **selection)
-                    is None
-                )
-            else:
-                assert capability["managed_execution"] and error is None
+            error = service.agent_selection_error(key, sandbox=sandbox)
+            assert capability["managed_execution"] and error is None
 
 
-@pytest.mark.parametrize("host", ["codex", "claude-code", "antigravity", "hermes", "grok"])
+@pytest.mark.parametrize("host", ["codex", "claude-code", "antigravity", "grok"])
 def test_plain_stdout_auth_failure_is_preserved_at_zero_exit(project, monkeypatch, host):
     fake_native_discovery(monkeypatch)
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
@@ -1729,7 +1654,6 @@ def test_plain_stdout_auth_failure_is_preserved_at_zero_exit(project, monkeypatc
             command, 0, "No credentials for selected model", ""
         ),
     )
-    selection = {"provider": "openrouter", "model": "provider/model"} if host == "hermes" else {}
-    result = run_agent(host, project, "Instructions", "packet", SCHEMA, **selection)
+    result = run_agent(host, project, "Instructions", "packet", SCHEMA)
     assert not result.ok
     assert "No credentials for selected model" in result.error

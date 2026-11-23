@@ -102,12 +102,14 @@ export function useRoleSettings(projectId: Ref<number>, projectDir: Ref<string>,
   function changeHost(host: string) {
     const previous = draft.value.host_key || ''
     if (previous === host) return
+    const inherited = defaults.value.host_key || effective.value[role.value]?.host_key || 'codex'
     hostDrafts.set(`${role.value}:${previous}`, copy(draft.value))
-    if (!previous) hostDrafts.set(`${role.value}:${defaults.value.host_key || effective.value[role.value]?.host_key || 'codex'}`, copy(draft.value))
+    if (!previous) hostDrafts.set(`${role.value}:${inherited}`, copy(draft.value))
     drafts.value[role.value] = copy(hostDrafts.get(`${role.value}:${host}`) ?? {
       ...draft.value, host_key: host || null, model: null, model_reasoning_effort: null, provider: null, profile: null,
       ...(role.value === 'main_agent' ? {} : { source_ref: null, instructions: null }),
     })
+    if (host && !draft.value.host_key && inherited !== host) drafts.value[role.value]!.host_key = host
     message.value = ''
   }
   async function save() {

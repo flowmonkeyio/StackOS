@@ -2383,7 +2383,7 @@ def native_source_fixtures(monkeypatch, tmp_path):
             selected_host = selected.get(
                 "host_key", kwargs.get("host_key") or defaults.get("host_key") or "codex"
             )
-            if selected_host in {"claude-code", "antigravity", "grok", "hermes"}:
+            if selected_host in {"claude-code", "antigravity", "grok"}:
                 prior_metadata = (
                     TrackerRepository(session)
                     .get(project_id=project_id, task_key=kwargs["task_key"])
@@ -2400,7 +2400,7 @@ def native_source_fixtures(monkeypatch, tmp_path):
                     monkeypatch.setattr(bridge, "default_home", lambda home=home: home)
                     monkeypatch.delenv("GROK_HOME", raising=False)
                     monkeypatch.delenv("HERMES_HOME", raising=False)
-                    write_native_route(home, root, selected_host, selected.get("profile"))
+                    write_native_route(home, selected_host)
                     bindings = WorkspaceRepository(session).list_bindings()
                     if not any(
                         b.last_known_root and Path(b.last_known_root).resolve() == root

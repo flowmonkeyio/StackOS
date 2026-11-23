@@ -23,6 +23,7 @@ from stackos.host_mcp.agent_execution import (
     structured_prompt,
 )
 from stackos.host_mcp.bridge import default_home
+from stackos.host_mcp.discovery import subprocess_env_for_cli
 from stackos.host_mcp.json_config import read_json_object
 from stackos.host_mcp.result import AgentRunResult, AgentSandbox, usage_snapshot
 
@@ -338,6 +339,7 @@ def run_agent(
         lambda text: decode_result(
             text, resumed=resume_thread_id is not None, project_dir=project_dir
         ),
+        {**subprocess_env_for_cli(cli), "STACKOS_WORKSPACE_ROOT": str(project_dir.resolve())},
         process_control=process_control,
         timeout=RUN_TIMEOUT_SECONDS,
         stderr_error=permission_error,

@@ -138,13 +138,18 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer(
             assert rule in source.prompt_contract.must_do, role
             assert rule in local["developer_instructions"], role
 
-    # Scoped amendments retain the older full-adaptation provenance.
-    for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
+    # Each historical amendment keeps its own revision as the source grows.
+    for role, proof_version in {
+        "planning": "0.7.30",
+        "test-designer": "0.6.14",
+        "delivery": "0.7.27",
+        "delivery-reviewer": "0.6.28",
+    }.items():
         source = agents.describe_preset(key=f"stackos.sdlc.{role}").preset
         local_text = (ROOT / f".codex/agents/sdlc-{role}.toml").read_text()
         assert (
             "Scoped amendment: Proof continuity and role-specific duties from "
-            f"{source.key} v{source.version}"
+            f"{source.key} v{proof_version}"
         ) in local_text
         assert "base adaptation and other pending deltas remain unchanged" in local_text
     # Each scoped amendment retains its own source revision as the preset grows.
@@ -152,27 +157,6 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer(
     assert (
         "Scoped amendment: Proof continuity and role-specific duties from v0.8.32." in orchestrator
     )
-    assert (
-        "Scoped amendment: Explicit preparation references and safe fresh fallback from v0.8.33."
-        in orchestrator
-    )
-    preparation = next(
-        rule for rule in main_rules if rule.startswith("For optional preparation context,")
-    )
-    for requirement in (
-        "completed read-only receipt",
-        "tracker.startDelivery.preparation_parent",
-        "safe child-role replacement",
-        "NEW assignments",
-        "existing fresh compact launch",
-        "unsupported/absent decision",
-        "retains exact sessions",
-        "missing identity, denial, partial execution or failed resume",
-        "Preserve failed native evidence",
-    ):
-        assert requirement in preparation
-        assert requirement in " ".join(orchestrator.split())
-
     main_capability = next(rule for rule in main_rules if rule.startswith("Establish uncertain"))
     specialist_capability = next(
         rule for rule in planning.prompt_contract.must_do if rule.startswith("Establish uncertain")

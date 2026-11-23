@@ -56,6 +56,19 @@ describe('role defaults ownership', () => {
     expect(settings.draft.value.model).toBe('new-model')
     expect(settings.ready.value).toBe(true)
   })
+  it('restores the selected app after the inherited project app changes on reload', async () => {
+    reads(); const { settings } = setup(); await settings.load(); await flushPromises()
+    settings.set('instructions', 'Claude draft')
+    settings.changeHost('grok')
+    vi.mocked(callOperation).mockResolvedValueOnce({ tracker: tracker(1, { ...defaults, host_key: 'grok' }, 8) })
+    await settings.load(); await flushPromises()
+    settings.changeHost('claude-code')
+    expect(settings.draft.value.host_key).toBe('claude-code')
+    expect(settings.draft.value.instructions).toBe('Claude draft')
+    settings.changeHost('')
+    expect(settings.draft.value.host_key).toBeUndefined()
+    expect(settings.defaults.value.host_key).toBe('grok')
+  })
   it.each(['load', 'save'] as const)('discards an old project %s response and keeps its current scope unauthorized', async operation => {
     reads(); const { settings, project, directory } = setup()
     if (operation === 'save') { await settings.load(); await flushPromises(); settings.set('model', 'new-model') }

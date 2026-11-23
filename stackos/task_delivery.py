@@ -31,7 +31,6 @@ from stackos.db.models import (
     TrackerItemStatus,
     TrackerSourceKind,
     TrackerTask,
-    TrackerTicket,
     TrackerTicketKind,
 )
 from stackos.host_mcp.agent_execution import ManagedProcessControl, managed_launch_lock
@@ -44,14 +43,12 @@ from stackos.host_mcp.service import (
     cancel_task_invocations,
     effective_agent_sandbox,
     managed_execution_error,
-    preparation_context_decision,
     quiesce_task_invocations,
     retire_invocation,
     run_agent,
     uncheckpointed_invocations,
 )
 from stackos.operations.tracker.schemas import (
-    PreparationParentRef,
     TaskDeliveryAgent,
     TaskDeliveryAgentOverride,
 )
@@ -397,8 +394,6 @@ def _upgrade_settings_digest(state):
     # was admitted. New task routes become part of their existing settings hash.
     if state.get("mcp_route_identities"):
         value["mcp_route_identities"] = state["mcp_route_identities"]
-    if state.get("preparation_parent"):
-        value["preparation_parent"] = state["preparation_parent"]
     return sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
@@ -1727,153 +1722,6 @@ def _retain_mcp_config(state: dict[str, Any], reference: dict[str, str] | None) 
         raise ValidationError("Task delivery must retain its accepted MCP configuration identity")
 
 
-def _retain_preparation_parent(state: dict[str, Any], reference: dict[str, Any] | None) -> None:
-    if state.get("project_dir") and state.get("preparation_parent") != reference:
-        raise ValidationError("Task delivery must retain its admitted preparation reference")
-
-
-def _validate_preparation_parent(session: Session, project_id: int, directory: Path, value):
-    """Validate explicit receipt authority before native discovery, never history content.
-
-    The main agent attests preparation-only applicability. Digests bind the
-    existing outcome and frozen source/settings/native identity, not a new store.
-    """
-    try:
-        ref = PreparationParentRef.model_validate(value)
-    except SchemaValidationError:
-        raise ValidationError("Invalid preparation reference") from None
-
-    def reject():
-        raise ValidationError(
-            "Preparation reference must pin a completed same-project read-only task phase",
-            data={"code": "invalid_preparation_parent", "next_operations": ["tracker.brief"]},
-        )
-
-    if ref.project_id != project_id or ref.thread_id.lower() in {"last", "latest"}:
-        reject()
-    task = session.get(TrackerTask, ref.task_id, populate_existing=True)
-    ticket = session.get(TrackerTicket, ref.ticket_id, populate_existing=True)
-    if (
-        task is None
-        or task.project_id != project_id
-        or ticket is None
-        or ticket.project_id != project_id
-        or ticket.task_id != task.id
-        or task.status != TrackerItemStatus.COMPLETE
-        or ticket.status != TrackerItemStatus.COMPLETE
-    ):
-        reject()
-    assert ticket is not None
-    automatic = (ticket.completion_evidence_json or {}).get("automatic_delivery", {})
-    if not isinstance(automatic, dict) or not isinstance(automatic.get("attempts", []), list):
-        reject()
-    attempts = [automatic, *automatic.get("attempts", [])]
-    if not all(isinstance(item, dict) for item in attempts):
-        reject()
-    matching = [item for item in attempts if item.get("attempt") == ref.attempt]
-    receipt = matching[0].get("delivery", {}) if len(matching) == 1 else {}
-    sessions = automatic.get("sessions", {})
-    if not isinstance(receipt, dict) or not isinstance(sessions, dict):
-        reject()
-    native = sessions.get("delivery", {})
-    if not isinstance(native, dict):
-        reject()
-    snapshot = native.get("agent_snapshot", {})
-    execution = receipt.get("execution", {})
-    launch = receipt.get("launch", {})
-    if not all(
-        isinstance(item, dict) for item in (snapshot, execution, launch, receipt.get("result"))
-    ):
-        reject()
-    if (
-        receipt.get("validated_outcome") != "success"
-        or type(receipt.get("exit_code")) is not int
-        or receipt.get("exit_code") != 0
-        or receipt.get("error")
-        or receipt.get("validation_error")
-        or receipt.get("cancelled")
-        or receipt.get("superseded")
-        or not receipt.get("finished_at")
-        or (receipt.get("result") or {}).get("status") != "success"
-        or launch.get("sandbox") != "read-only"
-        or launch.get("project_dir") != str(directory)
-        or execution.get("invocation_id") != ref.invocation_id
-        or execution.get("ticket_key") != ticket.key
-        or execution.get("agent") != receipt.get("agent")
-        or execution.get("host_key") != launch.get("host_key")
-        or receipt.get("thread_id") != ref.thread_id
-        or native.get("thread_id") != ref.thread_id
-        or not snapshot.get("instructions")
-        or snapshot.get("name") != receipt.get("agent")
-        or snapshot.get("host_key") != launch.get("host_key")
-        or {
-            key: value
-            for key, value in native.items()
-            if key not in {"thread_id", "agent_snapshot"}
-        }
-        != {
-            key: value
-            for key, value in launch.items()
-            if key not in {"sandbox", "started_at", "resume_thread_id"}
-        }
-        or any(
-            snapshot.get(key) != native.get(key)
-            for key in (
-                "model",
-                "model_reasoning_effort",
-                "provider",
-                "profile",
-                "source_ref",
-                "source_digest",
-                "native_settings",
-            )
-        )
-        or any(
-            sha256(json.dumps(item, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-            != expected
-            for item, expected in (
-                (receipt.get("result"), ref.outcome_digest),
-                (native, ref.snapshot_digest),
-            )
-        )
-    ):
-        reject()
-    if snapshot.get("source_ref"):
-        from stackos.host_mcp.project_agents import AgentSourceRef
-
-        try:
-            AgentSourceRef.model_validate(snapshot["source_ref"])
-        except SchemaValidationError:
-            reject()
-        if not re.fullmatch(r"[0-9a-f]{64}", str(snapshot.get("source_digest", ""))):
-            reject()
-    selection = {
-        key: native[key]
-        for key in ("model", "model_reasoning_effort", "provider", "profile", "native_settings")
-        if key in native
-    }
-    if any(
-        not isinstance(value, str) for key, value in selection.items() if key != "native_settings"
-    ):
-        reject()
-    if "native_settings" in selection and not isinstance(selection["native_settings"], dict):
-        reject()
-    if agent_selection_error(
-        native.get("host_key"), sandbox="read-only", retained=True, **selection
-    ):
-        reject()
-    from stackos.repositories.workspaces import WorkspaceRepository
-
-    projects = {
-        b.project_id
-        for b in WorkspaceRepository(session).list_bindings()
-        if b.last_known_root and Path(b.last_known_root).resolve() == directory
-    }
-    if projects != {project_id}:
-        reject()
-    return ref.model_dump()
-
-
 def _retain_reservation(previous: dict[str, Any], admission_id: str) -> None:
     held = (previous.get("continuation_intent") or {}).get("status") == "held"
     if (
@@ -2140,7 +1988,6 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         directory = Path(changes["project_dir"])
         _retain_directory(previous, directory)
         _retain_mcp_config(previous, changes.get("mcp_config_ref"))
-        _retain_preparation_parent(previous, changes.get("preparation_parent"))
         if previous.get("status") in {"queued", "running"}:
             if (previous.get("run_plan_id"), previous.get("step_id")) != (
                 changes.get("run_plan_id"),
@@ -2200,11 +2047,6 @@ def _receipt(task_key: str, state: dict[str, Any]) -> dict[str, Any]:
             else {}
         ),
         **({"mcp_config_ref": state["mcp_config_ref"]} if state.get("mcp_config_ref") else {}),
-        **(
-            {"preparation_parent": state["preparation_parent"]}
-            if state.get("preparation_parent")
-            else {}
-        ),
         "recommended_tool": "tracker.get",
         "message": "Inspect this task with tracker.get, task_key and response_mode=raw.",
     }
@@ -3034,7 +2876,7 @@ def _continue_delivery_task(session, task, scheduler, *, event):
             session, task, {**state, "slot_reserved": False}, intent, interrupted=True
         )
     except (ValidationError, NotFoundError, ConflictError, OSError) as error:
-        intent.update(status="held", issues=[str(error)], considered_generation=generation)
+        intent.update(status="held", issues=[str(error)])
         _update_delivery(
             repo,
             task.project_id,
@@ -3044,19 +2886,11 @@ def _continue_delivery_task(session, task, scheduler, *, event):
             slot_reserved=uncertain_owner,
             reason=f"Automatic continuation held: {error}",
             continuation_intent=intent,
+            runtime_continuation_event=event,
             handoff_id=uuid4().hex,
         )
         return
     handoff = uuid4().hex
-    transition = {
-        "event": event,
-        "from_generation": state["admission_id"],
-        "from_handoff_id": state["handoff_id"],
-        "to_generation": generation,
-        "to_handoff_id": handoff,
-        "ticket_key": intent.get("ticket_key"),
-        "phase": phase,
-    }
     state.update(
         status="queued",
         reason=None,
@@ -3064,6 +2898,7 @@ def _continue_delivery_task(session, task, scheduler, *, event):
         admission_id=generation,
         handoff_id=handoff,
         job_ref=f"task-delivery:{task.project_id}:{task.id}:{handoff}",
+        runtime_continuation_event=event,
         runtime_continuation={
             "handoff_id": handoff,
             "ticket_key": intent.get("ticket_key"),
@@ -3084,7 +2919,6 @@ def _continue_delivery_task(session, task, scheduler, *, event):
         else None,
     )
     state["continuation_intent"] = intent
-    state["runtime_continuations"] = [*state.get("runtime_continuations", []), transition]
     state.pop("stop_context", None)
     repo.update_task(
         project_id=task.project_id,
@@ -3467,7 +3301,6 @@ def start_delivery(
     agents: Mapping[str, dict[str, Any]] | None = None,
     replace_review: dict[str, Any] | None = None,
     _resolved_settings: dict[str, Any] | None = None,
-    preparation_parent: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Freeze handoff settings; schedules may retain their internal preflight snapshot.
 
@@ -3489,7 +3322,6 @@ def start_delivery(
                 review_agent,
                 agents,
                 agent_assignments,
-                preparation_parent,
             )
         ):
             raise _replacement_error(
@@ -3518,15 +3350,6 @@ def start_delivery(
     if not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
     _retain_directory(previous, directory)
-    if preparation_parent is not None:
-        preparation_parent = _validate_preparation_parent(
-            session, project_id, directory, preparation_parent
-        )
-    else:
-        # Already-admitted provenance may become ineligible; it never supplies
-        # context to the fresh path or changes an existing session's authority.
-        preparation_parent = deepcopy(previous.get("preparation_parent"))
-    _retain_preparation_parent(previous, preparation_parent)
     # Reject an already owned tree before native configuration preflight can
     # obscure that ownership with a different project's route/binding error.
     # The queue owner repeats this check atomically when admitting the task.
@@ -3555,7 +3378,6 @@ def start_delivery(
                 slot_reserved=False,
                 project_dir=str(directory),
                 mcp_config_ref=mcp_config_ref,
-                preparation_parent=preparation_parent,
                 run_plan_id=run_plan_id,
                 step_id=step_id,
                 replace_review=replace_review,
@@ -3794,7 +3616,6 @@ def start_delivery(
         reason=None,
         project_dir=str(directory),
         **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
-        preparation_parent=preparation_parent,
         **({"mcp_route_identities": route_identities} if route_identities else {}),
         host_key=host_key,
         agents=resolved,
@@ -4367,20 +4188,6 @@ def run_delivery(
                         agent,
                         resume_thread_id,
                     )
-                    occurrence["preparation_context"] = preparation_context_decision(
-                        host_key,
-                        has_parent=bool(state.get("preparation_parent")),
-                        resume_thread_id=resume_thread_id,
-                        independent_review=phase == "review",
-                    )
-                    if (
-                        phase == "delivery"
-                        and resume_thread_id is None
-                        and state.get("preparation_parent")
-                    ):
-                        occurrence["preparation_context"]["reference"] = deepcopy(
-                            state["preparation_parent"]
-                        )
                     if workflow_step is None:
                         # Reject impossible corrections before recording a launch or
                         # charging a repair. Final validation still checks returned work.

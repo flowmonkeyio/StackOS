@@ -55,6 +55,7 @@ def run_agent(
     cli = claude_mcp.resolve_claude_bin()
     if cli is None:
         return AgentRunResult(None, error="No Claude Code CLI was found by host discovery.")
+    env = {**subprocess_env_for_cli(cli), "STACKOS_WORKSPACE_ROOT": str(project_dir.resolve())}
     try:
         routed = (
             task_mcp_config(project_dir, mcp_config_ref)
@@ -68,7 +69,7 @@ def run_agent(
     except ValueError as exc:
         return AgentRunResult(None, error=str(exc))
     if model_reasoning_effort is not None:
-        inherited = subprocess_env_for_cli(cli).get("CLAUDE_CODE_EFFORT_LEVEL")
+        inherited = env.get("CLAUDE_CODE_EFFORT_LEVEL")
         if inherited is not None and inherited != model_reasoning_effort:
             return AgentRunResult(
                 None,
@@ -117,6 +118,7 @@ def run_agent(
         output_schema,
         "Claude Code",
         lambda stdout: MessagesStream(HOST_KEY, decode).decode_output(stdout),
+        env,
         process_control=process_control,
         on_output_line=stream.feed
         if on_session is not None or on_usage is not None or on_model is not None

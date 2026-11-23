@@ -16,9 +16,9 @@ from stackos.host_mcp.accounts import DesiredAccount, HostAccountError
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 
 
-@pytest.fixture(params=["codex", "claude-code", "grok"])
+@pytest.fixture
 def host_key(request):
-    return request.param
+    return getattr(request, "param", "codex")
 
 
 class Accounts:
@@ -143,6 +143,7 @@ def worker(tmp_path, monkeypatch, host_key):
     service.shutdown_usage()
 
 
+@pytest.mark.parametrize("host_key", ["codex", "claude-code", "grok"], indirect=True)
 def test_switch_resumes_exact_thread_with_proceed_and_separate_usage(worker):
     external = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     other_call = service.ActiveInvocation(
@@ -233,6 +234,7 @@ def test_successful_result_racing_switch_is_not_replayed(worker):
     assert len(worker.calls) == 1
 
 
+@pytest.mark.parametrize("host_key", ["codex", "claude-code", "grok"], indirect=True)
 def test_switch_fences_new_host_launch_but_not_other_hosts(worker, tmp_path, monkeypatch):
     entered, release, queued = Event(), Event(), Event()
     started = []

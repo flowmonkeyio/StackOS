@@ -868,25 +868,12 @@ or sibling skills. StackOS uses Hermes's documented `-p/--profile`,
 contracts; default-profile operations explicitly target `-p default` rather
 than inheriting the user's active-profile preference.
 
-The retained, unmanaged Hermes protocol adapter uses v0.23.3
-`--usage-file ... chat --oneshot --quiet --format stream-json --query ...`.
-The chat stream dispatcher forwards the report and retains the selected profile's
-single-query approval policy (default deny for unanswered flagged actions).
-The `-z` entrypoint is excluded because it unconditionally auto-approves unattended
-turns, even without an explicit `--yolo` flag. See the upstream
-[finite-turn policy](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/gateway/session_finite.py)
-and [approval gate](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/tools/approval.py).
-Provider/model/profile selections remain in force. Managed delivery, review and
-setup reject before native submission: the [gateway client](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_client.py)
-is only a viewer, and [detaching](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_chat.py)
-leaves accepted work running. StackOS has no verified exact-turn termination
-contract on this route. A retained client-only handle remains unconfirmed during
-Stop, restart and upgrade; StackOS never kills a shared gateway to infer retirement.
-The terminal result independently supplies session identity; the optional report
-supplies model/provider and main-loop usage. Early identity and live usage are unavailable.
-Missing exact-resume identity stops continuation. See the
-[native usage contract](task-tracker.md#native-usage-receipts)
-for scope, missing-report handling and the protocol-fixture proof limitation.
+Hermes registration and profile inspection remain available. Automated delivery,
+review and setup reject before native submission because StackOS has no verified
+exact-turn termination contract for its shared gateway. A viewer exit alone
+cannot establish retirement; StackOS never kills the shared gateway to infer it.
+Saved selections remain available for inspection and repair. Other hosts are
+unaffected.
 
 The upstream product contracts are OpenAI's
 [shared ChatGPT/Codex plugin directory](https://learn.chatgpt.com/docs/plugins)

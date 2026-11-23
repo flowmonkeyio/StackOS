@@ -657,7 +657,7 @@ def task_mcp_route(
 ) -> dict[str, str]:
     """Verify a task route at the native configuration owner; never install it.
 
-    For workspace/profile hosts the fragment is an expectation, not an override.
+    For workspace hosts the fragment is an expectation, not an override.
     Only route fingerprints leave this boundary; native entries/auth do not.
     """
     from stackos.host_mcp.toml_config import read_mcp_config_ref
@@ -681,8 +681,6 @@ def task_mcp_route(
         servers = antigravity.task_mcp_servers(project_dir, home, set(routes))
     elif host_key == "grok":
         servers = grok.task_mcp_servers(project_dir, home, set(routes))
-    elif host_key == "hermes":
-        servers = hermes.task_mcp_servers(home, profile, set(routes))
     else:
         raise ValueError("Task MCP routing has no native reader")
     for name, expected in routes.items():
@@ -730,8 +728,17 @@ def task_mcp_route(
             if context is None or expected_context is None:
                 raise ValueError("Task StackOS bridge has unsupported settings")
             settings = context[1]
-            root = settings["--workspace-root"] or env.get("STACKOS_WORKSPACE_ROOT")
-            if not isinstance(root, str) or Path(root).resolve() != project_dir.resolve():
+            # Supported native runners explicitly set this root in their own
+            # launch environment. Normal registration need not pin one global
+            # entry to a project; explicit native overrides must still agree.
+            root = settings["--workspace-root"]
+            if root is None:
+                root = env.get("STACKOS_WORKSPACE_ROOT", str(project_dir.resolve()))
+            if (
+                not isinstance(root, str)
+                or not root
+                or Path(root).resolve() != project_dir.resolve()
+            ):
                 raise ValueError("Task StackOS bridge targets a different project root")
             if any(
                 settings[key] != expected_context[1][key]
@@ -935,27 +942,6 @@ class HostMcpAggregate:
         ]
 
 
-def preparation_context_decision(
-    host_key: str, *, has_parent: bool, resume_thread_id: str | None, independent_review: bool
-) -> dict[str, str]:
-    """Select before execution; errors/denials never turn into a fresh retry.
-
-    All observed hosts lack demonstrated safe preparation-role replacement,
-    including Codex 0.171 despite its successful zero-turn fork.
-    """
-    if resume_thread_id is not None:
-        return {"mode": "resume", "reason": "retained_session"}
-    if independent_review:
-        return {"mode": "fresh", "reason": "independent_review"}
-    definition = _definition_by_key(host_key)
-    capability = (
-        definition.policy.agent_execution.preparation_context_reuse
-        if definition is not None
-        else "unsupported"
-    )
-    return {"mode": "fresh", "reason": capability if has_parent else "absent"}
-
-
 def run_agent(
     host_key: str,
     project_dir: str | Path,
@@ -1101,7 +1087,6 @@ def _run_agent_once(
         "provider": provider,
         "profile": profile,
         "native_settings": native_settings,
-        "managed": execution_scope is not None,
     }
     if definition is not None and (definition.native_models or resume_thread_id is not None):
         catalog = asdict(definition.policy.agent_execution)
@@ -1450,7 +1435,6 @@ def agent_selection_error(
     catalog: dict[str, Any] | None = None,
     refresh: bool = False,
     retained: bool = False,
-    managed: bool = True,
 ) -> str | None:
     """Validate explicit choices and existing source syntax without resolving defaults.
 
@@ -1467,6 +1451,8 @@ def agent_selection_error(
                 "saved sessions are not interchangeable."
             )
         return f"Host {host_key!r} does not support headless agent execution."
+    if error := managed_execution_error(host_key):
+        return error
     capability = definition.policy.agent_execution
     if sandbox not in capability.sandboxes:
         return f"Host {host_key!r} does not support {sandbox} execution. {capability.notes}"
@@ -1521,7 +1507,7 @@ def agent_selection_error(
                 f"Host {host_key!r}, model {model or 'native default'!r} does not support "
                 f"reasoning effort {model_reasoning_effort!r}. Supported: {choices}."
             )
-    return managed_execution_error(host_key) if managed else None
+    return None
 
 
 def inspect_all(*, home: Path | None = None, data_dir: Path | None = None) -> HostMcpAggregate:
@@ -1934,23 +1920,11 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "Hermes",
                 "explicit",
                 AgentCapabilities(
-                    sandboxes=("workspace-write", "normal"),
-                    mcp_routing="profile",
-                    review_sandbox="normal",
-                    custom_models=True,
-                    provider_selection=True,
-                    profile_selection=True,
-                    requires_provider_model=True,
                     auth_status_command=("hermes", "auth", "status"),
                     notes=(
                         "Managed execution unavailable: the persistent gateway outlives its CLI "
                         "viewer; exact accepted-turn termination is unproven. "
-                        "Unmanaged protocol only: explicit provider/model; single-query approval "
-                        "policy retained (default deny for unanswered flagged actions). "
-                        "Review uses normal native permissions with review-only instructions; "
-                        "no enforced read-only isolation. "
-                        "Terminal result identity is independent of optional usage-file "
-                        "model/provider and main-loop counters; no early identity or live usage. "
+                        "MCP registration and profile inspection remain available. "
                         "Installed shims may not be runnable."
                     ),
                     sources=(

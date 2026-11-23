@@ -386,14 +386,14 @@ work that has not launched yet. Current defaults cannot replace that selection;
 changed host, agent settings or assignments reject. Existing workspace, MCP-route,
 host-preflight and native-session identity guards still apply. This exception does
 not admit a new inline Codex task or refresh its prior receipts or repair count.
-Each role may override `host_key`, `model`, `model_reasoning_effort`, `provider`, and (for Hermes)
-`profile`. The merged role host overrides the task host, then the project host,
+Each role may override `host_key`, `model`, `model_reasoning_effort`, `provider`, and
+`profile` where the host capability catalog permits. The merged role host overrides the task host, then the project host,
 then `codex`. Clearing a role host uses that task/project host chain.
 Omitting the model preserves native host settings. Explicit selections reach
 native CLI arguments and launch evidence; StackOS never substitutes another
-host or model after a failure. Hermes requires an explicit provider/model pair,
-and retains saved provider/profile selections, but managed execution is currently
-unavailable because its gateway work outlives the CLI viewer. New handoffs reject
+host or model after a failure. Saved Hermes provider/model/profile selections
+remain inspectable, but managed execution is unavailable because its gateway work
+outlives the CLI viewer. New handoffs reject
 before submission; saved and historical settings are preserved without substitution.
 Codex also supports its configured `model_provider` selector. Other hosts reject
 `provider`; their existing native authentication/configuration remains in control.
@@ -649,49 +649,12 @@ occurrences are not replayed. Managed-upgrade checkpoints and their explicit
 finish/postflight protocol retain their own authority and retry refs. General
 stopped-work recovery still requires explicit authorization and rehandoff.
 
-### Preparation references and fresh execution
+### Fresh assignments and exact recovery
 
-Main may explicitly admit a completed read-only preparation receipt with
-`tracker.startDelivery(preparation_parent=...)`. This task-only reference uses
-the existing task-phase evidence owner:
-
-```json
-{
-  "kind": "task_phase", "project_id": 1, "task_id": 10, "ticket_id": 20,
-  "attempt": 1, "phase": "delivery", "invocation_id": "exact-invocation",
-  "thread_id": "exact-native-session", "outcome_digest": "<64 lowercase hex>",
-  "snapshot_digest": "<64 lowercase hex>", "preparation_only": true
-}
-```
-
-Select the completed successful delivery receipt from `automatic_delivery` or
-its retained `attempts`, and the exact `sessions.delivery` snapshot. Digests are
-SHA256 of UTF-8 `json.dumps(value, sort_keys=True, separators=(",", ":"))`:
-`outcome_digest` covers the phase's `result`, and `snapshot_digest` covers the
-whole native session including `agent_snapshot`. IDs, invocation, project/root,
-source, host/provider/profile/settings and native identity must agree. The
-parent task and ticket must be complete and its launch must be read-only.
-Read-only execution alone does not establish preparation-only applicability;
-main admits that applicability explicitly. Malformed, forged or foreign input
-rejects before native access. StackOS does not scan history or infer safe content.
-The reference is frozen at handoff; omission on rehandoff retains it.
-
-All currently observed hosts declare `preparation_context_reuse: unsupported`.
-Codex 0.171's zero-turn fork succeeded with a distinct child and unchanged parent,
-but both bounded child-role replacement checks failed. Those observations remain
-capability evidence; raw fork syntax does not establish safe context reuse.
-Future activation requires demonstrated safe role replacement and a separate
-reviewed change. There is no dormant fork executor or native upgrade here.
-
-NEW assignments use the existing compact fresh launch under their admitted
-role/settings/route. Each occurrence records `preparation_context` with mode
-`fresh` and reason `unsupported` for an admitted reference, or `absent` without
-one. A previously admitted reference can remain provenance if it later becomes
-ineligible; it supplies no inherited content. Independent review records
-`independent_review` and receives no preparation history. Recovery records mode
-`resume`/reason `retained_session` and resumes the exact existing identity.
-Missing identity, denial, partial execution or failed resume never triggers a
-fresh retry. This creates no context store, parent search, seed call or savings claim.
+Native preparation-context reuse remains unsupported. New assignments use the
+existing compact fresh launch, and independent review receives no delivery
+history. Recovery retains the exact native session; missing identity, denial,
+partial execution or failed resume never triggers a fresh retry.
 
 ### Task-local native tool routing
 
@@ -716,8 +679,8 @@ parses one in-memory byte buffer. Missing, malformed or changed fragments stop
 before native execution.
 
 The shared host capability catalog declares `mcp_routing`: `per-call` for
-Codex/Claude Code, `workspace` for Antigravity/Grok, `profile` for Hermes, or
-`unsupported` for MCP-only hosts such as Claude Desktop. This declares a
+Codex/Claude Code, `workspace` for Antigravity/Grok, or `unsupported` for
+Hermes and MCP-only hosts such as Claude Desktop. This declares a
 supported configuration mechanism; it does not assert a successful connection.
 Claude translates the same fragment over existing effective stdio entries into
 `--mcp-config` with `--strict-mcp-config`, for fresh and exact resumed calls.
@@ -730,13 +693,16 @@ disabled project servers. Worktree checks include the common repository's native
 project disable settings.
 
 Antigravity reads its native `.agents/mcp_config.json` workspace overlay; Grok
-reads `.grok/config.toml`; Hermes reads only its selected profile's `config.yaml`.
+reads `.grok/config.toml`.
 Their fragment is an expectation to compare against native configuration, never
 an arbitrary external override. Different route leaves reject before queueing or
 spawn with an actionable unsupported-override reason. StackOS never rewrites
 these files, replaces their executables, or changes global settings/trust.
 Fresh non-Codex admissions also verify their native route when no fragment was
-provided. Required StackOS tooling, host runtime, daemon context, actual root and
+provided. Native child processes receive the selected project directory through
+invocation-local `STACKOS_WORKSPACE_ROOT`, so ordinary registered bridges need no
+global project pin. Explicit server root overrides must still match that directory.
+Required StackOS tooling, host runtime, daemon context, actual root and
 the existing project binding must agree; supplied Serena routes must target the
 same root through the canonical wrapper. The admitted native route fingerprint
 is frozen in existing task/session receipts, rechecked before fresh/resumed
@@ -1236,7 +1202,7 @@ Current native usage contracts (and retained historical Gemini provenance):
 | Claude Code / `claude.model-usage.v2.1` | The [Agent SDK cost-tracking contract](https://code.claude.com/docs/en/agent-sdk/cost-tracking#accumulate-costs-across-multiple-calls) defines a version boundary for `claude -p`: stable 2.1 releases before 2.1.277 report per-invocation `modelUsage`; 2.1.277+ restore session totals on resume. A bounded `--version` probe of the same selected executable establishes the basis. Unknown, prerelease, unsupported-series or failed version probes leave usage unavailable and preserve execution. Sum models' input, cache-read and cache-creation counts for input, plus output for total. The narrower main-loop `usage` is not a fallback. Missing counters and potentially zeroed crash results are unavailable. |
 | Antigravity / `antigravity.headless` | The [native headless contract](https://antigravity.google/docs/cli/headless/) and owned agy 1.5.14 fresh/resume capture (2026-11-22) supply per-step counters and cumulative terminal counters. Captured native input/total exclude cache reads (a step reports input 2184 and cache 9821); full input is `input_tokens + cache_read_tokens`, and total adds output. Require valid native input/output/cache counters and native total equal to input plus output; thinking is already included in output. Fresh processes prefer valid terminal usage, otherwise sum distinct completed step indexes once; never add step and terminal totals. Resumed usage remains unavailable without a verified exact-session pre-invocation native baseline; neither the first post-work event nor an old StackOS receipt supplies one. Historical `antigravity.fresh-process` receipts retain their original accounting provenance. |
 | Gemini CLI (historical) / `gemini.models` | Retained receipts from the retired host used [headless JSON](https://google-gemini.github.io/gemini-cli/docs/cli/headless.html) `stats.models` and [telemetry hydration](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/telemetry/uiTelemetry.ts) on resume. Input is prompt (already includes cached), output is candidates plus thoughts plus tool; total must match their sum. No active Gemini runner remains and historical usage is not rewritten. |
-| Hermes / `hermes.oneshot.main.v0.23.3` | The documented [chat one-shot stream](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/website/docs/reference/cli-commands.md#format-stream-json--structured-jsonl-output) returns a terminal `result` event and a separate `--usage-file` report through the [chat dispatcher](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_chat.py). The [producer](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/agent/turn_finalizer.py) copies main-loop session counters; [native arithmetic](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/agent/usage_pricing.py) makes full input `input_tokens + cache_read_tokens + cache_write_tokens`, plus output for total. Reasoning is a subset of output. Matching resumed session snapshots use the existing delta rules; a missing baseline stays unavailable. Auxiliary usage and `total_including_auxiliary` have different scope and are excluded. This is versioned protocol-fixture proof, not live Hermes certification. |
+| Hermes (historical) / `hermes.oneshot.main.v0.23.3` | Retained main-loop session counters use full input `input_tokens + cache_read_tokens + cache_write_tokens`, plus output for total. Reasoning is included in output. Existing session-delta rules apply only with a matching baseline; auxiliary usage remains excluded. No new Hermes invocation or usage report is produced. |
 | Grok / `grok.headless` | Native `--output-format json` reports invocation usage, verified with CLI 1.0.77 fresh/resume captures and the [headless contract](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md#json). Full input is `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`; output already includes `reasoning_tokens`. Require all counters and a matching `total_tokens`. The captured calls contribute 15709 and 15796 (31505 total). Do not add `modelUsage` again or apply this arithmetic to persisted session `inputTokens`, which already includes cache. Missing, malformed or explicitly incomplete native usage remains unavailable; agent-authored usage is ignored. |
 
 Native detail mappings (same scope and basis as their parent counters):
@@ -1248,42 +1214,16 @@ Native detail mappings (same scope and basis as their parent counters):
 | Grok | `usage.cache_read_input_tokens` | `usage.cache_creation_input_tokens` | `usage.reasoning_tokens` |
 | Antigravity (fresh only) | `usage.cache_read_tokens` | Unavailable | `usage.thinking_tokens`, already included in output |
 | Gemini CLI (historical) | Sum `stats.models.*.tokens.cached`, only when every model reports a valid subset of its prompt | Unavailable | Sum `stats.models.*.tokens.thoughts`, already included in output; nested roles are not added |
-| Hermes (main loop) | `cache_read_tokens` | `cache_write_tokens` | `reasoning_tokens`, already included in output |
+| Hermes (historical main loop) | `cache_read_tokens` | `cache_write_tokens` | `reasoning_tokens`, already included in output |
 
-The unmanaged Hermes protocol adapter uses `--usage-file ... chat --oneshot --quiet --format stream-json --query ...`, the
-selected provider/model and explicit profile (defaulting to `default`). This
-preserves the profile's native single-query approval policy, whose default denies
-unanswered flagged actions. Hermes `-z` instead marks the turn unattended and
-unconditionally bypasses that gate; absence of `--yolo` cannot prove approval
-preservation. StackOS does not use `-z`, change the profile's policy or add an
-automatic approval override. The native [finite-turn](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/gateway/session_finite.py)
-and [approval](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/tools/approval.py)
-contracts define this distinction for both fresh and exact-resume calls.
-Managed calls fail closed before submission: the [gateway client](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_client.py)
-does not own accepted work's lifetime. CLI exit or viewer detachment cannot prove
-turn retirement. Existing client-only ownership remains unconfirmed during Stop,
-restart and upgrade, including explicit rehandoff; no shared gateway is killed.
-The canonical capability is `agent_execution.managed_execution: false`, independent
-of CLI availability. Enabling this route requires verified exact owned-turn termination.
-Each invocation owns a private temporary directory for its report, reads at most
-64 KiB from a regular non-symlink file,
-then removes it. Missing, corrupt (including excessive nesting), oversized or
-unsafe reports leave usage/model/provider unknown; they do not manufacture zero
-counters. Valid session identity comes independently from the native terminal
-`result.session_id`, including failed/interrupted results, with report identity as
-a fallback. Conflicting or invalid identities fail closed with no attributed
-identity or metrics. These values never come from the agent's answer or requested
-selection. Native model/provider observations use source
-`hermes.usage-file.v0.23.3` in the existing receipt contract.
-
-This one-shot path has no early-session or live-usage observation. If interrupted
-before a terminal identity or report exists, StackOS cannot invent a resumable identity. An exact
-resume with a missing or different observed session fails without a fresh retry.
-Nonzero process exits, `failed`, `partial`, `interrupted`, and `completed: false`
-remain failures even when stdout contains valid structured output. Valid counters
-and identity survive result/schema or native failure for accounting and diagnosis.
-No Hermes installation, login, account switch, private session-file synthesis or
-replacement result store is involved; optional local absence leaves other hosts usable.
+Hermes execution is unavailable until StackOS can retire the exact owned gateway
+turn. A client exit or detachment alone remains insufficient evidence during
+Stop, restart and upgrade. Historical receipts keep their recorded protocol and
+accounting provenance; cleanup does not rewrite them or launch new Hermes work.
+Upgrade preparation recognizes settled historical requests only when retained
+daemon-owned protocol provenance, exact session identity and successful terminal
+facts agree. Unknown provenance, interrupted viewers and failed retirement remain
+unconfirmed.
 
 Claude and Grok managed calls consume native Messages streams (`stream-json
 --verbose` and `streaming-messages-json`, respectively). Only the native

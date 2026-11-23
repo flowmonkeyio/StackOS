@@ -168,6 +168,98 @@ def test_hermes_persisted_client_exit_cannot_certify_upgrade_quiescence(
         assert held.value.data["requests"][0]["issues"] == ["native_retirement_unconfirmed"]
 
 
+@pytest.mark.parametrize(
+    "fault",
+    [
+        None,
+        "missing_provenance",
+        "unknown_source",
+        "conflicting_session",
+        "missing_session",
+        "unfinished",
+        "interrupted",
+        "native_error",
+        "missing_error",
+        "missing_result",
+        "unconfirmed_retirement",
+    ],
+)
+def test_upgrade_accepts_only_source_marked_settled_hermes_history(session, project_id, fault):
+    from stackos.task_delivery import prepare_managed_upgrade
+    from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+    # Historical shape produced by the retired daemon parser, not caller-authored
+    # result text. v0.23.3 emits a successful terminal only after the exact
+    # admission's message.complete/settled receipt; viewer exit alone is weaker.
+    # https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_chat_view.py#L527
+    _repo, request, _claim, _execution = owner(session, project_id)
+    native = {
+        "snapshot": {"host_key": "hermes"},
+        "execution": {
+            "invocation_id": "historical-hermes-turn",
+            "host_key": "hermes",
+            "thread_id": "settled-native-session",
+            "finished": True,
+            "model_observation": {
+                "status": "observed",
+                "source": "hermes.usage-file.v0.23.3",
+                "session_id": "settled-native-session",
+                "model": "observed-model",
+            },
+        },
+        "finished_at": datetime.now(UTC).isoformat(),
+        "exit_code": 0,
+        "error": None,
+        "cancelled": False,
+        "stop_error": None,
+        "result": {"status": "success"},
+    }
+    observed = native["execution"]["model_observation"]
+    if fault == "missing_provenance":
+        del native["execution"]["model_observation"]
+    elif fault == "unknown_source":
+        observed["source"] = "unknown-native-format"
+    elif fault == "conflicting_session":
+        observed["session_id"] = "another-native-session"
+    elif fault == "missing_session":
+        del native["execution"]["thread_id"]
+    elif fault == "unfinished":
+        native["execution"]["finished"] = False
+    elif fault == "interrupted":
+        native["cancelled"] = True
+    elif fault == "native_error":
+        native["error"] = "Native result was incomplete"
+    elif fault == "missing_error":
+        del native["error"]
+    elif fault == "missing_result":
+        del native["result"]
+    elif fault == "unconfirmed_retirement":
+        native["process_retirement"] = {"outcome": "unconfirmed"}
+    row = session.get(AgentRequest, request.id)
+    row.status = AgentRequestStatus.RESOLVED
+    row.metadata_json = {"native_execution": native}
+    session.add(row)
+    session.commit()
+
+    def prepare():
+        return prepare_managed_upgrade(
+            session_factory=lambda: Session(session.get_bind()),
+            scheduler=QueuedScheduler(),
+            upgrade_id="historical-hermes",
+            source_identity="source",
+            target_identity="target",
+            expected_revision=0,
+        )
+
+    if fault is None:
+        assert prepare()["status"] == "quiesced"
+    else:
+        with pytest.raises(ConflictError) as held:
+            prepare()
+        assert held.value.data["code"] == "native_request_quiescence_unconfirmed"
+        assert held.value.data["requests"][0]["request_id"] == request.id
+
+
 def test_native_exception_retires_owned_child_and_unknown_outcome_holds(
     session, project_id, tmp_path, monkeypatch
 ):

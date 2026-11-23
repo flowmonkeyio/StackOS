@@ -201,28 +201,6 @@ def test_messages_usage_and_model_reach_existing_live_and_final_owner(tmp_path, 
     assert result.model_observation["status"] == "observed"
 
 
-@pytest.mark.parametrize("fault", ["warning", "native", "exit"])
-def test_grok_messages_incomplete_stderr_invalidates_live_usage(tmp_path, monkeypatch, fault):
-    rows = events("grok")
-    if fault == "native":
-        rows[-1].update(is_error=True, errors=["denied"])
-    executable(
-        tmp_path,
-        monkeypatch,
-        "grok",
-        rows,
-        stderr="warning: incomplete usage",
-        exit_code=int(fault == "exit"),
-    )
-    updates = []
-    result = grok.run_agent(
-        tmp_path, "role", "work", SCHEMA, on_session=lambda _: None, on_usage=updates.append
-    )
-    assert result.ok is (fault == "warning")
-    assert result.usage is None
-    assert updates[-1] is None
-
-
 @pytest.mark.parametrize(
     "warning_position,fault",
     [

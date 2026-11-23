@@ -27,6 +27,93 @@ def _available_host(host, **_kwargs):
     return replace(result, agent_execution={**result.agent_execution, "runnable": "available"})
 
 
+def test_setup_auto_selection_skips_unmanaged_available_host(api, tmp_path, monkeypatch):
+    from stackos.project_setup_execution import resolve_preferences
+    from stackos.repositories.base import ValidationError
+
+    inspected = []
+
+    def inspect(host, **kwargs):
+        inspected.append(host)
+        return replace(_available_host(host), available=host in {"hermes", "grok"})
+
+    monkeypatch.setattr(service, "inspect_host", inspect)
+    with Session(api.app.state.engine) as session:
+        project = WorkspaceRepository(session).start_session(runtime="codex", cwd=str(tmp_path))
+        assert resolve_preferences(session, project.project_id) == {"host_key": "grok"}
+        assert "hermes" not in inspected
+        with pytest.raises(ValidationError, match="Hermes managed execution is unavailable"):
+            resolve_preferences(
+                session,
+                project.project_id,
+                {"host_key": "hermes", "provider": "configured", "model": "custom/model"},
+            )
+
+
+def test_default_native_registration_admits_bound_project_without_global_root_pin(
+    api, tmp_path, monkeypatch
+):
+    from stackos import install, task_delivery
+    from stackos.host_mcp import bridge
+    from stackos.host_mcp.adapters import antigravity
+    from stackos.repositories.base import ValidationError
+
+    home, directory = tmp_path / "native-home", tmp_path / "registered-native-project"
+    home.mkdir()
+    directory.mkdir()
+    for key in ("STACKOS_WORKSPACE_ROOT", "STACKOS_MCP_BRIDGE_COMMAND"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(service, "default_home", lambda: home)
+    monkeypatch.setattr(bridge, "default_home", lambda: home)
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: "/fixture/agy")
+    monkeypatch.setattr(antigravity, "token_preflight", lambda _home: None)
+    monkeypatch.setattr(install, "stackos_skill_is_current", lambda *a, **kw: True)
+    monkeypatch.setattr(install, "stackos_skill_is_owned", lambda *a, **kw: True)
+    monkeypatch.setattr(install, "copy_managed_stackos_skill_to", lambda *a, **kw: None)
+    original = service._definition_by_key
+    definition = replace(original("antigravity"), native_models=None)
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda key: definition if key == "antigravity" else original(key),
+    )
+    registered = antigravity.register(home)
+    assert registered.status == "registered_current"
+    path = antigravity.config_path(home)
+    before = path.read_bytes()
+    assert "--workspace-root" not in json.loads(before)["mcpServers"]["stackos"]["args"]
+    with Session(api.app.state.engine) as session:
+        project = WorkspaceRepository(session).start_session(runtime="codex", cwd=str(directory))
+        arguments = {
+            "project_id": project.project_id,
+            "project_dir": str(directory),
+            "agents": {
+                "delivery_agent": {
+                    "host_key": "antigravity",
+                    "name": "builder",
+                    "instructions": "Build",
+                }
+            },
+            "role_keys": {"delivery_agent"},
+        }
+        resolved = task_delivery.resolve_delivery_settings(session, **arguments)
+        assert resolved["mcp_route_identities"]["delivery_agent"]["project_dir"] == str(
+            directory.resolve()
+        )
+        assert path.read_bytes() == before
+        foreign = WorkspaceRepository(session).start_session(runtime="codex", cwd=str(home))
+        with pytest.raises(ValidationError, match="intended workspace project binding"):
+            task_delivery.resolve_delivery_settings(
+                session, **{**arguments, "project_id": foreign.project_id}
+            )
+        # An explicit per-server override must not be replaced by the launch default.
+        config = json.loads(before)
+        config["mcpServers"]["stackos"]["env"] = {"STACKOS_WORKSPACE_ROOT": str(home)}
+        path.write_text(json.dumps(config))
+        with pytest.raises(ValidationError, match="different project root"):
+            task_delivery.resolve_delivery_settings(session, **arguments)
+
+
 @pytest.mark.parametrize("transition", ["changed", "unknown", "unknown-before"])
 def test_console_setup_selection_fences_account_probe(
     api, settings, tmp_path, monkeypatch, transition

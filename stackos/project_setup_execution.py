@@ -145,6 +145,7 @@ def resolve_preferences(
                 d.policy.host_key
                 for d in service._definitions()
                 if d.run_agent
+                and d.policy.agent_execution.managed_execution
                 and "workspace-write" in d.policy.agent_execution.sandboxes
                 and service.inspect_host(d.policy.host_key, data_dir=data_dir).available
             ),

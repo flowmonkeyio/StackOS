@@ -74,7 +74,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.33"
+    assert loaded.preset.version == "0.8.34"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -137,7 +137,8 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     assert "independent exact-commit review" in required
     assert "TaskTracker.config_json.delivery" in required
     assert "tracker.configureDelivery" in required
-    assert "Antigravity and Hermes" in required and "normal native permissions" in required
+    assert "Antigravity uses normal native permissions" in required
+    assert "Antigravity and Hermes" not in required
     assert "executes remaining workflow gates through assigned agents" in required
     assert "waive required ticket independence because work is micro" in boundaries
     assert "did not implement" in policy["independence"]

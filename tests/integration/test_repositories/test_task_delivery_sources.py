@@ -89,7 +89,8 @@ def test_antigravity_registered_delivery_and_distinct_review(
     candidate = commit(tmp_path, "Baseline")
     calls = []
 
-    def execute(command, directory, stdin, schema, host, decode, **options):
+    def execute(command, directory, stdin, schema, host, decode, env, /, **options):
+        assert env["STACKOS_WORKSPACE_ROOT"] == str(directory.resolve())
         packet = json.loads(
             command[command.index("--print") + 1].split("\nReturn only", 1)[0].rsplit("\n\n", 1)[-1]
         )
@@ -1078,7 +1079,8 @@ def test_inline_roles_forward_reasoning_and_resume_frozen_native_selection(
     commit(tmp_path, "Baseline")
     calls = []
 
-    def execute(command, directory, prompt, schema, host, parse, **options):
+    def execute(command, directory, prompt, schema, host, parse, env, /, **options):
+        assert env["STACKOS_WORKSPACE_ROOT"] == str(directory.resolve())
         phase = "delivery" if host == "Claude Code" else "review"
         flag = "--effort" if phase == "delivery" else "--reasoning-effort"
         assert options["process_control"] is not None

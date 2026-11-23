@@ -161,7 +161,7 @@ Startup reconsiders eligible queued work or safely retired exact sessions once
 through the existing controller. Historical stops/failures, uncertain surviving
 owners and changed authority remain held; general stopped-work recovery still
 requires explicit authorization. The shared
-host capability owner selects review mode; Antigravity and Hermes use normal native
+host capability owner selects review mode; Antigravity uses normal native
 sessions with review-only instructions and no enforced read-only isolation.
 Native read-only controls remain where supported. See
 [task handoff](task-tracker.md#automated-task-delivery).

@@ -98,7 +98,6 @@ def test_hermes_managed_gateway_route_rejects_before_submission(
         pytest.fail("Managed Hermes must reject before native discovery or submission")
 
     monkeypatch.setattr(hermes, "resolve_hermes_bin", forbidden)
-    monkeypatch.setattr(hermes, "execute_json_agent", forbidden)
     options = {
         "model": "selected/model",
         "provider": "openrouter",

@@ -5,7 +5,7 @@ Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Scoped amendment: Candidate admission and bounded reporting-only continuation from v0.8.30.
 Scoped amendment: Simple, complete delivery first and project planning guidance routing from v0.8.31.
 Scoped amendment: Proof continuity and role-specific duties from v0.8.32.
-Scoped amendment: Explicit preparation references and safe fresh fallback from v0.8.33.
+Scoped amendment: Remove unavailable Hermes review execution from v0.8.34.
 The v0.8.25 adaptation and prior scoped amendments remain; other source deltas are not claimed.
 Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -272,16 +272,6 @@ their tickets; there is no separate delivery-summary assignment.
 
 ## Dispatch And Review Each Ticket
 
-For optional preparation context, main selects and explicitly admits a completed
-read-only receipt through `tracker.startDelivery.preparation_parent`; follow
-`docs/task-tracker.md` for its typed outcome/session pins. Never infer safe
-content by scanning history. Current hosts lack demonstrated safe child-role
-replacement, so NEW assignments use the existing fresh compact launch with an
-explicit unsupported/absent decision. Independent review receives no delivery
-history; repair/recovery retains exact sessions and never fresh-falls back after
-missing identity, denial, partial execution or failed resume. Preserve failed
-native evidence; do not add fork machinery, upgrades, seed calls or savings claims.
-
 Choose terminal-managed delegation or explicit `tracker.startDelivery` handoff.
 For automatic delivery, resolve agent identity, instructions, harness and model
 from `TaskTracker.config_json.delivery` defaults and task overrides
@@ -298,7 +288,7 @@ must not rewrite drafts or saved values. Source/default edits affect fresh
 admissions; queued/running work and resumed native sessions retain admitted
 settings. Prove this without adding a settings owner, forcing effort or editing
 the user's host configuration.
-Antigravity and Hermes reviewers use normal native permissions with review-only
+Antigravity reviewers use normal native permissions with review-only
 instructions and no enforced read-only isolation. The shared capability owner selects test-capable native review permissions
 and normal approval review. Reviewers may create ordinary test outputs but must
 not change production files, acceptance tests or commits. Record the actual mode

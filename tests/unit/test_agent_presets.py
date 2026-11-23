@@ -923,7 +923,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "architecture": "0.6.9",
         "test-designer": "0.6.14",
         "delivery": "0.7.27",
-        "delivery-reviewer": "0.6.28",
+        "delivery-reviewer": "0.6.29",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1075,7 +1075,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         assert requirement in reviewer
     assert "do not expand scope or alter shared interfaces/ownership" not in delivery
     assert "commit_sha" in delivery and "commit_sha" in reviewer
-    assert "antigravity and hermes" in reviewer and "normal native sessions" in reviewer
+    assert "antigravity uses normal native sessions" in reviewer
+    assert "antigravity and hermes" not in reviewer
     assert "no enforced read-only guarantee" in reviewer
     # The shared adaptation also changes the release role's effective source.
     assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.3"

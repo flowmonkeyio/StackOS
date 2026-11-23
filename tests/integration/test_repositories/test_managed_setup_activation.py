@@ -53,7 +53,8 @@ def test_managed_setup_selects_registered_antigravity(managed, session, monkeypa
     _execution, _project, scheduler, _factory = managed
     calls = []
 
-    def execute(command, root, stdin, schema, host, decode, **options):
+    def execute(command, root, stdin, schema, host, decode, env, /, **options):
+        assert env["STACKOS_WORKSPACE_ROOT"] == str(root.resolve())
         assert host == "Antigravity" and options["process_control"] is not None
         assert json.loads(command[command.index("--json-schema") + 1]) == RESULT_SCHEMA
         assert "Consume its complete project_setup_method" in command[command.index("--print") + 1]

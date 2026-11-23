@@ -116,6 +116,7 @@ def run_agent(
         output_schema,
         "Grok",
         lambda stdout: MessagesStream(HOST_KEY, _message_result).decode_output(stdout),
+        {**subprocess_env_for_cli(cli), "STACKOS_WORKSPACE_ROOT": str(project_dir.resolve())},
         process_control=process_control,
         stderr_error=diagnostic,
         usage_requires_complete_output=True,

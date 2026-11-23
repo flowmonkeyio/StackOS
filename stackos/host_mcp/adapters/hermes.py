@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
-import stat
 import subprocess
-import tempfile
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -14,12 +12,7 @@ from typing import Any
 
 import yaml
 
-from stackos.host_mcp.agent_execution import (
-    ManagedProcessControl,
-    execute_json_agent,
-    json_object,
-    structured_prompt,
-)
+from stackos.host_mcp.agent_execution import ManagedProcessControl
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     command_matches,
@@ -34,8 +27,6 @@ from stackos.host_mcp.result import (
     AgentSandbox,
     HostMcpResult,
     looks_secretish,
-    normalize_model_observation,
-    usage_snapshot,
 )
 
 HOST_KEY = "hermes"
@@ -68,169 +59,9 @@ def run_agent(
     resume_thread_id: str | None = None,
     process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
-    if process_control is not None:
-        # A process-group handle owns only the viewer, never accepted gateway work.
-        return AgentRunResult(None, error=MANAGED_EXECUTION_ERROR)
-    if sandbox == "read-only":
-        return AgentRunResult(None, error="Hermes does not support strict read-only review.")
-    if not model or not provider:
-        return AgentRunResult(None, error="Hermes execution requires explicit provider and model.")
-    cli = resolve_hermes_bin()
-    if cli is None:
-        return AgentRunResult(None, error="No Hermes CLI was found by host discovery.")
-    # -z unconditionally auto-approves unattended turns in v0.23.3. The documented
-    # chat stream route retains the profile's single-query approval policy and
-    # forwards usage-file to the same native terminal report writer.
-    with tempfile.TemporaryDirectory(prefix="stackos-hermes-") as directory:
-        usage_path = Path(directory) / "usage.json"
-        command = [
-            cli,
-            "--profile",
-            profile or "default",
-            "--in",
-            str(project_dir),
-            "--usage-file",
-            str(usage_path),
-            "chat",
-            "--oneshot",
-            "--quiet",
-            "--format",
-            "stream-json",
-            "--query",
-            structured_prompt(instructions + "\n\n" + prompt, output_schema),
-            "--provider",
-            provider,
-            "--model",
-            model,
-        ]
-        if resume_thread_id is not None:
-            command += ["--resume", resume_thread_id]
-        return execute_json_agent(
-            command,
-            project_dir,
-            "",
-            output_schema,
-            "Hermes",
-            lambda stdout: _agent_result(stdout, _read_usage_report(usage_path)),
-            process_control=process_control,
-        )
-
-
-def _read_usage_report(path: Path) -> dict[str, Any]:
-    """Optional native evidence: never follow links, block on pipes or read unbounded data."""
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as report:
-            info = os.fstat(report.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_size > 65536:
-                return {}
-            data = report.read(65537)
-        if len(data) > 65536:
-            return {}
-        return json_object(data.decode("utf-8"))
-    except (OSError, ValueError, RecursionError):
-        return {}
-
-
-def _agent_result(stdout: str, report: dict[str, Any] | None = None) -> AgentRunResult:
-    report = report or {}
-    error = None
-    terminal: dict[str, Any] = {}
-    try:
-        events = [json_object(line) for line in stdout.splitlines() if line.strip()]
-        if not events or events[-1].get("type") != "result":
-            raise ValueError("Missing Hermes terminal result event")
-        terminal = events[-1]
-    except (ValueError, RecursionError) as exc:
-        if not report:
-            # Let the common process boundary retain stderr launch/auth errors.
-            raise
-        error = f"Invalid Hermes result: {stdout.strip()[:4096] or exc}"
-    terminal_id = _session_id(terminal.get("session_id"))
-    report_id = _session_id(report.get("session_id"))
-    invalid_terminal = terminal.get("session_id") not in (None, "") and terminal_id is None
-    mismatch = bool(terminal_id and report_id and terminal_id != report_id)
-    if invalid_terminal:
-        error = "Invalid Hermes session identity"
-    elif mismatch:
-        error = "Hermes terminal/report session identity mismatch"
-    session_id = None if invalid_terminal or mismatch else terminal_id or report_id
-    model_observation = (
-        normalize_model_observation(
-            {
-                "status": "observed",
-                "model": report.get("model"),
-                "provider": report.get("provider"),
-                "session_id": session_id,
-                "source": "hermes.usage-file.v0.23.3",
-            },
-            session_id=session_id,
-            host_key=HOST_KEY,
-        )
-        if report_id and session_id
-        else None
-    )
-    # oneshot.py copies turn_finalizer's session_* main-loop counters.
-    # usage_pricing.CanonicalUsage defines cache buckets as additional input;
-    # reasoning is already included in output. Auxiliary totals have other scope.
-    counts = [
-        report.get(key)
-        for key in (
-            "input_tokens",
-            "cache_read_tokens",
-            "cache_write_tokens",
-            "output_tokens",
-            "total_tokens",
-        )
-    ]
-    usage = None
-    if report_id and session_id and all(type(count) is int and count >= 0 for count in counts):
-        usage = usage_snapshot(
-            "hermes.oneshot.main.v0.23.3",
-            "session",
-            sum(counts[:3]),
-            counts[3],
-            counts[4],
-            cache_read=counts[1],
-            cache_write=counts[2],
-            reasoning=report.get("reasoning_tokens"),
-        )
-    failures = [key for key in ("failed", "partial", "interrupted") if report.get(key)]
-    if report.get("completed") is False:
-        failures.append("completed=false")
-    if failures:
-        reason = report.get("failure") or report.get("turn_exit_reason") or "unknown reason"
-        error = error or f"Hermes turn did not complete ({', '.join(failures)}): {reason}"
-    result = None
-    try:
-        if type(terminal.get("exit_code")) is not int or terminal["exit_code"] != 0:
-            error = error or str(terminal.get("error") or "Hermes turn did not complete.")
-        result = json_object(terminal["text"])
-    except (ValueError, TypeError, KeyError, RecursionError) as exc:
-        if not report and not terminal:
-            raise
-        error = error or f"Invalid Hermes result: {stdout.strip()[:4096] or exc}"
-    return AgentRunResult(
-        0,
-        thread_id=session_id,
-        result=result,
-        usage=usage,
-        model_observation=model_observation,
-        error=error,
-    )
-
-
-def _session_id(value: Any) -> str | None:
-    if (
-        not isinstance(value, str)
-        or not value
-        or value != value.strip()
-        or value.startswith("-")
-        or value.lower() in {"latest", "last"}
-        or looks_secretish(value)
-    ):
-        return None
-    return value
+    # The gateway owns accepted work beyond the lifetime of its CLI viewer.
+    # Keep registration available, but expose no unsupported launch path.
+    return AgentRunResult(None, error=MANAGED_EXECUTION_ERROR)
 
 
 def inspect(
@@ -684,17 +515,6 @@ def _read_profile_server(
 
 def _hermes_config_path(home: Path, profile: str | None = None) -> Path:
     return _profile_home(home, profile) / "config.yaml"
-
-
-def task_mcp_servers(home: Path, profile: str | None, names: set[str]) -> dict:
-    """Inspect only the explicitly selected native profile."""
-    servers = {}
-    for name in names:
-        entry, _, error = _read_profile_server(home, _normalize_profile(profile), name)
-        if error or entry is None:
-            raise ValueError("Hermes task routes require existing selected-profile servers")
-        servers[name] = entry
-    return servers
 
 
 def _run_hermes(

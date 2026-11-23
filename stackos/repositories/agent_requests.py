@@ -269,6 +269,15 @@ class AgentRequestRepository:
                     func.json_extract(metadata, path + ".execution.host_key"),
                     func.json_extract(metadata, path + ".snapshot.host_key"),
                 ),
+                func.json_extract(metadata, path + ".exit_code"),
+                func.json_type(metadata, path + ".cancelled"),
+                func.json_type(metadata, path + ".error"),
+                func.json_type(metadata, path + ".result"),
+                func.json_type(metadata, path + ".execution.finished"),
+                func.json_extract(metadata, path + ".execution.thread_id"),
+                func.json_extract(metadata, path + ".execution.model_observation.source"),
+                func.json_extract(metadata, path + ".execution.model_observation.status"),
+                func.json_extract(metadata, path + ".execution.model_observation.session_id"),
             ).where(func.json_type(metadata, path).is_not(None))
         ).all()
         unresolved = []
@@ -282,6 +291,15 @@ class AgentRequestRepository:
             retirement,
             stop_error,
             host_key,
+            exit_code,
+            cancelled_kind,
+            error_kind,
+            result_kind,
+            finished_kind,
+            thread_id,
+            observation_source,
+            observation_status,
+            observation_session,
         ) in rows:
             issues = []
             if kind != "object" or not invocation_id:
@@ -290,10 +308,36 @@ class AgentRequestRepository:
                 issues.append("native_terminal_persistence_unconfirmed")
             if exit_kind != "integer" and retirement != "prevented":
                 issues.append("native_outcome_unobserved")
+            # Compatibility with the retired daemon-owned Hermes parser: this
+            # source marker accompanied its exact-session native terminal
+            # result, emitted after gateway admission settlement in v0.23.3.
+            # It is retained protocol provenance, not a binary-version probe.
+            # Generic exit-zero/results or viewer retirement cannot substitute.
+            hermes_settled = (
+                host_key == "hermes"
+                and observation_source == "hermes.usage-file.v0.23.3"
+                and observation_status == "observed"
+                and isinstance(thread_id, str)
+                and bool(thread_id)
+                and thread_id == thread_id.strip() == observation_session
+                and not thread_id.startswith("-")
+                and thread_id.lower() not in {"latest", "last"}
+                and finished_kind == "true"
+                and exit_kind == "integer"
+                and exit_code == 0
+                and cancelled_kind == "false"
+                and error_kind == "null"
+                and result_kind == "object"
+            )
             if (
                 stop_error
                 or retirement not in {None, "stopped", "prevented"}
-                or (host_key and retirement != "prevented" and managed_execution_error(host_key))
+                or (
+                    host_key
+                    and retirement != "prevented"
+                    and not hermes_settled
+                    and managed_execution_error(host_key)
+                )
             ):
                 issues.append("native_retirement_unconfirmed")
             if issues:

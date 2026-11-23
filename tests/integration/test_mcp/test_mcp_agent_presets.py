@@ -310,7 +310,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         "stackos.sdlc.requirements-flow-definer": "0.6.8",
         "stackos.sdlc.planning": "0.7.30",
         "stackos.sdlc.delivery": "0.7.27",
-        "stackos.sdlc.delivery-reviewer": "0.6.28",
+        "stackos.sdlc.delivery-reviewer": "0.6.29",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -424,7 +424,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert (
         compact_skill["key"] == full_skill["summary"]["key"] == "stackos.sdlc.delivery-orchestrator"
     )
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.33"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.34"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
@@ -443,21 +443,6 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         },
     )
     assert described_skill["preset"] == full_skill
-    preparation = next(
-        rule for rule in full_instructions if rule.startswith("For optional preparation context,")
-    )
-    for requirement in (
-        "completed read-only receipt",
-        "tracker.startDelivery.preparation_parent",
-        "typed outcome and frozen-session pins",
-        "NEW assignments use the existing fresh compact launch",
-        "explicit unsupported/absent decision",
-        "repair/recovery retains exact sessions",
-        "missing identity, denial, partial execution or failed resume",
-        "no fork machinery, upgrades, seed calls or savings claims",
-        "Source guidance does not activate future native capabilities or rewrite retained sessions",
-    ):
-        assert requirement in preparation
     observation = next(
         rule for rule in full_instructions if rule.startswith("Start routine observation")
     )

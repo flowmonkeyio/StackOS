@@ -270,10 +270,11 @@ def test_registered_saved_reasoning_reaches_distinct_native_role_commands(
     )
     commands = []
 
-    def execute(command, directory, prompt, schema, host, parse, **options):
+    def execute(command, directory, prompt, schema, host, parse, env, /, **options):
         phase = json.loads(prompt)["phase"]
         commands.append((phase, command))
         assert directory == tmp_path and options["process_control"] is not None
+        assert env["STACKOS_WORKSPACE_ROOT"] == str(directory.resolve())
         return AgentRunResult(0, thread_id=f"native-{phase}", result=generic_result())
 
     monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fixture/claude")

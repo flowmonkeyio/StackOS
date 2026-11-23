@@ -265,12 +265,13 @@ def test_saved_main_settings_reach_native_setup_and_frozen_continuation(
     tracker.configure_main_agent(project_id=project, preferences=saved)
     commands = []
 
-    def execute(command, directory, prompt, schema, host_name, parse, **options):
+    def execute(command, directory, prompt, schema, host_name, parse, env, /, **options):
         commands.append(command)
         context = json.loads(prompt)
         assert context["project_id"] == project
         assert str(directory) == context["project_dir"]
         assert options["process_control"] is not None
+        assert env["STACKOS_WORKSPACE_ROOT"] == str(directory.resolve())
         report = {
             "status": "needs_input" if len(commands) == 1 else "partial",
             "progress": {"message": "Checked fixture", "evidence_ref": "fixture:native-setup"},

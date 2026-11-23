@@ -5,7 +5,6 @@ from dataclasses import replace
 
 import pytest
 import tomlkit
-import yaml
 
 from stackos.host_mcp import bridge, service
 
@@ -37,8 +36,8 @@ def controlled_profile_host(monkeypatch):
     return "grok"
 
 
-def write_native_route(home, root, host, profile=None):
-    command = bridge.resolve_bridge_command(runtime=host, workspace_root=root)
+def write_native_route(home, host):
+    command = bridge.resolve_bridge_command(runtime=host)
     entry = {"command": command[0], "args": command[1:]}
     if host == "claude-code":
         path = home / ".claude.json"
@@ -50,11 +49,7 @@ def write_native_route(home, root, host, profile=None):
         path = home / ".grok/config.toml"
         data = tomlkit.dumps({"mcp_servers": {"stackos": entry}})
     else:
-        base = home / ".hermes"
-        if profile and profile != "default":
-            base = base / "profiles" / profile
-        path = base / "config.yaml"
-        data = yaml.safe_dump({"mcp_servers": {"stackos": entry}})
+        raise ValueError(f"Unsupported managed native host: {host}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(data)
 
@@ -91,13 +86,12 @@ def native_route_defaults(monkeypatch, tmp_path):
                 host = (
                     selected.get("host_key") or kwargs.get("host_key") or defaults.get("host_key")
                 )
-                if host not in {"claude-code", "antigravity", "grok", "hermes"}:
+                if host not in {"claude-code", "antigravity", "grok"}:
                     continue
                 monkeypatch.setattr(service, "default_home", lambda: home)
                 monkeypatch.setattr(bridge, "default_home", lambda: home)
                 monkeypatch.delenv("GROK_HOME", raising=False)
-                monkeypatch.delenv("HERMES_HOME", raising=False)
-                write_native_route(home, root, host, selected.get("profile"))
+                write_native_route(home, host)
                 bindings = WorkspaceRepository(session).list_bindings()
                 if not any(
                     b.last_known_root and Path(b.last_known_root).resolve() == root

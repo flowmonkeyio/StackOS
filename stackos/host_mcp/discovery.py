@@ -166,7 +166,6 @@ def probe_cli_version(cli_bin: str) -> tuple[str, str | None]:
     return "available", version[0] if version else None
 
 
-
 def _login_shell_path(shell: str) -> str | None:
     key = (shell, os.environ.get("PATH", ""), os.environ.get("HOME", ""))
     now = time.monotonic()

@@ -351,8 +351,7 @@ def operation_specs() -> list[OperationSpec]:
                 default_mode="compact",
                 allowed_modes=("compact", "raw"),
                 compact_notes=(
-                    "Keep task, workflow scope, job, ticket, status, preparation_parent "
-                    "and review_replacement refs "
+                    "Keep task, workflow scope, job, ticket, status, review_replacement refs "
                     "and inspection guidance.",
                 ),
             ),
@@ -385,15 +384,10 @@ def operation_specs() -> list[OperationSpec]:
                 "Lowering a limit only delays new admission; admitted work continues unchanged. "
                 "Git is optional; supplied candidate evidence requires clean matching HEAD. "
                 "Source-change and repair commit obligations come from project guidance.",
-                "Optional preparation_parent pins one existing completed read-only delivery "
-                "task-phase outcome and its frozen native session. Main explicitly attests "
-                "preparation-only applicability; StackOS validates provenance before native "
-                "access, without scanning transcript content. All observed hosts have unsupported "
-                "safe preparation-context reuse. NEW assignments use the existing fresh compact "
-                "launch; occurrences record unsupported/absent. Review never inherits delivery "
-                "history. Retained-session recovery remains exact resume and never falls back "
-                "after missing identity, denial, partial execution or failed resume. "
-                "The task-only reference is immutable across rehandoff; omission retains it.",
+                "New assignments start fresh. Independent review never inherits delivery "
+                "history. Retained-session recovery requires the original native identity "
+                "and never falls back to fresh execution after missing identity, denial, "
+                "partial execution or failed resume.",
                 "Optional task-only mcp_config_ref supplies an absolute outside-Git TOML path "
                 "and SHA256. Selected Codex validates the same bytes and applies only existing "
                 "stdio server args/cwd/non-secret env leaves through native -c overrides; "
@@ -418,11 +412,12 @@ def operation_specs() -> list[OperationSpec]:
                 "No "
                 "required .codex folder. Resolved names and instructions must be complete. "
                 "Optional per-role host_key, "
-                "model, provider and Hermes profile use the host_mcp capability catalog. "
+                "model, provider and profile use the host_mcp capability catalog. "
                 "Without defaults, omitted host/model keeps the Codex/inherited-model path. "
-                "Codex, Claude Code and Grok retain native review controls; Antigravity and Hermes "
-                "review with normal native permissions and review-only behavioral instructions. "
-                "Claude Desktop cannot run headlessly. Unsupported choices fail without fallback.",
+                "Codex, Claude Code and Grok retain native review controls; Antigravity "
+                "reviews with normal native permissions and review-only behavioral instructions. "
+                "Claude Desktop and Hermes cannot run managed tasks. "
+                "Unsupported choices fail without fallback.",
             ),
             returns=(
                 "Returns task/job/status refs. Inspect tracker.get response_mode=raw for progress.",

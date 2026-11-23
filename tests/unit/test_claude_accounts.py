@@ -382,10 +382,8 @@ def test_failed_secure_store_write_keeps_prior_login_and_metadata(tmp_path, monk
 def test_native_resume_keeps_original_session_id_and_environment(tmp_path, monkeypatch):
     session = str(uuid4())
     monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/synthetic/claude")
-    from stackos.host_mcp import agent_execution
-
     monkeypatch.setattr(
-        agent_execution,
+        claude_code,
         "subprocess_env_for_cli",
         lambda _: {"CLAUDE_CONFIG_DIR": "/original/native/home"},
     )
@@ -395,7 +393,10 @@ def test_native_resume_keeps_original_session_id_and_environment(tmp_path, monke
             return subprocess.CompletedProcess(command, 0, "2.1.327 (Claude Code)", "")
         assert command[command.index("--resume") + 1] == session
         assert not kwargs.get("pass_fds")
-        assert kwargs["env"] == {"CLAUDE_CONFIG_DIR": "/original/native/home"}
+        assert kwargs["env"] == {
+            "CLAUDE_CONFIG_DIR": "/original/native/home",
+            "STACKOS_WORKSPACE_ROOT": str(tmp_path.resolve()),
+        }
         return subprocess.CompletedProcess(
             command,
             0,
