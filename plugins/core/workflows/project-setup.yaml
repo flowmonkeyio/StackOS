@@ -1,0 +1,42 @@
+schema_version: stackos.workflow-template.v1
+key: core.project-setup
+name: Project Setup and Update
+version: 0.1.0
+description: Prepare selected project workflows and verify their readiness through tracked delivery.
+domain: core
+steps:
+  - id: prepare
+    title: Prepare project workflows
+    purpose: Adapt the selected method and identify only the missing readiness checks.
+    instructions:
+      - Resolve workflowTemplate.authoringGuide and consume its complete project_setup_method.
+      - Inspect current project guidance and preserve compatible settings and local choices.
+      - Return setup_report with selected workflows, prepared evidence, any adoption proposal and explicit missing workflow_checks.
+      - A question returns blocked with a concrete needs_input report; do not wait for an answer.
+      - Do not start business workflows or change your own task lifecycle.
+    output_refs: [setup_report]
+    success_criteria:
+      - The selected workflows are prepared and the missing bounded proof is explicit.
+  - id: activate-verify
+    title: Verify project readiness
+    purpose: Verify only missing current claims using the selected actual roles and saved defaults.
+    depends_on: [prepare]
+    instructions:
+      - Consume current prepared evidence, canonical saved defaults and completed check references.
+      - Execute only assigned missing bounded checks under your actual native settings.
+      - Return setup_activation_checks with claims, status, environment_ref and evidence_ref when executing a selected check.
+      - Return a success setup_report only when all requested readiness claims are covered; the owner binds your actual completed invocation.
+      - Do not invent completed references, launch business work or repeat accepted proof.
+    output_refs: [setup_report]
+    success_criteria:
+      - Required setup evidence is current, complete and bound to actual native consumption.
+outputs:
+  - key: setup_report
+    name: Setup report
+    type: object
+    required: true
+    description: The existing project setup report, validated against the protected admission.
+    schema: {type: object}
+metadata:
+  builtin: true
+  setup_control: true

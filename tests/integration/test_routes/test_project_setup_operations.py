@@ -265,9 +265,9 @@ def test_console_previews_inherited_host_without_replacing_saved_choices(
 def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     api, settings, tmp_path, monkeypatch
 ):
-    from stackos.db.models import AgentRequest
     from stackos.host_mcp import progress
     from stackos.host_mcp.adapters import codex
+    from tests.integration.test_repositories.test_managed_setup import task_receipts
 
     with Session(api.app.state.engine) as session:
         project = (
@@ -286,18 +286,29 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
         on_session("frozen-setup-thread")
         schema = json.loads(Path(command[command.index("--output-schema") + 1]).read_text())
         assert set(schema["required"]) == set(schema["properties"])
-        assert schema["properties"]["verification_status"]["type"] == ["string", "null"]
+        assert "status" in schema["properties"]
         Path(command[command.index("-o") + 1]).write_text(
             json.dumps(
                 {
-                    "verification_status": None,
-                    "report_json": json.dumps(
+                    "status": "blocked",
+                    "summary": "A setup answer is needed.",
+                    "followups": [],
+                    "outputs": json.dumps(
                         {
-                            "status": "partial",
-                            "progress": {
-                                "message": "Fixture checked",
-                                "evidence_ref": "fixture:native-command",
-                            },
+                            "setup_report": {
+                                "status": "needs_input",
+                                "question": {
+                                    "question_id": "goal" if len(commands) == 1 else "details",
+                                    "revision": 1,
+                                    "prompt": "What is the goal?",
+                                    "workflow_keys": [],
+                                    "response_channel": "managed_ui",
+                                },
+                                "progress": {
+                                    "message": "Fixture checked",
+                                    "evidence_ref": "fixture:native-command",
+                                },
+                            }
                         }
                     ),
                 }
@@ -343,7 +354,7 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     )
     assert first.status_code == 200, first.text
     attempt = first.json()["data"]["attempt"]
-    assert attempt["managed"]["settings"]["model_reasoning_effort"] == "ultra"
+    assert attempt["workflow_admission"]["preferences"]["model_reasoning_effort"] == "ultra"
     scheduler.run()
     assert len(commands) == 1
     assert (
@@ -359,12 +370,15 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     )
     state = call("projectSetup.get", response_mode="raw").json()
     current = state["current_attempt"]
-    assert current["status"] == "partial" and current["thread_id"] == "frozen-setup-thread"
+    assert current["status"] == "needs_input", state["work"]
     assert state["launch_preferences"]["model_reasoning_effort"] == "low"
     continued = call(
-        "projectSetup.continue",
+        "projectSetup.answer",
         request_id=current["request_id"],
         expected_revision=current["revision"],
+        question_id="goal",
+        question_revision=1,
+        answer="Maintain this project",
         response_mode="raw",
     )
     assert continued.status_code == 200, continued.text
@@ -377,15 +391,11 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     assert "resume" not in commands[0]
     assert commands[1][commands[1].index("resume") + 1] == "frozen-setup-thread"
     with Session(api.app.state.engine) as session:
-        for request_id in (
-            current["request_id"],
-            continued.json()["data"]["attempt"]["request_id"],
-        ):
-            snapshot = session.get(AgentRequest, request_id).metadata_json["native_execution"][
-                "snapshot"
-            ]
-            assert snapshot["model_reasoning_effort"] == "ultra"
-            assert snapshot["native_settings"]["model_reasoning_effort"] == "ultra"
+        _, receipts = task_receipts(session, project, first.json()["data"]["task_key"])
+        evidence = receipts[f"workflow-{first.json()['data']['run_plan_id']}-prepare"]
+        snapshot = evidence["sessions"]["delivery"]["agent_snapshot"]
+        assert snapshot["model_reasoning_effort"] == "ultra"
+        assert len(evidence["attempts"]) == 1
 
 
 def test_console_explicit_null_clears_launch_only_and_configure_clears_saved_defaults(
@@ -423,7 +433,7 @@ def test_console_explicit_null_clears_launch_only_and_configure_clears_saved_def
         response_mode="raw",
     )
     assert opened.status_code == 200, opened.text
-    selected = opened.json()["data"]["attempt"]["managed"]["settings"]
+    selected = opened.json()["data"]["attempt"]["workflow_admission"]["preferences"]
     assert selected["host_key"] == "codex" and not set(selected) & {
         "model",
         "model_reasoning_effort",
@@ -720,8 +730,11 @@ def test_console_managed_start_duplicate_cancel_and_preferences(
     assert first.status_code == 200, first.text
     data = first.json()["data"]
     assert data["claim_token"] is None
+    assert data["run_plan_id"] > 0
+    assert data["run_id"] > 0
+    assert data["task_key"] == f"workflow-{data['run_plan_id']}"
     assert data["attempt"]["requested_scope"] == "ready_to_use"
-    assert data["attempt"]["managed"]["settings"]["model"] == "gpt-6.1-sol"
+    assert data["attempt"]["workflow_admission"]["preferences"]["model"] == "gpt-6.1-sol"
     repeated = call("projectSetup.start", {**arguments, "response_mode": "compact"})
     assert repeated.status_code == 200, repeated.text
     assert repeated.json()["data"]["attempt"]["request_id"] == data["attempt"]["request_id"]
@@ -807,7 +820,8 @@ def test_console_answer_scope_replay_and_continuation(api, settings, tmp_path, m
     result = call("answer", arguments)
     assert result.status_code == 200, result.text
     successor = result.json()["data"]["attempt"]
-    assert successor["predecessor_request_id"] == pending["request_id"]
+    assert successor["request_id"] == pending["request_id"]
+    assert successor["predecessor_request_id"] is None
     assert "reports" not in successor and successor["answers"][0]["question_id"] == "goal"
     assert result.json()["data"]["claim_token"] is None
     assert call("answer", {**arguments, "answer": "Different intent"}).status_code == 409
@@ -818,9 +832,9 @@ def test_console_answer_scope_replay_and_continuation(api, settings, tmp_path, m
     scheduler.run()
     # Consumed-answer replay recovers its receipt, without another native admission.
     replay = call("answer", arguments)
-    assert replay.status_code == 200 and replay.json()["data"]["attempt"]["status"] == "partial"
+    assert replay.status_code == 200 and replay.json()["data"]["attempt"]["status"] == "needs_input"
     with Session(api.app.state.engine) as session:
-        assert len(session.exec(select(AgentRequest)).all()) == 2
+        assert len(session.exec(select(AgentRequest)).all()) == 1
 
 
 @pytest.mark.parametrize("directory", ["workflows", "agent-presets", "skill-presets"])

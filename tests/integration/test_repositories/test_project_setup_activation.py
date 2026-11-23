@@ -866,8 +866,6 @@ def test_retained_native_eligibility_is_rechecked_on_read_and_final_success(
 def test_managed_native_reference_uses_wrapped_setup_report(
     attempt, session, outcome, historical_schema
 ):
-    from stackos.project_setup_execution import RESULT_SCHEMA
-
     opened = open_setup(attempt)
     result, native = activation_result(attempt, session)
     report = SetupReport(
@@ -875,7 +873,20 @@ def test_managed_native_reference_uses_wrapped_setup_report(
         progress={"message": "Native setup outcome", "evidence_ref": "fixture/native-report"},
     )
     raw = {"report_json": "invalid JSON" if outcome == "malformed" else report.model_dump_json()}
-    schema = copy.deepcopy(RESULT_SCHEMA)
+    # Retained native-request proof keeps its historical schema after the
+    # executable setup request protocol is replaced by task delivery.
+    schema = {
+        "type": "object",
+        "properties": {
+            "report_json": {"type": "string"},
+            "verification_status": {
+                "type": ["string", "null"],
+                "enum": ["passed", "failed", "blocked", None],
+            },
+        },
+        "required": ["report_json", "verification_status"],
+        "additionalProperties": False,
+    }
     if historical_schema:
         # A completed historical result retains its original optional field
         # contract. Current transport requirements cannot invalidate that proof.

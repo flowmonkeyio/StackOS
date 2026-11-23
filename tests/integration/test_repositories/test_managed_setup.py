@@ -1,53 +1,35 @@
-"""Managed setup shares real request execution and task capacity owners."""
+"""Project setup uses the canonical workflow/task runner; legacy ownership stays fenced.
 
-# Imported pytest fixtures are intentionally shadowed by fixture arguments.
-# ruff: noqa: F811
+Native adapters are deterministic fixtures, not installed-host activation evidence.
+Shared queue/session/lifetime matrices remain in test_task_delivery.py.
+"""
 
-import asyncio
+# Imported fixtures intentionally provide the normal native route and lifetime.
+
 import json
-import os
-import subprocess
-import sys
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
-from threading import Event
-from time import perf_counter
-from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 from sqlmodel import Session, select
 
 from stackos import task_delivery
-from stackos.db.models import AgentRequest, RunPlan, TrackerTask
+from stackos.db.models import AgentRequest, RunPlan, TrackerTask, TrackerTicket
 from stackos.host_mcp import service
 from stackos.host_mcp.result import AgentRunResult, HostMcpResult
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.project_setup import ProjectSetupRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.workspaces import WorkspaceRepository
-from stackos.task_capacity import save_limits
-from tests.integration.test_repositories.test_project_setup import verified_result
-from tests.integration.test_repositories.test_request_execution import (
-    native_lifetime,  # noqa: F401
-    threaded_session,  # noqa: F401
-)
-from tests.integration.test_repositories.test_task_delivery import (
-    QueuedScheduler,
-    native_source_fixtures,  # noqa: F401
-    prepared_task,
-    submit,
-)
+from tests.helpers.native_task_routes import native_route_defaults  # noqa: F401
+from tests.integration.test_repositories.test_request_execution import native_lifetime  # noqa: F401
+from tests.integration.test_repositories.test_task_delivery import QueuedScheduler, generic_result
 
 
 def capacity_counts(session, scheduler):
     rows = task_delivery.delivery_capacity(session, scheduler)["projects"]
     return {key: sum(row[key] for row in rows) for key in ("running_count", "queued_count")}
-
-
-def reserve_setup(execution, session, scheduler):
-    rows = task_delivery.delivery_capacity(session, scheduler)["projects"]
-    return execution.reserve_setup(session, scheduler, {row["project_id"]: row for row in rows})
 
 
 def _host_status(host, *, available=True, **_kwargs):
@@ -95,8 +77,27 @@ def launch(managed, **choices):
     )
 
 
-def execute_job(scheduler):
-    scheduler.run()
+def install_native(monkeypatch, runner):
+    """Replace only the native adapter; service owns real invocation receipts."""
+    original = service._definition_by_key
+
+    def definition(key):
+        found = original(key)
+        return replace(found, run_agent=runner) if found and found.run_agent else found
+
+    monkeypatch.setattr(service, "_definition_by_key", definition)
+
+
+def task_receipts(session, project, task_key):
+    session.expire_all()
+    task = session.exec(
+        select(TrackerTask).where(TrackerTask.project_id == project, TrackerTask.key == task_key)
+    ).one()
+    tickets = session.exec(select(TrackerTicket).where(TrackerTicket.task_id == task.id)).all()
+    return task, {
+        ticket.key: (ticket.completion_evidence_json or {}).get("automatic_delivery", {})
+        for ticket in tickets
+    }
 
 
 def stored_setup(session, project, key, payload):
@@ -122,59 +123,6 @@ def stored_setup(session, project, key, payload):
     return row.id
 
 
-@pytest.mark.parametrize(
-    "shape", ["missing", "unknown", "retired_unknown", "source_only", "namespace_only"]
-)
-def test_unclassified_setup_fences_capacity_directory_and_ordinary_admission(
-    managed, session, project_id, tmp_path, shape
-):
-    from datetime import datetime
-
-    from stackos.db.models import AgentRequestStatus
-    from stackos.repositories.base import ConflictError
-
-    execution, project, scheduler, _factory = managed
-    payload = {"status": "running"}
-    if shape in {"unknown", "retired_unknown"}:
-        payload["entry_kind"] = "legacy"
-    if shape == "retired_unknown":
-        payload.update(status="failed", managed={"slot_reserved": False})
-    request_id = stored_setup(session, project, "unclassified-owner", payload)
-    row = session.get(AgentRequest, request_id)
-    row.status = AgentRequestStatus.CLAIMED
-    row.claim_expires_at = datetime(2000, 1, 1)
-    if shape == "source_only":
-        row.metadata_json = {"native_execution": row.metadata_json["native_execution"]}
-    if shape == "namespace_only":
-        row.source_kind = None
-    session.add(row)
-    session.commit()
-    before = deepcopy(row.metadata_json)
-    expected = {"project_id": project, "request_id": request_id, "next_action": "inspect_request"}
-    for read in (
-        lambda: capacity_counts(session, scheduler),
-        lambda: execution.setup_directories(session),
-    ):
-        with pytest.raises(ConflictError) as error:
-            read()
-        assert error.value.data == expected
-    prepared_task(session, project_id)
-    root = tmp_path / "ordinary"
-    root.mkdir()
-    with pytest.raises(ConflictError) as error:
-        submit(session, project_id, root, scheduler)
-    assert error.value.data == expected
-    session.expire_all()
-    assert session.get(AgentRequest, request_id).metadata_json == before
-    task = session.exec(
-        select(TrackerTask).where(
-            TrackerTask.project_id == project_id, TrackerTask.key == "deliver"
-        )
-    ).one()
-    assert task.metadata_json == {"keep": "yes"}
-    assert not scheduler.jobs
-
-
 @pytest.mark.parametrize("has_managed_field", [False, True])
 def test_established_external_setup_stays_out_of_managed_admission(
     managed, session, has_managed_field
@@ -188,416 +136,6 @@ def test_established_external_setup_stays_out_of_managed_admission(
     assert capacity_counts(session, scheduler)["running_count"] == 0
     assert capacity_counts(session, scheduler)["queued_count"] == 0
     assert execution.setup_directories(session) == []
-
-
-@pytest.mark.parametrize("history_count", [0, 1, 40])
-def test_admission_projects_only_relevant_setup_scalars(
-    managed, session, project_id, tmp_path, monkeypatch, history_count, record_property
-):
-    from sqlalchemy import event
-
-    from stackos.repositories.project_setup import SetupAdmissionState, SetupAttempt
-
-    execution, project, scheduler, factory = managed
-    opened = launch(managed, host_key="codex")
-    retired = opened.attempt.model_dump(mode="json")
-    retired["schema_version"] = 999  # Intentionally incompatible full history.
-    retired["managed"]["slot_reserved"] = False
-    for index in range(history_count):
-        retired["status"] = (
-            "needs_input",
-            "success",
-            "partial",
-            "failed",
-            "interrupted",
-            "cancelled",
-        )[index % 6]
-        stored_setup(session, project, f"retired-{index}", retired)
-
-    validations, projected, hydrated, columns, queries = [], [], [], [], []
-    validate = SetupAttempt.model_validate
-    project_state = SetupAdmissionState.model_validate
-
-    def validating(value, *args, **kwargs):
-        validations.append(value["request_id"])
-        return validate(value, *args, **kwargs)
-
-    def loaded(_session, instance):
-        if isinstance(instance, AgentRequest):
-            hydrated.append(instance.id)
-
-    def queried(_connection, cursor, statement, parameters, *_args):
-        if "FROM agent_requests" in statement:
-            columns.append([column[0] for column in cursor.description])
-            queries.append((statement, parameters))
-
-    def projecting(value, *args, **kwargs):
-        projected.append(value["request_id"])
-        return project_state(value, *args, **kwargs)
-
-    monkeypatch.setattr(SetupAttempt, "model_validate", validating)
-    monkeypatch.setattr(SetupAdmissionState, "model_validate", projecting)
-    event.listen(Session, "loaded_as_persistent", loaded)
-    event.listen(session.get_bind(), "after_cursor_execute", queried)
-    try:
-        started = perf_counter()
-        with factory() as check:
-            assert capacity_counts(check, scheduler)["running_count"] == 1
-            assert execution.setup_directories(check) == [
-                opened.attempt.managed.settings["project_dir"]
-            ]
-        elapsed = perf_counter() - started
-        assert validations == []
-        assert projected == [opened.attempt.request_id] * 2
-        assert hydrated == []
-        assert columns and all(
-            len(selected) == 9
-            and "metadata_json" not in selected
-            and "body_preview" not in selected
-            for selected in columns
-        )
-        record_property("retired_history_count", history_count)
-        record_property("scalar_rows_per_read", len(projected) // 2)
-        record_property("projected_column_count", len(columns[0]))
-        record_property("full_model_validations", len(validations))
-        record_property("hydrated_requests", len(hydrated))
-        record_property("elapsed_seconds_supporting_only", elapsed)
-        # Real ordinary admission in a different project must survive bad retired history.
-        prepared_task(session, project_id)
-        root = tmp_path / "ordinary"
-        root.mkdir()
-        submit(session, project_id, root, scheduler)
-        assert capacity_counts(session, scheduler)["running_count"] == 2
-    finally:
-        event.remove(Session, "loaded_as_persistent", loaded)
-        event.remove(session.get_bind(), "after_cursor_execute", queried)
-    with session.get_bind().connect() as connection:
-        statement, parameters = queries[0]
-        plan = connection.exec_driver_sql("EXPLAIN QUERY PLAN " + statement, parameters).all()
-        record_property("sqlite_query_plan", [row[3] for row in plan])
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"status": "unknown"},
-        {"status": None},
-        {"status": "missing"},
-        {"slot_reserved": None},
-        {"slot_reserved": "missing"},
-        {"slot_reserved": "false"},
-        {"slot_reserved": 0},
-        {"project_dir": None},
-    ],
-)
-def test_uncertain_setup_ownership_returns_bounded_repair_context(managed, session, change):
-    from stackos.repositories.base import ConflictError
-
-    execution, project, scheduler, _factory = managed
-    opened = launch(managed, host_key="codex")
-    payload = opened.attempt.model_dump(mode="json")
-    payload["status"] = "failed"
-    payload["managed"]["slot_reserved"] = False
-    for name, value in change.items():
-        if name == "status":
-            if value == "missing":
-                payload.pop(name)
-            else:
-                payload[name] = value
-        elif name == "project_dir":
-            payload["managed"]["settings"][name] = value
-            payload["managed"]["slot_reserved"] = True
-        else:
-            if value == "missing":
-                payload["managed"].pop(name)
-            else:
-                payload["managed"][name] = value
-    request_id = stored_setup(session, project, "uncertain", payload)
-    for read in (
-        lambda: capacity_counts(session, scheduler),
-        lambda: execution.setup_directories(session),
-    ):
-        with pytest.raises(ConflictError) as error:
-            read()
-        assert error.value.data == {
-            "project_id": project,
-            "request_id": request_id,
-            "next_action": "inspect_request",
-        }
-    assert (
-        session.get(AgentRequest, request_id).metadata_json["project_setup"]["managed"]
-        == payload["managed"]
-    )
-
-
-def test_setup_reservation_selects_one_current_claimed_candidate(managed, session, monkeypatch):
-    from stackos.repositories.base import ConflictError
-    from stackos.repositories.project_setup import SetupAttempt
-
-    execution, project, scheduler, _factory = managed
-    opened = launch(managed, host_key="codex")
-    queued = opened.attempt.model_dump(mode="json")
-    queued["managed"]["slot_reserved"] = False
-    queued["managed"]["admission_id"] = "prior-daemon"
-    stale = stored_setup(session, project, "stale-queue", queued)
-    queued["managed"]["admission_id"] = task_delivery._admission_id(scheduler)
-    queued["schema_version"] = 999
-    missing_claim = stored_setup(session, project, "lost-claim", queued)
-    queued["schema_version"] = 1
-    first = stored_setup(session, project, "first-current", queued)
-    second = stored_setup(session, project, "second-current", queued)
-    scheduler.project_setup_claims.update({stale: "old", first: "first", second: "second"})
-    validated = []
-    validate = SetupAttempt.model_validate
-
-    def validating(value, *args, **kwargs):
-        validated.append(value["request_id"])
-        return validate(value, *args, **kwargs)
-
-    monkeypatch.setattr(SetupAttempt, "model_validate", validating)
-    assert capacity_counts(session, scheduler)["queued_count"] == 3
-    assert reserve_setup(execution, session, scheduler)[2]["request_id"] == first
-    assert validated == [first]
-    assert reserve_setup(execution, session, scheduler)[2]["request_id"] == second
-    assert validated == [first, second]
-    assert reserve_setup(execution, session, scheduler) is None
-    assert missing_claim not in scheduler.project_setup_claims
-    # A restarted daemon cannot recreate claims, even for otherwise valid queues.
-    assert reserve_setup(execution, session, QueuedScheduler()) is None
-    # An explicitly selected incompatible body fails with bounded repair context.
-    save_limits(session, {project: 4})
-    scheduler.project_setup_claims[missing_claim] = "retained-existing-claim"
-    with pytest.raises(ConflictError) as error:
-        reserve_setup(execution, session, scheduler)
-    assert error.value.data == {
-        "project_id": project,
-        "request_id": missing_claim,
-        "next_action": "inspect_request",
-    }
-    assert validated == [first, second, missing_claim]
-
-
-def test_missed_setup_hydrates_only_exact_job_and_preserves_other_work(
-    managed, session, monkeypatch
-):
-    from stackos.repositories.project_setup import SetupAttempt
-
-    _execution, project, scheduler, factory = managed
-    opened = launch(managed, host_key="codex")
-    payload = opened.attempt.model_dump(mode="json")
-    payload["status"] = "running"
-    payload["schema_version"] = 999
-    payload["managed"]["job_ref"] = "project-setup:unrelated"
-    unrelated = stored_setup(session, project, "unrelated-active", payload)
-    before = deepcopy(session.get(AgentRequest, unrelated).metadata_json)
-    validated = []
-    validate = SetupAttempt.model_validate
-
-    def validating(value, *args, **kwargs):
-        validated.append(value["request_id"])
-        return validate(value, *args, **kwargs)
-
-    monkeypatch.setattr(SetupAttempt, "model_validate", validating)
-    task_delivery.missed_delivery_job(
-        SimpleNamespace(job_id=opened.attempt.managed.job_ref),
-        session_factory=factory,
-        scheduler=scheduler,
-    )
-    session.expire_all()
-    target = session.get(AgentRequest, opened.attempt.request_id).metadata_json["project_setup"]
-    assert target["status"] == "failed" and target["managed"]["slot_reserved"] is False
-    assert validated == [opened.attempt.request_id]
-    assert session.get(AgentRequest, unrelated).metadata_json == before
-    assert capacity_counts(session, scheduler)["running_count"] == 1
-
-
-def test_prior_daemon_reserved_setup_counts_and_fences_ordinary_directory(managed, session):
-    from pathlib import Path
-
-    execution, project, _scheduler, _factory = managed
-    opened = launch(managed, host_key="codex")
-    row, attempt = execution._load(session, project, opened.attempt.request_id)
-    attempt.status = "cancelled"
-    attempt.managed.admission_id = "prior-daemon"
-    execution._save(session, row, attempt)
-    restarted = QueuedScheduler()
-    assert capacity_counts(session, restarted)["running_count"] == 1
-    assert capacity_counts(session, restarted)["queued_count"] == 0
-    prepared_task(session, project)
-    with pytest.raises(ValidationError, match="working directory"):
-        submit(session, project, Path(attempt.managed.settings["project_dir"]), restarted)
-
-
-def test_duplicate_start_freezes_choice_and_queued_cancel_retires_once(managed, session):
-    execution, project, scheduler, factory = managed
-    save_limits(session, {project: 1})
-    first = launch(managed, host_key="codex", model="gpt-6.1-sol")
-    second = launch(managed, host_key="codex", model="gpt-6-astra")
-    assert second.attached and second.attempt.request_id == first.attempt.request_id
-    assert first.claim_token is None and second.claim_token is None
-    assert len(scheduler.jobs) == 1
-    TrackerRepository(session).configure_main_agent(
-        project_id=project, preferences={"host_key": "codex", "model": "gpt-6-astra"}
-    )
-    assert capacity_counts(session, scheduler)["running_count"] == 1
-    execution.cancel_managed(
-        project, first.attempt.request_id, session_factory=factory, scheduler=scheduler
-    )
-    execution.cancel_managed(
-        project, first.attempt.request_id, session_factory=factory, scheduler=scheduler
-    )
-    session.expire_all()
-    attempt = ProjectSetupRepository(session).get(project).current_attempt
-    assert attempt.status == "cancelled"
-    assert attempt.partial_changes_possible is False
-    assert attempt.managed.settings["model"] == "gpt-6.1-sol"
-    assert capacity_counts(session, scheduler)["running_count"] == 0
-    assert not session.exec(select(RunPlan)).all()
-    assert not session.exec(select(TrackerTask)).all()
-
-
-def test_real_request_executor_persists_report_identity_and_releases(managed, session, monkeypatch):
-    _execution, project, scheduler, _factory = managed
-    definition = service._definition_by_key("codex")
-
-    def runner(root, instructions, prompt, schema, *, on_session, **kwargs):
-        on_session("managed-native-fixture")
-        context = json.loads(prompt)
-        assert context["project_id"] == project
-        assert context["guidance_ref"] == {
-            "tool_name": "workflowTemplate.authoringGuide",
-            "arguments": {"response_mode": "raw"},
-        }
-        assert "Consume its complete project_setup_method" in instructions
-        assert str(root) == context["project_dir"]
-        return AgentRunResult(
-            0,
-            thread_id="managed-native-fixture",
-            result={
-                "verification_status": None,
-                "report_json": json.dumps(
-                    {
-                        "status": "partial",
-                        "progress": {
-                            "message": "Inspected; configuration needs input",
-                            "evidence_ref": "fixture:inspection",
-                        },
-                        "recovery_condition": "Select the remaining project inputs",
-                    }
-                ),
-            },
-        )
-
-    monkeypatch.setattr(
-        service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
-    )
-    first = launch(managed, host_key="codex", model="gpt-6.1-sol")
-    execute_job(scheduler)
-    session.expire_all()
-    row = session.get(AgentRequest, first.attempt.request_id)
-    evidence = row.metadata_json["native_execution"]
-    assert (
-        evidence["finished_at"] and evidence["execution"]["thread_id"] == "managed-native-fixture"
-    )
-    assert evidence["snapshot"]["model"] == "gpt-6.1-sol"
-    assert json.loads(evidence["snapshot"]["prompt"])["claim_token"] == "[redacted]"
-    assert row.metadata_json["project_setup"]["status"] == "partial"
-    assert capacity_counts(session, scheduler)["running_count"] == 0
-
-
-@pytest.mark.skipif(os.name != "posix", reason="Owned process groups require POSIX")
-@pytest.mark.parametrize("status", ["partial", "needs_input", "invalid"])
-@pytest.mark.parametrize(
-    "retirement", ["ordinary", "remaining_child", "cancelled", "live_root", "failed_root"]
-)
-def test_setup_report_survives_completed_native_group_cleanup(
-    managed, session, monkeypatch, status, retirement
-):
-    _execution, project, scheduler, _factory = managed
-    definition = service._definition_by_key("codex")
-    controls = []
-    report = {
-        "status": status,
-        "progress": {"message": "Inspected project", "evidence_ref": "fixture:inspection"},
-    }
-    if status == "partial":
-        report["recovery_condition"] = "Reconcile the remaining project inputs"
-    elif status == "needs_input":
-        report["question"] = {
-            "question_id": "goal",
-            "revision": 1,
-            "prompt": "What should this project do?",
-            "workflow_keys": [],
-            "response_channel": "managed_ui",
-        }
-
-    def runner(_root, _instructions, prompt, _schema, *, on_session, process_control, **kwargs):
-        controls.append(process_control)
-        on_session("completed-setup")
-        script = "pass"
-        if retirement in {"remaining_child", "failed_root"}:
-            script = (
-                "import subprocess,sys; "
-                "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
-                f"sys.exit({7 if retirement == 'failed_root' else 0})"
-            )
-        elif retirement == "live_root":
-            script = "import time; time.sleep(30)"
-        process = process_control.spawn(
-            [sys.executable, "-c", script],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        if retirement == "live_root":
-            assert process.poll() is None
-        else:
-            assert process.wait(timeout=3) == (7 if retirement == "failed_root" else 0)
-        if retirement in {"remaining_child", "failed_root", "live_root"}:
-            assert process_control.retirement_status() == "unconfirmed"
-        if retirement == "cancelled":
-            context = json.loads(prompt)
-            assert service.cancel_request_invocations(project, context["request_id"])
-        return AgentRunResult(
-            0,
-            thread_id="completed-setup",
-            result=(
-                {"verification_status": None, "report_json": json.dumps(report)}
-                if status != "invalid"
-                else {"not_a_setup_result": True}
-            ),
-        )
-
-    monkeypatch.setattr(
-        service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
-    )
-    opened = launch(managed, host_key="codex")
-    try:
-        execute_job(scheduler)
-        session.expire_all()
-        row = session.get(AgentRequest, opened.attempt.request_id)
-        native = row.metadata_json["native_execution"]
-        setup = row.metadata_json["project_setup"]
-        assert native["finished_at"] and native["exit_code"] == 0
-        rejected = retirement in {"cancelled", "live_root", "failed_root"}
-        assert native["cancelled"] is rejected
-        assert setup["status"] == ("failed" if rejected or status == "invalid" else status)
-        assert setup["managed"]["slot_reserved"] is False
-        assert service.active_request_execution(project, row.id) is None
-        assert controls[0].retirement_status() == "stopped"
-        if retirement in {"remaining_child", "failed_root", "live_root"}:
-            assert native["process_retirement"]["outcome"] == "stopped"
-        if rejected:
-            assert "cancelled" in setup["managed"]["diagnostic"]
-        elif status == "invalid":
-            assert "Invalid" in setup["managed"]["diagnostic"]
-            assert not setup["reports"]
-        else:
-            assert setup["reports"][-1]["status"] == status
-            assert not setup["managed"]["diagnostic"]
-    finally:
-        for control in controls:
-            control.stop()
 
 
 def test_invalid_explicit_selection_rejects_before_request(managed, session):
@@ -622,7 +160,7 @@ def test_saved_main_agent_preserves_specialists_and_inherits(managed, session):
         "main_agent": {"host_key": "codex", "model": "gpt-6.1-sol"},
     }
     first = launch(managed)
-    assert first.attempt.managed.settings["model"] == "gpt-6.1-sol"
+    assert first.attempt.workflow_admission.preferences["model"] == "gpt-6.1-sol"
 
 
 def test_omitted_model_keeps_native_default_and_recommendation_is_advisory(managed, session):
@@ -637,8 +175,8 @@ def test_omitted_model_keeps_native_default_and_recommendation_is_advisory(manag
     )
     repo.configure_main_agent(project_id=project, preferences={"host_key": "codex", "model": None})
     opened = launch(managed)
-    assert opened.attempt.managed.settings["host_key"] == "codex"
-    assert "model" not in opened.attempt.managed.settings
+    assert opened.attempt.workflow_admission.preferences["host_key"] == "codex"
+    assert "model" not in opened.attempt.workflow_admission.preferences
     catalog = service._definition_by_key("codex").policy.agent_execution
     assert catalog.recommended_model in catalog.models
 
@@ -680,331 +218,6 @@ def test_invalid_reasoning_creates_no_managed_request(managed, session):
     assert not managed[2].jobs
 
 
-@pytest.mark.parametrize("setup_first", [True, False])
-def test_setup_and_delivery_compete_in_both_orders(
-    managed, session, tmp_path, monkeypatch, setup_first
-):
-    execution, project, scheduler, factory = managed
-    save_limits(session, {project: 1})
-    prepared_task(session, project)
-    monkeypatch.setattr(task_delivery, "_select_work", lambda *args: (None, None, False))
-    root = tmp_path / "task"
-    root.mkdir()
-    if setup_first:
-        opened = launch(managed, host_key="codex")
-        submit(session, project, root, scheduler)
-    else:
-        submit(session, project, root, scheduler)
-        opened = launch(managed, host_key="codex")
-    session.expire_all()
-    current = ProjectSetupRepository(session).get(project).current_attempt
-    assert current.status == "queued"
-    assert current.managed.slot_reserved == setup_first
-    assert capacity_counts(session, scheduler)["running_count"] == 1
-    assert capacity_counts(session, scheduler)["queued_count"] == 1
-    execution.cancel_managed(
-        project, opened.attempt.request_id, session_factory=factory, scheduler=scheduler
-    )
-    scheduler.run()
-    assert capacity_counts(session, scheduler)["running_count"] == 0
-
-
-def test_setup_uses_its_project_limit_and_retains_claims_while_other_project_is_full(
-    managed, session, project_id, tmp_path, monkeypatch
-):
-    execution, setup_project, scheduler, factory = managed
-    assert setup_project != project_id
-    save_limits(session, {project_id: 1, setup_project: 1})
-    prepared_task(session, project_id)
-    monkeypatch.setattr(task_delivery, "_select_work", lambda *args: (None, None, False))
-    for key in ("deliver", "unrelated"):
-        root = tmp_path / key
-        root.mkdir()
-        submit(session, project_id, root, scheduler, task_key=key)
-    opened = launch(managed, host_key="codex")
-    payload = opened.attempt.model_dump(mode="json")
-    payload["managed"]["slot_reserved"] = False
-    waiting = stored_setup(session, setup_project, "waiting", payload)
-    scheduler.project_setup_claims[waiting] = "existing-fixture-claim"
-    claims = dict(scheduler.project_setup_claims)
-    task_delivery.drain_delivery(session_factory=factory, scheduler=scheduler)
-    rows = task_delivery.delivery_capacity(session, scheduler)["projects"]
-    assert {r["project_id"]: (r["running_count"], r["queued_count"]) for r in rows} == {
-        project_id: (1, 1),
-        setup_project: (1, 1),
-    }
-    assert len(scheduler.jobs) == 2
-    assert scheduler.project_setup_claims == claims
-    save_limits(session, {setup_project: 2})
-    task_delivery.drain_delivery(session_factory=factory, scheduler=scheduler)
-    assert len(scheduler.jobs) == 3
-    assert scheduler.project_setup_claims == claims
-    assert scheduler.jobs[-1][1]["executor"] == f"task-delivery:{setup_project}"
-    assert scheduler.jobs[-1][1]["kwargs"]["claim_token"] == "existing-fixture-claim"
-    assert capacity_counts(session, scheduler) == {"running_count": 3, "queued_count": 1}
-    # A new scheduler has no authority to recreate these claims or resume them.
-    assert reserve_setup(execution, session, QueuedScheduler()) is None
-
-
-def test_setup_native_error_is_failed_without_cancellation(managed, session, monkeypatch):
-    _execution, _project, scheduler, _factory = managed
-    definition = service._definition_by_key("codex")
-
-    def runner(*args, on_session, **kwargs):
-        on_session("native-error-fixture")
-        return AgentRunResult(1, thread_id="native-error-fixture", error="ordinary native error")
-
-    monkeypatch.setattr(
-        service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
-    )
-    opened = launch(managed, host_key="codex")
-    execute_job(scheduler)
-    session.expire_all()
-    row = session.get(AgentRequest, opened.attempt.request_id)
-    setup = row.metadata_json["project_setup"]
-    assert setup["status"] == "failed"
-    assert setup["managed"]["cancel_requested"] is False
-    assert setup["managed"]["slot_reserved"] is False
-    assert "ordinary native error" in setup["managed"]["diagnostic"]
-
-
-@pytest.mark.parametrize("queue_removal_fails", [False, True])
-def test_live_cancel_retains_reports_fences_late_report_and_releases_after_callback(
-    threaded_session, tmp_path, monkeypatch, queue_removal_fails
-):
-    from stackos import project_setup_execution as execution
-    from stackos.mcp.context import MCPContext
-    from stackos.operations.project_setup_state import ProjectSetupReportInput, project_setup_report
-    from stackos.repositories.base import ConflictError
-
-    session = threaded_session
-    root = tmp_path / "live"
-    root.mkdir()
-    opened = WorkspaceRepository(session).start_session(
-        runtime="codex", cwd=str(root), client_session_id="native"
-    )
-    project = opened.project_id
-
-    def factory():
-        return Session(session.get_bind())
-
-    scheduler = QueuedScheduler()
-    monkeypatch.setattr(service, "inspect_host", _host_status)
-    definition = service._definition_by_key("codex")
-    entered, finish = Event(), Event()
-    checked = []
-
-    def runner(root, instructions, prompt, schema, *, on_session, **kwargs):
-        on_session("live-native-session")
-        context = json.loads(prompt)
-        with factory() as own:
-            repo = ProjectSetupRepository(own)
-            proof = verified_result(repo, project)
-            proof.attempt_ref = context["attempt_ref"]
-            arguments = dict(
-                project_id=project,
-                session_id=opened.data.id,
-                client_session_id="native",
-                request_id=context["request_id"],
-                claim_token=context["claim_token"],
-                expected_revision=1,
-                report={
-                    "status": "running",
-                    "progress": {
-                        "message": "First workflow checked",
-                        "evidence_ref": "fixture:partial",
-                    },
-                    "workflow_results": [
-                        {
-                            "workflow_key": "engineering.tracked-delivery",
-                            "expected_revision": 0,
-                            "result": proof.model_dump(mode="json"),
-                        }
-                    ],
-                },
-            )
-            ctx = MCPContext(session=own, request_id="native-report", extras={"surface": "mcp"})
-            with pytest.raises(ConflictError):
-                asyncio.run(
-                    project_setup_report(
-                        ProjectSetupReportInput(**{**arguments, "claim_token": "foreign"}),
-                        ctx,
-                        None,
-                    )
-                )
-            assert repo.get(project).configured_count == 0
-            envelope = asyncio.run(
-                project_setup_report(ProjectSetupReportInput(**arguments), ctx, None)
-            )
-            assert envelope.data.revision == 2
-            checked.append(True)
-            entered.set()
-            assert finish.wait(10)
-            arguments.update(
-                expected_revision=2,
-                report={
-                    "status": "failed",
-                    "progress": {"message": "late mutation", "evidence_ref": "fixture:late"},
-                },
-            )
-            with pytest.raises(ConflictError, match="cancellation"):
-                asyncio.run(project_setup_report(ProjectSetupReportInput(**arguments), ctx, None))
-        return AgentRunResult(
-            0,
-            thread_id="live-native-session",
-            result={"report_json": "{}", "verification_status": None},
-        )
-
-    monkeypatch.setattr(
-        service, "_definition_by_key", lambda _: replace(definition, run_agent=runner)
-    )
-    managed = (execution, project, scheduler, factory)
-    started = launch(managed, host_key="codex")
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(scheduler.run)
-        try:
-            assert entered.wait(10)
-            if queue_removal_fails:
-
-                def unavailable_queue(*args, **kwargs):
-                    raise RuntimeError("fixture queue unavailable")
-
-                monkeypatch.setattr(scheduler, "remove_job", unavailable_queue)
-            cancelled = execution.cancel_managed(
-                project, started.attempt.request_id, session_factory=factory, scheduler=scheduler
-            )
-            assert cancelled.managed.cancel_requested and cancelled.managed.slot_reserved
-            assert cancelled.status == "running"
-            with factory() as check:
-                assert ProjectSetupRepository(check).get(project).configured_count == 1
-                assert capacity_counts(check, scheduler)["running_count"] == 1
-        finally:
-            finish.set()
-        future.result(timeout=10)
-    session.expire_all()
-    after = ProjectSetupRepository(session).get(project)
-    assert checked and after.configured_count == 1
-    assert after.current_attempt.status == "cancelled"
-    assert len(after.current_attempt.reports) == 1
-    assert capacity_counts(session, scheduler)["running_count"] == 0
-
-
-def test_restart_or_timeout_never_reclassifies_unconfirmed_live_work(managed, session):
-    execution, project, _scheduler, factory = managed
-    opened = launch(managed, host_key="codex")
-    row, attempt = execution._load(session, project, opened.attempt.request_id)
-    attempt.status = "running"
-    attempt.managed.callback_started = True
-    row.metadata_json = {
-        **row.metadata_json,
-        "native_execution": {"finished_at": None, "execution": {"thread_id": "still-live"}},
-    }
-    execution._save(session, row, attempt)
-    restarted = QueuedScheduler()
-    after = execution.cancel_managed(project, row.id, session_factory=factory, scheduler=restarted)
-    assert after.status == "running" and after.managed.slot_reserved
-    assert "reconciliation" in after.managed.diagnostic
-    assert capacity_counts(session, restarted)["running_count"] == 1
-    assert launch((execution, project, restarted, factory)).attached
-
-
-def test_changed_folder_and_missed_job_fail_without_launch(managed, session, monkeypatch):
-    execution, project, scheduler, factory = managed
-    opened = launch(managed, host_key="codex")
-    row, attempt = execution._load(session, project, opened.attempt.request_id)
-    attempt.managed.settings["project_dir"] += "-unavailable"
-    execution._save(session, row, attempt)
-    monkeypatch.setattr(
-        service, "run_agent", lambda **kw: pytest.fail("must fail before native launch")
-    )
-    scheduler.run()
-    session.expire_all()
-    assert ProjectSetupRepository(session).get(project).current_attempt.status == "failed"
-    assert capacity_counts(session, scheduler)["running_count"] == 0
-    opened = launch(managed, host_key="codex")
-    scheduler.jobs.clear()
-    task_delivery.missed_delivery_job(
-        SimpleNamespace(job_id=opened.attempt.managed.job_ref),
-        session_factory=factory,
-        scheduler=scheduler,
-    )
-    session.expire_all()
-    assert ProjectSetupRepository(session).get(project).current_attempt.status == "failed"
-    assert capacity_counts(session, scheduler)["running_count"] == 0
-
-
-@pytest.mark.parametrize("setup_first", [True, False])
-def test_setup_and_delivery_preserve_directory_exclusivity(managed, session, setup_first):
-    from pathlib import Path
-
-    from stackos.repositories.base import ConflictError
-    from stackos.repositories.projects import ProjectRepository
-
-    _, project, scheduler, _ = managed
-    root = Path(ProjectRepository(session).get(project).project_dir)
-    prepared_task(session, project)
-    if setup_first:
-        launch(managed, host_key="codex")
-        with pytest.raises(ValidationError, match="working directory"):
-            submit(session, project, root, scheduler)
-    else:
-        submit(session, project, root, scheduler)
-        with pytest.raises(ConflictError, match="folder is owned"):
-            launch(managed, host_key="codex")
-
-
-def test_managed_goal_question_does_not_select_example_workflows(managed, session, monkeypatch):
-    execution, project, scheduler, factory = managed
-    definition = service._definition_by_key("codex")
-
-    def runner(*args, on_session, **kwargs):
-        on_session("goal-question")
-        return AgentRunResult(
-            0,
-            thread_id="goal-question",
-            result={
-                "verification_status": None,
-                "report_json": json.dumps(
-                    {
-                        "status": "needs_input",
-                        "progress": {
-                            "message": "Inspected project intent",
-                            "evidence_ref": "fixture:goal",
-                        },
-                        "question": {
-                            "question_id": "goal",
-                            "revision": 1,
-                            "prompt": "What should this project do?",
-                            "workflow_keys": [],
-                            "response_channel": "managed_ui",
-                        },
-                    }
-                ),
-            },
-        )
-
-    monkeypatch.setattr(
-        service, "_definition_by_key", lambda _: replace(definition, run_agent=runner)
-    )
-    opened = execution.start_managed(
-        project_id=project,
-        session_factory=factory,
-        scheduler=scheduler,
-        mode="setup",
-        workflow_keys=[],
-        preferences={"host_key": "codex"},
-    )
-    scheduler.run()
-    session.expire_all()
-    current = ProjectSetupRepository(session).get(project).current_attempt
-    assert current.status == "needs_input" and current.workflow_keys == []
-    assert not current.managed.slot_reserved and current.thread_id == "goal-question"
-    cancelled = execution.cancel_managed(
-        project, opened.attempt.request_id, session_factory=factory, scheduler=scheduler
-    )
-    assert cancelled.status == "cancelled" and len(cancelled.reports) == 1
-
-
 @pytest.mark.parametrize("problem", ["host", "folder"])
 def test_unavailable_host_or_folder_creates_no_request(managed, session, monkeypatch, problem):
     from pathlib import Path
@@ -1025,134 +238,160 @@ def test_unavailable_host_or_folder_creates_no_request(managed, session, monkeyp
     assert not session.exec(select(AgentRequest)).all()
 
 
-def test_unknown_managed_reservation_blocks_cleanup_after_request_lease_expires(
-    managed, session, tmp_path
+def test_first_setup_owns_one_real_workflow_and_uses_generic_native_receipts(
+    managed, session, monkeypatch
 ):
-    from datetime import UTC, datetime, timedelta
+    execution, project, scheduler, _factory = managed
+    calls = []
 
-    from stackos.config import Settings
-    from stackos.project_cleanup import ProjectCleanupService
-
-    execution, project, _scheduler, _factory = managed
-    opened = launch(managed, host_key="codex")
-    row, attempt = execution._load(session, project, opened.attempt.request_id)
-    attempt.status = "interrupted"
-    attempt.managed.callback_started = True
-    row.claim_expires_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
-    execution._save(session, row, attempt)
-    cleanup = ProjectCleanupService(
-        session, Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
-    )
-    assert "claimed_request" not in cleanup._blockers(project)
-    assert "managed_setup" in cleanup._blockers(project)
-    from stackos.db.models import Project
-
-    project_row = session.get(Project, project)
-    result = asyncio.run(
-        cleanup.delete(
-            project,
-            confirmation={
-                "permanent": True,
-                "project_id": project,
-                "project_slug": project_row.slug,
-            },
+    def runner(root, instructions, prompt, schema, *, on_session, **kwargs):
+        packet = json.loads(prompt)
+        calls.append(packet)
+        assert packet["project_setup"]["workflow_keys"] == ["engineering.tracked-delivery"]
+        assert "claim_token" not in packet["project_setup"]
+        assert not (root / ".codex" / "agents").exists()
+        on_session("first-setup-question")
+        return AgentRunResult(
+            0,
+            thread_id="first-setup-question",
+            result=generic_result(
+                "blocked",
+                {
+                    "setup_report": {
+                        "status": "needs_input",
+                        "progress": {
+                            "message": "Need project goal",
+                            "evidence_ref": "fixture/goal",
+                        },
+                        "question": {
+                            "question_id": "goal",
+                            "revision": 1,
+                            "prompt": "What is the project goal?",
+                            "workflow_keys": ["engineering.tracked-delivery"],
+                            "response_channel": "managed_ui",
+                        },
+                    }
+                },
+            ),
         )
-    )
-    assert result.status == "blocked" and "managed_setup" in result.blockers
-    assert session.get(Project, project) is not None
+
+    install_native(monkeypatch, runner)
+    opened = launch(managed, host_key="codex", model="gpt-6.1-sol")
+    assert opened.run_plan_id and opened.run_id and opened.task_key
+    assert opened.attempt.managed is None
+    assert opened.attempt.workflow_admission.run_plan_id == opened.run_plan_id
+    assert len(scheduler.jobs) == 1 and scheduler.jobs[0][0] is task_delivery.run_delivery
+    attached = launch(managed, host_key="claude-code")
+    assert attached.attached and attached.run_plan_id == opened.run_plan_id
+    assert attached.attempt.workflow_admission.preferences["host_key"] == "codex"
+    assert len(scheduler.jobs) == 1
+    assert ProjectSetupRepository(session).managed_admissions() == []
+    assert execution.setup_directories(session) == []
+    assert sum(capacity_counts(session, scheduler).values()) == 1
+    scheduler.run()
+    task, receipts = task_receipts(session, project, opened.task_key)
+    current = ProjectSetupRepository(session).get(project).current_attempt
+    assert current.status == "needs_input" and current.question.question_id == "goal"
+    assert current.request_id == opened.attempt.request_id
+    receipt = receipts[f"{opened.task_key}-prepare"]["delivery"]
+    assert receipt["execution"]["invocation_id"] and receipt["finished_at"]
+    assert receipt["thread_id"] == "first-setup-question"
+    assert receipt["launch"]["model"] == "gpt-6.1-sol"
+    assert receipt["selected_role"] == "main_agent"
+    assert task.metadata_json["delivery"]["status"] == "stopped"
+    assert len(session.exec(select(RunPlan)).all()) == 1
+    assert len(session.exec(select(AgentRequest)).all()) == 1
+    assert "native_execution" not in session.get(AgentRequest, current.request_id).metadata_json
+    assert len(calls) == 1 and not scheduler.jobs
 
 
-def test_queued_cancel_survives_queue_error_and_late_callback_keeps_replacement_slot(
+@pytest.mark.parametrize("shape", ["missing", "unknown", "retired_unknown", "source_only"])
+def test_unknown_legacy_owner_still_fences_capacity(managed, session, shape):
+    from datetime import datetime
+
+    from stackos.db.models import AgentRequestStatus
+
+    execution, project, scheduler, _ = managed
+    payload = {"status": "running"}
+    if shape in {"unknown", "retired_unknown"}:
+        payload["entry_kind"] = "legacy"
+    if shape == "retired_unknown":
+        payload.update(status="failed", managed={"slot_reserved": False})
+    request_id = stored_setup(session, project, "unclassified-owner", payload)
+    row = session.get(AgentRequest, request_id)
+    row.status = AgentRequestStatus.CLAIMED
+    row.claim_expires_at = datetime(2000, 1, 1)
+    if shape == "source_only":
+        row.metadata_json = {"native_execution": row.metadata_json["native_execution"]}
+    session.add(row)
+    session.commit()
+    before = deepcopy(row.metadata_json)
+    expected = {"project_id": project, "request_id": request_id, "next_action": "inspect_request"}
+    for read in (
+        lambda: capacity_counts(session, scheduler),
+        lambda: execution.setup_directories(session),
+    ):
+        with pytest.raises(ConflictError) as error:
+            read()
+        assert error.value.data == expected
+    session.expire_all()
+    assert session.get(AgentRequest, request_id).metadata_json == before
+
+
+def test_cancel_started_setup_before_first_report_preserves_possible_edits(
     managed, session, monkeypatch
 ):
     execution, project, scheduler, factory = managed
-    opened = launch(managed, host_key="codex")
+    calls = []
 
-    def unavailable_queue(*args, **kwargs):
-        raise RuntimeError("fixture queue unavailable")
-
-    monkeypatch.setattr(scheduler, "remove_job", unavailable_queue)
-    cancelled = execution.cancel_managed(
-        project, opened.attempt.request_id, session_factory=factory, scheduler=scheduler
-    )
-    assert cancelled.status == "cancelled" and "queue removal" in cancelled.managed.diagnostic
-    task_delivery.missed_delivery_job(
-        SimpleNamespace(job_id=cancelled.managed.job_ref),
-        session_factory=factory,
-        scheduler=scheduler,
-    )
-    replacement = launch(managed, host_key="codex")
-    monkeypatch.setattr(
-        service, "run_agent", lambda **kw: pytest.fail("cancelled callback cannot launch")
-    )
-    scheduler.run()
-    session.expire_all()
-    assert execution._load(session, project, opened.attempt.request_id)[1].status == "cancelled"
-    assert capacity_counts(session, scheduler)["running_count"] == 1
-    assert replacement.attempt.request_id != opened.attempt.request_id
-    execution.cancel_managed(
-        project, replacement.attempt.request_id, session_factory=factory, scheduler=scheduler
-    )
-
-
-def test_supported_host_can_report_before_native_thread_identity_is_available(
-    managed, session, monkeypatch
-):
-    from stackos.mcp.context import MCPContext
-    from stackos.operations.project_setup_state import ProjectSetupReportInput, project_setup_report
-
-    _execution, project, scheduler, _factory = managed
-    from stackos.repositories.projects import ProjectRepository
-
-    root = ProjectRepository(session).get(project).project_dir
-    reporter = WorkspaceRepository(session).start_session(
-        runtime="claude-code", cwd=root, client_session_id="claude-native"
-    )
-    definition = service._definition_by_key("claude-code")
-    observed = []
-
-    def runner(root, instructions, prompt, schema, **kwargs):
-        context = json.loads(prompt)
-        assert service.active_request_execution(project, context["request_id"])["thread_id"] is None
-        report = {
-            "status": "needs_input",
-            "progress": {"message": "Inspected native project", "evidence_ref": "fixture:host"},
-            "question": {
-                "question_id": "goal",
-                "revision": 1,
-                "prompt": "What is the goal?",
-                "workflow_keys": ["engineering.tracked-delivery"],
-                "response_channel": "managed_ui",
-            },
-        }
-        envelope = asyncio.run(
-            project_setup_report(
-                ProjectSetupReportInput(
-                    project_id=project,
-                    session_id=reporter.data.id,
-                    client_session_id="claude-native",
-                    request_id=context["request_id"],
-                    claim_token=context["claim_token"],
-                    expected_revision=1,
-                    report=report,
-                ),
-                MCPContext(session=session, request_id="host-report", extras={"surface": "mcp"}),
-                None,
+    def runner(root, instructions, prompt, schema, *, on_session, **kwargs):
+        packet = json.loads(prompt)
+        calls.append(packet)
+        on_session("cancel-before-report")
+        (root / "possible-setup-edit.txt").write_text("retained partial work")
+        setup = packet["project_setup"]
+        with factory() as check:
+            assert (
+                ProjectSetupRepository(check)._row(project, "engineering.tracked-delivery") is None
             )
+        cancelled = execution.cancel_setup(
+            project,
+            setup["request_id"],
+            expected_revision=setup["expected_revision"],
+            external_work_stopped=False,
+            session_factory=factory,
+            scheduler=scheduler,
         )
-        observed.append(envelope.data.revision)
+        assert cancelled.partial_changes_possible
         return AgentRunResult(
             0,
-            thread_id="claude-final-thread",
-            result={"report_json": json.dumps(report), "verification_status": None},
+            thread_id="cancel-before-report",
+            result=generic_result(
+                outputs={
+                    "setup_report": {
+                        "status": "partial",
+                        "progress": {
+                            "message": "Late report after cancellation",
+                            "evidence_ref": "fixture/late",
+                        },
+                    }
+                },
+            ),
         )
 
-    monkeypatch.setattr(
-        service, "_definition_by_key", lambda _: replace(definition, run_agent=runner)
-    )
-    launch(managed, host_key="claude-code", model="claude-sonnet-5-5")
+    install_native(monkeypatch, runner)
+    opened = launch(managed, host_key="codex")
     scheduler.run()
-    session.expire_all()
+    task, receipts = task_receipts(session, project, opened.task_key)
     current = ProjectSetupRepository(session).get(project).current_attempt
-    assert observed == [2] and current.status == "needs_input"
-    assert current.thread_id == "claude-final-thread" and not current.managed.slot_reserved
+    assert current.status == "cancelled" and current.partial_changes_possible
+    assert ProjectSetupRepository(session)._row(project, "engineering.tracked-delivery") is None
+    assert TrackerRepository(session).delivery_defaults(project_id=project) == {}
+    assert (
+        Path(current.workflow_admission.project_dir) / "possible-setup-edit.txt"
+    ).read_text() == "retained partial work"
+    receipt = receipts[f"{opened.task_key}-prepare"]["delivery"]
+    assert receipt["execution"]["invocation_id"] and receipt["finished_at"]
+    assert receipt["validated_outcome"] is None
+    assert task.metadata_json["delivery"]["slot_reserved"] is False
+    assert len(calls) == 1 and not scheduler.jobs

@@ -15,7 +15,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic import ValidationError as ModelValidationError
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
@@ -567,6 +567,9 @@ class SetupStartOut(BaseModel):
     attempt: SetupAttempt
     attached: bool
     claim_token: str | None = None
+    run_plan_id: int | None = None
+    run_id: int | None = None
+    task_key: str | None = None
     guidance_ref: dict[str, Any] = Field(default_factory=lambda: dict(SETUP_GUIDANCE_REF))
     next_action: str
 
@@ -597,6 +600,19 @@ class SetupAdmissionState(BaseModel):
         return self.reservation == "true"
 
 
+class SetupWorkOut(BaseModel):
+    run_plan_id: int
+    run_id: int | None
+    task_key: str
+    run_status: Literal["draft", "started", "completed", "failed", "aborted"]
+    delivery_status: Literal["queued", "running", "stopped", "complete"] | None
+    busy: bool
+    reason: str | None
+    can_continue: bool
+    can_cancel: bool
+    can_answer: bool
+
+
 class ProjectSetupOut(BaseModel):
     project_id: int
     eligible: bool
@@ -613,6 +629,7 @@ class ProjectSetupOut(BaseModel):
     unknown_count: int = 0
     workflows: list[SetupWorkflowOut] = Field(default_factory=list)
     current_attempt: SetupAttempt | None = None
+    work: SetupWorkOut | None = None
     launch_preferences: dict[str, Any] = Field(default_factory=dict)
     delivery_defaults_digest: str
     attempt_diagnostic: str | None = None
@@ -658,6 +675,19 @@ class ProjectSetupRepository:
                 func.json_extract(metadata, "$.project_setup.managed.settings.project_dir").label(
                     "project_dir"
                 ),
+                col(AgentRequest.source_kind).label("source_kind"),
+                col(AgentRequest.status).label("request_status"),
+                col(AgentRequest.run_plan_id).label("run_plan_id"),
+                col(AgentRequest.request_key).label("request_key"),
+                col(AgentRequest.title).label("request_title"),
+                col(AgentRequest.attention_status).label("attention_status"),
+                case(
+                    (
+                        func.json_type(metadata, "$.project_setup.workflow_admission") == "object",
+                        func.json_extract(metadata, "$.project_setup"),
+                    ),
+                    else_=None,
+                ).label("tracked_setup"),
             )
             .where(
                 or_(
@@ -694,9 +724,86 @@ class ProjectSetupRepository:
             query = query.where(
                 func.json_extract(metadata, "$.project_setup.managed.job_ref") == job_ref
             )
+        # Tracked setup has an admission record, not a second native owner.
+        # Validate actual immutable links in batches, including historical rows.
+        from stackos.project_setup_workflow import validate_admission
+
+        rows = [row._asdict() for row in self._s.execute(query).all()]
+        tracked = [item for item in rows if item["tracked_setup"] is not None]
+        if tracked:
+            attempts: dict[int, SetupAttempt] = {}
+            for request in tracked:
+                try:
+                    attempts[request["request_id"]] = SetupAttempt.model_validate_json(
+                        request["tracked_setup"]
+                    )
+                except ModelValidationError as error:
+                    raise ConflictError(
+                        "managed setup ownership is uncertain; "
+                        "inspect before admitting another writer",
+                        data={
+                            "project_id": request["project_id"],
+                            "request_id": request["request_id"],
+                            "next_action": "inspect_request",
+                        },
+                    ) from error
+            links = [
+                item.workflow_admission
+                for item in attempts.values()
+                if item.workflow_admission is not None
+            ]
+            plans = {
+                row.id: row
+                for row in self._s.exec(
+                    select(RunPlan)
+                    .where(col(RunPlan.id).in_({link.run_plan_id for link in links}))
+                    .execution_options(populate_existing=True)
+                ).all()
+            }
+            tasks = {
+                row.id: row
+                for row in self._s.exec(
+                    select(TrackerTask)
+                    .where(col(TrackerTask.id).in_({link.task_id for link in links}))
+                    .execution_options(populate_existing=True)
+                ).all()
+            }
+            for request in tracked:
+                current = attempts[request["request_id"]]
+                link = current.workflow_admission
+                assert link is not None
+                validate_admission(
+                    row=AgentRequest(
+                        id=request["request_id"],
+                        project_id=request["project_id"],
+                        source_kind=request["source_kind"],
+                        status=request["request_status"],
+                        run_plan_id=request["run_plan_id"],
+                        request_key=request["request_key"],
+                        title=request["request_title"],
+                        attention_status=request["attention_status"],
+                    ),
+                    current=current,
+                    plan=plans.get(link.run_plan_id),
+                    task=tasks.get(link.task_id),
+                    project_id=request["project_id"],
+                    request_id=request["request_id"],
+                    run_plan_id=link.run_plan_id,
+                    task_id=link.task_id,
+                )
         states = []
-        for row in self._s.execute(query).all():
-            values = row._asdict()
+        for values in rows:
+            if values.pop("tracked_setup") is not None:
+                continue
+            for key in (
+                "source_kind",
+                "request_status",
+                "run_plan_id",
+                "request_key",
+                "request_title",
+                "attention_status",
+            ):
+                values.pop(key)
             owner_project = values.pop("owner_project_id")
             owner_request = values.pop("owner_request_id")
             try:
@@ -707,8 +814,8 @@ class ProjectSetupRepository:
                 raise ConflictError(
                     "managed setup ownership is uncertain; inspect before admitting another writer",
                     data={
-                        "project_id": row.project_id,
-                        "request_id": row.request_id,
+                        "project_id": values["project_id"],
+                        "request_id": values["request_id"],
                         "next_action": "inspect_request",
                     },
                 ) from exc
@@ -1039,7 +1146,6 @@ class ProjectSetupRepository:
         session_id: int | None,
         mode: Literal["setup", "update"],
         workflow_keys: list[str],
-        managed: SetupManagedExecution | None = None,
         requested_scope: SetupScope = "ready_to_use",
     ) -> SetupStartOut:
         """Reserve the project before admission; attachment never issues writer authority."""
@@ -1056,13 +1162,20 @@ class ProjectSetupRepository:
                     },
                 )
             session = self._s.get(AgentSession, session_id) if session_id is not None else None
-            if managed is None and (session is None or session.project_id != project_id):
+            if session is None or session.project_id != project_id:
                 raise ConflictError(
                     "agent session does not belong to the setup project",
                     data={"project_id": project_id},
                 )
             current = self._current_attempt(project_id)
-            if current and (
+            if current and current.workflow_admission:
+                from stackos.project_setup_execution import _started, work_projection
+
+                work = work_projection(self._s, current)
+                if work["run_status"] in {"draft", "started"} or work["busy"]:
+                    self._s.commit()
+                    return _started(self._s, current, attached=True)
+            elif current and (
                 current.status in {"queued", "running", "needs_input"}
                 or (current.managed is not None and current.managed.slot_reserved)
             ):
@@ -1072,7 +1185,7 @@ class ProjectSetupRepository:
                 )
             if (
                 mode not in {"setup", "update"}
-                or (not workflow_keys and managed is None)
+                or not workflow_keys
                 or len(workflow_keys) > 100
                 or any(not key.strip() or len(key) > 200 for key in workflow_keys)
                 or len(set(workflow_keys)) != len(workflow_keys)
@@ -1103,19 +1216,15 @@ class ProjectSetupRepository:
                 request_id=row.id,
                 mode=mode,
                 requested_scope=requested_scope,
-                entry_kind="managed_ui" if managed else "existing_agent",
+                entry_kind="existing_agent",
                 session_id=session_id,
-                runtime=managed.settings["host_key"]
-                if managed
-                else (session.runtime if session else ""),
+                runtime=session.runtime,
                 thread_id=session.thread_id if session else None,
-                managed=managed,
-                status="queued" if managed else "running",
+                status="running",
                 workflow_keys=workflow_keys,
                 observed_receipt_revisions={
                     key: (receipt.revision if (receipt := self._row(project_id, key)) else 0)
-                    for key in set(workflow_keys)
-                    | ({item.workflow_key for item in state.workflows} if managed else set())
+                    for key in workflow_keys
                 },
             )
             row.metadata_json = {SETUP_NAMESPACE: attempt.model_dump(mode="json")}
@@ -1125,7 +1234,7 @@ class ProjectSetupRepository:
                 attempt=attempt,
                 attached=False,
                 claim_token=token,
-                next_action="observe_managed_setup" if managed else "execute_in_existing_session",
+                next_action="execute_in_existing_session",
             )
         except Exception:
             self._s.rollback()
@@ -2264,6 +2373,8 @@ class ProjectSetupRepository:
             ).all()
         )
         receipts_by_key = {item.workflow_key: item for item in receipts}
+        # The packaged controller runs setup; it is not a business method to adapt.
+        keys.discard("core.project-setup")
         aggregate_keys = keys.copy()
         if workflow_key:
             keys.add(workflow_key)
@@ -2304,6 +2415,8 @@ class ProjectSetupRepository:
             else "current"
         )
         delivery_defaults = TrackerRepository(self._s).delivery_defaults(project_id=project_id)
+        from stackos.project_setup_execution import work_projection
+
         return ProjectSetupOut(
             project_id=project_id,
             eligible=eligible,
@@ -2317,6 +2430,9 @@ class ProjectSetupRepository:
             update_count=updates,
             unknown_count=unknown,
             current_attempt=attempt,
+            work=work_projection(self._s, attempt)
+            if attempt and attempt.workflow_admission
+            else None,
             launch_preferences=delivery_defaults.get("main_agent", {}),
             delivery_defaults_digest=_digest(delivery_defaults),
             attempt_diagnostic=attempt_diagnostic,

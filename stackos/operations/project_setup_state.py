@@ -108,7 +108,7 @@ async def project_setup_start(
             workflow_keys=inp.workflow_keys,
             preferences=inp.preferences.model_dump(exclude_unset=True) if inp.preferences else None,
         )
-        return WriteEnvelope(project_id=inp.project_id, data=result)
+        return WriteEnvelope(project_id=inp.project_id, run_id=result.run_id, data=result)
     if inp.preferences is not None:
         raise ToolNotGrantedError("existing-session entry cannot select a managed agent")
     if ctx.extras.get("surface") != "mcp":
@@ -234,7 +234,7 @@ async def project_setup_continue(inp: ProjectSetupContinueInput, ctx: MCPContext
         scheduler=ctx.extras["scheduler"],
         **answer,
     )
-    return WriteEnvelope(project_id=inp.project_id, data=result)
+    return WriteEnvelope(project_id=inp.project_id, run_id=result.run_id, data=result)
 
 
 async def project_setup_cancel(inp: ProjectSetupCancelInput, ctx: MCPContext, _emit):
@@ -318,7 +318,17 @@ def validate_setup_replay(
         continuation_current = SetupAttempt.model_validate(
             (row.metadata_json or {}).get("project_setup")
         )
-        if (
+        if predecessor.workflow_admission:
+            from stackos.project_setup_execution import work_projection
+
+            work_projection(ctx.session, predecessor)
+            if (
+                continuation_current.request_id != predecessor.request_id
+                or continuation_current.workflow_admission != predecessor.workflow_admission
+                or continuation_saved.attempt.attempt_ref != predecessor.attempt_ref
+            ):
+                raise ConflictError("continuation retry target changed; inspect setup")
+        elif (
             predecessor.successor_request_id != continuation_current.request_id
             or continuation_current.predecessor_request_id != inp.request_id
             or continuation_current.attempt_ref != predecessor.attempt_ref
@@ -490,8 +500,10 @@ def operation_specs() -> list[OperationSpec]:
                     "Compact retains attempt/revision, workflow outcomes, "
                     "requested scope, activation coverage, question and repair context. "
                     "Raw retains report history.",
-                    "Setup creates no business run or tracker task. Only managed_ui console "
-                    "entry launches a native coordinator through shared capacity.",
+                    "managed_ui creates a core.project-setup run and real work tickets through "
+                    "task delivery; run_plan_id, run_id and task_key identify that work. "
+                    "existing_agent remains external and creates no native delivery. "
+                    "Neither entry starts the selected business workflow.",
                     "ready_to_use success requires current saved-default/native coverage. "
                     "Incomplete activation returns workflow/missing-claim repair context. "
                     "Adoption proposals are evidence only and never confer local-admin authority.",
@@ -565,12 +577,13 @@ def operation_specs() -> list[OperationSpec]:
                         enabled=True, browser_safe=True, path=f"/api/v1/operations/{name}/call"
                     ),
                 ),
-                purpose="Link one successor request in the exact native session after retirement.",
+                purpose="Resume the same tracked setup work and retained native session "
+                "after retirement.",
                 prerequisites=(
                     "Authenticated console; exact current request/revision; confirmed native exit.",
                 ),
                 returns=(
-                    "Compact/raw retain lineage, question, revision, outcomes and recovery. "
+                    "Compact/raw retain work refs, question, revision, outcomes and recovery. "
                     "No writer token is exposed.",
                 ),
                 examples=(OperationExample(title=summary, arguments=example),),

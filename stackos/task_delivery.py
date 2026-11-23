@@ -2546,6 +2546,7 @@ def resolve_delivery_settings(
     _defer_requirements_to_tickets: bool = False,
     _source_bindings: Mapping[str, int] | None = None,
     _verify_native_routes: bool = True,
+    _setup_bootstrap: tuple[int, int, int] | None = None,
 ) -> dict[str, Any]:
     """Read-only execution preflight for explicit task delivery.
 
@@ -2555,6 +2556,30 @@ def resolve_delivery_settings(
     directory = Path(project_dir).expanduser().resolve()
     if not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
+    if _setup_bootstrap is not None:
+        from stackos.project_setup_workflow import load_admission
+
+        request_id, plan_id, task_id = _setup_bootstrap
+        _, setup = load_admission(
+            session,
+            project_id=project_id,
+            request_id=request_id,
+            run_plan_id=plan_id,
+            task_id=task_id,
+        )
+        setup_plan = RunPlanRepository(session).get(plan_id, project_id=project_id)
+        assert setup.workflow_admission is not None
+        if (
+            setup_plan.template_key != "core.project-setup"
+            or role_keys != {"main_agent"}
+            or set(agents or {}) != {"main_agent"}
+            or setup.workflow_admission.project_dir != str(directory)
+            or any(
+                (agents or {})["main_agent"].get(key) != value
+                for key, value in setup.workflow_admission.preferences.items()
+            )
+        ):
+            raise ValidationError("Setup bootstrap must retain its protected Main selection")
     defaults: dict[str, Any] = (
         {"agents": dict(_retained_agents)}
         if _retained_agents is not None
@@ -2610,7 +2635,7 @@ def resolve_delivery_settings(
             defaults, role_host=choice.get("host_key"), host_key=host_key
         )
         explicit_effort = choice.get("model_reasoning_effort")
-        if choice["host_key"] == "codex" and _retained_agents is None:
+        if choice["host_key"] == "codex" and _retained_agents is None and _setup_bootstrap is None:
             if not choice.get("source_ref"):
                 raise ValidationError(
                     f"Codex {role} adoption_required: select an exact project source_ref",
@@ -3112,9 +3137,7 @@ def _reserve_delivery(session_factory, scheduler):
                 }
             _update_delivery(repo, task.project_id, task.key, **changes)
             return task.project_id, task.key, state
-        from stackos.project_setup_execution import reserve_setup
-
-        return reserve_setup(session, scheduler, capacities)
+        return None
 
 
 def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
@@ -3129,16 +3152,6 @@ def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
         return
     while reserved := _reserve_delivery(session_factory, scheduler):
         project_id, task_key, state = reserved
-        if task_key is None:
-            from stackos.project_setup_execution import schedule_setup
-
-            schedule_setup(
-                project_id=project_id,
-                state=state,
-                session_factory=session_factory,
-                scheduler=scheduler,
-            )
-            continue
         # Keep registration outside managed_launch_lock. Abort must be able to
         # fence a callback even while scheduler registration is blocked.
         try:
@@ -3233,11 +3246,6 @@ def _request_delivery_drain(session_factory, scheduler):
 
 def missed_delivery_job(event, *, session_factory, scheduler):
     """A callback rejected as late never enters run_delivery's finally block."""
-    if event.job_id.startswith("project-setup:"):
-        from stackos.project_setup_execution import missed_setup
-
-        missed_setup(event, session_factory=session_factory, scheduler=scheduler)
-        return
     if not event.job_id.startswith("task-delivery:"):
         return
     with managed_launch_lock, session_factory() as session:
@@ -3345,6 +3353,45 @@ def start_delivery(
     plan = (
         RunPlanRepository(session).get(run_plan_id, project_id=project_id) if run_plan_id else None
     )
+    setup_request_id = (plan.metadata_json or {}).get("project_setup_request_id") if plan else None
+    if setup_request_id:
+        from stackos.project_setup_workflow import read_admission
+
+        assert plan is not None
+        read_admission(
+            session,
+            project_id=project_id,
+            request_id=setup_request_id,
+            run_plan_id=plan.id,
+            task_id=task.id,
+        )
+        if plan.template_key != "core.project-setup":
+            raise ValidationError("Setup bootstrap requires the packaged control workflow")
+        if previous.get("agents"):
+            if any(
+                value is not None
+                for value in (
+                    agents,
+                    delivery_agent,
+                    review_agent,
+                    host_key,
+                    _resolved_settings,
+                )
+            ):
+                raise ValidationError("Setup continuation retains its admitted role settings")
+            _resolved_settings = {
+                key: deepcopy(previous[key])
+                for key in (
+                    "project_dir",
+                    "host_key",
+                    "agents",
+                    "mcp_config_ref",
+                    "mcp_route_identities",
+                )
+                if key in previous
+            }
+            _resolved_settings["project_id"] = project_id
+            agent_assignments = previous.get("agent_assignments", {})
     if plan and controller_run_id is not None and controller_run_id != plan.run_id:
         raise ValidationError("Delivery controller run does not match the workflow plan")
     if plan and not replaying:
@@ -3408,6 +3455,7 @@ def start_delivery(
     }
     if (
         previous.get("status") == "stopped"
+        and not setup_request_id
         and previous.get("handoff_id")
         and previous.get("job_ref")
         == f"task-delivery:{project_id}:{task.id}:{previous['handoff_id']}"
@@ -4299,6 +4347,11 @@ def run_delivery(
                     # Progress detection must retain the full set even when a ticket
                     # is outside the model's current prerequisite/integration scope.
                     completed_ticket_keys = {ticket["key"] for ticket in completed_tickets}
+                    from stackos.project_setup_execution import assignment_context
+
+                    setup_context = assignment_context(
+                        session, project_id, current, selected, phase, completed_tickets
+                    )
                 prior_review = next(
                     (
                         attempt["review"]
@@ -4385,6 +4438,7 @@ def run_delivery(
                                     "reopened dependency work stops this task."
                                 ),
                                 "phase": phase,
+                                **({"project_setup": setup_context} if setup_context else {}),
                                 "occurrence": occurrence,
                                 **(
                                     {"reporting_correction": reporting_correction["diagnostics"]}
@@ -4844,7 +4898,13 @@ def run_delivery(
                         # without persisting an as-yet-unvalidated native payload.
                         pending_evidence = deepcopy(evidence)
                         pending_evidence[phase].pop("result", None)
-                        _save_evidence(repo, project_id, ticket_key, pending_evidence)
+                        _save_evidence(
+                            repo,
+                            project_id,
+                            ticket_key,
+                            pending_evidence,
+                            _commit=setup_context is None,
+                        )
                         status = (
                             RunPlanStepStatus.SUCCESS
                             if accepted
@@ -4853,6 +4913,41 @@ def run_delivery(
                             else RunPlanStepStatus.FAILED
                         )
                         try:
+                            if (
+                                setup_context is not None
+                                and valid
+                                and decision in {"success", "blocked"}
+                            ):
+                                from stackos.project_setup_execution import bind_verification
+                                from stackos.project_setup_workflow import accept_result
+                                from stackos.repositories.run_plans import _ensure_no_secrets
+
+                                # Preserve the canonical output boundary before a domain
+                                # failure can reach the retained failure-receipt writer.
+                                _ensure_no_secrets(outputs, label="run plan step result")
+                                evidence[phase]["validated_outcome"] = decision
+                                _save_evidence(
+                                    repo, project_id, ticket_key, evidence, _commit=False
+                                )
+                                setup_attempt = accept_result(
+                                    session,
+                                    project_id=project_id,
+                                    request_id=setup_context["request_id"],
+                                    run_plan_id=state["run_plan_id"],
+                                    task_id=task.id,
+                                    ticket_id=selected.id,
+                                    attempt=evidence["attempt"],
+                                    phase="review" if phase == "review" else "delivery",
+                                    invocation_id=evidence[phase]["execution"]["invocation_id"],
+                                    handoff_id=handoff_id,
+                                    expected_revision=setup_context["expected_revision"],
+                                )
+                                if (
+                                    accepted
+                                    and workflow_step.step_id == "prepare"
+                                    and setup_attempt.requested_scope == "ready_to_use"
+                                ):
+                                    bind_verification(session, project_id, task, setup_attempt)
                             plans.record_step(
                                 run_plan_id=state["run_plan_id"],
                                 run_id=state["controller_run_id"],
@@ -4865,8 +4960,11 @@ def run_delivery(
                                 error=None
                                 if accepted
                                 else (validation_error or result.error or value.get("summary")),
+                                _commit=setup_context is None,
                             )
                         except RunPlanSecretValidationError as error:
+                            if setup_context is not None:
+                                session.rollback()
                             # Only this producer's bounded contract is safe to retain;
                             # never forward arbitrary exception.data or rejected JSON.
                             evidence[phase].pop("result", None)
@@ -4938,13 +5036,27 @@ def run_delivery(
                                 continue
                             failure_code = "output_validation"
                             raise
+                        except Exception:
+                            if setup_context is not None:
+                                session.rollback()
+                                evidence[phase]["validated_outcome"] = None
+                            raise
                         if valid:
                             evidence[phase]["validated_outcome"] = decision
                         if reporting_correction is not None:
                             correction_receipt = evidence["reporting_corrections"][-1]
                             correction_receipt["status"] = "accepted" if accepted else "rejected"
                             correction_receipt["corrected_receipt"] = deepcopy(evidence[phase])
-                        _save_evidence(repo, project_id, ticket_key, evidence, accepted=accepted)
+                        _save_evidence(
+                            repo,
+                            project_id,
+                            ticket_key,
+                            evidence,
+                            accepted=accepted,
+                            _commit=setup_context is None,
+                        )
+                        if setup_context is not None:
+                            session.commit()
                     else:
                         _save_evidence(
                             repo, project_id, ticket_key, evidence, accepted=accepted, **patch
