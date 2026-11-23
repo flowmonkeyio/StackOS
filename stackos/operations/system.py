@@ -54,6 +54,10 @@ class HostMcpAgentExecutionOut(BaseModel):
     custom_models: bool
     provider_selection: bool
     profile_selection: bool
+    managed_execution: bool = Field(
+        description="StackOS can own and confirm retirement of accepted native work; "
+        "a runnable CLI alone does not establish this."
+    )
     mcp_routing: Literal["unsupported", "per-call", "workspace", "profile"] = "unsupported"
     preparation_context_reuse: Literal["unsupported"] = "unsupported"
     requires_provider_model: bool = Field(
@@ -253,6 +257,8 @@ def operation_specs():
                 "sandbox choices, with catalog notes and provenance. Empty sandboxes mean "
                 "headless execution is unsupported. requires_provider_model controls whether "
                 "native defaults are allowed; provider_selection also permits provider model IDs.",
+                "managed_execution gates managed admission independently of CLI availability. "
+                "Client-only lifetime control cannot confirm accepted work's retirement.",
                 "runnable and cli_version reflect bounded CLI probes. catalog_source and "
                 "model_access distinguish packaged suggestions from observed native choices; "
                 "neither guarantees a model invocation or another account's entitlement.",

@@ -251,7 +251,12 @@ def test_hermes_optional_report_is_bounded_owned_and_unknown(tmp_path, monkeypat
         elif fault == "fifo":
             os.mkfifo(path)
         return subprocess.CompletedProcess(
-            command, 0, messages_output("hermes", {"text": '{"summary":"OK"}'}), ""
+            command,
+            0,
+            messages_output(
+                "hermes", {"text": '{"summary":"OK"}', "session_id": "owned-terminal-session"}
+            ),
+            "",
         )
 
     monkeypatch.setattr(subprocess, "run", execute)
@@ -259,9 +264,131 @@ def test_hermes_optional_report_is_bounded_owned_and_unknown(tmp_path, monkeypat
         "hermes", tmp_path, "Role", "Work", SCHEMA, model="model", provider="openrouter"
     )
     assert result.ok
-    assert result.usage is None and result.thread_id is None and result.model_observation is None
+    assert result.thread_id == "owned-terminal-session"
+    assert result.usage is None and result.model_observation is None
     assert not paths[0].parent.exists()
     assert json.loads(foreign.read_text()) == HERMES_0233
+
+
+@pytest.mark.parametrize("exit_code", [0, 1, 130])
+def test_hermes_terminal_identity_survives_without_optional_metrics(
+    tmp_path, monkeypatch, exit_code
+):
+    # Independent identity is emitted for failed/interrupted results too:
+    # https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/stream_json.py
+    from stackos.repositories.tracker.receipt_projection import receipt_input
+
+    terminal = {
+        "type": "result",
+        "session_id": "owned-terminal-session",
+        "exit_code": exit_code,
+        "error": "interrupted" if exit_code else None,
+        "text": '{"summary":"OK"}',
+    }
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **kw: subprocess.CompletedProcess(
+            command, exit_code, json.dumps(terminal), "interrupted" if exit_code else ""
+        ),
+    )
+    result = run_agent(
+        "hermes", tmp_path, "Role", "Work", SCHEMA, model="model", provider="openrouter"
+    )
+    assert result.ok is (exit_code == 0)
+    assert result.exit_code == exit_code
+    assert result.thread_id == terminal["session_id"]
+    assert result.usage is None and result.model_observation is None
+    receipt = receipt_input(
+        {"launch": {"host_key": "hermes"}, "thread_id": result.thread_id, "error": result.error}
+    )
+    assert receipt["thread_id"] == terminal["session_id"]
+
+
+def test_hermes_exact_resume_uses_terminal_identity_without_optional_metrics(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
+
+    def execute(command, **kw):
+        calls.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            messages_output(
+                "hermes",
+                {
+                    "session_id": "owned-terminal-session",
+                    "text": '{"summary":"OK"}',
+                },
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    first = run_agent(
+        "hermes", tmp_path, "Role", "Work", SCHEMA, model="model", provider="openrouter"
+    )
+    assert first.ok and first.thread_id == "owned-terminal-session" and first.usage is None
+    resumed = run_agent(
+        "hermes",
+        tmp_path,
+        "Role",
+        "Repair",
+        SCHEMA,
+        model="model",
+        provider="openrouter",
+        resume_thread_id=first.thread_id,
+    )
+    assert resumed.ok and resumed.thread_id == first.thread_id and resumed.usage is None
+    assert len(calls) == 2 and calls[1][calls[1].index("--resume") + 1] == first.thread_id
+
+
+def test_hermes_conflicting_terminal_and_report_identity_fails_closed():
+    result = hermes._agent_result(
+        messages_output(
+            "hermes", {"session_id": "different-terminal-session", "text": '{"summary":"OK"}'}
+        ),
+        HERMES_0233,
+    )
+    assert not result.ok and "identity mismatch" in result.error
+    assert result.thread_id is None
+    assert result.usage is None and result.model_observation is None
+
+
+@pytest.mark.parametrize("session_id", [" ", " padded ", "--last", "latest", 123])
+def test_hermes_invalid_terminal_identity_is_not_retained(session_id):
+    result = hermes._agent_result(
+        messages_output("hermes", {"session_id": session_id, "text": '{"summary":"OK"}'})
+    )
+    assert not result.ok and result.thread_id is None
+
+
+def test_hermes_corrupt_optional_identity_cannot_discard_valid_terminal_identity():
+    result = hermes._agent_result(
+        messages_output(
+            "hermes", {"session_id": "owned-terminal-session", "text": '{"summary":"OK"}'}
+        ),
+        {**HERMES_0233, "session_id": 123},
+    )
+    assert result.ok and result.thread_id == "owned-terminal-session"
+    assert result.usage is None and result.model_observation is None
+
+
+def test_hermes_failed_start_with_empty_native_identity_keeps_failure_reason():
+    result = hermes._agent_result(
+        json.dumps(
+            {
+                "type": "result",
+                "session_id": "",
+                "exit_code": 1,
+                "text": "",
+                "error": "credentials unavailable",
+            }
+        )
+    )
+    assert not result.ok and result.error == "credentials unavailable"
+    assert result.thread_id is None and result.usage is None
 
 
 @pytest.mark.parametrize(
@@ -331,7 +458,7 @@ def test_hermes_failure_without_report_stays_failed_and_cleans(tmp_path, monkeyp
     assert len(paths) == 1 and not paths[0].parent.exists()
 
 
-def test_hermes_owned_process_reaches_final_receipt_and_exact_resume(tmp_path, monkeypatch):
+def test_hermes_unmanaged_protocol_reaches_final_receipt_and_exact_resume(tmp_path, monkeypatch):
     import sys
 
     from stackos.host_mcp import service
@@ -358,7 +485,6 @@ def test_hermes_owned_process_reaches_final_receipt_and_exact_resume(tmp_path, m
     monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: str(native))
     previous = None
     measured = []
-    receipts = []
     for resumed in (False, True):
         result = service.run_agent(
             "hermes",
@@ -370,13 +496,7 @@ def test_hermes_owned_process_reaches_final_receipt_and_exact_resume(tmp_path, m
             provider="openrouter",
             profile="work",
             resume_thread_id="hermes-session" if resumed else None,
-            execution_scope=service.AgentExecutionScope(
-                1, "fixture-task", "fixture-ticket", "role"
-            ),
             previous_usage=previous,
-            on_execution_change=lambda call, live: (
-                receipts.append(call.projection()) if not live else None
-            ),
         )
         assert result.ok, result.error
         assert result.model_observation["model"] == "observed/model"
@@ -390,7 +510,6 @@ def test_hermes_owned_process_reaches_final_receipt_and_exact_resume(tmp_path, m
                 "launch": {"host_key": "hermes", "model": "selected/model"},
                 "thread_id": result.thread_id,
                 "model_observation": result.model_observation,
-                "execution": receipts[-1],
                 "usage": previous,
             }
         )
@@ -398,7 +517,6 @@ def test_hermes_owned_process_reaches_final_receipt_and_exact_resume(tmp_path, m
         assert _model_identity(receipt) == ("observed/model", "observed")
         assert receipt["usage"]["measured"]["total"] == 150
     assert measured == [150, 150]
-    assert all(row["model_observation"]["model"] == "observed/model" for row in receipts)
     paths = [Path(line) for line in output_paths.read_text().splitlines()]
     assert len(paths) == 2 and paths[0] != paths[1]
     assert all(not path.parent.exists() for path in paths)

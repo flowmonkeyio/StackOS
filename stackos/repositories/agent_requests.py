@@ -31,6 +31,7 @@ from stackos.host_mcp.result import AgentRunResult
 from stackos.host_mcp.service import (
     ActiveInvocation,
     active_request_execution,
+    managed_execution_error,
     owns_request_invocation,
 )
 from stackos.repositories.base import (
@@ -264,6 +265,10 @@ class AgentRequestRepository:
                 func.json_type(metadata, path + ".exit_code"),
                 func.json_extract(metadata, path + ".process_retirement.outcome"),
                 func.json_extract(metadata, path + ".stop_error"),
+                func.coalesce(
+                    func.json_extract(metadata, path + ".execution.host_key"),
+                    func.json_extract(metadata, path + ".snapshot.host_key"),
+                ),
             ).where(func.json_type(metadata, path).is_not(None))
         ).all()
         unresolved = []
@@ -276,6 +281,7 @@ class AgentRequestRepository:
             exit_kind,
             retirement,
             stop_error,
+            host_key,
         ) in rows:
             issues = []
             if kind != "object" or not invocation_id:
@@ -284,7 +290,11 @@ class AgentRequestRepository:
                 issues.append("native_terminal_persistence_unconfirmed")
             if exit_kind != "integer" and retirement != "prevented":
                 issues.append("native_outcome_unobserved")
-            if stop_error or retirement not in {None, "stopped", "prevented"}:
+            if (
+                stop_error
+                or retirement not in {None, "stopped", "prevented"}
+                or (host_key and retirement != "prevented" and managed_execution_error(host_key))
+            ):
                 issues.append("native_retirement_unconfirmed")
             if issues:
                 unresolved.append(

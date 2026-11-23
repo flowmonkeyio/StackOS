@@ -13,7 +13,7 @@ const catalog = { items: [
   { host_key: 'codex', display_name: 'Codex', available: true, agent_execution: { runnable: 'available', sandboxes: ['workspace-write'], models: ['gpt-6.1-sol'], reasoning_efforts: {} } },
   { host_key: 'claude-code', display_name: 'Claude Code', available: true, agent_execution: { runnable: 'available', sandboxes: ['workspace-write'], models: ['claude-fable-5-2'], reasoning_efforts: {} } },
   { host_key: 'claude-desktop', display_name: 'Claude Desktop', available: true, agent_execution: { runnable: 'unsupported', sandboxes: [], models: [] } },
-  { host_key: 'hermes', display_name: 'Hermes', available: false, agent_execution: { runnable: 'unavailable', sandboxes: ['workspace-write'], models: [] } },
+  { host_key: 'hermes', display_name: 'Hermes', available: true, agent_execution: { runnable: 'available', managed_execution: false, sandboxes: ['workspace-write'], models: [] } },
 ] }
 describe('Agents role form', () => {
   it('shows effective source precedence, supported apps and non-Codex inline contracts in the existing form', async () => {
@@ -31,7 +31,7 @@ describe('Agents role form', () => {
     const field = (label: string) => wrapper!.findAllComponents(UiFormField).find(item => item.props('label') === label)!
     const apps = field('Agent app').getComponent(UiSelect).props('options')
     expect(apps).toContainEqual(expect.objectContaining({ label: 'Claude Desktop · MCP only', disabled: true }))
-    expect(apps).toContainEqual(expect.objectContaining({ label: 'Hermes · CLI unavailable', disabled: true }))
+    expect(apps).toContainEqual(expect.objectContaining({ label: 'Hermes · Managed execution unavailable', disabled: true }))
     field('Role').getComponent(UiSelect).vm.$emit('update:modelValue', 'review_agent'); await flushPromises()
     expect(field('Role instructions').getComponent(UiTextarea).props('modelValue')).toBe('Review')
     expect(wrapper.text()).toContain('This host uses its supported inline contract')

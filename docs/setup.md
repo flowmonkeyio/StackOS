@@ -243,7 +243,7 @@ does not prove execution or model access. Save project agent defaults in
 `tracker.configureDelivery` operation. Task overrides merge by role and freeze
 at handoff. Fresh Codex roles require exact project-native source references;
 other hosts retain supported inline contracts. Saving defaults installs no agent.
-Antigravity and Hermes reviewers use normal native permissions with review-only
+Antigravity reviewers use normal native permissions with review-only
 instructions; receipts do not claim enforced read-only isolation. Supported
 native review controls remain in use on other hosts. See the task handoff
 contract for setup examples.
@@ -268,6 +268,9 @@ connection, plus the observed `cli_version` (null when unknown). A connected
 Hermes shim that exits 127 is unavailable for execution; Claude Desktop is
 MCP-only. Explicit status reads run bounded `--version` and supported native
 model-list probes; rendering does not start a polling job or model turn.
+`agent_execution.managed_execution` separately states whether StackOS can own
+the accepted work's lifetime. Hermes managed launches are unavailable even with
+a runnable CLI: its gateway continues after the viewer exits.
 Antigravity uses exact `agy models` IDs, including Gemini 4 and Claude 5.5
 variants. Grok uses `grok models`. `catalog_source=native` and
 `model_access=observed` identify the current native list, not a guarantee that
@@ -865,7 +868,7 @@ or sibling skills. StackOS uses Hermes's documented `-p/--profile`,
 contracts; default-profile operations explicitly target `-p default` rather
 than inheriting the user's active-profile preference.
 
-Automated Hermes execution uses v0.23.3
+The retained, unmanaged Hermes protocol adapter uses v0.23.3
 `--usage-file ... chat --oneshot --quiet --format stream-json --query ...`.
 The chat stream dispatcher forwards the report and retains the selected profile's
 single-query approval policy (default deny for unanswered flagged actions).
@@ -873,9 +876,14 @@ The `-z` entrypoint is excluded because it unconditionally auto-approves unatten
 turns, even without an explicit `--yolo` flag. See the upstream
 [finite-turn policy](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/gateway/session_finite.py)
 and [approval gate](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/tools/approval.py).
-Provider/model/profile selections remain in force. The report supplies terminal
-session/model/provider and main-loop usage; early identity and live usage are
-unavailable on this path.
+Provider/model/profile selections remain in force. Managed delivery, review and
+setup reject before native submission: the [gateway client](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_client.py)
+is only a viewer, and [detaching](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_chat.py)
+leaves accepted work running. StackOS has no verified exact-turn termination
+contract on this route. A retained client-only handle remains unconfirmed during
+Stop, restart and upgrade; StackOS never kills a shared gateway to infer retirement.
+The terminal result independently supplies session identity; the optional report
+supplies model/provider and main-loop usage. Early identity and live usage are unavailable.
 Missing exact-resume identity stops continuation. See the
 [native usage contract](task-tracker.md#native-usage-receipts)
 for scope, missing-report handling and the protocol-fixture proof limitation.

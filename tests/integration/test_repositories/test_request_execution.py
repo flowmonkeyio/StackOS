@@ -143,6 +143,31 @@ def test_unknown_persisted_native_request_prevents_quiescence(
     assert held.value.data["requests"][0]["request_id"] == request.id
 
 
+@pytest.mark.parametrize("retirement", [None, "stopped", "prevented"])
+def test_hermes_persisted_client_exit_cannot_certify_upgrade_quiescence(
+    session, project_id, retirement
+):
+    repo, request, _claim, _execution = owner(session, project_id)
+    row = session.get(AgentRequest, request.id)
+    row.metadata_json = {
+        "native_execution": {
+            "snapshot": {"host_key": "hermes"},
+            "execution": {"invocation_id": "retained-viewer", "host_key": "hermes"},
+            "finished_at": datetime.now(UTC).isoformat(),
+            "exit_code": 130,
+            "process_retirement": {"outcome": retirement},
+        }
+    }
+    session.add(row)
+    session.commit()
+    if retirement == "prevented":
+        repo.require_native_quiescence()  # No native launch is a different lifetime fact.
+    else:
+        with pytest.raises(ConflictError) as held:
+            repo.require_native_quiescence()
+        assert held.value.data["requests"][0]["issues"] == ["native_retirement_unconfirmed"]
+
+
 def test_native_exception_retires_owned_child_and_unknown_outcome_holds(
     session, project_id, tmp_path, monkeypatch
 ):

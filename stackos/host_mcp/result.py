@@ -256,6 +256,8 @@ class AgentCapabilities:
     provider_selection: bool = False
     profile_selection: bool = False
     requires_provider_model: bool = False
+    # CLI availability alone does not establish ownership of accepted native work.
+    managed_execution: bool = False
     mcp_routing: Literal["unsupported", "per-call", "workspace", "profile"] = "unsupported"
     # Raw fork syntax does not prove safe replacement of inherited role authority.
     preparation_context_reuse: Literal["unsupported"] = "unsupported"

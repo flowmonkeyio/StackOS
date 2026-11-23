@@ -5486,7 +5486,36 @@ def test_incomplete_or_invalid_resolved_defaults_never_schedule(
     assert task.metadata_json == {"keep": "yes"}
 
 
-@pytest.mark.parametrize("host", ["antigravity", "hermes"])
+@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+def test_hermes_managed_handoff_rejects_without_rewriting_settings(
+    session, project_id, tmp_path, role
+):
+    prepared_task(session, project_id)
+    repo = TrackerRepository(session)
+    before = deepcopy(repo.get(project_id=project_id, task_key="deliver").tasks[0].metadata_json)
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="gateway"):
+        submit(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            **{
+                role: {
+                    "host_key": "hermes",
+                    "name": "retained",
+                    "instructions": "Role",
+                    "provider": "openrouter",
+                    "model": "saved/model",
+                    "profile": "saved-profile",
+                }
+            },
+        )
+    assert not scheduler.jobs
+    assert repo.get(project_id=project_id, task_key="deliver").tasks[0].metadata_json == before
+
+
+@pytest.mark.parametrize("host", ["antigravity"])
 @pytest.mark.parametrize("failure", [None, "reject", "native", "mutation"])
 def test_normal_review_receipts_and_same_task_failure(
     session, project_id, tmp_path, monkeypatch, host, failure
@@ -5524,8 +5553,6 @@ def test_normal_review_receipts_and_same_task_failure(
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     review = {"name": "reviewer", "instructions": "Independent review only", "host_key": host}
-    if host == "hermes":
-        review.update(provider="openrouter", model="provider/model")
     submit(session, project_id, tmp_path, scheduler, review_agent=review)
     scheduler.run()
     session.expire_all()

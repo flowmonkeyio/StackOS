@@ -14,6 +14,7 @@ from sqlmodel import Session
 from stackos import task_delivery
 from stackos.host_mcp import service
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
+from stackos.repositories.base import ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.agent_stats import invocation_receipts, usage_refresh
@@ -67,6 +68,74 @@ def test_new_generation_rejoins_authorized_queue_once_and_fences_old_callback(
     startup(session, new)
     assert len(new.jobs) == 1
     assert state(session, project_id) == after
+
+
+@pytest.mark.parametrize("host_in_receipt", [True, False])
+def test_hermes_client_exit_holds_restart_and_explicit_rehandoff(
+    session, project_id, tmp_path, monkeypatch, host_in_receipt
+):
+    prepared_task(session, project_id)
+    old, new = QueuedScheduler(), QueuedScheduler()
+    submit(session, project_id, tmp_path, old)
+    repo = TrackerRepository(session)
+    task = repo.get(project_id=project_id, task_key="deliver").tasks[0]
+    metadata = deepcopy(task.metadata_json)
+    saved = metadata["delivery"]
+    saved["status"] = "running"
+    saved["agents"]["delivery_agent"]["host_key"] = "hermes"
+    saved["continuation_intent"].update(ticket_key="first", phase="delivery")
+    execution = {"invocation_id": "retained-hermes-viewer", "process_identity": {"pid": 12345}}
+    if host_in_receipt:
+        execution["host_key"] = "hermes"
+    repo.update_task(
+        project_id=project_id, task_key="deliver", patch_json={"metadata_json": metadata}
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={
+            "completion_evidence_json": {
+                "automatic_delivery": {
+                    "repair_count": 1,
+                    "delivery": {
+                        "thread_id": "exact-owned-session",
+                        "execution": execution,
+                    },
+                },
+            }
+        },
+    )
+    monkeypatch.setattr(
+        task_delivery.ManagedProcessControl, "observe_identity", lambda _: "stopped"
+    )
+    startup(session, new)
+    held = state(session, project_id)
+    assert held["status"] == "stopped" and held["slot_reserved"]
+    assert "gateway" in held["reason"] and not new.jobs
+    assert held["continuation_intent"]["host_key"] == "hermes"
+    with pytest.raises(ValidationError, match="retiring"):
+        task_delivery._retain_reservation(held, "new-generation")
+    assert (
+        repo.brief(project_id=project_id, ticket_key="first").ticket.completion_evidence_json[
+            "automatic_delivery"
+        ]["repair_count"]
+        == 1
+    )
+
+
+def test_upgrade_rejects_hermes_viewer_only_retirement(session, project_id, tmp_path):
+    prepared_task(session, project_id)
+    submit(session, project_id, tmp_path, QueuedScheduler())
+    repo = TrackerRepository(session)
+    task = repo.get(project_id=project_id, task_key="deliver").tasks[0]
+    saved = {**task.metadata_json["delivery"], "slot_reserved": False}
+    checkpoint = deepcopy(saved["continuation_intent"])
+    checkpoint.update(
+        invocations=[{"invocation_id": "viewer", "host_key": "hermes"}],
+        retirement={"viewer": {"outcome": "stopped", "retired": True}},
+    )
+    with pytest.raises(ValidationError, match="gateway"):
+        task_delivery._validate_upgrade_checkpoint(session, task, saved, checkpoint)
 
 
 def test_missed_authorized_launch_requeues_once_without_accepting_late_callback(

@@ -420,6 +420,11 @@ def retire_invocation(call: ActiveInvocation, *, cancel: bool = True) -> str:
     except Exception as error:
         outcome = "unconfirmed"
         call.process_control.stop_error = f"Native retirement failed: {type(error).__name__}"
+    if outcome != "prevented" and managed_execution_error(call.host_key):
+        outcome = "unconfirmed"
+        call.process_control.stop_error = (
+            call.process_control.stop_error or managed_execution_error(call.host_key)
+        )
     with _active_invocations_lock:
         call.process_retirement = {"outcome": outcome}
         if call.process_control.stop_error:
@@ -1096,6 +1101,7 @@ def _run_agent_once(
         "provider": provider,
         "profile": profile,
         "native_settings": native_settings,
+        "managed": execution_scope is not None,
     }
     if definition is not None and (definition.native_models or resume_thread_id is not None):
         catalog = asdict(definition.policy.agent_execution)
@@ -1255,6 +1261,9 @@ def _run_agent_once(
                 or result.exit_code is None
                 or retirement == "unconfirmed"
                 or call.process_control.stop_error is not None
+                or (
+                    retirement != "prevented" and managed_execution_error(call.host_key) is not None
+                )
             ):
                 # Returned adapter errors can hide failed post-spawn I/O too.
                 # Reconcile the actual group before releasing either owner.
@@ -1419,6 +1428,16 @@ def agent_review_sandbox(host_key: str) -> AgentSandbox:
     return "read-only"
 
 
+def managed_execution_error(host_key: str) -> str | None:
+    """One capability owner for admission and retained native lifetime checks."""
+    definition = _definition_by_key(host_key)
+    if definition is not None and definition.policy.agent_execution.managed_execution:
+        return None
+    if host_key == "hermes":
+        return hermes.MANAGED_EXECUTION_ERROR
+    return f"Host {host_key!r} does not support managed execution."
+
+
 def agent_selection_error(
     host_key: str,
     *,
@@ -1431,6 +1450,7 @@ def agent_selection_error(
     catalog: dict[str, Any] | None = None,
     refresh: bool = False,
     retained: bool = False,
+    managed: bool = True,
 ) -> str | None:
     """Validate explicit choices and existing source syntax without resolving defaults.
 
@@ -1501,7 +1521,7 @@ def agent_selection_error(
                 f"Host {host_key!r}, model {model or 'native default'!r} does not support "
                 f"reasoning effort {model_reasoning_effort!r}. Supported: {choices}."
             )
-    return None
+    return managed_execution_error(host_key) if managed else None
 
 
 def inspect_all(*, home: Path | None = None, data_dir: Path | None = None) -> HostMcpAggregate:
@@ -1783,6 +1803,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
+                    managed_execution=True,
                     mcp_routing="per-call",
                     review_sandbox="workspace-write",
                     models=tuple(codex_reasoning),
@@ -1812,6 +1833,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
+                    managed_execution=True,
                     mcp_routing="per-call",
                     review_sandbox="workspace-write",
                     models=(*claude_reasoning, "claude-fable-5-2"),
@@ -1855,6 +1877,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "normal"),
+                    managed_execution=True,
                     mcp_routing="workspace",
                     review_sandbox="normal",
                     models=(
@@ -1920,17 +1943,20 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     requires_provider_model=True,
                     auth_status_command=("hermes", "auth", "status"),
                     notes=(
-                        "Explicit provider/model; native single-query approval policy "
-                        "retained (default deny for unanswered flagged actions). "
+                        "Managed execution unavailable: the persistent gateway outlives its CLI "
+                        "viewer; exact accepted-turn termination is unproven. "
+                        "Unmanaged protocol only: explicit provider/model; single-query approval "
+                        "policy retained (default deny for unanswered flagged actions). "
                         "Review uses normal native permissions with review-only instructions; "
                         "no enforced read-only isolation. "
-                        "One-shot usage-file identity/model/provider and main-loop session usage "
-                        "are terminal-only; no early identity or live usage. "
+                        "Terminal result identity is independent of optional usage-file "
+                        "model/provider and main-loop counters; no early identity or live usage. "
                         "Installed shims may not be runnable."
                     ),
                     sources=(
                         "https://hermes-agent.nousresearch.com/docs/reference/cli-commands",
                         "https://hermes-agent.nousresearch.com/docs/user-guide/security",
+                        "https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_client.py",
                     ),
                 ),
             ),
@@ -1960,6 +1986,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     sandboxes=("workspace-write", "read-only"),
                     mcp_routing="workspace",
                     review_sandbox="workspace-write",
+                    managed_execution=True,
                     models=("grok-4.7", "grok-4.7-build-fast", *grok_reasoning),
                     reasoning_efforts=grok_reasoning,
                     checked_on="2026-11-22",

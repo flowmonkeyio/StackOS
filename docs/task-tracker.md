@@ -392,7 +392,9 @@ then `codex`. Clearing a role host uses that task/project host chain.
 Omitting the model preserves native host settings. Explicit selections reach
 native CLI arguments and launch evidence; StackOS never substitutes another
 host or model after a failure. Hermes requires an explicit provider/model pair,
-for example `{"host_key":"hermes","provider":"openrouter","model":"<provider model ID>","profile":"work"}`.
+and retains saved provider/profile selections, but managed execution is currently
+unavailable because its gateway work outlives the CLI viewer. New handoffs reject
+before submission; saved and historical settings are preserved without substitution.
 Codex also supports its configured `model_provider` selector. Other hosts reject
 `provider`; their existing native authentication/configuration remains in control.
 
@@ -1248,7 +1250,7 @@ Native detail mappings (same scope and basis as their parent counters):
 | Gemini CLI (historical) | Sum `stats.models.*.tokens.cached`, only when every model reports a valid subset of its prompt | Unavailable | Sum `stats.models.*.tokens.thoughts`, already included in output; nested roles are not added |
 | Hermes (main loop) | `cache_read_tokens` | `cache_write_tokens` | `reasoning_tokens`, already included in output |
 
-Hermes uses `--usage-file ... chat --oneshot --quiet --format stream-json --query ...`, the
+The unmanaged Hermes protocol adapter uses `--usage-file ... chat --oneshot --quiet --format stream-json --query ...`, the
 selected provider/model and explicit profile (defaulting to `default`). This
 preserves the profile's native single-query approval policy, whose default denies
 unanswered flagged actions. Hermes `-z` instead marks the turn unattended and
@@ -1257,17 +1259,25 @@ preservation. StackOS does not use `-z`, change the profile's policy or add an
 automatic approval override. The native [finite-turn](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/gateway/session_finite.py)
 and [approval](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/tools/approval.py)
 contracts define this distinction for both fresh and exact-resume calls.
+Managed calls fail closed before submission: the [gateway client](https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_client.py)
+does not own accepted work's lifetime. CLI exit or viewer detachment cannot prove
+turn retirement. Existing client-only ownership remains unconfirmed during Stop,
+restart and upgrade, including explicit rehandoff; no shared gateway is killed.
+The canonical capability is `agent_execution.managed_execution: false`, independent
+of CLI availability. Enabling this route requires verified exact owned-turn termination.
 Each invocation owns a private temporary directory for its report, reads at most
 64 KiB from a regular non-symlink file,
 then removes it. Missing, corrupt (including excessive nesting), oversized or
-unsafe reports leave usage and identity unknown; they do not manufacture zero
-counters. Session, native model and provider observations come only from this
-report, never the agent's answer
-or requested selection. Native model/provider observations use source
+unsafe reports leave usage/model/provider unknown; they do not manufacture zero
+counters. Valid session identity comes independently from the native terminal
+`result.session_id`, including failed/interrupted results, with report identity as
+a fallback. Conflicting or invalid identities fail closed with no attributed
+identity or metrics. These values never come from the agent's answer or requested
+selection. Native model/provider observations use source
 `hermes.usage-file.v0.23.3` in the existing receipt contract.
 
 This one-shot path has no early-session or live-usage observation. If interrupted
-before a report exists, StackOS cannot invent a resumable identity. An exact
+before a terminal identity or report exists, StackOS cannot invent a resumable identity. An exact
 resume with a missing or different observed session fails without a fresh retry.
 Nonzero process exits, `failed`, `partial`, `interrupted`, and `completed: false`
 remain failures even when stdout contains valid structured output. Valid counters
@@ -1842,20 +1852,20 @@ catalog refresh must not rewrite pins, drafts or frozen session settings.
 | Codex | Resolved catalog and recommendation; explicit `gpt-6.1-sol` and `gpt-6-astra` remain supported, with configured provider models following the catalog's capability flags | Automatic approval review for delivery and test-capable review |
 | Claude Code | Resolved `agent_execution.models` and capability notes | Native `auto` permissions for delivery and test-capable review |
 | Antigravity | Exact IDs from `agy models`, projected into the resolved catalog for the observed account | Session-local terminal sandbox and `proceed-in-sandbox`, explicit StackOS MCP tool permissions, saved ask/deny rules preserved; delivery `accept-edits` / normal native diff review with review-only instructions |
-| Hermes | Explicit provider's model ID; no Hermes model family | Native one-shot approvals / normal native permissions, review-only instructions |
+| Hermes | Saved explicit provider's model ID; no Hermes model family | Managed execution unavailable: gateway lifetime cannot be controlled through its viewer |
 | Grok | Exact IDs from `grok models`, projected into the resolved catalog; configured aliases follow its custom-model validation policy | `workspace` sandbox, `auto` for delivery and test-capable review |
 | Claude Desktop | None for headless execution | Unsupported |
 
 Review modes permit focused shell-based tests under native permissions; they
-do not enforce reviewer source immutability. Antigravity and Hermes have no
-established strict read-only execution contract. Both support independent
+do not enforce reviewer source immutability. Antigravity has no
+established strict read-only execution contract. It supports independent
 review through normal native sessions with instructions to avoid changing files
 or commits; these instructions provide no enforced read-only isolation. The shared
 host capability owner selects the mode (`review_sandbox`); launch receipts record
 `sandbox: "normal"` for these reviews. Antigravity review permits sandboxed checks
 and explicit StackOS MCP tools through session-only settings; strict tool approval
 or unavailable required sandbox/permissions fails rather than widening authority;
-Hermes retains native one-shot permissions. Unsupported hosts still reject before scheduling.
+Hermes managed execution rejects before scheduling, preserving its saved selections.
 Native permissions may deny required work, including committing; a structured
 blocked result stops the task even if the process exit code is zero.
 

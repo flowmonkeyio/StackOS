@@ -4,7 +4,8 @@ export function executionAvailable(host: DesktopMcpHostStatus | undefined): bool
   // Older native shells may lack a probe; explicit unavailable/unknown never
   // becomes executable merely because the MCP registration is connected.
   const runnable = host?.agent_execution?.runnable
-  return host?.available === true && (runnable === undefined || runnable === 'available')
+  return host?.available === true && host.agent_execution?.managed_execution !== false
+    && (runnable === undefined || runnable === 'available')
 }
 
 export function executionStatus(host: DesktopMcpHostStatus): string | null {
@@ -13,6 +14,7 @@ export function executionStatus(host: DesktopMcpHostStatus): string | null {
   if (capability.runnable === 'unsupported') return 'MCP only'
   if (capability.runnable === 'unavailable') return 'CLI unavailable'
   if (capability.runnable === 'unknown') return 'CLI status unknown'
+  if (capability.managed_execution === false) return 'Managed execution unavailable'
   return `CLI ready · ${capability.cli_version ? `v${capability.cli_version}` : 'Version unknown'}`
 }
 

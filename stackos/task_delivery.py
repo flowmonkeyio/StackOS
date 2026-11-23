@@ -43,6 +43,7 @@ from stackos.host_mcp.service import (
     agent_selection_error,
     cancel_task_invocations,
     effective_agent_sandbox,
+    managed_execution_error,
     preparation_context_decision,
     quiesce_task_invocations,
     retire_invocation,
@@ -816,6 +817,15 @@ def prepare_managed_upgrade(
         return result
 
 
+def _retained_lifetime_error(state, phase, execution):
+    agents = state.get("agents", state)
+    agent = agents.get(f"{phase}_agent", {})
+    for host in (execution.get("host_key"), agent.get("host_key")):
+        if host and (error := managed_execution_error(host)):
+            return error
+    return None
+
+
 def _validate_upgrade_checkpoint(
     session, task, state, checkpoint, *, consumed=False, interrupted=False
 ):
@@ -835,6 +845,8 @@ def _validate_upgrade_checkpoint(
     if _upgrade_settings_digest(state) != checkpoint.get(settings_key):
         raise ValidationError("Frozen settings changed")
     for invocation in checkpoint.get("invocations", []):
+        if error := _retained_lifetime_error(state, checkpoint.get("phase"), invocation):
+            raise ValidationError(error)
         retired = checkpoint.get("retirement", {}).get(invocation["invocation_id"], {})
         if retired.get("outcome") not in {"stopped", "prevented"} or not retired.get("retired"):
             raise ValidationError("Native retirement remains unconfirmed")
@@ -1866,6 +1878,9 @@ def _retain_reservation(previous: dict[str, Any], admission_id: str) -> None:
     held = (previous.get("continuation_intent") or {}).get("status") == "held"
     if (
         held
+        and not _retained_lifetime_error(
+            previous, previous["continuation_intent"].get("phase"), previous["continuation_intent"]
+        )
         and ManagedProcessControl.observe_identity(
             previous["continuation_intent"].get("process_identity")
         )
@@ -2974,9 +2989,16 @@ def _continue_delivery_task(session, task, scheduler, *, event):
             receipt = evidence.get(phase, {})
             execution = receipt.get("execution", {})
             intent["process_identity"] = execution.get("process_identity")
+            intent["host_key"] = execution.get("host_key") or state.get("agents", state).get(
+                f"{phase}_agent", {}
+            ).get("host_key")
             if not execution.get("invocation_id"):
                 uncertain_owner = True
                 raise ValidationError("unknown_native_owner")
+            lifetime_error = _retained_lifetime_error(state, phase, execution)
+            if lifetime_error:
+                uncertain_owner = True
+                raise ValidationError(lifetime_error)
             observed = ManagedProcessControl.observe_identity(execution.get("process_identity"))
             uncertain_owner = observed != "stopped"
             if uncertain_owner:

@@ -1707,7 +1707,15 @@ def test_discovery_and_execution_use_same_capability_catalog():
             selection = (
                 {"provider": "openrouter", "model": "provider/model"} if key == "hermes" else {}
             )
-            assert service.agent_selection_error(key, sandbox=sandbox, **selection) is None
+            error = service.agent_selection_error(key, sandbox=sandbox, **selection)
+            if key == "hermes":
+                assert not capability["managed_execution"] and "gateway" in error
+                assert (
+                    service.agent_selection_error(key, sandbox=sandbox, managed=False, **selection)
+                    is None
+                )
+            else:
+                assert capability["managed_execution"] and error is None
 
 
 @pytest.mark.parametrize("host", ["codex", "claude-code", "antigravity", "hermes", "grok"])

@@ -49,6 +49,10 @@ COMMON_HERMES_CLI_CANDIDATES = (
     "/usr/local/bin/hermes",
 )
 UNSAFE_TRANSPORT_FIELDS = frozenset({"url", "headers", "auth", "env"})
+MANAGED_EXECUTION_ERROR = (
+    "Hermes managed execution is unavailable: its persistent gateway outlives the CLI viewer; "
+    "client exit cannot confirm accepted-turn retirement. Exact gateway termination is unproven."
+)
 
 
 def run_agent(
@@ -64,6 +68,9 @@ def run_agent(
     resume_thread_id: str | None = None,
     process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
+    if process_control is not None:
+        # A process-group handle owns only the viewer, never accepted gateway work.
+        return AgentRunResult(None, error=MANAGED_EXECUTION_ERROR)
     if sandbox == "read-only":
         return AgentRunResult(None, error="Hermes does not support strict read-only review.")
     if not model or not provider:
@@ -127,19 +134,41 @@ def _read_usage_report(path: Path) -> dict[str, Any]:
 
 def _agent_result(stdout: str, report: dict[str, Any] | None = None) -> AgentRunResult:
     report = report or {}
-    session_id = report.get("session_id")
-    if not isinstance(session_id, str) or not session_id.strip() or looks_secretish(session_id):
-        session_id = None
-    model_observation = normalize_model_observation(
-        {
-            "status": "observed",
-            "model": report.get("model"),
-            "provider": report.get("provider"),
-            "session_id": session_id,
-            "source": "hermes.usage-file.v0.23.3",
-        },
-        session_id=session_id,
-        host_key=HOST_KEY,
+    error = None
+    terminal: dict[str, Any] = {}
+    try:
+        events = [json_object(line) for line in stdout.splitlines() if line.strip()]
+        if not events or events[-1].get("type") != "result":
+            raise ValueError("Missing Hermes terminal result event")
+        terminal = events[-1]
+    except (ValueError, RecursionError) as exc:
+        if not report:
+            # Let the common process boundary retain stderr launch/auth errors.
+            raise
+        error = f"Invalid Hermes result: {stdout.strip()[:4096] or exc}"
+    terminal_id = _session_id(terminal.get("session_id"))
+    report_id = _session_id(report.get("session_id"))
+    invalid_terminal = terminal.get("session_id") not in (None, "") and terminal_id is None
+    mismatch = bool(terminal_id and report_id and terminal_id != report_id)
+    if invalid_terminal:
+        error = "Invalid Hermes session identity"
+    elif mismatch:
+        error = "Hermes terminal/report session identity mismatch"
+    session_id = None if invalid_terminal or mismatch else terminal_id or report_id
+    model_observation = (
+        normalize_model_observation(
+            {
+                "status": "observed",
+                "model": report.get("model"),
+                "provider": report.get("provider"),
+                "session_id": session_id,
+                "source": "hermes.usage-file.v0.23.3",
+            },
+            session_id=session_id,
+            host_key=HOST_KEY,
+        )
+        if report_id and session_id
+        else None
     )
     # oneshot.py copies turn_finalizer's session_* main-loop counters.
     # usage_pricing.CanonicalUsage defines cache buckets as additional input;
@@ -155,7 +184,7 @@ def _agent_result(stdout: str, report: dict[str, Any] | None = None) -> AgentRun
         )
     ]
     usage = None
-    if session_id and all(type(count) is int and count >= 0 for count in counts):
+    if report_id and session_id and all(type(count) is int and count >= 0 for count in counts):
         usage = usage_snapshot(
             "hermes.oneshot.main.v0.23.3",
             "session",
@@ -166,25 +195,19 @@ def _agent_result(stdout: str, report: dict[str, Any] | None = None) -> AgentRun
             cache_write=counts[2],
             reasoning=report.get("reasoning_tokens"),
         )
-    error = None
     failures = [key for key in ("failed", "partial", "interrupted") if report.get(key)]
     if report.get("completed") is False:
         failures.append("completed=false")
     if failures:
         reason = report.get("failure") or report.get("turn_exit_reason") or "unknown reason"
-        error = f"Hermes turn did not complete ({', '.join(failures)}): {reason}"
+        error = error or f"Hermes turn did not complete ({', '.join(failures)}): {reason}"
     result = None
     try:
-        events = [json_object(line) for line in stdout.splitlines() if line.strip()]
-        if not events or events[-1].get("type") != "result":
-            raise ValueError("Missing Hermes terminal result event")
-        terminal = events[-1]
         if type(terminal.get("exit_code")) is not int or terminal["exit_code"] != 0:
             error = error or str(terminal.get("error") or "Hermes turn did not complete.")
         result = json_object(terminal["text"])
-    except (ValueError, TypeError, KeyError) as exc:
-        if not report:
-            # Let the common process boundary retain stderr launch/auth errors.
+    except (ValueError, TypeError, KeyError, RecursionError) as exc:
+        if not report and not terminal:
             raise
         error = error or f"Invalid Hermes result: {stdout.strip()[:4096] or exc}"
     return AgentRunResult(
@@ -195,6 +218,19 @@ def _agent_result(stdout: str, report: dict[str, Any] | None = None) -> AgentRun
         model_observation=model_observation,
         error=error,
     )
+
+
+def _session_id(value: Any) -> str | None:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or value.startswith("-")
+        or value.lower() in {"latest", "last"}
+        or looks_secretish(value)
+    ):
+        return None
+    return value
 
 
 def inspect(

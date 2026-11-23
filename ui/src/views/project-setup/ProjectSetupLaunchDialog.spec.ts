@@ -84,6 +84,22 @@ it('retains saved pins but blocks a connected unavailable CLI', async () => {
   expect(start).not.toHaveBeenCalled()
 })
 
+it('preserves a saved Hermes selection but blocks a runnable viewer without managed lifetime control', async () => {
+  const viewer = { ...hosts[0]!, connection_state: 'connected',
+    agent_execution: { ...hosts[0]!.agent_execution!, runnable: 'available' as const, managed_execution: false } }
+  vi.mocked(callOperation).mockResolvedValue({ items: [viewer] })
+  const start = vi.fn()
+  wrapper = mount(Dialog, { props: { state: setupFixture({ launch_preferences: {
+    host_key: 'hermes', model: 'saved/model', provider: 'saved-provider', profile: 'saved-profile',
+  } }), pending: false, error: null, start }, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('saved/model')
+  expect(wrapper.text()).toContain('Managed execution unavailable')
+  expect(button('Start setup').attributes('disabled')).toBeDefined()
+  await button('Start setup').trigger('click')
+  expect(start).not.toHaveBeenCalled()
+})
+
 it('accepts an initial custom model from an empty catalog and requires its provider', async () => {
   const start = await dialog('hermes')
   expect(button('Start setup').attributes('disabled')).toBeDefined()

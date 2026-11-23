@@ -89,6 +89,88 @@ def test_recovered_identity_never_trusts_reused_pid_or_unknown_probe(monkeypatch
     assert ManagedProcessControl.observe_identity(None) == "unknown_native_owner"
 
 
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+@pytest.mark.parametrize("resumed", [False, True])
+def test_hermes_managed_gateway_route_rejects_before_submission(
+    tmp_path, monkeypatch, phase, resumed
+):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Managed Hermes must reject before native discovery or submission")
+
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", forbidden)
+    monkeypatch.setattr(hermes, "execute_json_agent", forbidden)
+    options = {
+        "model": "selected/model",
+        "provider": "openrouter",
+        "sandbox": "normal" if phase == "review" else "workspace-write",
+        "resume_thread_id": "exact-owned-session" if resumed else None,
+    }
+    result = service.run_agent(
+        "hermes",
+        tmp_path,
+        "role",
+        "work",
+        {},
+        execution_scope=service.AgentExecutionScope(42, "A", "t", "worker", 1, phase),
+        **options,
+    )
+    assert not result.ok and "gateway" in result.error and "managed" in result.error
+    assert not service.usage_executions()
+    result = hermes.run_agent(
+        tmp_path, "role", "work", {}, process_control=ManagedProcessControl(), **options
+    )
+    assert not result.ok and "gateway" in result.error
+
+
+def test_hermes_retained_viewer_exit_cannot_confirm_gateway_retirement(tmp_path):
+    # v0.23.3 gateway_client: closing a viewer never stops its authority.
+    # https://github.com/NousResearch/hermes-agent/blob/v0.23.3/hermes_cli/gateway_client.py
+    # This owned two-process protocol fixture deliberately keeps gateway work
+    # independent of the CLI group; no native Hermes/provider is installed.
+    marker = tmp_path / "accepted-work"
+    gateway = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from pathlib import Path; "
+            "print('accepted',flush=True); sys.stdin.readline(); "
+            "Path(sys.argv[1]).write_text('completed after viewer exit')",
+            str(marker),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    control = ManagedProcessControl()
+    call = service.ActiveInvocation(
+        "legacy-hermes",
+        service.AgentExecutionScope(42, "A", "t", "worker"),
+        "hermes",
+        "selected/model",
+        datetime.now(UTC).isoformat(),
+        process_control=control,
+    )
+    try:
+        assert gateway.stdout.readline().strip() == "accepted"
+        viewer = control.spawn([sys.executable, "-c", "import time;time.sleep(30)"])
+        service._register(call)
+        call.cleanup_complete = True
+        assert service.retire_invocation(call) == "unconfirmed"
+        assert viewer.poll() is not None
+        assert control.retirement_status() == "stopped"
+        assert not call.retired.is_set() and call.invocation_id in service._active_invocations
+        assert gateway.poll() is None  # Never kill the shared authority/foreign sessions.
+        gateway.communicate("release\n", timeout=3)
+        assert gateway.returncode == 0 and marker.exists()
+    finally:
+        control.stop()
+        if gateway.poll() is None:
+            gateway.terminate()
+        gateway.communicate(timeout=3)
+        service._active_invocations.pop(call.invocation_id, None)
+
+
 @pytest.mark.parametrize("retiring_signal", [signal.SIGTERM, signal.SIGKILL])
 def test_stop_confirms_group_after_transient_probe_denial(
     process_stop_boundary, monkeypatch, retiring_signal
@@ -321,7 +403,7 @@ def test_cancel_before_registration_and_before_handle_never_spawns(tmp_path, mon
     assert not service.usage_executions()
 
 
-@pytest.mark.parametrize("adapter", [claude_code, grok, antigravity_execution, hermes])
+@pytest.mark.parametrize("adapter", [claude_code, grok, antigravity_execution])
 def test_all_shared_adapters_forward_same_private_control(adapter, tmp_path, monkeypatch):
     control = ManagedProcessControl()
     if adapter is claude_code:
@@ -330,8 +412,6 @@ def test_all_shared_adapters_forward_same_private_control(adapter, tmp_path, mon
         monkeypatch.setattr(adapter, "resolve_grok_bin", lambda *_: "/fake/native")
     elif adapter is antigravity_execution:
         monkeypatch.setattr(adapter, "resolve_antigravity_bin", lambda: "/fake/native")
-    else:
-        monkeypatch.setattr(adapter, "resolve_hermes_bin", lambda: "/fake/native")
     seen = []
 
     def execute(*args, **kwargs):
