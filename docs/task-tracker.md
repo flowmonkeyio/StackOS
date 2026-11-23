@@ -1829,16 +1829,21 @@ test outputs. Reasoning settings remain inherited; native mode comes from the
 shared `agent_review_sandbox` capability owner, not guidance or a permission bypass.
 
 The existing `stackos.host_mcp` registry owns execution capabilities and model
-IDs, reused by host discovery and launch validation. Its dated official sources
-and capability notes appear in host status `agent_execution`. Current selections:
+IDs, reused by host discovery and launch validation. Choose current models from
+the resolved `hostMcp.status` `agent_execution` catalog, including its dated sources,
+capability notes and observation fields; see [host capability guidance](setup.md).
+A native model-list observation applies to the provider/account that produced it
+and does not guarantee a successful model invocation. Packaged suggestions do not
+establish entitlement. Preserve saved and historical model IDs as recorded;
+catalog refresh must not rewrite pins, drafts or frozen session settings.
 
-| Host | Native model IDs | Delivery / review |
+| Host | Model selection source | Delivery / review |
 | --- | --- | --- |
-| Codex | `gpt-6.2-sol` (recommended), `gpt-6.2-astra`; explicit `gpt-6.1-sol`, `gpt-6-astra`, Terra (`gpt-6.1-terra`), Luna (`gpt-6-luna`) and configured provider models remain available | Automatic approval review for delivery and test-capable review |
-| Claude Code | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` | Native `auto` permissions for delivery and test-capable review |
-| Antigravity | `gemini-3.8-flash-high`, `gemini-3.8-flash-medium`, `gemini-3.8-flash-low`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium` | Session-local terminal sandbox and `proceed-in-sandbox`, explicit StackOS MCP tool permissions, saved ask/deny rules preserved; delivery `accept-edits` / normal native diff review with review-only instructions |
+| Codex | Resolved catalog and recommendation; explicit `gpt-6.1-sol` and `gpt-6-astra` remain supported, with configured provider models following the catalog's capability flags | Automatic approval review for delivery and test-capable review |
+| Claude Code | Resolved `agent_execution.models` and capability notes | Native `auto` permissions for delivery and test-capable review |
+| Antigravity | Exact IDs from `agy models`, projected into the resolved catalog for the observed account | Session-local terminal sandbox and `proceed-in-sandbox`, explicit StackOS MCP tool permissions, saved ask/deny rules preserved; delivery `accept-edits` / normal native diff review with review-only instructions |
 | Hermes | Explicit provider's model ID; no Hermes model family | Native one-shot approvals / normal native permissions, review-only instructions |
-| Grok | CLI selections from `grok models`, including configured aliases such as `grok-build`; distinct from API ID `grok-4.7` | `workspace` sandbox, `auto` for delivery and test-capable review |
+| Grok | Exact IDs from `grok models`, projected into the resolved catalog; configured aliases follow its custom-model validation policy | `workspace` sandbox, `auto` for delivery and test-capable review |
 | Claude Desktop | None for headless execution | Unsupported |
 
 Review modes permit focused shell-based tests under native permissions; they
@@ -1871,8 +1876,9 @@ JSON envelope (`text`, `sessionId`, `stopReason`), distinct from its Messages
 stream format. All adapters enforce the same caller-supplied result schema.
 
 Installed/MCP-connected status establishes neither credential presence nor
-model access. Discovery reports these as `not_checked` and provides documented
-native auth-status commands where available. `codex login status`,
+model access. Catalog observation fields distinguish native model lists from
+unverified suggestions; unavailable checks remain `not_checked`. Documented
+native auth-status commands are provided where available. `codex login status`,
 `claude auth status`, and `hermes auth status` (for the selected provider/profile)
 only report native authentication state, not entitlement to every model.
 Antigravity/Grok auth-status support is unverified. Actual launch failures, including
