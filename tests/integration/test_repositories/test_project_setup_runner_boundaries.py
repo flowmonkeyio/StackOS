@@ -4,6 +4,7 @@
 import json
 from copy import deepcopy
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import event
@@ -23,6 +24,7 @@ from tests.integration.test_repositories.test_managed_setup import (
     native_lifetime,  # noqa: F401
     task_receipts,
 )
+from tests.integration.test_repositories.test_task_delivery import generic_result
 
 
 def test_only_validated_admissions_are_outside_legacy_native_capacity(managed, session):
@@ -233,8 +235,114 @@ def test_registration_failure_retains_work_and_retries_without_fake_session(
     assert continued.task_key == task.key and len(scheduler.jobs) == 1
 
 
+@pytest.mark.parametrize("control", ["abort", "native_failure"])
+def test_generic_stop_before_report_preserves_possible_edits_and_resume(
+    managed, session, monkeypatch, control
+):
+    execution, project, scheduler, factory = managed
+    calls = []
+
+    def native(root, instructions, prompt, schema, *, on_session, resume_thread_id=None, **kwargs):
+        calls.append(resume_thread_id)
+        on_session("generic-stop-before-report")
+        (root / "possible-setup-edit.txt").write_text("retained partial work")
+        if control == "abort" and len(calls) == 1:
+            with factory() as writer:
+                task_delivery.abort_run_plan(
+                    writer,
+                    run_plan_id=started.run_plan_id,
+                    project_id=project,
+                    actor="console",
+                    reason="Cancel workflow",
+                    scheduler=scheduler,
+                )
+            return AgentRunResult(
+                0,
+                thread_id="generic-stop-before-report",
+                result=generic_result(
+                    outputs={
+                        "setup_report": {
+                            "status": "partial",
+                            "progress": {
+                                "message": "Late cancelled report",
+                                "evidence_ref": "fixture/late",
+                            },
+                        }
+                    }
+                ),
+            )
+        return AgentRunResult(1, thread_id="generic-stop-before-report", stderr="Fixture failure")
+
+    install_native(monkeypatch, native)
+    started = launch(managed, host_key="codex")
+    scheduler.run()
+    session.expire_all()
+    state = ProjectSetupRepository(session).get(project)
+    assert state.current_attempt.status == ("cancelled" if control == "abort" else "interrupted")
+    assert state.current_attempt.partial_changes_possible
+    assert state.work.run_status == ("aborted" if control == "abort" else "started")
+    assert state.work.delivery_status == "stopped"
+    stored = session.get(AgentRequest, started.attempt.request_id).metadata_json["project_setup"]
+    assert stored["status"] == "running" and stored["revision"] == state.current_attempt.revision
+    assert stored["reports"] == [] and stored["partial_changes_possible"] is False
+    assert (
+        Path(state.current_attempt.workflow_admission.project_dir) / "possible-setup-edit.txt"
+    ).read_text() == "retained partial work"
+    continued = execution.continue_managed(
+        project,
+        started.attempt.request_id,
+        expected_revision=state.current_attempt.revision,
+        session_factory=factory,
+        scheduler=scheduler,
+    )
+    assert continued.task_key == started.task_key
+    assert continued.attempt.revision == state.current_attempt.revision + 1
+    scheduler.run()
+    assert calls == [None, "generic-stop-before-report"]
+
+
+def test_generic_abort_without_native_work_does_not_invent_possible_edits(managed, session):
+    _, project, scheduler, _ = managed
+    started = launch(managed, host_key="codex")
+    task_delivery.abort_run_plan(
+        session,
+        run_plan_id=started.run_plan_id,
+        project_id=project,
+        actor="console",
+        scheduler=scheduler,
+    )
+    state = ProjectSetupRepository(session).get(project)
+    assert state.current_attempt.status == "cancelled"
+    assert state.current_attempt.partial_changes_possible is False
+    assert state.current_attempt.revision == started.attempt.revision
+    assert state.work.run_status == "aborted"
+    _, receipts = task_receipts(session, project, started.task_key)
+    assert all(not item.get("delivery") and not item.get("review") for item in receipts.values())
+
+
+def test_generic_abort_preserves_accepted_question_effects(managed, session, monkeypatch):
+    from tests.integration.test_repositories.test_setup_continuation import pending_question
+
+    started, pending, _ = pending_question(managed, session, monkeypatch)
+    assert pending.status == "needs_input" and not pending.partial_changes_possible
+    assert pending.applied_workflow_results
+    task_delivery.abort_run_plan(
+        session,
+        run_plan_id=started.run_plan_id,
+        project_id=managed[1],
+        actor="console",
+        scheduler=managed[2],
+    )
+    state = ProjectSetupRepository(session).get(managed[1])
+    assert state.current_attempt.status == "cancelled"
+    assert state.current_attempt.partial_changes_possible is False
+    assert state.current_attempt.question == pending.question
+    assert state.current_attempt.revision == pending.revision
+
+
+@pytest.mark.parametrize("control", ["setup", "work"])
 def test_cancel_verification_preserves_accepted_preparation_and_adoption(
-    managed, session, monkeypatch
+    managed, session, monkeypatch, control
 ):
     from tests.integration.test_repositories.test_managed_setup_activation import (
         KEY,
@@ -252,14 +360,24 @@ def test_cancel_verification_preserves_accepted_preparation_and_adoption(
             prepared.update(
                 deepcopy(ProjectSetupRepository(check)._row(project, KEY).latest_result_json)
             )
-        execution.cancel_setup(
-            project,
-            setup["request_id"],
-            expected_revision=setup["expected_revision"],
-            external_work_stopped=False,
-            session_factory=factory,
-            scheduler=scheduler,
-        )
+        if control == "setup":
+            execution.cancel_setup(
+                project,
+                setup["request_id"],
+                expected_revision=setup["expected_revision"],
+                external_work_stopped=False,
+                session_factory=factory,
+                scheduler=scheduler,
+            )
+        else:
+            with factory() as writer:
+                task_delivery.abort_run_plan(
+                    writer,
+                    run_plan_id=started.run_plan_id,
+                    project_id=project,
+                    actor="console",
+                    scheduler=scheduler,
+                )
         return "success"  # A late successful return cannot undo the canonical abort.
 
     install_runner(managed, monkeypatch, proposal, verification_status=cancel_during_verification)
@@ -269,6 +387,7 @@ def test_cancel_verification_preserves_accepted_preparation_and_adoption(
     repo = ProjectSetupRepository(session)
     current = repo.get(project)
     assert current.current_attempt.status == "cancelled"
+    assert current.current_attempt.partial_changes_possible
     assert current.work.run_status == "aborted"
     assert current.current_attempt.adopted_delivery_digest
     assert repo._row(project, KEY).latest_result_json == prepared
@@ -276,3 +395,7 @@ def test_cancel_verification_preserves_accepted_preparation_and_adoption(
     assert receipts[f"{started.task_key}-prepare"]["delivery"]["validated_outcome"] == "success"
     assert receipts[f"{started.task_key}-activate-verify"]["review"]["validated_outcome"] is None
     assert current.workflows[0].missing_activation_claims
+    stored = session.get(AgentRequest, started.attempt.request_id).metadata_json["project_setup"]
+    assert stored["status"] == "partial"
+    assert stored["revision"] == current.current_attempt.revision
+    assert stored["adopted_delivery_digest"] == current.current_attempt.adopted_delivery_digest

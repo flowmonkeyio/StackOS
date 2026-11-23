@@ -2357,7 +2357,11 @@ class ProjectSetupRepository:
             else "current"
         )
         delivery_defaults = TrackerRepository(self._s).delivery_defaults(project_id=project_id)
-        from stackos.project_setup_execution import work_projection
+        from stackos.project_setup_execution import attempt_projection
+
+        work = None
+        if attempt and attempt.workflow_admission:
+            attempt, work = attempt_projection(self._s, attempt)
 
         return ProjectSetupOut(
             project_id=project_id,
@@ -2372,9 +2376,7 @@ class ProjectSetupRepository:
             update_count=updates,
             unknown_count=unknown,
             current_attempt=attempt,
-            work=work_projection(self._s, attempt)
-            if attempt and attempt.workflow_admission
-            else None,
+            work=work,
             launch_preferences=delivery_defaults.get("main_agent", {}),
             delivery_defaults_digest=_digest(delivery_defaults),
             attempt_diagnostic=attempt_diagnostic,

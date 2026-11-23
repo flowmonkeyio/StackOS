@@ -10,10 +10,17 @@ from pathlib import Path
 from apscheduler.jobstores.base import JobLookupError
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as ModelValidationError
-from sqlmodel import select
+from sqlalchemy import func
+from sqlmodel import col, select
 
 from stackos.artifacts import redact_secret_text
-from stackos.db.models import AgentRequestStatus, RunPlan, TrackerTask
+from stackos.db.models import (
+    AgentRequestStatus,
+    RunPlan,
+    TrackerReceiptProjection,
+    TrackerTask,
+    TrackerTicket,
+)
 from stackos.host_mcp import service
 from stackos.host_mcp.agent_execution import managed_launch_lock
 from stackos.repositories.base import ConflictError, ValidationError
@@ -197,10 +204,54 @@ def work_projection(session, attempt):
     }
 
 
+def attempt_projection(session, attempt):
+    """Combine retained domain facts with current work without rewriting either."""
+    work = work_projection(session, attempt)
+    if not work or (work["run_status"] != "aborted" and work["delivery_status"] != "stopped"):
+        return attempt, work
+    status = attempt.status
+    if work["run_status"] == "aborted":
+        status = "cancelled"
+    elif status in {"queued", "running"}:
+        status = "interrupted"
+    possible_edits = attempt.partial_changes_possible
+    if not possible_edits:
+        # This existing index contains only canonical receipt inputs, including
+        # retained invocations. Read one scalar for this exact task, never native
+        # result bodies or project-wide setup history. A queued launch is no proof
+        # that an invocation actually began.
+        invocation = func.json_extract(
+            TrackerReceiptProjection.receipt_json, "$.execution.invocation_id"
+        )
+        latest_invocation = session.exec(
+            select(invocation)
+            .join(TrackerTicket, TrackerReceiptProjection.ticket_id == TrackerTicket.id)
+            .where(
+                TrackerTicket.project_id == attempt.project_id,
+                TrackerTicket.task_id == attempt.workflow_admission.task_id,
+                func.length(invocation) > 0,
+            )
+            .order_by(
+                col(TrackerReceiptProjection.launch_at).desc(),
+                col(TrackerReceiptProjection.ticket_id).desc(),
+            )
+            .limit(1)
+        ).first()
+        # An accepted report already supplies its effect state; an older
+        # invocation must not turn a harmless current question into a warning.
+        possible_edits = bool(
+            latest_invocation and latest_invocation not in attempt.applied_workflow_results
+        )
+    return attempt.model_copy(
+        update={"status": status, "partial_changes_possible": possible_edits}
+    ), work
+
+
 def _started(session, attempt, *, attached=False):
     from stackos.repositories.project_setup import SetupStartOut
 
-    work = work_projection(session, attempt) or {}
+    attempt, work = attempt_projection(session, attempt)
+    work = work or {}
     return SetupStartOut(
         attempt=attempt,
         attached=attached,
@@ -688,11 +739,7 @@ def cancel_setup(
                     run_plan_id=link.run_plan_id,
                     task_id=link.task_id,
                 )
-                current.status = "cancelled"
-                current.revision += 1
-                current.partial_changes_possible = True
-                _save(session, row, current)
-            return current
+                return attempt_projection(session, current)[0]
     return _cancel_legacy(
         project_id, request_id, session_factory=session_factory, scheduler=scheduler
     )
