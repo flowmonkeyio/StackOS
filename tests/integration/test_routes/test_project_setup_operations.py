@@ -14,6 +14,7 @@ from stackos.host_mcp.result import HostMcpResult
 from stackos.repositories.project_setup import ProjectSetupRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
+from tests.helpers.native_task_routes import controlled_profile_host as controlled_profile_host
 from tests.integration.test_repositories.test_project_setup import verified_result
 from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
 
@@ -111,9 +112,9 @@ def test_console_setup_selection_fences_account_probe(
         assert TrackerRepository(session).delivery_defaults(project_id=project) == saved
 
 
-@pytest.mark.parametrize("configured_host", [None, "hermes"])
+@pytest.mark.parametrize("configured_host", [None, "grok", "hermes"])
 def test_console_previews_inherited_host_without_replacing_saved_choices(
-    api, settings, tmp_path, monkeypatch, configured_host
+    api, settings, tmp_path, monkeypatch, controlled_profile_host, configured_host
 ):
     from stackos.project_setup_execution import resolve_preferences
     from stackos.repositories.tracker import TrackerRepository
@@ -135,6 +136,7 @@ def test_console_previews_inherited_host_without_replacing_saved_choices(
             TrackerRepository(session).configure_delivery(
                 project_id=project, delivery={"host_key": configured_host}
             )
+        before = TrackerRepository(session).delivery_defaults(project_id=project)
     ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
 
     def call(name, **arguments):
@@ -150,6 +152,13 @@ def test_console_previews_inherited_host_without_replacing_saved_choices(
         else {"model": "gpt-6-luna", "model_reasoning_effort": "high", "provider": "configured"}
     )
     configured = call("tracker.configureDelivery", main_agent=saved)
+    if configured_host == "hermes":
+        assert configured.status_code == 422, configured.text
+        assert "Hermes managed execution is unavailable" in configured.text
+        with Session(api.app.state.engine) as session:
+            defaults = TrackerRepository(session).delivery_defaults(project_id=project)
+            assert defaults == before
+        return
     assert configured.status_code == 200, configured.text
     probes.clear()
     raw = call("projectSetup.get", response_mode="raw")

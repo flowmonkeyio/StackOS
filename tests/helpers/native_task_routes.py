@@ -1,12 +1,40 @@
 """Owned native configuration for retained settings/lifecycle consumer tests."""
 
 import json
+from dataclasses import replace
 
 import pytest
 import tomlkit
 import yaml
 
 from stackos.host_mcp import bridge, service
+
+
+@pytest.fixture
+def controlled_profile_host(monkeypatch):
+    """Exercise shared selectors with a controlled, managed-capable native edge.
+
+    Keep Grok's supported managed lifetime and real workspace route reader, but
+    declare provider/profile selectors for these propagation tests only. This is
+    not native Grok provider/profile certification or permission to admit Hermes.
+    """
+    original = service._definition_by_key
+    definition = original("grok")
+    assert definition.policy.agent_execution.managed_execution
+    controlled = replace(
+        definition,
+        policy=replace(
+            definition.policy,
+            agent_execution=replace(
+                definition.policy.agent_execution, provider_selection=True, profile_selection=True
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: controlled if key == "grok" else original(key)
+    )
+    assert service.managed_execution_error("hermes") is not None
+    return "grok"
 
 
 def write_native_route(home, root, host, profile=None):

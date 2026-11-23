@@ -37,6 +37,9 @@ from stackos.operations.tracker.write_handlers import (
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+from tests.helpers.native_task_routes import (
+    controlled_profile_host as controlled_profile_host,
+)
 from tests.helpers.native_task_routes import write_native_route
 from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
 
@@ -5233,7 +5236,11 @@ def test_observed_model_native_to_live_final_resume_and_rebuilt_statistics(
 
 
 def test_role_host_model_provider_reach_launch_and_receipt(
-    session: Session, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    controlled_profile_host: str,
 ) -> None:
     from stackos import task_delivery
 
@@ -5279,7 +5286,7 @@ def test_role_host_model_provider_reach_launch_and_receipt(
         delivery_agent={
             "name": "builder",
             "instructions": "Build",
-            "host_key": "hermes",
+            "host_key": controlled_profile_host,
             "model": "provider/model",
             "provider": "openrouter",
             "profile": "work",
@@ -5295,7 +5302,10 @@ def test_role_host_model_provider_reach_launch_and_receipt(
     assert (
         calls
         == [
-            ("hermes", {"model": "provider/model", "provider": "openrouter", "profile": "work"}),
+            (
+                controlled_profile_host,
+                {"model": "provider/model", "provider": "openrouter", "profile": "work"},
+            ),
             ("claude-code", {"model": "claude-opus-5-5"}),
         ]
         * 2
@@ -5308,6 +5318,8 @@ def test_role_host_model_provider_reach_launch_and_receipt(
     )
     assert evidence["delivery"]["launch"]["provider"] == "openrouter"
     assert evidence["delivery"]["launch"]["profile"] == "work"
+    assert evidence["delivery"]["launch"]["host_key"] == controlled_profile_host
+    assert evidence["delivery"]["launch"]["model"] == "provider/model"
     assert evidence["review"]["launch"]["host_key"] == "claude-code"
     assert evidence["review"]["launch"]["model"] == "claude-opus-5-5"
 
