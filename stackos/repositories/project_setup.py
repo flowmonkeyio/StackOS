@@ -423,6 +423,9 @@ class SetupWorkflowReport(SetupEvidenceModel):
 
 class SetupReport(SetupEvidenceModel):
     role_verification_request: SetupRoleCheckRequest | None = None
+    workflow_checks: dict[str, list[SetupRoleCheckRequest]] = Field(
+        default_factory=dict, max_length=100
+    )
     status: Literal[
         "running", "needs_input", "success", "partial", "failed", "interrupted", "cancelled"
     ]
@@ -435,6 +438,8 @@ class SetupReport(SetupEvidenceModel):
 
     @model_validator(mode="after")
     def valid_question(self) -> SetupReport:
+        if sum(len(checks) for checks in self.workflow_checks.values()) > 100:
+            raise ValueError("setup permits at most 100 bounded workflow checks")
         if (self.status == "needs_input") != (self.question is not None):
             raise ValueError(
                 "needs_input requires a concrete question; other states cannot ask one"
@@ -499,6 +504,17 @@ class SetupManagedExecution(SetupEvidenceModel):
     preflight_failed: bool = False
 
 
+class SetupWorkflowAdmission(SetupEvidenceModel):
+    """Protected console admission; execution remains owned by its run and task."""
+
+    run_plan_id: int = Field(gt=0)
+    task_id: int = Field(gt=0)
+    binding_id: int = Field(gt=0)
+    project_dir: str = Field(min_length=1)
+    preferences: dict[str, Any]
+    bootstrap: Literal["core.project-setup"] = "core.project-setup"
+
+
 class SetupAttempt(SetupEvidenceModel):
     """Versioned AgentRequest metadata; native execution evidence stays alongside it."""
 
@@ -539,6 +555,12 @@ class SetupAttempt(SetupEvidenceModel):
     revalidate_workflow_keys: list[str] = Field(default_factory=list)
     partial_changes_possible: bool = False
     adoption_proposal: SetupAdoptionProposal | None = None
+    workflow_admission: SetupWorkflowAdmission | None = None
+    workflow_checks: dict[str, list[SetupRoleCheckRequest]] = Field(
+        default_factory=dict, max_length=100
+    )
+    adopted_delivery_digest: str | None = None
+    applied_workflow_results: dict[str, str] = Field(default_factory=dict)
 
 
 class SetupStartOut(BaseModel):
@@ -948,15 +970,31 @@ class ProjectSetupRepository:
 
     def _current_attempt(self, project_id: int) -> SetupAttempt | None:
         attempts = self._attempts(project_id)
-        active = [
-            a
-            for _, a in attempts
-            if a.successor_request_id is None
-            and (
-                a.status in {"queued", "running", "needs_input"}
-                or (a.managed is not None and a.managed.slot_reserved)
-            )
-        ]
+        active = []
+        for _, attempt in attempts:
+            if admission := attempt.workflow_admission:
+                from stackos.project_setup_workflow import read_admission
+
+                read_admission(
+                    self._s,
+                    project_id=project_id,
+                    request_id=attempt.request_id,
+                    run_plan_id=admission.run_plan_id,
+                    task_id=admission.task_id,
+                )
+                plan = self._s.get(RunPlan, admission.run_plan_id)
+                task = self._s.get(TrackerTask, admission.task_id)
+                assert plan is not None and task is not None
+                is_active = plan.status.value in {"draft", "started"} or bool(
+                    (task.metadata_json or {}).get("delivery", {}).get("slot_reserved")
+                )
+            else:
+                is_active = attempt.successor_request_id is None and (
+                    attempt.status in {"queued", "running", "needs_input"}
+                    or (attempt.managed is not None and attempt.managed.slot_reserved)
+                )
+            if is_active:
+                active.append(attempt)
         if len(active) > 1:
             raise ConflictError(
                 "multiple setup writers require reconciliation", data={"project_id": project_id}
@@ -1136,6 +1174,8 @@ class ProjectSetupRepository:
             ProjectRepository(self._s).require_available(project_id, reserve=True)
             requests = AgentRequestRepository(self._s)
             row = requests._fetch(project_id=project_id, request_id=request_id)
+            if (row.metadata_json or {}).get(SETUP_NAMESPACE, {}).get("workflow_admission"):
+                raise ConflictError("tracked setup results belong to the owning workflow")
             requests._verify_claim(row, claim_token, _setup_owner=True)
             current = self._current_attempt(project_id)
             if (
@@ -1245,170 +1285,188 @@ class ProjectSetupRepository:
                     raise ConflictError(
                         "managed workflow selection is already fixed for this attempt"
                     )
-            if report.question is not None and (
-                report.question.response_channel != current.entry_kind
-                or not set(report.question.workflow_keys).issubset(current.workflow_keys)
-            ):
-                raise ValidationError(
-                    "question must stay in the owning session and selected workflows"
-                )
-            if report.question and any(
-                answer.question_id == report.question.question_id
-                and answer.question_revision >= report.question.revision
-                for answer in current.answers
-            ):
-                raise ConflictError("question was already answered; consume the recorded answer")
-            outcomes = dict(current.outcomes)
-            if report.adoption_proposal is not None:
-                if (
-                    current.managed is not None
-                    and current.managed.phase != "preparation"
-                    and report.adoption_proposal != current.adoption_proposal
-                ):
-                    raise ConflictError("Adopted role selection changed; start a new setup review")
-                self._validate_adoption_proposal(project_id, report.adoption_proposal)
-                current.adoption_proposal = report.adoption_proposal
-            for item in report.workflow_results:
-                if (
-                    item.workflow_key not in current.workflow_keys
-                    or item.result.attempt_ref != current.attempt_ref
-                ):
-                    raise ConflictError("workflow result does not belong to this setup attempt")
-                if item.expected_revision != current.observed_receipt_revisions[item.workflow_key]:
-                    raise ConflictError(
-                        "report receipt revision differs from the attempt observation"
-                    )
-                # The owning request fixes intent. A report cannot silently downgrade it.
-                item.result.requested_scope = current.requested_scope
-                saved = self.record_result(
-                    project_id,
-                    item.workflow_key,
-                    expected_revision=item.expected_revision,
-                    result=item.result,
-                    _commit=False,
-                )
-                current.observed_receipt_revisions[item.workflow_key] = saved.revision
-                assert saved.receipt_id is not None
-                outcomes[item.workflow_key] = SetupWorkflowOutcome(
-                    receipt_id=saved.receipt_id,
-                    revision=saved.revision,
-                    status=item.result.status,
-                    result_ref=item.result.result_ref,
-                    activation_status=saved.activation_status,
-                    missing_activation_claims=saved.missing_activation_claims,
-                )
-            if report.status == "success" and (
-                not current.workflow_keys
-                or any(
-                    key not in outcomes or outcomes[key].status != "success"
-                    for key in current.workflow_keys
-                )
-            ):
-                raise ValidationError(
-                    "every selected workflow needs verified success before attempt success"
-                )
-            if report.status == "success":
-                project = ProjectRepository(self._s).get(project_id)
-                if project.project_dir is None:
-                    raise ConflictError(
-                        "setup completion needs an available selected project folder",
-                        data={"project_id": project_id, "next_action": "repair_project_folder"},
-                    )
-                # A previous progress report can precede another source/receipt
-                # change. Closing the attempt must not bless that stale proof.
-                for key, outcome in outcomes.items():
-                    receipt = self._row(project_id, key)
-                    if (
-                        receipt is None
-                        or receipt.revision != outcome.revision
-                        or receipt.successful_json is None
-                    ):
-                        raise ConflictError(
-                            "workflow receipt changed; revalidate before completion",
-                            data={"workflow_key": key},
-                        )
-                    proof = VerifiedSetup.model_validate(receipt.successful_json["verification"])
-                    sources = self.inspect_sources(
-                        project_id, key, selected_optional_presets=proof.selected_optional_presets
-                    )
-                    if self._identity(sources) != self._identity(proof.sources):
-                        raise ConflictError(
-                            "workflow sources changed; revalidate before completion",
-                            data={"workflow_key": key},
-                        )
-                    if current.requested_scope == "ready_to_use":
-                        activation = proof.activation_proof
-                        if (
-                            proof.activation != "verified_loaded"
-                            or activation is None
-                            or activation.status != "verified"
-                            or activation.gaps()
-                        ):
-                            raise ValidationError(
-                                "required workflow activation is incomplete",
-                                data={
-                                    "workflow_key": key,
-                                    "requested_scope": current.requested_scope,
-                                    "activation_status": activation.status
-                                    if activation
-                                    else "pending",
-                                    "missing_claims": activation.gaps()
-                                    if activation
-                                    else ["saved_defaults", "native_consumption"],
-                                    "next_action": "complete_activation",
-                                },
-                            )
-                        self._validate_activation(project_id, proof, current_sources=sources)
-            if final_replay or final_confirmation:
-                # A native final confirmation may summarize the success already
-                # reported by this invocation. The retained proof was revalidated
-                # above; preserve its receipts and the accepted report unchanged.
-                self._s.commit()
-                return current
-            current.revision += 1
-            current.status = report.status
-            current.progress = report.progress
-            current.question = report.question
-            current.recovery_condition = report.recovery_condition
-            current.outcomes = outcomes
-            current.partial_changes_possible = current.partial_changes_possible or bool(
-                any(item.result.changes for item in report.workflow_results)
+            current = self._apply_report(
+                project_id,
+                row,
+                current,
+                report,
+                report_digest=report_digest,
+                preserve_report=final_replay or final_confirmation,
             )
-            current.reports.append(
-                SetupReportReceipt(
-                    revision=current.revision,
-                    status=report.status,
-                    progress=report.progress,
-                    question=report.question,
-                    result_refs=[item.result.result_ref for item in report.workflow_results],
-                    checked_at=datetime.now(UTC),
-                    adoption_proposal=report.adoption_proposal,
-                    report_digest=report_digest,
-                )
-            )
-            if len(current.model_dump_json().encode()) > 2_000_000:
-                raise ValidationError(
-                    "setup attempt exceeds 2 MB; retain detailed evidence by reference"
-                )
-            row.metadata_json = {
-                **(row.metadata_json or {}),
-                SETUP_NAMESPACE: current.model_dump(mode="json"),
-            }
-            row.updated_at = datetime.now(UTC).replace(tzinfo=None)
-            if report.status not in {"running", "needs_input"} and not _managed:
-                row.status = (
-                    AgentRequestStatus.RESOLVED
-                    if report.status == "success"
-                    else AgentRequestStatus.FAILED
-                )
-                row.completed_at = row.updated_at
-                row.claim_token_hash = None
-            self._s.add(row)
             self._s.commit()
             return current
         except Exception:
             self._s.rollback()
             raise
+
+    def _apply_report(
+        self,
+        project_id: int,
+        row: AgentRequest,
+        current: SetupAttempt,
+        report: SetupReport,
+        *,
+        report_digest: str,
+        preserve_report: bool = False,
+    ) -> SetupAttempt:
+        """Apply domain evidence after its caller has established the exact writer."""
+        if report.question is not None and (
+            report.question.response_channel != current.entry_kind
+            or not set(report.question.workflow_keys).issubset(current.workflow_keys)
+        ):
+            raise ValidationError("question must stay in the owning session and selected workflows")
+        if report.question and any(
+            answer.question_id == report.question.question_id
+            and answer.question_revision >= report.question.revision
+            for answer in current.answers
+        ):
+            raise ConflictError("question was already answered; consume the recorded answer")
+        outcomes = dict(current.outcomes)
+        if report.adoption_proposal is not None:
+            if (
+                current.managed is not None
+                and current.managed.phase != "preparation"
+                and report.adoption_proposal != current.adoption_proposal
+            ):
+                raise ConflictError("Adopted role selection changed; start a new setup review")
+            self._validate_adoption_proposal(project_id, report.adoption_proposal)
+            current.adoption_proposal = report.adoption_proposal
+        for item in report.workflow_results:
+            if (
+                item.workflow_key not in current.workflow_keys
+                or item.result.attempt_ref != current.attempt_ref
+            ):
+                raise ConflictError("workflow result does not belong to this setup attempt")
+            if item.expected_revision != current.observed_receipt_revisions[item.workflow_key]:
+                raise ConflictError("report receipt revision differs from the attempt observation")
+            # The owning request fixes intent. A report cannot silently downgrade it.
+            item.result.requested_scope = current.requested_scope
+            saved = self.record_result(
+                project_id,
+                item.workflow_key,
+                expected_revision=item.expected_revision,
+                result=item.result,
+                _commit=False,
+            )
+            current.observed_receipt_revisions[item.workflow_key] = saved.revision
+            assert saved.receipt_id is not None
+            outcomes[item.workflow_key] = SetupWorkflowOutcome(
+                receipt_id=saved.receipt_id,
+                revision=saved.revision,
+                status=item.result.status,
+                result_ref=item.result.result_ref,
+                activation_status=saved.activation_status,
+                missing_activation_claims=saved.missing_activation_claims,
+            )
+        if report.status == "success" and (
+            not current.workflow_keys
+            or any(
+                key not in outcomes or outcomes[key].status != "success"
+                for key in current.workflow_keys
+            )
+        ):
+            raise ValidationError(
+                "every selected workflow needs verified success before attempt success"
+            )
+        if report.status == "success":
+            project = ProjectRepository(self._s).get(project_id)
+            if project.project_dir is None:
+                raise ConflictError(
+                    "setup completion needs an available selected project folder",
+                    data={"project_id": project_id, "next_action": "repair_project_folder"},
+                )
+            # A previous progress report can precede another source/receipt
+            # change. Closing the attempt must not bless that stale proof.
+            for key, outcome in outcomes.items():
+                receipt = self._row(project_id, key)
+                if (
+                    receipt is None
+                    or receipt.revision != outcome.revision
+                    or receipt.successful_json is None
+                ):
+                    raise ConflictError(
+                        "workflow receipt changed; revalidate before completion",
+                        data={"workflow_key": key},
+                    )
+                proof = VerifiedSetup.model_validate(receipt.successful_json["verification"])
+                sources = self.inspect_sources(
+                    project_id, key, selected_optional_presets=proof.selected_optional_presets
+                )
+                if self._identity(sources) != self._identity(proof.sources):
+                    raise ConflictError(
+                        "workflow sources changed; revalidate before completion",
+                        data={"workflow_key": key},
+                    )
+                if current.requested_scope == "ready_to_use":
+                    activation = proof.activation_proof
+                    if (
+                        proof.activation != "verified_loaded"
+                        or activation is None
+                        or activation.status != "verified"
+                        or activation.gaps()
+                    ):
+                        raise ValidationError(
+                            "required workflow activation is incomplete",
+                            data={
+                                "workflow_key": key,
+                                "requested_scope": current.requested_scope,
+                                "activation_status": activation.status if activation else "pending",
+                                "missing_claims": activation.gaps()
+                                if activation
+                                else ["saved_defaults", "native_consumption"],
+                                "next_action": "complete_activation",
+                            },
+                        )
+                    self._validate_activation(project_id, proof, current_sources=sources)
+        if preserve_report:
+            # A native final confirmation may summarize the success already
+            # reported by this invocation. The retained proof was revalidated
+            # above; preserve its receipts and the accepted report unchanged.
+            return current
+        current.revision += 1
+        current.status = report.status
+        current.progress = report.progress
+        current.question = report.question
+        current.recovery_condition = report.recovery_condition
+        current.outcomes = outcomes
+        current.partial_changes_possible = current.partial_changes_possible or bool(
+            any(item.result.changes for item in report.workflow_results)
+        )
+        current.reports.append(
+            SetupReportReceipt(
+                revision=current.revision,
+                status=report.status,
+                progress=report.progress,
+                question=report.question,
+                result_refs=[item.result.result_ref for item in report.workflow_results],
+                checked_at=datetime.now(UTC),
+                adoption_proposal=report.adoption_proposal,
+                report_digest=report_digest,
+            )
+        )
+        if len(current.model_dump_json().encode()) > 2_000_000:
+            raise ValidationError(
+                "setup attempt exceeds 2 MB; retain detailed evidence by reference"
+            )
+        row.metadata_json = {
+            **(row.metadata_json or {}),
+            SETUP_NAMESPACE: current.model_dump(mode="json"),
+        }
+        row.updated_at = datetime.now(UTC).replace(tzinfo=None)
+        if (
+            report.status not in {"running", "needs_input"}
+            and current.entry_kind == "existing_agent"
+        ):
+            row.status = (
+                AgentRequestStatus.RESOLVED
+                if report.status == "success"
+                else AgentRequestStatus.FAILED
+            )
+            row.completed_at = row.updated_at
+            row.claim_token_hash = None
+        self._s.add(row)
+        self._s.flush()
+        return current
 
     def startup_summary(self, project_id: int) -> dict[str, Any]:
         state = self.get(project_id)

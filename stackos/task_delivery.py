@@ -2356,7 +2356,9 @@ def _archive_attempt(evidence: dict[str, Any]) -> None:
     evidence["attempt"] = len(evidence.setdefault("attempts", [])) + 1
 
 
-def _save_evidence(repo, project_id, ticket_key, evidence, *, accepted=False, **patch) -> None:
+def _save_evidence(
+    repo, project_id, ticket_key, evidence, *, accepted=False, _commit=True, **patch
+) -> None:
     ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
     repo.update_ticket(
         project_id=project_id,
@@ -2374,7 +2376,10 @@ def _save_evidence(repo, project_id, ticket_key, evidence, *, accepted=False, **
     _refresh_runtime_evidence(
         repo, project_id, ticket.task_key, ticket_key, evidence, accepted=accepted
     )
-    repo._s.commit()
+    if _commit:
+        repo._s.commit()
+    else:
+        repo._s.flush()
 
 
 def _runtime_checkpoint(session, task, state, evidence, *, phase):

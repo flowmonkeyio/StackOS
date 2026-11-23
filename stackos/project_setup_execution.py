@@ -733,12 +733,9 @@ def schedule_setup(*, project_id, state, session_factory, scheduler):
 
 def _adopt_managed(session, project_id, request_id, claim_token):
     """Consume a bounded proposal under the original authenticated setup ownership."""
-    from stackos.operations.tracker.schemas import TaskDeliveryAgentOverride
     from stackos.repositories.agent_requests import AgentRequestRepository
-    from stackos.repositories.project_setup import ProjectSetupRepository, VerifiedSetup, _digest
+    from stackos.repositories.project_setup import ProjectSetupRepository, VerifiedSetup
     from stackos.repositories.projects import ProjectRepository
-    from stackos.repositories.tracker import TrackerRepository
-    from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 
     ProjectRepository(session).require_available(project_id, reserve=True)
     project = ProjectRepository(session).get(project_id)
@@ -781,51 +778,10 @@ def _adopt_managed(session, project_id, request_id, claim_token):
             )
             if repo._identity(sources) != repo._identity(proof.sources):
                 raise ConflictError("Preparation sources changed before adoption")
-    tracker = TrackerRepository(session)
-    defaults = tracker.delivery_defaults(project_id=project_id)
-    sources, inline = {}, {}
-    for role, selection in proposal.roles.items():
-        before = _delivery_role_defaults(defaults, role)
-        if before or defaults.get("host_key") is not None:
-            # Inspect the saved basis before proposal overrides. New roles in
-            # blank defaults may choose a host; configured roles retain their
-            # canonical inheritance, independently of the setup agent runtime.
-            saved_host = TaskDeliveryAgentOverride(host_key=before.get("host_key")).host_key
-            if _delivery_host(defaults, role_host=saved_host) != selection.host_key:
-                raise ConflictError("Adoption cannot change the intended native host")
-        if selection.source_ref:
-            sources[role] = {
-                "source_ref": selection.source_ref.model_dump(),
-                "expected_digest": selection.expected_digest,
-            }
-        else:
-            inline[role] = {
-                "host_key": selection.host_key,
-                "name": selection.name,
-                "instructions": selection.instructions,
-            }
-    arguments = dict(
-        project_id=project_id,
-        project_dir=proposal.project_dir,
-        sources=sources,
-        inline_roles=inline,
-        _execution_requirements={
-            role: selection.execution_requirements.model_dump()
-            for role, selection in proposal.roles.items()
-            if selection.execution_requirements is not None
-        },
-    )
-    preview = tracker.adopt_delivery_sources(**arguments, preview=True)
-    if any(
-        preview["adoption"]["agents"][role]["host_key"] != selection.host_key
-        for role, selection in proposal.roles.items()
-    ):
-        raise ConflictError("Adoption cannot change the intended native host")
-    tracker.adopt_delivery_sources(**arguments, preview=False, _commit=False)
+    from stackos.project_setup_workflow import adopt_proposal
+
+    current.managed.adopted_delivery_digest = adopt_proposal(session, project_id, proposal)
     current.managed.phase = "verification"
-    current.managed.adopted_delivery_digest = _digest(
-        tracker.delivery_defaults(project_id=project_id)
-    )
     # Adoption and its receipt commit together. A retry cannot repeat the write.
     _save(session, row, current)
 

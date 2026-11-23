@@ -859,6 +859,7 @@ class RunPlanRepository:
         result_json: dict[str, Any] | None = None,
         error: str | None = None,
         project_id: int | None = None,
+        _commit: bool = True,
     ) -> Envelope[RunPlanOut]:
         plan = self._fetch_plan(run_plan_id)
         self._require_plan_project(plan, project_id)
@@ -911,7 +912,10 @@ class RunPlanRepository:
         self._touch_linked_run(plan, step_id=step.step_id, now=now)
         TrackerRepository(self._s).mirror_run_plan_step_recorded(plan=plan, step=step)
         self._sync_terminal_status(plan, status, now=now)
-        self._s.commit()
+        if _commit:
+            self._s.commit()
+        else:
+            self._s.flush()
         self._s.refresh(plan)
         return Envelope(data=self._plan_out(plan), run_id=plan.run_id, project_id=plan.project_id)
 
