@@ -147,10 +147,31 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer(
             f"{source.key} v{source.version}"
         ) in local_text
         assert "base adaptation and other pending deltas remain unchanged" in local_text
+    # Each scoped amendment retains its own source revision as the preset grows.
+    assert "Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.25" in orchestrator
     assert (
-        f"Scoped amendment: Proof continuity and role-specific duties from v{skill.version}."
+        "Scoped amendment: Proof continuity and role-specific duties from v0.8.32." in orchestrator
+    )
+    assert (
+        "Scoped amendment: Explicit preparation references and safe fresh fallback from v0.8.33."
         in orchestrator
     )
+    preparation = next(
+        rule for rule in main_rules if rule.startswith("For optional preparation context,")
+    )
+    for requirement in (
+        "completed read-only receipt",
+        "tracker.startDelivery.preparation_parent",
+        "safe child-role replacement",
+        "NEW assignments",
+        "existing fresh compact launch",
+        "unsupported/absent decision",
+        "retains exact sessions",
+        "missing identity, denial, partial execution or failed resume",
+        "Preserve failed native evidence",
+    ):
+        assert requirement in preparation
+        assert requirement in " ".join(orchestrator.split())
 
     main_capability = next(rule for rule in main_rules if rule.startswith("Establish uncertain"))
     specialist_capability = next(

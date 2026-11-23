@@ -421,7 +421,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.32"
+    assert (
+        compact_skill["key"] == full_skill["summary"]["key"] == "stackos.sdlc.delivery-orchestrator"
+    )
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.33"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
@@ -440,6 +443,21 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         },
     )
     assert described_skill["preset"] == full_skill
+    preparation = next(
+        rule for rule in full_instructions if rule.startswith("For optional preparation context,")
+    )
+    for requirement in (
+        "completed read-only receipt",
+        "tracker.startDelivery.preparation_parent",
+        "typed outcome and frozen-session pins",
+        "NEW assignments use the existing fresh compact launch",
+        "explicit unsupported/absent decision",
+        "repair/recovery retains exact sessions",
+        "missing identity, denial, partial execution or failed resume",
+        "no fork machinery, upgrades, seed calls or savings claims",
+        "Source guidance does not activate future native capabilities or rewrite retained sessions",
+    ):
+        assert requirement in preparation
     observation = next(
         rule for rule in full_instructions if rule.startswith("Start routine observation")
     )
