@@ -23,6 +23,7 @@ from stackos.repositories.project_setup import (
     SetupReport,
     _digest,
 )
+from tests.helpers.native_task_routes import native_route_defaults  # noqa: F401
 from tests.integration.test_repositories.test_project_setup import verified_result
 from tests.integration.test_repositories.test_project_setup_attempts import attempt  # noqa: F401
 

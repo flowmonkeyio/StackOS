@@ -10,6 +10,7 @@ from stackos.db.models import RunPlan, TrackerTask
 from stackos.host_mcp import service
 from stackos.repositories.project_setup import ProjectSetupRepository
 from stackos.workflows.authoring_guide import PROJECT_SETUP_NOTICES
+from tests.helpers.native_task_routes import native_route_defaults  # noqa: F401
 from tests.integration.test_repositories.test_project_setup import verified_result
 
 from .test_mcp_bridge_agent_path import (

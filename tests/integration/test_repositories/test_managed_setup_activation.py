@@ -35,6 +35,7 @@ from stackos.repositories.project_setup import (
 )
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.workspaces import WorkspaceRepository
+from tests.helpers.native_task_routes import native_route_defaults  # noqa: F401
 from tests.integration.test_repositories.test_managed_setup import (
     launch,
     managed,  # noqa: F401
