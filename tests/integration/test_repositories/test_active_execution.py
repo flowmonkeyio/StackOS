@@ -3,6 +3,7 @@
 import json
 import threading
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
@@ -226,7 +227,8 @@ def test_overlapping_receipt_handoff_keeps_inflight_projections_consistent(
             returned.set()
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    definition = replace(service._definition_by_key("codex"), run_agent=runner)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: definition)
     thread = threading.Thread(target=launch)
     thread.start()
     try:
@@ -418,9 +420,8 @@ def test_actual_call_identity_transitions_and_cleanup(
         return AgentRunResult(0 if exit_kind == "success" else 1, thread_id="same-native-session")
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(
-        service, "_definition_by_key", lambda key: SimpleNamespace(run_agent=runner)
-    )
+    definition = replace(service._definition_by_key("codex"), run_agent=runner)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: definition)
     for name, model in [
         ("Project implementer", "model-v1"),
         ("Independent reviewer", "model-v2"),
@@ -938,7 +939,8 @@ def test_native_exit_hands_usage_to_receipt_before_return_without_active_resourc
         _record_execution_transition(lambda: Session(session.get_bind()), call, active)
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    definition = replace(service._definition_by_key("codex"), run_agent=runner)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: definition)
     service.run_agent(
         "fixture",
         tmp_path,

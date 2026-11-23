@@ -6,6 +6,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from dataclasses import replace
 from threading import Barrier, Event, Lock
 
 import pytest
@@ -14,6 +15,7 @@ from sqlmodel import Session
 
 from stackos import task_delivery
 from stackos.config import Settings
+from stackos.host_mcp import service
 from stackos.jobs.scheduler import build_scheduler
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ProjectRepository
@@ -196,8 +198,34 @@ def test_concurrent_drains_skip_saturated_project_and_reserve_in_task_id_order(
         assert [(r["running_count"], r["queued_count"]) for r in rows] == [(2, 3), (2, 0)]
 
 
+@pytest.fixture
+def antigravity_catalog(monkeypatch, tmp_path):
+    """Capacity callbacks are inert; keep their admission probes inert too."""
+    cli = tmp_path / "agy"
+    cli.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  --version) printf '1.5.14\\n' ;;\n"
+        "  models) printf 'gemini-4-neon-high\\tGemini 4 Neon High\\n' ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n"
+    )
+    cli.chmod(0o700)
+    definitions = service._definitions()
+    monkeypatch.setattr(
+        service,
+        "_definitions",
+        lambda: tuple(
+            replace(definition, cli=lambda _home: str(cli))
+            if definition.policy.host_key == "antigravity"
+            else definition
+            for definition in definitions
+        ),
+    )
+
+
 def test_independent_projects_execute_beyond_old_pool_and_lower_without_preemption(
-    delivery_engine, project_id, tmp_path, monkeypatch
+    delivery_engine, project_id, tmp_path, monkeypatch, antigravity_catalog
 ):
     """Use actual APScheduler pools and persisted limits, with inert held callbacks."""
     first_keys = [f"first-{index}" for index in range(18)]

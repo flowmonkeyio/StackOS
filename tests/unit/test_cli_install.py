@@ -1546,6 +1546,26 @@ def install_postflight(sandbox: Path, monkeypatch: pytest.MonkeyPatch):
         definitions = host_mcp_service._definitions()
         calls = []
         states = {}
+        # Catalog inspection is another native edge. Installed CLIs can write
+        # config even for version/model reads, outside the NativeEdge adapter.
+        cli = sandbox / "capability-cli"
+        cli.write_text(
+            "#!/bin/sh\n"
+            'case "$*" in\n'
+            "  --version) printf '1.0.0\\n' ;;\n"
+            "  models) printf 'gemini-4-neon-high\\tGemini 4 Neon High\\n' ;;\n"
+            "  '--no-auto-update models') printf '%s\\n' '- grok-4.7' '- grok-4.7-build-fast' ;;\n"
+            "  *) exit 2 ;;\n"
+            "esac\n"
+        )
+        cli.chmod(0o700)
+
+        def native_cli(_home, *, key):
+            return (
+                None
+                if states.get(key, "absent") in {"absent", "unsupported_host_version"}
+                else str(cli)
+            )
 
         class NativeEdge:
             def __init__(self, key):
@@ -1581,7 +1601,13 @@ def install_postflight(sandbox: Path, monkeypatch: pytest.MonkeyPatch):
             host_mcp_service,
             "_definitions",
             lambda: tuple(
-                replace(d, adapter=NativeEdge(d.policy.host_key), repair=None, force_register=None)
+                replace(
+                    d,
+                    adapter=NativeEdge(d.policy.host_key),
+                    repair=None,
+                    force_register=None,
+                    cli=lambda home, key=d.policy.host_key: native_cli(home, key=key),
+                )
                 for d in definitions
             ),
         )
@@ -1614,6 +1640,13 @@ def test_normal_install_repair_doctor_optional_host_subsets(sandbox, install_pos
     assert calls == ([] if host in {None, "hermes", "unsupported"} else [host])
     report = CliRunner().invoke(app, ["doctor", "--json"])
     assert report.exit_code == 0, report.output
+    hosts = json.loads(report.stdout)["info"]["mcp_hosts"]
+    if host not in {None, "claude-desktop", "unsupported"}:
+        observed = next(row for row in hosts if row["host_key"] == host)["agent_execution"]
+        assert observed["runnable"] == "available"
+        assert observed["cli_version"] == "1.0.0"
+        if host in {"antigravity", "grok"}:
+            assert observed["catalog_source"] == "native"
     for config in (
         ".codex/config.toml",
         ".claude.json",

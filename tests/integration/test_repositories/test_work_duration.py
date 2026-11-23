@@ -1,6 +1,7 @@
 """Independent wall-interval expectations through the retained tracker outputs."""
 
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -353,7 +354,8 @@ def test_real_managed_timing_handoff_persists_and_freezes(
         _record_execution_transition(lambda: Session(session.get_bind()), call, active)
 
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
-    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    definition = replace(service._definition_by_key("codex"), run_agent=runner)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: definition)
     kwargs = {
         "execution_scope": service.AgentExecutionScope(
             project_id, "overview", "managed", "worker", 1, "delivery"
