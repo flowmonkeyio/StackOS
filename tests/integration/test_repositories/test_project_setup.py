@@ -374,6 +374,35 @@ def test_required_role_mapping_and_reload_truth(setup_project):
     assert repo.get(project).status == "setup_needed"
 
 
+def test_role_mapping_uses_exact_template_id_and_schema_explains_it(setup_project):
+    from stackos.operations.project_setup_state import ProjectSetupReportInput
+    from stackos.workflows.authoring_guide import SETUP_ROLE_MAPPING_RULE
+
+    project, _, repo = setup_project
+    result = verified_result(repo, project)
+    mapping = next(
+        item
+        for item in result.verification.role_mapping
+        if item.role == "stackos.sdlc.delivery-orchestrator"
+    )
+    mapping.role = "main_agent"
+    with pytest.raises(ValidationError, match="source-to-target"):
+        repo.record_result(
+            project, "engineering.tracked-delivery", expected_revision=0, result=result
+        )
+    mapping.role = "stackos.sdlc.delivery-orchestrator"
+    saved = repo.record_result(
+        project, "engineering.tracked-delivery", expected_revision=0, result=result
+    )
+    assert any(
+        item["role"] == mapping.role for item in saved.successful["verification"]["role_mapping"]
+    )
+    schema = ProjectSetupReportInput.model_json_schema()
+    assert schema["$defs"]["SetupRoleMapping"]["properties"]["role"]["description"] == (
+        SETUP_ROLE_MAPPING_RULE
+    )
+
+
 def test_compatible_adaptation_and_justified_recommended_role_decision(setup_project):
     project, _, repo = setup_project
     result = verified_result(repo, project)

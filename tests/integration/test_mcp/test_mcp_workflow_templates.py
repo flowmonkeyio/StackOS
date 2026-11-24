@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from stackos.workflows.authoring_guide import SETUP_ROLE_MAPPING_RULE
+
 from .conftest import MCPClient
 
 
@@ -230,6 +232,8 @@ outputs:
         "no configured business run" in item
         for item in authoring_guide["setup_completion_contract"]
     )
+    assert SETUP_ROLE_MAPPING_RULE in authoring_guide["setup_completion_contract"]
+    assert SETUP_ROLE_MAPPING_RULE in authoring_guide["project_setup_method"]["report_guidance"]
     canonical_operation_names = {item["name"] for item in authoring_guide["canonical_operations"]}
     assert {
         "workflowTemplate.validate",

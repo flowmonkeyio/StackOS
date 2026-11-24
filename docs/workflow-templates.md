@@ -549,6 +549,12 @@ same definitions live in
 [`stackos/workflows/authoring_guide.py`](../stackos/workflows/authoring_guide.py).
 The phase summaries below are navigation, not another copy of that procedure.
 
+In setup evidence, `verification.role_mapping[].role` uses the effective
+requirement's `role`, falling back to its exact `agent_preset_ref` or
+`skill_preset_ref` when no role is declared. For example, the engineering
+orchestrator maps as `stackos.sdlc.delivery-orchestrator`, not its source kind
+`main_agent`. Pair that ID with the inspected source's exact `ref` in `source_ref`.
+
 The guide's `project_setup_method` authors the shared setup/update agent prompt,
 bounded input contract, mode instructions, session notices and concrete question/
 result wording for both existing-session and managed entrypoints. Consumers load

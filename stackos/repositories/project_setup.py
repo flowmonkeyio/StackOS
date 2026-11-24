@@ -41,7 +41,7 @@ from stackos.repositories.agent_requests import AgentRequestRepository, _hash_to
 from stackos.repositories.base import ConflictError, RepositoryError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.skill_presets.loader import SkillPresetLoader
-from stackos.workflows.authoring_guide import PROJECT_SETUP_NOTICES
+from stackos.workflows.authoring_guide import PROJECT_SETUP_NOTICES, SETUP_ROLE_MAPPING_RULE
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 
 
@@ -73,7 +73,7 @@ class SetupSource(SetupEvidenceModel):
 
 class SetupRoleMapping(SetupEvidenceModel):
     source_ref: str
-    role: str
+    role: str = Field(description=SETUP_ROLE_MAPPING_RULE)
     decision: Literal["materialized", "session_only", "omitted"]
     target_paths: list[str] = Field(default_factory=list)
     reason: str | None = None

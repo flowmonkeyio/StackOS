@@ -6,6 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 WORKFLOW_AUTHORING_GUIDE_VERSION = "stackos.workflow-authoring-guide.v2"
 WORKFLOW_AUTHORING_GUIDE_OPERATION = "workflowTemplate.authoringGuide"
+SETUP_ROLE_MAPPING_RULE = (
+    "For verification.role_mapping[].role, copy the effective template requirement's role "
+    "when present; otherwise copy its agent_preset_ref or skill_preset_ref exactly. "
+    "Pair it with the inspected source's exact ref in source_ref. Source kinds and execution "
+    "slots such as main_agent are not aliases for these role IDs."
+)
 
 PROJECT_SETUP_NOTICES = {
     "setup_needed": (
@@ -281,6 +287,7 @@ def project_setup_method() -> ProjectSetupMethod:
             "role_mapping, source obligations and targets/reasons, local_adaptations, "
             "syntax/registration/references/behavior checks, activation evidence and the separate "
             "readiness tuple plus structural/strict validation refs and exact deferred inputs.",
+            SETUP_ROLE_MAPPING_RULE,
             "Agent and independent review judge semantic coverage; structural receipt validation "
             "cannot prove it. Unresolved obligations, material loss or missing required proof "
             "must not be reported as success. Report failed/unfinished/needs_input/interrupted/"
@@ -1002,6 +1009,7 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
             "Required, recommended, and optional agent/skill preset decisions with exact versions "
             "and "
             "preset-to-file/session mapping.",
+            SETUP_ROLE_MAPPING_RULE,
             "Host-local files changed with absolute paths, validation status, and any "
             "restart/reload need.",
             "Per-workflow previous/local/new comparison, exact source-obligation-to-target "

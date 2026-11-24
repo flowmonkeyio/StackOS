@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.1.47 - 2026-11-23
+
+- Track managed project setup and updates as ordinary workflows with preparation
+  and readiness tickets, shared delivery controls, retained evidence and direct
+  navigation from Setup to Work. Clarify exact role identifiers in setup reports.
+- Replace Gemini CLI integration with Antigravity, including native execution,
+  MCP registration, StackOS skills, available plan and quota information.
+- Configure delivery and review harnesses and models from project Agents settings.
+  Preserve supported Codex model choices and report native execution capabilities
+  separately from MCP connection status.
+- Improve native worker continuation, account-switch recovery and usage reporting
+  across harnesses while preserving conversations, accepted work and repair limits.
+  Retain Codex model attribution through supported large rollout records.
+- Load Overview and Project Home more efficiently by reducing repeated database
+  and filesystem work, avoiding blocking reads and prioritizing task and chart data.
+- Simplify the Finance console, reuse Board-style filters, improve reporting
+  readiness and provide guarded recovery for retained Finance records. Move
+  Finance activation into its own page instead of adding controls to plugin cards.
+- Keep unavailable optional harnesses from blocking installation or account
+  loading, retain actionable account errors, and improve workspace/setup recovery.
+- Reserve daemon listeners before recovery starts so a competing process cannot
+  interrupt active work. Preserve managed continuation through install and repair.
+- Use pinned, cached TDLib build inputs and the ElevenLabs provider logo.
+
 ## 2.1.46 - 2026-11-19
 
 - Add saved native accounts for Codex, Claude Code and Grok, with email-based
