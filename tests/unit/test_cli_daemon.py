@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import errno
 import os
 import plistlib
+import socket
 import sys
-import types
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -60,30 +62,151 @@ def _write_launchd_plist(
     return plist
 
 
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "localhost"])
+@pytest.mark.parametrize("startup_failure", [False, True])
 def test_serve_writes_and_removes_pid_file(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,
+    host: str,
+    startup_failure: bool,
 ) -> None:
-    pid_path = sandbox / ".local" / "state" / "stackos" / "daemon.pid"
+    import uvicorn
+    from fastapi import FastAPI
 
-    def fake_run(*_args: object, **kwargs: object) -> None:
+    import stackos.server
+
+    pid_path = sandbox / ".local" / "state" / "stackos" / "daemon.pid"
+    events = []
+    sockets = []
+    create_server = socket.create_server
+    previous_env = {
+        key: os.environ.get(key) for key in ("STACKOS_HOST", "STACKOS_PORT", "STACKOS_LOG_LEVEL")
+    }
+
+    def observe_bind(*args, **kwargs):
+        sock = create_server(*args, **kwargs)
+        sockets.append(sock)
+        return sock
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        events.append("startup")
+        if startup_failure:
+            raise RuntimeError("Fixture startup failure")
+        yield
+        events.append("shutdown")
+
+    def factory():
         assert pid_path.read_text(encoding="utf-8") == f"{os.getpid()}\n"
-        assert kwargs["host"] == "127.0.0.1"
-        assert kwargs["port"] == 5199
+        expected = {
+            address[4][0] for address in socket.getaddrinfo(host, 0, type=socket.SOCK_STREAM)
+        }
+        assert {sock.getsockname()[0] for sock in sockets} == expected
+        for sock in sockets:
+            with socket.create_connection(sock.getsockname()[:2], timeout=1):
+                pass
+        events.append("factory")
+        return FastAPI(lifespan=lifespan)
+
+    async def finish(server):
+        assert server.started
+        assert server.config.host == host and server.config.port == 0
         # Callback query values must never enter Uvicorn's access log. The
         # application-owned timing logger records method/path only.
-        assert kwargs["access_log"] is False
+        assert server.config.access_log is False
+        events.append("serve")
 
-    monkeypatch.setitem(sys.modules, "uvicorn", types.SimpleNamespace(run=fake_run))
+    monkeypatch.setattr(socket, "create_server", observe_bind)
+    monkeypatch.setattr(uvicorn.Server, "main_loop", finish)
+    monkeypatch.setattr(stackos.server, "create_app", factory)
 
     result = CliRunner().invoke(
         app,
-        ["serve", "--host", "127.0.0.1", "--port", "5199"],
+        ["serve", "--host", host, "--port", "0"],
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == (3 if startup_failure else 0), result.output
+    assert events == (
+        ["factory", "startup"] if startup_failure else ["factory", "startup", "serve", "shutdown"]
+    )
     assert not pid_path.exists()
+    assert sockets and all(sock.fileno() == -1 for sock in sockets)
+    assert {key: os.environ.get(key) for key in previous_env} == previous_env
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost"])
+def test_serve_duplicate_rejects_before_factory_and_preserves_incumbent(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    from fastapi import FastAPI
+
+    import stackos.server
+
+    pid_path = sandbox / ".local" / "state" / "stackos" / "daemon.pid"
+    pid_path.write_text("424242\n")
+    events = []
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        events.append("recovery")
+        raise RuntimeError("Duplicate must not start recovery")
+        yield  # pragma: no cover
+
+    def factory():
+        events.append("factory")
+        return FastAPI(lifespan=lifespan)
+
+    monkeypatch.setattr(stackos.server, "create_app", factory)
+    previous_env = {
+        key: os.environ.get(key) for key in ("STACKOS_HOST", "STACKOS_PORT", "STACKOS_LOG_LEVEL")
+    }
+    with socket.create_server(("127.0.0.1", 0)) as incumbent:
+        port = incumbent.getsockname()[1]
+        result = CliRunner().invoke(
+            app, ["serve", "--host", host, "--port", str(port)], catch_exceptions=False
+        )
+        assert result.exit_code == 3, result.output
+        assert events == []
+        assert pid_path.read_text() == "424242\n"
+        with socket.create_connection(incumbent.getsockname(), timeout=1):
+            pass
+    assert {key: os.environ.get(key) for key in previous_env} == previous_env
+
+
+@pytest.mark.parametrize("host, expected_exit", [("localhost", 0), ("::1", 3)])
+def test_serve_unavailable_family_only_falls_back_for_localhost(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch, host: str, expected_exit: int
+) -> None:
+    import uvicorn
+    from fastapi import FastAPI
+
+    import stackos.server
+
+    create_server = socket.create_server
+    factories = []
+
+    def reserve(address, *, family, **kwargs):
+        if family == socket.AF_INET6:
+            raise OSError(errno.EADDRNOTAVAIL, "Fixture unavailable IPv6")
+        return create_server(address, family=family, **kwargs)
+
+    def factory():
+        factories.append(True)
+        return FastAPI()
+
+    async def finish(_server):
+        pass
+
+    monkeypatch.setattr(socket, "create_server", reserve)
+    monkeypatch.setattr(stackos.server, "create_app", factory)
+    monkeypatch.setattr(uvicorn.Server, "main_loop", finish)
+    result = CliRunner().invoke(
+        app, ["serve", "--host", host, "--port", "0"], catch_exceptions=False
+    )
+    assert result.exit_code == expected_exit, result.output
+    assert factories == ([True] if host == "localhost" else [])
+    assert not (sandbox / ".local" / "state" / "stackos" / "daemon.pid").exists()
 
 
 def test_discover_daemon_processes_classifies_listener_pids(

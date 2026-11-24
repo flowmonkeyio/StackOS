@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import logging
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
+from contextlib import ExitStack, suppress
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -80,16 +84,12 @@ def serve(
     os.environ["STACKOS_PORT"] = str(port)
     os.environ["STACKOS_LOG_LEVEL"] = log_level.upper()
 
-    settings = get_settings()
-    settings.ensure_dirs()
-    daemon_processes._write_pid_file(settings.pid_path, os.getpid())
-
     try:
         # Late-import uvicorn so `--help` is fast and the heavy import only
         # happens on actual serve.
         import uvicorn
 
-        uvicorn.run(
+        config = uvicorn.Config(
             "stackos.server:create_app",
             host=host,
             port=port,
@@ -100,8 +100,50 @@ def serve(
             # RequestTimingMiddleware provides path-only request diagnostics.
             access_log=False,
         )
+        # Own the actual listener before app startup can recover durable work or
+        # overwrite the incumbent PID. Binding alone is not exclusive while
+        # SO_REUSEADDR sockets have not yet begun listening.
+        with ExitStack() as reservations:
+            try:
+                sockets = []
+                addresses = dict.fromkeys(
+                    (address[0], address[4])
+                    for address in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+                )
+                for family, address in addresses:
+                    try:
+                        sock = socket.create_server(address, family=family, backlog=config.backlog)
+                    except OSError as exc:
+                        if host == "localhost" and exc.errno in {
+                            errno.EADDRNOTAVAIL,
+                            errno.EAFNOSUPPORT,
+                            errno.EPROTONOSUPPORT,
+                        }:
+                            continue
+                        raise
+                    reservations.enter_context(sock)
+                    sockets.append(sock)
+                if not sockets:
+                    raise OSError("no available loopback address")
+            except OSError as exc:
+                typer.echo(f"error: cannot listen on {host}:{port}: {exc}", err=True)
+                raise typer.Exit(code=3) from exc
+            settings = get_settings()
+            settings.ensure_dirs()
+            daemon_processes._write_pid_file(settings.pid_path, os.getpid())
+            try:
+                server = uvicorn.Server(config)
+                logging.getLogger("uvicorn.error").info(
+                    "Uvicorn listening on %s (Press CTRL+C to quit)",
+                    [sock.getsockname() for sock in sockets],
+                )
+                with suppress(KeyboardInterrupt):
+                    server.run(sockets=sockets)
+                if not server.started:
+                    raise typer.Exit(code=3)
+            finally:
+                daemon_processes._remove_pid_file(settings.pid_path, os.getpid())
     finally:
-        daemon_processes._remove_pid_file(settings.pid_path, os.getpid())
         for key, value in previous_env.items():
             if value is None:
                 os.environ.pop(key, None)

@@ -130,6 +130,10 @@ background.
 Use `stackos restart` when a daemon is already running and should reload
 settings, token rotation, or package code.
 
+`serve` reserves its listening socket before writing the PID file or starting
+application recovery. A competing process that cannot bind the port exits
+without changing the running daemon's PID or delivery state.
+
 Use `stackos stop` to shut down the singleton daemon without immediately
 starting it again. This is useful when testing a packaged desktop app launch and
 you want the app to prove it can start its bundled daemon path from a cold
