@@ -74,7 +74,10 @@ def inspect(
     if hermes_bin is None:
         return _absent()
     if profile is not None:
-        return _inspect_profile_with_bin(home, hermes_bin, _normalize_profile(profile), server_name)
+        return replace(
+            _inspect_profile_with_bin(home, hermes_bin, _normalize_profile(profile), server_name),
+            _cli=(hermes_bin, None),
+        )
 
     results = [
         _inspect_profile_with_bin(home, hermes_bin, candidate, server_name)
@@ -87,6 +90,7 @@ def inspect(
             default,
             message="Hermes is available. Choose a profile to connect to StackOS.",
             targets=[],
+            _cli=(hermes_bin, None),
         )
 
     priority = {
@@ -104,7 +108,9 @@ def inspect(
         message = f"Hermes StackOS connection is healthy in: {profile_labels}."
     else:
         message = f"Hermes StackOS profile connections need attention in: {profile_labels}."
-    return replace(representative, message=message, target=None, targets=targets)
+    return replace(
+        representative, message=message, target=None, targets=targets, _cli=(hermes_bin, None)
+    )
 
 
 def inspect_profile(
@@ -116,11 +122,9 @@ def inspect_profile(
     hermes_bin = resolve_hermes_bin()
     if hermes_bin is None:
         return _absent()
-    result = _inspect_profile_with_bin(
-        home,
-        hermes_bin,
-        _normalize_profile(profile),
-        server_name,
+    result = replace(
+        _inspect_profile_with_bin(home, hermes_bin, _normalize_profile(profile), server_name),
+        _cli=(hermes_bin, None),
     )
     if result.status == "config_unreadable":
         return replace(result, selected=True)

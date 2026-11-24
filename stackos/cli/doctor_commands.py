@@ -464,12 +464,14 @@ def _check_claude_mcp_registered(home: Path) -> tuple[bool, dict[str, object]]:
     return result.ok and result.available, result.to_info()
 
 
-def _check_mcp_hosts(home: Path) -> tuple[bool, list[dict[str, object]]]:
+def _check_mcp_hosts(
+    home: Path, *, include_models: bool = True
+) -> tuple[bool, list[dict[str, object]]]:
     """Inspect all known host MCP registrations through the shared lifecycle service."""
     from stackos.host_mcp import inspect_all
     from stackos.host_mcp.service import host_installation_ok
 
-    aggregate = inspect_all(home=home)
+    aggregate = inspect_all(home=home, include_models=include_models)
     return aggregate.ok, [
         {**result.to_info(), "installation_ok": host_installation_ok(result)}
         for result in aggregate.results
@@ -490,6 +492,10 @@ def mcp_host_status(
         str | None,
         typer.Option("--profile", help="Inspect one existing Hermes profile."),
     ] = None,
+    include_models: Annotated[
+        bool,
+        typer.Option("--include-models/--no-include-models", help="Inspect native model choices."),
+    ] = True,
 ) -> None:
     """Inspect only supported AI-tool connections, without running full doctor."""
 
@@ -497,11 +503,13 @@ def mcp_host_status(
         typer.echo("error: --profile is valid only with --host hermes.", err=True)
         raise typer.Exit(code=2)
     if host is None:
-        ok, hosts = _check_mcp_hosts(_doctor_home())
+        ok, hosts = _check_mcp_hosts(_doctor_home(), include_models=include_models)
     else:
         from stackos.host_mcp import inspect_host
 
-        result = inspect_host(host, home=_doctor_home(), profile=profile)
+        result = inspect_host(
+            host, home=_doctor_home(), profile=profile, include_models=include_models
+        )
         ok = not result.blocking
         hosts = [result.to_info()]
     payload = {

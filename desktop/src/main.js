@@ -724,7 +724,7 @@ function registerIpc() {
   });
   ipcMain.handle("stackos:restart-service", async () => service.restartDaemon());
   ipcMain.handle("stackos:doctor", async () => service.runDoctor());
-  ipcMain.handle("stackos:mcp-host-status", async () => service.inspectMcpHosts());
+  ipcMain.handle("stackos:mcp-host-status", async (_event, options) => service.inspectMcpHosts(options));
   ipcMain.handle("stackos:updates:state", async () => updateController.state);
   ipcMain.handle("stackos:updates:check", async () => updateController.checkForUpdates());
   ipcMain.handle("stackos:updates:download", async () => updateController.downloadUpdate());

@@ -19,7 +19,7 @@ from stackos.host_mcp.bridge import (
     resolve_bridge_command,
     token_preflight,
 )
-from stackos.host_mcp.discovery import iter_cli_bins, subprocess_env_for_cli
+from stackos.host_mcp.discovery import executable_identity, iter_cli_bins, subprocess_env_for_cli
 from stackos.host_mcp.json_config import (
     CONFIG_CHANGED,
     JsonConfigRead,
@@ -40,7 +40,11 @@ COMMON_ANTIGRAVITY_CLI_CANDIDATES = (
 REPAIR = "Run `stackos install --mcp-only` or desktop Repair."
 
 
-def resolve_antigravity_bin(explicit: str | None = None) -> str | None:
+def resolve_antigravity_bin(
+    explicit: str | None = None,
+    *,
+    observation: list[tuple[str, tuple[int, ...], str]] | None = None,
+) -> str | None:
     """Probe runnable agy, not just an executable cmux shim or dangling link.
 
     Explicit paths and STACKOS_ANTIGRAVITY_BIN are authoritative (no fallback).
@@ -53,6 +57,7 @@ def resolve_antigravity_bin(explicit: str | None = None) -> str | None:
         explicit=explicit,
         common_candidates=COMMON_ANTIGRAVITY_CLI_CANDIDATES,
     ):
+        before = executable_identity(candidate)
         try:
             result = subprocess.run(
                 [candidate, "--version"],
@@ -69,6 +74,8 @@ def resolve_antigravity_bin(explicit: str | None = None) -> str | None:
         if result.returncode == 0 and re.fullmatch(
             r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", result.stdout.strip()
         ):
+            if observation is not None and before is not None:
+                observation.append((candidate, before, result.stdout.strip()))
             return candidate
     return None
 
@@ -129,7 +136,9 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
 def _inspect_snapshot(home: Path, *, server_name: str) -> tuple[HostMcpResult, JsonConfigRead]:
     loaded = read_json_object(config_path(home))
     current = _inspect_assets(home, loaded, server_name=server_name)
-    if resolve_antigravity_bin() is None:
+    observation: list[tuple[str, tuple[int, ...], str]] = []
+    cli = resolve_antigravity_bin(observation=observation)
+    if cli is None:
         return replace(
             current,
             status="absent",
@@ -139,7 +148,11 @@ def _inspect_snapshot(home: Path, *, server_name: str) -> tuple[HostMcpResult, J
             advisory=True,
             blocking=False,
         ), loaded
-    return current, loaded
+    return replace(
+        current,
+        _cli=(cli, observation[0][2] if observation else None),
+        _execution_basis=(cli, observation[0][1]) if observation else None,
+    ), loaded
 
 
 def _inspect_assets(home: Path, loaded: JsonConfigRead, *, server_name: str) -> HostMcpResult:

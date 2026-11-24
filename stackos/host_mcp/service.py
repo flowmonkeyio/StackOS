@@ -787,6 +787,8 @@ def execution_catalog(
     *,
     home: Path,
     executable_basis: list[tuple[str, tuple[int, ...]]] | None = None,
+    inspection: HostMcpResult | None = None,
+    include_models: bool = True,
 ) -> dict[str, Any]:
     """Refresh one registry entry, without caching, changing pins or starting a turn.
 
@@ -804,21 +806,34 @@ def execution_catalog(
     if definition.run_agent is None:
         return {**catalog, "runnable": "unsupported"}
     try:
-        cli = definition.cli(home) if definition.cli else None
+        if inspection is not None and not inspection.available:
+            return {**catalog, "runnable": "unavailable", "probe_status": "failed"}
+        observed_cli = inspection._cli if inspection is not None else None
+        cli = observed_cli[0] if observed_cli else definition.cli(home) if definition.cli else None
         if cli is None:
             return {**catalog, "runnable": "unavailable", "probe_status": "failed"}
-        before = executable_identity(cli)
+        before = (
+            inspection._execution_basis[1]
+            if inspection is not None and inspection._execution_basis is not None
+            else executable_identity(cli)
+        )
         if before is None:
             return {**catalog, "runnable": "unknown", "probe_status": "failed"}
         if executable_basis is not None:
             executable_basis.append((cli, before))
-        runnable, version = probe_cli_version(cli)
+        if before != executable_identity(cli):
+            return _stale_execution_catalog(definition)
+        runnable, version = (
+            ("available", observed_cli[1])
+            if observed_cli is not None and observed_cli[1] is not None
+            else probe_cli_version(cli)
+        )
         catalog.update(
             runnable=runnable,
             cli_version=version,
             probe_status="observed" if runnable == "available" else "failed",
         )
-        if runnable == "available" and definition.native_models:
+        if include_models and runnable == "available" and definition.native_models:
             models = definition.native_models(cli)
             if models:
                 catalog.update(
@@ -1510,7 +1525,9 @@ def agent_selection_error(
     return None
 
 
-def inspect_all(*, home: Path | None = None, data_dir: Path | None = None) -> HostMcpAggregate:
+def inspect_all(
+    *, home: Path | None = None, data_dir: Path | None = None, include_models: bool = True
+) -> HostMcpAggregate:
     home_dir = home or default_home()
     definitions = _definitions()
     bases = {d.policy.host_key: _catalog_account(d, data_dir=data_dir) for d in definitions}
@@ -1519,7 +1536,10 @@ def inspect_all(*, home: Path | None = None, data_dir: Path | None = None) -> Ho
         thread_name_prefix="stackos-host-inspect",
     ) as executor:
         futures = [
-            executor.submit(_inspect_definition, definition, home_dir) for definition in definitions
+            executor.submit(
+                _inspect_definition, definition, home_dir, include_models=include_models
+            )
+            for definition in definitions
         ]
         results = [future.result() for future in futures]
     # Observation lifetime includes waiting for every sibling, not just the
@@ -1556,12 +1576,21 @@ def _catalog_account(
         return False
 
 
-def _inspect_definition(definition: HostMcpDefinition, home: Path) -> HostMcpResult:
+def _inspect_definition(
+    definition: HostMcpDefinition, home: Path, *, include_models: bool = True
+) -> HostMcpResult:
     basis: list[tuple[str, tuple[int, ...]]] = []
+    current = _call_adapter(definition.adapter.inspect, home, definition.policy.host_key)
     result = normalize_result(
-        _call_adapter(definition.adapter.inspect, home, definition.policy.host_key),
+        current,
         definition.policy,
-        execution=execution_catalog(definition, home=home, executable_basis=basis),
+        execution=execution_catalog(
+            definition,
+            home=home,
+            executable_basis=basis,
+            inspection=current,
+            include_models=include_models,
+        ),
     )
     return replace(result, _execution_basis=basis[0] if basis else None)
 
@@ -1669,8 +1698,16 @@ def inspect_host(
     home: Path | None = None,
     profile: str | None = None,
     data_dir: Path | None = None,
+    include_models: bool = True,
 ) -> HostMcpResult:
-    return _single(host_key, action="inspect", home=home, profile=profile, data_dir=data_dir)
+    return _single(
+        host_key,
+        action="inspect",
+        home=home,
+        profile=profile,
+        data_dir=data_dir,
+        include_models=include_models,
+    )
 
 
 def _single(
@@ -1681,6 +1718,7 @@ def _single(
     force: bool = False,
     profile: str | None = None,
     data_dir: Path | None = None,
+    include_models: bool = True,
 ) -> HostMcpResult:
     home_dir = home or default_home()
     definition = _definition_by_key(host_key)
@@ -1718,7 +1756,9 @@ def _single(
         execution = (
             _stale_execution_catalog(definition)
             if basis is False
-            else execution_catalog(definition, home=home_dir)
+            else execution_catalog(
+                definition, home=home_dir, inspection=current, include_models=include_models
+            )
         )
         if basis != _catalog_account(definition, data_dir=data_dir):
             execution = _stale_execution_catalog(definition)

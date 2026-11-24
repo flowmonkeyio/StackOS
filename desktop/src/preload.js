@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld("stackosDesktop", {
   installOrRepair: () => ipcRenderer.invoke("stackos:install-or-repair"),
   restartService: () => ipcRenderer.invoke("stackos:restart-service"),
   runDoctor: () => ipcRenderer.invoke("stackos:doctor"),
-  hostStatuses: () => ipcRenderer.invoke("stackos:mcp-host-status"),
+  hostStatuses: (options) => ipcRenderer.invoke("stackos:mcp-host-status", options),
   checkForUpdates: () => ipcRenderer.invoke("stackos:updates:check"),
   downloadUpdate: () => ipcRenderer.invoke("stackos:updates:download"),
   installUpdate: () => ipcRenderer.invoke("stackos:updates:install"),

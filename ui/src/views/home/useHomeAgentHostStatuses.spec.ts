@@ -86,7 +86,7 @@ describe('home host status transport', () => {
     vi.mocked(callOperation).mockResolvedValue({ ok: true, items: hosts })
     const state = useHomeAgentHostStatuses(false)
     await state.loadHostStatuses()
-    expect(callOperation).toHaveBeenCalledWith('hostMcp.status', {})
+    expect(callOperation).toHaveBeenCalledWith('hostMcp.status', { include_models: true })
     expect(desktop.hostStatuses).not.toHaveBeenCalled()
     expect(state.hostStatuses.value).toEqual({ kind: 'loaded', items: hosts })
     vi.mocked(callOperation).mockRejectedValue(new Error('Service unavailable'))
@@ -98,6 +98,33 @@ describe('home host status transport', () => {
     })
   })
 
+  it('keeps connection-only and model-picker snapshots separate within one app', async () => {
+    const includeModels = ref(false)
+    let state!: ReturnType<typeof useHomeAgentHostStatuses>
+    let finishModels!: (value: unknown) => void
+    vi.mocked(callOperation)
+      .mockResolvedValueOnce({ items: [{ ...catalogHost, message: 'Connection only' }] })
+      .mockImplementationOnce(() => new Promise(resolve => { finishModels = resolve }))
+      .mockImplementation(() => new Promise(() => {}))
+    const Reader = defineComponent({ setup() {
+      state = useHomeAgentHostStatuses(false, includeModels.value)
+      onMounted(state.loadHostStatuses)
+      return () => null
+    } })
+    const wrapper = mount(defineComponent({ setup: () => () => h(Reader, { key: String(includeModels.value) }) }))
+    try {
+      await flushPromises()
+      expect(callOperation).toHaveBeenLastCalledWith('hostMcp.status', { include_models: false })
+      includeModels.value = true; await flushPromises()
+      expect(state.hostStatuses.value.items).toEqual([])
+      expect(callOperation).toHaveBeenLastCalledWith('hostMcp.status', { include_models: true })
+      finishModels({ items: [{ ...catalogHost, message: 'Native models' }] }); await flushPromises()
+      expect(state.hostStatuses.value.items[0]?.message).toBe('Native models')
+      includeModels.value = false; await flushPromises()
+      expect(state.hostStatuses.value.items[0]?.message).toBe('Connection only')
+    } finally { wrapper.unmount() }
+  })
+
   it.each([catalogHost, { host_key: 'codex' }])(
     'preserves native IPC rows with or without a catalog, without duplicate browser reads',
     async (host) => {
@@ -106,6 +133,7 @@ describe('home host status transport', () => {
       await state.loadHostStatuses()
       expect(state.hostStatuses.value).toEqual({ kind: 'loaded', items: [host] })
       expect(desktop.hostStatuses).toHaveBeenCalledTimes(1)
+      expect(desktop.hostStatuses).toHaveBeenCalledWith({ includeModels: true })
       expect(callOperation).not.toHaveBeenCalled()
     },
   )

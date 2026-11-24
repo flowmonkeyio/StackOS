@@ -298,6 +298,7 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
                 else "Grok Build was not detected; skipping MCP registration."
             ),
         )
+    current = replace(current, _cli=(grok_bin, None))
     if current.status in {"config_unreadable", "registered_unsafe", "registered_unmanaged"}:
         return current
     capabilities = _run_grok(grok_bin, ["mcp", "add", "--help"], home=home)

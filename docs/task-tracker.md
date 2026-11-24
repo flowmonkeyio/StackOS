@@ -1790,6 +1790,8 @@ The existing `stackos.host_mcp` registry owns execution capabilities and model
 IDs, reused by host discovery and launch validation. Choose current models from
 the resolved `hostMcp.status` `agent_execution` catalog, including its dated sources,
 capability notes and observation fields; see [host capability guidance](setup.md).
+Selection consumers use the default `include_models: true`; Overview's
+connection-only request uses false and is retained separately from picker results.
 A native model-list observation applies to the provider/account that produced it
 and does not guarantee a successful model invocation. Packaged suggestions do not
 establish entitlement. Preserve saved and historical model IDs as recorded;

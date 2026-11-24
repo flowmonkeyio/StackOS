@@ -30,7 +30,7 @@ function setUsageVisibility(value: string | number): void {
 }
 const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
 const { hostStatuses, hostStatusSummary, loadHostStatuses, applyHostStatuses } =
-  useHomeAgentHostStatuses(isShell)
+  useHomeAgentHostStatuses(isShell, false)
 const quotas = useHomeSubscriptions()
 async function refreshHostPanel(): Promise<void> {
   await Promise.all([loadHostStatuses(), quotas.load(true)])

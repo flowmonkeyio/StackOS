@@ -27,7 +27,7 @@ def isolated_host(tmp_path, monkeypatch):
         "esac\n"
     )
     cli.chmod(0o755)
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: str(cli))
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda **_kwargs: str(cli))
     # Both discovery consumers see each test's available/absent native edge.
     monkeypatch.setattr(
         antigravity_execution,
@@ -142,7 +142,7 @@ def test_unowned_skill_is_preserved_before_any_mcp_write(tmp_path, configured, k
 
 
 def test_absent_host_is_optional_and_does_not_install_assets(tmp_path, monkeypatch):
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: None)
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda **_kwargs: None)
     result = service.inspect_host("antigravity", home=tmp_path)
     assert result.connection_state == "unavailable" and not result.blocking
     assert result.agent_execution["runnable"] == "unavailable"
@@ -161,7 +161,7 @@ def test_bulk_cleanup_without_binary_or_mcp_retains_unrelated_files(
     (target / "references/browser.md").unlink()
     extra = target / "personal-notes.txt"
     extra.write_text("Keep notes")
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: None)
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda **_kwargs: None)
     current = service.inspect_host("antigravity", home=tmp_path)
     assert current.selected and current.managed and not current.blocking
 
@@ -186,7 +186,7 @@ def test_owned_skill_cleanup_preserves_foreign_or_damaged_config(tmp_path, monke
         config.write_text("{broken")
     before = config.read_bytes()
     target = install.copy_managed_stackos_skill_to(antigravity.skills_root(tmp_path))
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: None)
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda **_kwargs: None)
 
     assert not service.remove_all(home=tmp_path).ok
     assert not target.exists()

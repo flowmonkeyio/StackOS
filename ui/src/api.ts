@@ -5482,11 +5482,18 @@ export interface components {
             /** @default null */
             pending_enrollment: components["schemas"]["EnrollmentView"] | null;
         };
+        /** HostSubscription */
+        HostSubscription: {
+            /** Meters */
+            meters: components["schemas"]["SubscriptionMeter"][];
+            /** Plan */
+            plan: string | null;
+        };
         /**
-         * HostMcpStatusInput
+         * HostSubscriptionsInput
          * @description Inspect the daemon's local hosts, with no caller-controlled filesystem target.
          */
-        HostMcpStatusInput: {
+        HostSubscriptionsInput: {
             /**
              * Expected Etag
              * @default null
@@ -5502,19 +5509,12 @@ export interface components {
              * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
              * @default null
              */
-            response_mode: HostMcpStatusInputResponse_modeAnyOf0 | null;
+            response_mode: HostSubscriptionsInputResponse_modeAnyOf0 | null;
             /**
              * Run Token
              * @default null
              */
             run_token: string | null;
-        };
-        /** HostSubscription */
-        HostSubscription: {
-            /** Meters */
-            meters: components["schemas"]["SubscriptionMeter"][];
-            /** Plan */
-            plan: string | null;
         };
         /** HostSubscriptionsOut */
         HostSubscriptionsOut: {
@@ -12275,8 +12275,8 @@ export type SchemaHealthResponse = components['schemas']['HealthResponse'];
 export type SchemaHeartbeatResponse = components['schemas']['HeartbeatResponse'];
 export type SchemaHostAccountInventory = components['schemas']['HostAccountInventory'];
 export type SchemaHostAccountsView = components['schemas']['HostAccountsView'];
-export type SchemaHostMcpStatusInput = components['schemas']['HostMcpStatusInput'];
 export type SchemaHostSubscription = components['schemas']['HostSubscription'];
+export type SchemaHostSubscriptionsInput = components['schemas']['HostSubscriptionsInput'];
 export type SchemaHostSubscriptionsOut = components['schemas']['HostSubscriptionsOut'];
 export type SchemaIntegrationActionSummaryOut = components['schemas']['IntegrationActionSummaryOut'];
 export type SchemaIntegrationBudgetOut = components['schemas']['IntegrationBudgetOut'];
@@ -15979,7 +15979,7 @@ export enum HealthResponseDb_status {
     ok = "ok",
     unreachable = "unreachable"
 }
-export enum HostMcpStatusInputResponse_modeAnyOf0 {
+export enum HostSubscriptionsInputResponse_modeAnyOf0 {
     compact = "compact",
     raw = "raw",
     ack = "ack",

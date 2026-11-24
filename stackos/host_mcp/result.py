@@ -329,6 +329,9 @@ class HostMcpResult:
     target: dict[str, str] | None = None
     targets: list[dict[str, str]] = field(default_factory=list)
     agent_execution: dict[str, Any] = field(default_factory=dict)
+    # Resolved executable and any version already checked by this inspection.
+    # Private facts are never retained across refreshes or exposed by to_info.
+    _cli: tuple[str, str | None] | None = field(default=None, repr=False, compare=False)
     # Refresh-local witness; deliberately excluded from public to_info output.
     _execution_basis: tuple[str, tuple[int, ...]] | None = field(
         default=None, repr=False, compare=False

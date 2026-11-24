@@ -4,7 +4,7 @@ import asyncio
 import json
 import subprocess
 import tomllib
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from threading import get_ident
 
@@ -127,7 +127,109 @@ def test_runnable_and_version_are_independent(tmp_path, text, code, runnable, ve
     assert probe_cli_version(str(cli)) == (runnable, version)
 
 
-def test_account_change_while_sibling_is_held_invalidates_only_that_catalog(tmp_path, monkeypatch):
+@pytest.mark.parametrize("include_models", [False, True])
+def test_antigravity_inspection_reuses_version_and_only_lists_requested_models(
+    tmp_path, monkeypatch, include_models
+):
+    cli, calls, version = (tmp_path / name for name in ("agy", "calls", "version"))
+    cli.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$*" >> "{calls}"\n'
+        'case "$1" in\n'
+        f'  --version) cat "{version}" ;;\n'
+        "  models) printf 'gemini-4-neon-xhigh\\tGemini 4 Neon\\n' ;;\n"
+        "  *) exit 2 ;;\nesac\n"
+    )
+    cli.chmod(0o755)
+    monkeypatch.setattr(antigravity, "iter_cli_bins", lambda *_a, **_k: iter([str(cli)]))
+    current = HostMcpResult("antigravity", "fixture", "registered_current", "Connected", True, True)
+    monkeypatch.setattr(antigravity, "_inspect_assets", lambda *_a, **_k: current)
+
+    def duplicate_resolution(_home):
+        pytest.fail("Catalog must reuse the executable resolved by inspection")
+
+    definition = replace(service._definition_by_key("antigravity"), cli=duplicate_resolution)
+    monkeypatch.setattr(service, "_definitions", lambda: [definition])
+    monkeypatch.setattr(service, "_catalog_account", lambda *_a, **_k: None)
+    for native_version in ("1.5.14", "1.5.15"):
+        version.write_text(native_version + "\n")
+        result = service.inspect_all(home=tmp_path, include_models=include_models).results[0]
+        catalog = result.agent_execution
+        assert result.connection_state == "connected"
+        assert catalog["runnable"] == "available" and catalog["cli_version"] == native_version
+        assert catalog["model_access"] == ("observed" if include_models else "not_checked")
+        if include_models:
+            assert catalog["models"] == ["gemini-4-neon-xhigh"]
+        assert str(cli) not in json.dumps(result.to_info())
+    assert calls.read_text().splitlines() == (
+        ["--version", "models"] * 2 if include_models else ["--version"] * 2
+    )
+
+
+def test_absent_host_is_discovered_once_per_inspection(tmp_path, monkeypatch):
+    calls = []
+
+    def absent():
+        calls.append("discovery")
+        return None
+
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", absent)
+    definition = service._definition_by_key("hermes")
+    monkeypatch.setattr(service, "_definitions", lambda: [definition])
+    for _ in range(2):
+        result = service.inspect_all(home=tmp_path, include_models=False).results[0]
+        assert result.available is False and result.agent_execution["runnable"] == "unavailable"
+    assert calls == ["discovery", "discovery"]
+
+
+def test_reused_antigravity_version_keeps_its_original_executable_fence(tmp_path, monkeypatch):
+    cli = tmp_path / "agy"
+    cli.write_text("old executable")
+    monkeypatch.setattr(antigravity, "iter_cli_bins", lambda *_a, **_k: iter([str(cli)]))
+
+    def version(argv, **_kwargs):
+        cli.write_text("replacement executable")
+        return subprocess.CompletedProcess(argv, 0, "1.5.14\n", "")
+
+    monkeypatch.setattr(antigravity.subprocess, "run", version)
+    result = service._inspect_definition(service._definition_by_key("antigravity"), tmp_path)
+    assert result.agent_execution["probe_status"] == "stale"
+    assert result.agent_execution["runnable"] == "unknown"
+    assert result.agent_execution["cli_version"] is None
+
+
+@pytest.mark.parametrize("include_models", [False, True])
+@pytest.mark.parametrize("host", [None, "hermes"])
+def test_cli_status_propagates_model_demand(tmp_path, monkeypatch, include_models, host):
+    calls = []
+    result = service.normalize_result(
+        HostMcpResult("hermes", "fixture", "absent", "Absent", True, False),
+        service._definition_by_key("hermes").policy,
+    )
+
+    def inspect_all(**kwargs):
+        calls.append(kwargs["include_models"])
+        return service.HostMcpAggregate(ok=True, results=[result])
+
+    def inspect_host(_host, **kwargs):
+        calls.append(kwargs["include_models"])
+        return result
+
+    monkeypatch.setattr("stackos.host_mcp.inspect_all", inspect_all)
+    monkeypatch.setattr("stackos.host_mcp.inspect_host", inspect_host)
+    arguments = ["mcp-host-status", "--json"]
+    if not include_models:
+        arguments.append("--no-include-models")
+    if host:
+        arguments.extend(["--host", host])
+    response = CliRunner().invoke(app, arguments, catch_exceptions=False)
+    assert response.exit_code == 0 and calls == [include_models]
+
+
+@pytest.mark.parametrize("include_models", [False, True])
+def test_account_change_while_sibling_is_held_invalidates_only_that_catalog(
+    tmp_path, monkeypatch, include_models
+):
     from concurrent.futures import ThreadPoolExecutor
     from dataclasses import replace
     from threading import Event
@@ -148,12 +250,7 @@ def test_account_change_while_sibling_is_held_invalidates_only_that_catalog(tmp_
         for key in ("grok", "antigravity")
     ]
 
-    def held(_cli):
-        entered.set()
-        assert release.wait(5)
-        return ("gemini-4-neon-high",)
-
-    definitions[1] = replace(definitions[1], native_models=held)
+    definitions[1] = replace(definitions[1], native_models=lambda _cli: ("gemini-4-neon-high",))
     monkeypatch.setattr(service, "_definitions", lambda: definitions)
     monkeypatch.setattr(
         service,
@@ -162,15 +259,16 @@ def test_account_change_while_sibling_is_held_invalidates_only_that_catalog(tmp_
             revision=revision[0] if d.policy.host_key == "grok" else 0
         ),
     )
-    monkeypatch.setattr(
-        service,
-        "_call_adapter",
-        lambda _call, _home, key: HostMcpResult(
-            key, "fixture", "registered_current", "Connected", True, True
-        ),
-    )
+
+    def inspect(_call, _home, key):
+        if key == "antigravity":
+            entered.set()
+            assert release.wait(5)
+        return HostMcpResult(key, "fixture", "registered_current", "Connected", True, True)
+
+    monkeypatch.setattr(service, "_call_adapter", inspect)
     with ThreadPoolExecutor(max_workers=1) as pool:
-        pending = pool.submit(service.inspect_all, home=tmp_path)
+        pending = pool.submit(service.inspect_all, home=tmp_path, include_models=include_models)
         try:
             assert entered.wait(5)
             revision[0] = 2  # A -> B -> A still invalidates the original read.
@@ -180,8 +278,12 @@ def test_account_change_while_sibling_is_held_invalidates_only_that_catalog(tmp_
     catalogs = {r.host_key: r.agent_execution for r in result.results}
     assert catalogs["grok"]["probe_status"] == "stale"
     assert catalogs["grok"]["model_access"] == "not_checked"
-    assert catalogs["antigravity"]["models"] == ["gemini-4-neon-high"]
-    assert catalogs["antigravity"]["model_access"] == "observed"
+    assert catalogs["antigravity"]["runnable"] == "available"
+    assert catalogs["antigravity"]["model_access"] == (
+        "observed" if include_models else "not_checked"
+    )
+    if include_models:
+        assert catalogs["antigravity"]["models"] == ["gemini-4-neon-high"]
 
 
 def test_native_host_replacement_discards_probe(tmp_path):
@@ -236,8 +338,8 @@ def test_host_replacement_while_sibling_is_held_is_not_published(tmp_path, monke
     )
     inspect = service._inspect_definition
 
-    def observed(definition, home):
-        result = inspect(definition, home)
+    def observed(definition, home, **kwargs):
+        result = inspect(definition, home, **kwargs)
         if definition.policy.host_key == "antigravity":
             completed.set()
         return result
@@ -297,7 +399,7 @@ def native_registrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(codex, "resolve_codex_bins", lambda: ["/fixture/codex"])
     monkeypatch.setattr(claude_mcp, "resolve_claude_bin", lambda _bin: "/fixture/claude")
     monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fixture/grok")
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: None)
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda **_kwargs: None)
     monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fixture/hermes")
     copy_managed_stackos_skill_to(tmp_path / ".grok/skills")
     codex_config = tmp_path / ".codex/config.toml"
@@ -501,7 +603,7 @@ def test_host_status_offloads_inspection_without_context_or_filesystem_inputs(
     caller_thread = get_ident()
     inspected_threads: list[int] = []
 
-    def inspect():
+    def inspect(**_kwargs):
         inspected_threads.append(get_ident())
         return service.HostMcpAggregate(ok=True, results=[])
 
@@ -524,7 +626,7 @@ def test_host_status_projects_shared_execution_catalog(monkeypatch: pytest.Monke
             for d in definitions
         ],
     )
-    monkeypatch.setattr(service, "inspect_all", lambda: aggregate)
+    monkeypatch.setattr(service, "inspect_all", lambda **_kwargs: aggregate)
 
     result = asyncio.run(host_mcp_status(HostMcpStatusInput(), None, None)).model_dump(mode="json")
 

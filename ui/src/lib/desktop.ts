@@ -168,7 +168,7 @@ interface DesktopBridge {
   installOrRepair(): Promise<DesktopCommandResult>
   restartService(): Promise<DesktopCommandResult>
   runDoctor(): Promise<DesktopDoctorResult>
-  hostStatuses(): Promise<DesktopHostStatusesResult>
+  hostStatuses(options?: { includeModels: boolean }): Promise<DesktopHostStatusesResult>
   checkForUpdates(): Promise<DesktopUpdateResult>
   downloadUpdate(): Promise<DesktopUpdateResult>
   installUpdate(): Promise<DesktopUpdateResult>
@@ -219,7 +219,7 @@ export const desktop = {
   installOrRepair: () => safe((b) => b.installOrRepair()),
   restartService: () => safe((b) => b.restartService()),
   runDoctor: () => safe((b) => b.runDoctor()),
-  hostStatuses: () => safe((b) => b.hostStatuses()),
+  hostStatuses: (options?: { includeModels: boolean }) => safe((b) => b.hostStatuses(options)),
   checkForUpdates: () => safe((b) => b.checkForUpdates()),
   downloadUpdate: () => safe((b) => b.downloadUpdate()),
   installUpdate: () => safe((b) => b.installUpdate()),

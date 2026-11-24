@@ -470,7 +470,7 @@ def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
         found_any = True
         if command is None:
             command = resolve_bridge_command(runtime=HOST_KEY)
-        result = _inspect_with_bin(codex_bin, command, server_name)
+        result = replace(_inspect_with_bin(codex_bin, command, server_name), _cli=(codex_bin, None))
         if result.status != "unsupported_host_version":
             return result
         unsupported = result

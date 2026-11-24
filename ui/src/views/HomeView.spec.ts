@@ -122,6 +122,9 @@ describe('HomeView', () => {
       '/api/v1/operations/hostMcp.status/call',
       expect.anything(),
     )
+    const statusRequest = vi.mocked(globalThis.fetch).mock.calls.find(([url]) =>
+      String(url) === '/api/v1/operations/hostMcp.status/call')
+    expect(JSON.parse(String(statusRequest?.[1]?.body)).arguments.include_models).toBe(false)
     const urls = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => String(url))
     const subscriptionsIndex = urls.indexOf('/api/v1/operations/hostMcp.subscriptions/call')
     expect(subscriptionsIndex).toBeGreaterThan(-1)
@@ -327,6 +330,7 @@ describe('HomeView', () => {
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('AI tool connections'))
     expect(hostStatuses).toHaveBeenCalledTimes(1)
+    expect(hostStatuses).toHaveBeenCalledWith({ includeModels: false })
     expect(wrapper.text()).toContain(
       '1 connected · 3 available · 1 needs attention · 1 not detected',
     )

@@ -343,4 +343,5 @@ def _convert(result: claude_mcp.ClaudeMcpResult) -> HostMcpResult:
         warnings=[warning for warning in [result.legacy_json_error] if warning],
         selected=selected,
         managed=managed,
+        _cli=(result.claude_bin, None) if result.claude_bin else None,
     )

@@ -82,10 +82,14 @@ async function installReadiness() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-install-readiness-"));
   let daemonHostStatusMode = "ok";
   let daemonHostStatusHits = 0;
+  const daemonHostStatusDemands = [];
   let cliHostStatusHits = 0;
   const server = http.createServer((req, res) => {
     if (req.url === "/api/v1/operations/hostMcp.status/call" && req.method === "POST") {
       daemonHostStatusHits += 1;
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => { daemonHostStatusDemands.push(JSON.parse(body).arguments.include_models); });
       if (daemonHostStatusMode === "ok" && req.headers.authorization === "Bearer test-daemon-token") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({
@@ -125,7 +129,7 @@ async function installReadiness() {
 const fs = require("node:fs");
 const command = process.argv[2];
 if (command === "mcp-host-status") {
-  fs.appendFileSync(${JSON.stringify(cliMarker)}, "hit\\n");
+  fs.appendFileSync(${JSON.stringify(cliMarker)}, JSON.stringify(process.argv.slice(3)) + "\\n");
   console.log(JSON.stringify({ ok: true, hosts: [{ host_key: "codex", status: "registered_current", ok: true, available: true, from: "cli" }] }));
   process.exitCode = 0;
   return;
@@ -153,15 +157,21 @@ if (command === "doctor") {
     assert.equal(fromDaemon.items[0].host_key, "codex");
     assert.equal(daemonHostStatusHits, 1);
     assert.equal(fs.existsSync(cliMarker), false);
+    await lifecycleService.inspectMcpHosts({ includeModels: false });
+    assert.deepEqual(daemonHostStatusDemands, [true, false]);
 
     daemonHostStatusMode = "error";
-    const fromCliFallback = await lifecycleService.inspectMcpHosts();
+    const fromCliFallback = await lifecycleService.inspectMcpHosts({ includeModels: false });
     assert.equal(fromCliFallback.ok, true);
     assert.equal(fromCliFallback.items.length, 1);
     assert.equal(fromCliFallback.items[0].from, "cli");
-    assert.equal(daemonHostStatusHits, 2);
+    assert.equal(daemonHostStatusHits, 3);
     cliHostStatusHits = fs.readFileSync(cliMarker, "utf8").trim().split("\n").length;
     assert.equal(cliHostStatusHits, 1);
+    await lifecycleService.inspectMcpHosts();
+    assert.deepEqual(fs.readFileSync(cliMarker, "utf8").trim().split("\n").map(JSON.parse), [
+      ["--json", "--no-include-models"], ["--json", "--include-models"]
+    ]);
     const reportIndex = process.argv.indexOf("--doctor-report");
     const emitted = reportIndex < 0 ? null : JSON.parse(fs.readFileSync(process.argv[reportIndex + 1], "utf8"));
     const emittedExpected = !process.argv.includes("--expect-install-failure");

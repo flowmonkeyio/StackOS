@@ -199,11 +199,18 @@ Desktop Home reads the narrow connection report rather than running all of
 Doctor just to render AI-tool status:
 
 ```bash
-stackos mcp-host-status --json
+stackos mcp-host-status --json --no-include-models
 ```
 
 Browser Home uses the authenticated local-admin `hostMcp.status` read operation
-over the same inspector. It returns safe host status fields, not commands or
+with `include_models: false` over the same inspector. Desktop passes that demand
+through both the warm daemon and CLI fallback. Runtime/version and connection
+checks remain active; Home skips native model-list commands. Agent settings and
+Setup keep the default `include_models: true` to refresh their model choices.
+Inspection reuses its resolved executable and any already-observed version;
+each subsequent refresh still checks the native state afresh. An absent optional
+host may still require one bounded login-shell discovery.
+The operation returns safe host status fields, not commands or
 configuration contents, and does not change host registration or restart
 markers. All connection cards and Refresh are visible in both environments.
 Restart, Run doctor, and Install or repair remain native desktop controls;

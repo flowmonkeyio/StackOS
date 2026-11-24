@@ -385,6 +385,12 @@ only `delivery.main_agent`, preserving specialist roles, unrelated settings and
 already admitted snapshots. `projectSetup.get.launch_preferences` reads saved choices;
 `hostMcp.status.agent_execution` supplies supported and recommended models from the
 existing host catalog. Neither catalog nor recommendation proves account model access.
+`hostMcp.status` defaults `include_models` to true for selection consumers.
+Overview requests false: it keeps fresh connection/runtime/version checks while
+skipping native model lists; any packaged model suggestions remain explicitly
+unverified. Web and desktop share this demand, including desktop's CLI fallback
+(`mcp-host-status --no-include-models`). This read option does not change fresh
+launch validation, subscription reads, account selection or retained sessions.
 When the console needs an inherited host for the launch dialog, it requests
 `projectSetup.get` with `resolve_launch_preferences: true`. This local-console-only
 read returns effective choices in `launch_preferences` through the same resolver

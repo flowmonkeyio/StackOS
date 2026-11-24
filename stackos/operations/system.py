@@ -34,8 +34,18 @@ from stackos.operations.spec import (
 )
 
 
-class HostMcpStatusInput(MCPInput):
+class HostSubscriptionsInput(MCPInput):
     """Inspect the daemon's local hosts, with no caller-controlled filesystem target."""
+
+
+class HostMcpStatusInput(MCPInput):
+    include_models: bool = Field(
+        default=True,
+        description=(
+            "Include native model choices for selection. "
+            "False keeps runtime/connection checks only."
+        ),
+    )
 
 
 class HostMcpAgentExecutionOut(BaseModel):
@@ -124,7 +134,7 @@ class HostSubscriptionsOut(BaseModel):
 
 
 async def host_subscriptions(
-    inp: HostMcpStatusInput, ctx: MCPContext, _emit: ProgressEmitter
+    inp: HostSubscriptionsInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> HostSubscriptionsOut:
     if (
         ctx.extras.get("surface") != "rest"
@@ -182,7 +192,9 @@ async def host_mcp_status(
 ) -> HostMcpStatusOut:
     settings = _ctx.extras.get("settings") if _ctx is not None else None
     aggregate = await to_thread(
-        host_mcp_service.inspect_all, **({"data_dir": settings.data_dir} if settings else {})
+        host_mcp_service.inspect_all,
+        include_models=_inp.include_models,
+        **({"data_dir": settings.data_dir} if settings else {}),
     )
     items = []
     for result in aggregate.results:
@@ -210,7 +222,7 @@ def operation_specs():
         OperationSpec(
             name="hostMcp.subscriptions",
             summary="Read subscription plans and remaining quotas from signed-in native tools.",
-            input_model=HostMcpStatusInput,
+            input_model=HostSubscriptionsInput,
             output_model=HostSubscriptionsOut,
             handler=host_subscriptions,
             mutating=False,
@@ -248,7 +260,9 @@ def operation_specs():
                 "Let the local console inspect supported host connections through the shared "
                 "host lifecycle service and its canonical agent capability catalog. "
                 "Bounded version and supported native model-list reads report observed runtime "
-                "facts separately from MCP. This does not repair hosts, clear restart markers, "
+                "facts separately from MCP. Set include_models=false to skip native model lists "
+                "for connection/runtime-only consumers; selection keeps the full default. "
+                "This does not repair hosts, clear restart markers, "
                 "restart apps, start model turns or expose registration/auth configuration."
             ),
             returns=(

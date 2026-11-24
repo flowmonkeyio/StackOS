@@ -17,9 +17,11 @@ export type HostStatusState =
   | { kind: 'loaded'; items: DesktopMcpHostStatus[] }
   | { kind: 'error'; items: DesktopMcpHostStatus[]; message: string }
 
-const retained = new WeakMap<App, DesktopMcpHostStatus[]>()
+const retainedConnections = new WeakMap<App, DesktopMcpHostStatus[]>()
+const retainedModels = new WeakMap<App, DesktopMcpHostStatus[]>()
 
-export function useHomeAgentHostStatuses(isShell: boolean) {
+export function useHomeAgentHostStatuses(isShell: boolean, includeModels = true) {
+  const retained = includeModels ? retainedModels : retainedConnections
   const app = getCurrentInstance()?.appContext.app
   let disposed = false
   let request = 0
@@ -39,8 +41,8 @@ export function useHomeAgentHostStatuses(isShell: boolean) {
     hostStatuses.value = { kind: 'loading', items: hostStatuses.value.items }
     try {
       const result = isShell
-        ? await desktop.hostStatuses()
-        : await callOperation<DesktopHostStatusesResult>('hostMcp.status', {})
+        ? await desktop.hostStatuses({ includeModels })
+        : await callOperation<DesktopHostStatusesResult>('hostMcp.status', { include_models: includeModels })
       if (current === request) applyHostStatuses(result)
     } catch (err) {
       if (disposed || current !== request) return

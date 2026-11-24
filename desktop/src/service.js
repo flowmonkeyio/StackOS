@@ -903,13 +903,14 @@ async function runDoctor() {
   };
 }
 
-async function inspectMcpHosts() {
+async function inspectMcpHosts(options = {}) {
+  const includeModels = options?.includeModels !== false;
   // Reuse the warm local daemon when reachable so Overview does not pay a
   // cold Python CLI startup on every visit; fall back to CLI when offline.
   try {
     const payload = await authenticatedJsonPost(
       "/api/v1/operations/hostMcp.status/call",
-      { arguments: {} },
+      { arguments: { include_models: includeModels } },
       { timeoutMs: 15000 }
     );
     if (payload && typeof payload.ok === "boolean" && Array.isArray(payload.items)) {
@@ -923,7 +924,9 @@ async function inspectMcpHosts() {
   } catch (_error) {
     // Daemon may be stopped or unauthenticated; fall back to local CLI check.
   }
-  const result = await runStackos(["mcp-host-status", "--json"], {
+  const result = await runStackos([
+    "mcp-host-status", "--json", includeModels ? "--include-models" : "--no-include-models"
+  ], {
     timeoutMs: 30000
   });
   const parsed = parseMcpHostStatusPayload(result);

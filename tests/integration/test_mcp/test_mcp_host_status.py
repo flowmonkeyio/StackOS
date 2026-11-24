@@ -73,6 +73,9 @@ def test_host_status_has_one_read_only_local_admin_contract() -> None:
     assert all(spec.surfaces.is_enabled(surface) for surface in ("mcp", "rest", "cli"))
     assert spec.response_policy.default_mode == "raw"
     assert spec.response_policy.allowed_modes == ("raw",)
+    assert spec.input_model.model_json_schema()["properties"]["include_models"]["default"] is True
+    subscription = build_operation_registry().get("hostMcp.subscriptions")
+    assert "include_models" not in subscription.input_model.model_json_schema()["properties"]
     schema = spec.output_model.model_json_schema()
     capability_fields = schema["$defs"]["HostMcpAgentExecutionOut"]["properties"]
     assert {
@@ -478,11 +481,22 @@ def test_subscription_snapshot_fences_a_finished_reader_until_siblings_finish(
     )
 
 
-def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspected) -> None:
+@pytest.mark.parametrize("include_models", [False, True])
+def test_console_reads_only_normalized_host_status(
+    mcp_client: MCPClient, inspected, monkeypatch, include_models
+) -> None:
     client = mcp_client.test_client
+    inspect = service.inspect_all
+    demands = []
+
+    def demanded(**kwargs):
+        demands.append(kwargs["include_models"])
+        return inspect(**kwargs)
+
+    monkeypatch.setattr(service, "inspect_all", demanded)
     response = client.post(
         "/api/v1/operations/hostMcp.status/call",
-        json={"arguments": {}},
+        json={"arguments": {"include_models": include_models}},
         headers={"Authorization": f"Bearer {client.app.state.ui_token}"},
     )
     assert response.status_code == 200, response.text
@@ -518,6 +532,7 @@ def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspec
     ):
         assert secret not in response.text
     assert len(inspected) == 1
+    assert demands == [include_models]
 
 
 @pytest.mark.parametrize(
