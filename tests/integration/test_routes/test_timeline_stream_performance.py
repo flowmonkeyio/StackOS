@@ -380,6 +380,8 @@ async def test_stream_phase_workload(
     statements, projections, decodes, measurements = [], [], [], []
     original_refresh, original_decode = context.usage_refresh, agent_stats.decode_receipt
     owned = threading.local()
+    stream_checkouts = 0
+    outstanding_checkouts = set()
 
     class MeasuredSession(Session):
         def __enter__(self):
@@ -407,10 +409,24 @@ async def test_stream_phase_workload(
         if getattr(owned, "active", False):
             statements.append(sql)
 
+    def checkout(_connection, record, _proxy):
+        nonlocal stream_checkouts
+        if getattr(owned, "active", False):
+            stream_checkouts += 1
+            outstanding_checkouts.add(record)
+
+    def checkin(_connection, record):
+        outstanding_checkouts.discard(record)
+
     monkeypatch.setattr(context, "usage_refresh", refresh)
     monkeypatch.setattr(agent_stats, "decode_receipt", decode)
     monkeypatch.setattr(context, "Session", MeasuredSession)
     event.listen(engine, "before_cursor_execute", observe)
+    event.listen(engine, "checkout", checkout)
+    event.listen(engine, "checkin", checkin)
+    # A background owner may hold a connection after every stream has closed.
+    # Keep one checked out deterministically; only stream-owned returns count.
+    unrelated_connection = engine.connect()
 
     async def measured(label, operation):
         statements.clear()
@@ -502,8 +518,13 @@ async def test_stream_phase_workload(
                     await reconnect.body_iterator.aclose()
             finally:
                 await response.body_iterator.aclose()
+        assert stream_checkouts > 0
+        assert not outstanding_checkouts
     finally:
+        unrelated_connection.close()
         event.remove(engine, "before_cursor_execute", observe)
+        event.remove(engine, "checkout", checkout)
+        event.remove(engine, "checkin", checkin)
         record_property(
             "stream_workload",
             json.dumps(
@@ -522,4 +543,3 @@ async def test_stream_phase_workload(
         for item in measurements
         if item["phase"] == "idle"
     )
-    assert engine.pool.checkedout() == 0
