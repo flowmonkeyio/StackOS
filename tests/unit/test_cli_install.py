@@ -2746,10 +2746,9 @@ def test_doctor_plain_output_reports_claude_absent_without_blocking(
 def test_mcp_host_status_reports_connections_without_running_full_doctor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        doctor_cli,
-        "_check_mcp_hosts",
-        lambda home: (
+    def check_hosts(home, *, include_models):
+        assert include_models is True
+        return (
             True,
             [
                 {
@@ -2763,8 +2762,9 @@ def test_mcp_host_status_reports_connections_without_running_full_doctor(
                     "needs_restart": False,
                 }
             ],
-        ),
-    )
+        )
+
+    monkeypatch.setattr(doctor_cli, "_check_mcp_hosts", check_hosts)
 
     result = CliRunner().invoke(app, ["mcp-host-status", "--json"], catch_exceptions=False)
 

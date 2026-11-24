@@ -61,7 +61,11 @@ def test_lifecycle_preserves_entry_replaced_after_ownership_inspection(
     monkeypatch.setattr(owner, operation, interleave)
     monkeypatch.setattr(service, "token_preflight", lambda _: None)
     monkeypatch.setattr(antigravity, "token_preflight", lambda _: None)
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: "/fixture/agy")
+    monkeypatch.setattr(
+        antigravity,
+        "resolve_antigravity_bin",
+        lambda explicit=None, *, observation=None: "/fixture/agy",
+    )
     if legacy:
         monkeypatch.setattr(service, "_definitions", lambda: ())
         result = getattr(service, caller)(home=tmp_path)
@@ -94,7 +98,11 @@ def test_antigravity_refuses_entry_replaced_while_preparing_atomic_write(
     initial = {"mcpServers": {} if action == "register" else {"stackos": ANTIGRAVITY}}
     path.write_text(json.dumps(initial))
     monkeypatch.setattr(antigravity, "token_preflight", lambda _: None)
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: "/fixture/agy")
+    monkeypatch.setattr(
+        antigravity,
+        "resolve_antigravity_bin",
+        lambda explicit=None, *, observation=None: "/fixture/agy",
+    )
     original_mkstemp = json_config.tempfile.mkstemp
     external = {"outside_change": "keep", "mcpServers": {"stackos": FOREIGN}}
 
