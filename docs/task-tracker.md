@@ -1600,8 +1600,13 @@ coverage reductions and selected timing rows share one SQL snapshot, so a native
 final receipt committed during a report cannot erase supported work time or its
 coverage. These reads preserve lifetime gaps without decoding unrelated history.
 One bounded query path supplies all six trends; no report cache or analytics store
-is introduced. `test_delivery_trends.py` provides independent reopens, stops,
-review, overlap, DST, scope, missing-history and read-budget ledgers.
+is introduced. Completion and stop reads use the covering
+`ix_tracker_revisions_delivery_stats` expression index instead of fetching full
+revision snapshots. Its fixed JSON paths are shared with the reader; SQLite
+maintains the index in the source write transaction. Migration `0053` indexes
+retained rows once without rewriting history. `test_delivery_trends.py` provides
+independent reopens, stops, review, overlap, DST, scope, missing-history and
+read-budget ledgers.
 
 Request example for `tracker.agentStats` (`tracker.agentStatsAll` accepts the
 same filters and `is_active` instead of `project_id`):

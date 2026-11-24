@@ -13,6 +13,7 @@ from stackos.db.migrate import alembic_config, upgrade_to_head
 from stackos.db.models import (
     TrackerItemStatus,
     TrackerReceiptProjection,
+    TrackerRevision,
     TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
@@ -23,6 +24,79 @@ from stackos.repositories.tracker import TrackerRepository
 from tests.helpers.agent_statistics import seed_statistics_workload
 from tests.integration.test_repositories.test_agent_statistics import _receipt, _repaired, _store
 from tests.integration.test_schema import _historical_project_fixture_session
+
+
+def test_revision_index_upgrade_and_writes_preserve_snapshots(settings):
+    from tests.integration.test_repositories.test_delivery_trends import ledger
+
+    config = alembic_config(settings)
+    command.upgrade(config, "0052_upgrade_receipts")
+    engine = make_engine(settings.db_path)
+    with Session(engine) as session:
+        pid = (
+            ProjectRepository(session)
+            .create(slug="revision-index", name="Revision index", domain="test.invalid")
+            .data.id
+        )
+        ledger(session, pid)
+        before = session.execute(
+            select(
+                TrackerRevision.id, TrackerRevision.before_json, TrackerRevision.after_json
+            ).order_by(TrackerRevision.id)
+        ).all()
+    command.upgrade(config, "head")
+    with Session(engine) as session:
+        assert (
+            session.execute(
+                select(
+                    TrackerRevision.id, TrackerRevision.before_json, TrackerRevision.after_json
+                ).order_by(TrackerRevision.id)
+            ).all()
+            == before
+        )
+        assert (
+            session.connection()
+            .exec_driver_sql(
+                "SELECT 1 FROM sqlite_master WHERE name = 'ix_tracker_revisions_delivery_stats'"
+            )
+            .scalar_one()
+            == 1
+        )
+    command.downgrade(config, "0052_upgrade_receipts")
+    with engine.connect() as connection:
+        assert (
+            connection.exec_driver_sql(
+                "SELECT 1 FROM sqlite_master WHERE name = 'ix_tracker_revisions_delivery_stats'"
+            ).first()
+            is None
+        )
+    command.upgrade(config, "head")
+    with Session(engine) as session:
+        repo = TrackerRepository(session)
+        repo.create_task(project_id=pid, key="writer", title="Writer")
+        repo.update_task(project_id=pid, task_key="writer", patch_json={"status": "in-progress"})
+        completion = {"status": "complete", "completion_evidence_json": {"summary": "fixture"}}
+        repo.update_task(project_id=pid, task_key="writer", patch_json=completion, commit=False)
+        assert repo.agent_stats(project_id=pid).delivery_trends.totals.completed_tasks.total == 2
+        session.rollback()
+        assert repo.agent_stats(project_id=pid).delivery_trends.totals.completed_tasks.total == 1
+        repo.update_task(project_id=pid, task_key="writer", patch_json=completion)
+        assert repo.agent_stats(project_id=pid).delivery_trends.totals.completed_tasks.total == 2
+        revision = session.execute(
+            select(TrackerRevision)
+            .where(TrackerRevision.entity_key == "writer")
+            .order_by(TrackerRevision.rev.desc())
+            .limit(1)
+        ).scalar_one()
+        # SQLite maintains indexed scalars for retained-row edits/deletes as well.
+        revision.after_json = {**revision.after_json, "status": "in-progress"}
+        session.commit()
+        assert repo.agent_stats(project_id=pid).delivery_trends.totals.completed_tasks.total == 1
+        session.delete(revision)
+        session.commit()
+        assert repo.agent_stats(project_id=pid).delivery_trends.totals.completed_tasks.total == 1
+        assert session.connection().exec_driver_sql("PRAGMA integrity_check").scalar_one() == "ok"
+    engine.dispose()
 
 
 def test_existing_receipts_backfill_atomically(settings):
@@ -86,7 +160,7 @@ def test_existing_receipts_backfill_atomically(settings):
 def test_product_merge_rebuilds_cancelled_inputs_without_rewriting_sources(settings, prior_head):
     config = alembic_config(settings)
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0052_upgrade_receipts"]
+    assert script.get_heads() == ["0053_revision_delivery_index"]
     assert script.get_revision("0048_product_receipts_merge").down_revision == (
         "0046_receipt_trend_bounds",
         "0047_patterns_setup_merge",
@@ -117,7 +191,7 @@ def test_product_merge_rebuilds_cancelled_inputs_without_rewriting_sources(setti
     upgrade_to_head(settings)
     with engine.connect() as connection:
         assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").all() == [
-            ("0052_upgrade_receipts",)
+            ("0053_revision_delivery_index",)
         ]
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
     if prior_head != "base":

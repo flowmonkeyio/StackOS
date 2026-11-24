@@ -12,6 +12,13 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, case, func, literal, null, or_, select, union_all
 from sqlmodel import Session, col
 
+from stackos.db.model_tracker import (
+    REVISION_AFTER_DELIVERY_STATUS,
+    REVISION_AFTER_STATUS,
+    REVISION_BEFORE_DELIVERY_STATUS,
+    REVISION_BEFORE_STATUS,
+    REVISION_BEFORE_TYPE,
+)
 from stackos.db.models import (
     Project,
     TaskTracker,
@@ -111,8 +118,8 @@ def query_delivery_trends(
         ("ticket", TrackerTicket, "completed_tickets"),
     ):
         rev = TrackerRevision
-        before = col(rev.before_json)["status"].as_string()
-        after = col(rev.after_json)["status"].as_string()
+        before = REVISION_BEFORE_STATUS
+        after = REVISION_AFTER_STATUS
         transition = and_(before.is_not(None), before != "complete", after == "complete")
         imported_complete = or_(
             before == "complete", and_(col(rev.change_kind) == "create", after == "complete")
@@ -170,8 +177,8 @@ def query_delivery_trends(
         )
 
     rev = TrackerRevision
-    before_stop = col(rev.before_json)["metadata_json"]["delivery"]["status"].as_string()
-    after_stop = col(rev.after_json)["metadata_json"]["delivery"]["status"].as_string()
+    before_stop = REVISION_BEFORE_DELIVERY_STATUS
+    after_stop = REVISION_AFTER_DELIVERY_STATUS
     stops = _join_scope(
         select(col(rev.created_at))
         .select_from(rev)
@@ -185,7 +192,7 @@ def query_delivery_trends(
         TrackerTask,
     ).where(
         col(rev.entity_kind) == "task",
-        func.json_type(col(rev.before_json)) == "object",
+        REVISION_BEFORE_TYPE == "object",
         func.coalesce(before_stop, "") != "stopped",
         after_stop == "stopped",
         col(rev.change_kind) != "create",

@@ -13,10 +13,12 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     event,
+    func,
     inspect,
+    literal_column,
 )
 from sqlalchemy.types import JSON
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, col
 
 from stackos.db.model_base import _enum_column, _utcnow
 from stackos.db.model_enums import (
@@ -554,6 +556,40 @@ class TrackerRevision(SQLModel, table=True):
     patch_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+# Fixed paths must compile identically in the index and statistics queries.
+# Bound JSON path parameters prevent SQLite from covering these expressions.
+REVISION_BEFORE_STATUS = func.json_extract(
+    col(TrackerRevision.before_json), literal_column("'$.\"status\"'")
+)
+REVISION_AFTER_STATUS = func.json_extract(
+    col(TrackerRevision.after_json), literal_column("'$.\"status\"'")
+)
+REVISION_BEFORE_TYPE = func.json_type(col(TrackerRevision.before_json))
+REVISION_BEFORE_DELIVERY_STATUS = func.json_extract(
+    col(TrackerRevision.before_json),
+    literal_column('\'$."metadata_json"."delivery"."status"\''),
+)
+REVISION_AFTER_DELIVERY_STATUS = func.json_extract(
+    col(TrackerRevision.after_json),
+    literal_column('\'$."metadata_json"."delivery"."status"\''),
+)
+REVISION_DELIVERY_STATS_INDEX = Index(
+    "ix_tracker_revisions_delivery_stats",
+    col(TrackerRevision.entity_kind),
+    col(TrackerRevision.entity_id),
+    col(TrackerRevision.tracker_id),
+    col(TrackerRevision.project_id),
+    col(TrackerRevision.rev),
+    col(TrackerRevision.created_at),
+    col(TrackerRevision.change_kind),
+    REVISION_BEFORE_STATUS,
+    REVISION_AFTER_STATUS,
+    REVISION_BEFORE_TYPE,
+    REVISION_BEFORE_DELIVERY_STATUS,
+    REVISION_AFTER_DELIVERY_STATUS,
+)
 
 
 class TrackerTombstone(SQLModel, table=True):

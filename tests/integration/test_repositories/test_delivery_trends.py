@@ -134,6 +134,48 @@ def test_independent_completion_review_stop_and_interval_ledger(session, project
     assert later.totals.work_time.total_seconds == 1800
 
 
+@pytest.mark.parametrize("global_scope", [False, True])
+def test_revision_reductions_use_covering_scalars(session, project_id, global_scope):
+    ledger(session, project_id)
+    # Snapshot size must not determine the cost of reading five status facts.
+    row = session.exec(select(TrackerRevision)).first()
+    row.before_json = {**(row.before_json or {}), "retained_evidence": "x" * 262144}
+    session.add(row)
+    session.commit()
+    statements = []
+
+    def capture(_conn, _cursor, statement, parameters, *_args):
+        if statement.startswith("SELECT") and "tracker_revisions" in statement:
+            statements.append((statement, parameters))
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        repo = TrackerRepository(session)
+        result = (
+            repo.agent_stats_all(**FILTERS)
+            if global_scope
+            else repo.agent_stats(project_id=project_id, **FILTERS)
+        ).delivery_trends
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert result.totals.completed_tasks.total == 1
+    assert result.totals.stops.total == 2
+    assert len(statements) == 3
+    connection = session.connection()
+    root = connection.exec_driver_sql(
+        "SELECT rootpage FROM sqlite_master WHERE name = 'tracker_revisions'"
+    ).scalar_one()
+    for statement, parameters in statements:
+        # Explain the exact bound statement emitted by the real report reader.
+        bytecode = connection.exec_driver_sql("EXPLAIN " + statement, parameters).all()
+        table_cursors = {row[2] for row in bytecode if row[1] == "OpenRead" and row[3] == root}
+        assert not [row for row in bytecode if row[1] == "Column" and row[2] in table_cursors]
+        assert not [
+            row for row in bytecode if row[1] in {"Function", "PureFunc"} and "json_" in row[5]
+        ]
+
+
 def test_global_project_visibility_and_weighted_rate(session, project_id):
     ledger(session, project_id)
     projects = ProjectRepository(session)
