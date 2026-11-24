@@ -948,12 +948,24 @@ all existing context, sessions, attempts and counters. `tracker.updateTicket`
 and the other ticket mutation paths validate this record through the repository;
 MCP, REST and CLI share that contract. This field adds no mutation authority.
 The intent is captured in each launch's `occurrence.correction_intent`. Only
-the matching attempt may use it, and the admitted SHA must match both its
-observed base and the immediately preceding delivered candidate. Evidence-only
+the matching attempt may use it, and the admitted SHA must match clean current
+HEAD and the immediately preceding delivered candidate. Evidence-only
 consistency is checked before native invocation, launched-phase persistence or
 charging the next ordinary repair pass. Missing prior delivered SHA or a
 current-target SHA/base mismatch stops admission without creating a native
 invocation or session; retained receipts and consumed repair allowance survive.
+An ordinary blocked delivery that explicitly returns a valid clean committed
+candidate retains that SHA with its original base. Unfinished dirty work and an
+unchanged interrupted source repair retain their existing blocked/owned-work
+behavior without promoting a candidate. For older blocked receipts missing the
+canonical SHA, matching current-target evidence-only intent can recover the
+explicit returned SHA from the latest archived native attempt. Admission verifies
+the validated blocked disposition, retained delivery session/launch/occurrence
+identity, original base, clean exact HEAD and ancestry, preserving the source
+repair obligation. It never searches past later native work. A failed prelaunch
+admission has no native receipt to archive, so retry can retain the same target
+attempt; it does not rewrite the earlier receipt or its missing canonical field.
+The admitted blocked candidate keeps its original base through delivery and review.
 The prior delivered candidate need not have been approved. Stale target intent
 does not authorize evidence-only reuse and retains the conservative descendant
 rules rather than adding an unconditional admission rejection. Final validation

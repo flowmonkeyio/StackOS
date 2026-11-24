@@ -8557,6 +8557,187 @@ def test_ordinary_blocked_result_requires_explicit_resolution_and_requeue(
     assert calls == [*stopped_calls, "delivery", "review"]
 
 
+@pytest.mark.parametrize(
+    ("history", "fault"),
+    [("canonical", None), ("legacy-prelaunch", None), ("legacy", "short-sha")]
+    + [
+        ("legacy", fault)
+        for fault in (
+            "returned-sha",
+            "non-head",
+            "dirty",
+            "unrelated-base",
+            "missing-launch",
+            "wrong-thread",
+            "wrong-attempt",
+            "validation-error",
+            "later-native",
+            "stale-intent",
+            "source-repair",
+            "unfinished-repair",
+        )
+    ],
+)
+def test_blocked_committed_delivery_recovers_original_base(
+    session, project_id, tmp_path, monkeypatch, history, fault
+):
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Committed blocked recovery")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    calls = []
+    recovering = False
+    native_failure = False
+
+    def launch(*args, **selection):
+        packet = json.loads(args[3])
+        phase = packet["phase"]
+        prior = any(call["phase"] == phase for call in calls)
+        assert selection.get("resume_thread_id") == (f"first-{phase}" if prior else None)
+        calls.append(packet)
+        if native_failure:
+            return AgentRunResult(1, thread_id=f"first-{phase}", error="Native unavailable")
+        sha = git(tmp_path, "rev-parse", "HEAD")
+        status = "success"
+        if not recovering:
+            if phase == "delivery":
+                if not (prior and fault == "unfinished-repair"):
+                    sha = commit(tmp_path, f"candidate-{len(calls)}")
+                status = "blocked" if prior else "success"
+            else:
+                status = "repair"
+        return AgentRunResult(
+            0,
+            thread_id=f"first-{phase}",
+            result=generic_result(
+                status,
+                {"commit_sha": sha[:12] if fault == "short-sha" and status == "blocked" else sha},
+                "External proof unavailable",
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    original = deepcopy(ticket.completion_evidence_json["automatic_delivery"])
+    sha = git(tmp_path, "rev-parse", "HEAD")
+    base = original["candidate"]["base_commit_sha"]
+    assert ticket.status == "in-progress" and ticket.blocker_reason
+    assert original["delivery"]["validated_outcome"] == "blocked"
+    assert original["repair_count"] == 1
+    assert (base == sha) == (fault == "unfinished-repair")
+    if history == "canonical":
+        assert original["candidate"] == {"base_commit_sha": base, "commit_sha": sha}
+    else:
+        # Emulate the old writer's sole missing field; keep the real native receipt.
+        original["candidate"].pop("commit_sha", None)
+    correction = {
+        "work_intent": "evidence_only",
+        "candidate_commit_sha": sha,
+        "target_attempt": original["attempt"] + 1,
+    }
+    if fault == "returned-sha":
+        original["delivery"]["result"]["outputs"] = json.dumps({"commit_sha": base})
+    elif fault == "non-head":
+        commit(tmp_path, "unrelated-head")
+    elif fault == "dirty":
+        (tmp_path / "unfinished").write_text("preserve this work")
+    elif fault == "unrelated-base":
+        base = git(tmp_path, "commit-tree", "HEAD^{tree}", "-m", "unrelated root")
+        original["candidate"]["base_commit_sha"] = base
+        original["delivery"]["occurrence"]["candidate"]["base_commit_sha"] = base
+    elif fault == "missing-launch":
+        original["delivery"].pop("launch")
+    elif fault == "wrong-thread":
+        original["delivery"]["thread_id"] = "foreign-native-thread"
+    elif fault == "wrong-attempt":
+        original["delivery"]["occurrence"]["attempt"] = 1
+    elif fault == "validation-error":
+        original["delivery"]["validation_error"] = "Invalid supplied candidate"
+    elif fault == "stale-intent":
+        correction["target_attempt"] -= 1
+    elif fault == "source-repair":
+        correction["work_intent"] = "source_repair"
+
+    def requeue(intent, evidence=None):
+        patch = {"status": "in-progress", "context_json": {"correction": intent}}
+        if evidence is not None:
+            patch["completion_evidence_json"] = {"automatic_delivery": evidence}
+        repo.update_ticket(project_id=project_id, ticket_key="first", patch_json=patch)
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"status": "not-started", "blocker_reason": None},
+        )
+        submit(session, project_id, tmp_path, scheduler)
+        scheduler.run()
+        session.expire_all()
+        return repo.brief(project_id=project_id, ticket_key="first").ticket
+
+    recovering = True
+    before = task_delivery._worktree_snapshot(str(tmp_path))
+    if history == "legacy-prelaunch":
+        failed = requeue({**correction, "candidate_commit_sha": base}, original)
+        refused = deepcopy(failed.completion_evidence_json["automatic_delivery"])
+        assert failed.status == "failed" and len(calls) == 3
+        assert "delivery" not in refused and "review" not in refused
+        assert refused["attempt"] == correction["target_attempt"]
+        assert refused["attempts"][-1]["delivery"] == original["delivery"]
+        assert refused["repair_count"] == 1
+        # A prelaunch refusal creates no native attempt to archive on the retry.
+        ticket = requeue(correction)
+    elif fault == "later-native":
+        native_failure = True
+        failed = requeue({**correction, "work_intent": "source_repair"}, original)
+        assert failed.status == "failed" and len(calls) == 4
+        later = deepcopy(failed.completion_evidence_json["automatic_delivery"])
+        native_failure = False
+        ticket = requeue({**correction, "target_attempt": later["attempt"] + 1})
+    else:
+        ticket = requeue(correction, original)
+    current = ticket.completion_evidence_json["automatic_delivery"]
+    if fault not in {None, "short-sha"}:
+        assert ticket.status == "failed"
+        assert current["repair_count"] == 1
+        assert current["sessions"] == original["sessions"]
+        assert current["attempts"][: len(original["attempts"])] == original["attempts"]
+        assert current["attempts"][len(original["attempts"])]["delivery"] == original["delivery"]
+        assert task_delivery._worktree_snapshot(str(tmp_path)) == before
+        assert len(calls) == (
+            4 if fault in {"later-native", "stale-intent", "source-repair"} else 3
+        )
+        if fault in {"stale-intent", "source-repair"}:
+            assert (
+                current["delivery"]["validation_error"] == "Repair requires a new descendant commit"
+            )
+        else:
+            assert "delivery" not in current and "review" not in current
+        return
+    assert ticket.status == "complete"
+    assert [call["phase"] for call in calls] == [
+        "delivery",
+        "review",
+        "delivery",
+        "delivery",
+        "review",
+    ]
+    assert current["candidate"] == {"base_commit_sha": base, "commit_sha": sha}
+    assert current["attempt"] == correction["target_attempt"]
+    assert current["attempts"][:-1] == original["attempts"]
+    assert current["attempts"][-1]["delivery"] == original["delivery"]
+    assert current["attempts"][-1]["candidate"] == original["candidate"]
+    assert current["sessions"] == original["sessions"]
+    assert current["repair_count"] == 1
+    for phase in ("delivery", "review"):
+        assert current[phase]["validated_outcome"] == "success"
+        assert current[phase]["occurrence"]["candidate"]["base_commit_sha"] == base
+    assert git(tmp_path, "rev-parse", "HEAD") == sha
+
+
 @pytest.mark.parametrize("fault", ["native", "blocked", "candidate"])
 def test_failed_repair_resumes_same_counted_pass(session, project_id, tmp_path, monkeypatch, fault):
     from stackos import task_delivery

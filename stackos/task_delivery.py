@@ -2316,21 +2316,95 @@ def _assignment_occurrence(
     }
 
 
-def _evidence_only_candidate(occurrence: dict[str, Any], evidence: dict[str, Any]) -> bool:
+def _evidence_only_candidate(
+    occurrence: dict[str, Any], evidence: dict[str, Any], project_dir: str
+) -> dict[str, Any] | None:
     intent = occurrence.get("correction_intent")
     if (
         not intent
         or intent["work_intent"] != "evidence_only"
         or intent["target_attempt"] != occurrence["attempt"]
     ):
-        return False
-    prior = evidence["attempts"][-1].get("candidate", {}) if evidence["attempts"] else {}
+        return None
+    # A prelaunch refusal has no native receipt to archive. Never search past
+    # the latest real attempt, which may have superseded earlier blocked work.
+    prior_attempt = evidence["attempts"][-1] if evidence["attempts"] else {}
+    prior = prior_attempt.get("candidate", {})
+    delivery = prior_attempt.get("delivery", {})
+    if delivery.get("validated_outcome") == "blocked":
+        native = evidence.get("sessions", {}).get("delivery", {})
+        launch = delivery.get("launch", {})
+        original = delivery.get("occurrence", {})
+        result = delivery.get("result") or {}
+        base = prior.get("base_commit_sha")
+        sha = intent["candidate_commit_sha"]
+        original_intent = original.get("correction_intent") or {}
+        if not (
+            delivery.get("selected_role") == "delivery_agent"
+            and delivery.get("exit_code") == 0
+            and delivery.get("error") is None
+            and delivery.get("validation_error") is None
+            and result.get("status") == "blocked"
+            and "review" not in prior_attempt
+            and native.get("thread_id")
+            and delivery.get("thread_id") == native["thread_id"]
+            and delivery.get("agent") == native.get("agent")
+            and {k: v for k, v in native.items() if k not in {"thread_id", "agent_snapshot"}}
+            == {
+                k: v
+                for k, v in launch.items()
+                if k not in {"sandbox", "started_at", "resume_thread_id"}
+            }
+            and launch.get("started_at")
+            and original.get("attempt") == prior_attempt.get("attempt")
+            and type(original.get("attempt")) is int
+            and 0 < original["attempt"] < occurrence["attempt"]
+            and original.get("resume_thread_id") == launch.get("resume_thread_id")
+            and launch.get("resume_thread_id") in {None, native["thread_id"]}
+            and original.get("launched_source")
+            == {k: native[k] for k in ("source_ref", "source_digest") if k in native}
+            and isinstance(base, str)
+            and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", base)
+            and original.get("candidate", {}).get("base_commit_sha") == base
+            and prior.get("commit_sha", sha) == sha
+            and occurrence["candidate"].get("base_commit_sha") in {sha, base}
+            and not (
+                sha == base
+                and (
+                    prior_attempt.get("repair_count", 0)
+                    or (
+                        original_intent.get("work_intent") == "source_repair"
+                        and original_intent.get("target_attempt") == original["attempt"]
+                    )
+                    or any(
+                        attempt.get("review", {}).get("validated_outcome") == "success"
+                        and attempt.get("candidate", {}).get("commit_sha")
+                        and attempt["candidate"].get("base_commit_sha")
+                        and attempt["candidate"]["commit_sha"]
+                        != attempt["candidate"]["base_commit_sha"]
+                        for attempt in evidence["attempts"][:-1]
+                    )
+                )
+                and not (
+                    original_intent.get("work_intent") == "evidence_only"
+                    and original_intent.get("target_attempt") == original["attempt"]
+                    and original_intent.get("candidate_commit_sha") == sha
+                )
+            )
+        ):
+            raise ValidationError("Evidence-only intent does not match retained blocked delivery")
+        returned = _candidate_commit(
+            project_dir, _result_outputs(result.get("outputs", "{}")).get("commit_sha"), base
+        )
+        if returned != sha:
+            raise ValidationError("Evidence-only intent does not match retained blocked delivery")
+        return {"base_commit_sha": base, "commit_sha": sha}
     if not (
         intent["candidate_commit_sha"] == occurrence["candidate"].get("base_commit_sha")
         and intent["candidate_commit_sha"] == prior.get("commit_sha")
     ):
         raise ValidationError("Evidence-only intent does not match the prior candidate and base")
-    return True
+    return occurrence["candidate"]
 
 
 def _archive_attempt(evidence: dict[str, Any]) -> None:
@@ -4245,7 +4319,12 @@ def run_delivery(
                         # Reject impossible corrections before recording a launch or
                         # charging a repair. Final validation still checks returned work.
                         failure_code = "candidate_validation"
-                        _evidence_only_candidate(occurrence, evidence)
+                        admitted = _evidence_only_candidate(
+                            occurrence, evidence, state["project_dir"]
+                        )
+                        if admitted is not None:
+                            evidence["candidate"] = deepcopy(admitted)
+                            occurrence["candidate"] = deepcopy(admitted)
                         if (
                             phase == "delivery"
                             and candidate_required
@@ -4620,10 +4699,23 @@ def run_delivery(
                                 ):
                                     changed_candidate = True
                                     break
-                        # Blocked reviews still attest the delivered candidate.
-                        # Blocked delivery may instead leave unfinished owned work.
+                        # A blocked delivery can explicitly retain a finished commit;
+                        # unfinished dirty work keeps its separate ownership receipt.
+                        blocked_commit = (
+                            workflow_step is None
+                            and phase == "delivery"
+                            and decision == "blocked"
+                            and "commit_sha" in outputs
+                            and not _git(
+                                state["project_dir"],
+                                "status",
+                                "--porcelain",
+                                "--untracked-files=all",
+                            )
+                        )
                         if (
                             decision in {"success", "repair"}
+                            or blocked_commit
                             or (
                                 workflow_step is None
                                 and phase == "review"
@@ -4642,8 +4734,12 @@ def run_delivery(
                                 )
                             )
                         ):
-                            evidence_only = workflow_step is None and _evidence_only_candidate(
-                                occurrence, evidence
+                            evidence_only = (
+                                workflow_step is None
+                                and _evidence_only_candidate(
+                                    occurrence, evidence, state["project_dir"]
+                                )
+                                is not None
                             )
                             intent = occurrence.get("correction_intent") or {}
                             source_repair = (
@@ -4674,8 +4770,14 @@ def run_delivery(
                                     )
                                     and sha == evidence["candidate"].get("base_commit_sha")
                                 ):
-                                    raise ValidationError("Repair requires a new descendant commit")
-                                evidence["candidate"]["commit_sha"] = sha
+                                    if not blocked_commit:
+                                        raise ValidationError(
+                                            "Repair requires a new descendant commit"
+                                        )
+                                    # An interrupted repair may report its unchanged
+                                    # baseline without claiming a finished candidate.
+                                else:
+                                    evidence["candidate"]["commit_sha"] = sha
                             elif sha != evidence["candidate"].get("commit_sha"):
                                 raise ValidationError(
                                     "Review commit_sha differs from the delivery candidate"
