@@ -1,0 +1,143 @@
+{
+  "version": "2.1.47",
+  "status": "published",
+  "recorded_at": "2026-11-24T02:41:35.194846+00:00",
+  "source_commit": "d3f4a5599f1f0351489d2a8d3c25e40ead830fdc",
+  "accepted_runtime_commit": "2acdd44d1beec83091d7486c95a9ce0752d701b9",
+  "included_commit_count": 95,
+  "tag": {
+    "name": "v2.1.47",
+    "verified": true,
+    "annotated_object": "d9eda3e808ba8f99e271ef632cfe7640ba586dd7",
+    "peeled_commit": "d3f4a5599f1f0351489d2a8d3c25e40ead830fdc",
+    "verification_owner": "main release owner"
+  },
+  "build_id": "20261124T002643Z",
+  "built_at": "2026-11-24T00:28:54Z",
+  "authority": "Operator authorized release and version bump",
+  "public_base": "https://stackos.flowmonkey.io/StackOS/",
+  "source_verification": {
+    "status": "passed",
+    "baseline_python_passed": 9245,
+    "baseline_python_skipped": 4,
+    "focused_checks_passed": 77,
+    "desktop_checks": "passed",
+    "proof_reuse": "Unchanged accepted runtime signoff plus focused release-delta checks and independent review"
+  },
+  "notarization": {
+    "app_submission": "df29e707-caaf-4dd4-ad27-adbad916b049",
+    "dmg_submission": "f057cd52-e494-4d3f-8a96-20336c526454",
+    "status": "Accepted",
+    "signing_team": "TSHN26FR48"
+  },
+  "artifact_verification": {
+    "status": "passed",
+    "source_ui_template_matches": 115,
+    "signature_staple_gatekeeper_cli": "passed",
+    "final_hashes_independently_rechecked": true
+  },
+  "artifacts": [
+    {
+      "name": "stackos-2.1.47-mac-arm64.dmg",
+      "bytes": 563452081,
+      "sha256": "e40695dd8b173c722c2c10e123166a210ef147a6a892e28ce391e56f816c0424",
+      "sha512_base64": "a2NOS6rJhYfJ1XU2HFZsbyEqsL5Ai69sip1QeLXbEZNcAWBfYU1P/tP5g8P//I/F+xFhFrTzpWyWzU/73vXIAA=="
+    },
+    {
+      "name": "stackos-2.1.47-mac-arm64.zip",
+      "bytes": 552046940,
+      "sha256": "c47c9a52fafd9bdb6d143ef76e0da8c597fc0d2933ab5f13263ba2443427f24d",
+      "sha512_base64": "Vep96rilNDhZMV50yQHGtq3x1lKFm1JBOmc/BFtL0+Ys+xWgr6UBZ5Ws4gp91MMxH5AX/us30GJfk4HlfsMusQ=="
+    },
+    {
+      "name": "stackos-2.1.47-mac-arm64.dmg.blockmap",
+      "bytes": 583301,
+      "sha256": "0fdd1c57a1a67311525f04ed45b1baa9ce4e540c926c4144c608162986e41639",
+      "sha512_base64": "VEJSresGNOPtsfmRr1e7O4hkVYXtrwDmxDNQFyno7MGdBBk9F2H8W4bLs0f6zvOhHBHy4p19NGfmvzNPyhrH6g=="
+    },
+    {
+      "name": "stackos-2.1.47-mac-arm64.zip.blockmap",
+      "bytes": 562459,
+      "sha256": "801bfc5f90b971b49518ee83dfd79a634fcb94c48ff8fdb4eddee662b342c0bb",
+      "sha512_base64": "RkvuRo4dk+HA34W6txRrr4B1t4wX3AzEBG/Q6R4fTTZwQ/YeK04hYsXCnt4kWCtt3vHQyrF+KSB6fUnfrVsMfA=="
+    },
+    {
+      "name": "stackos-latest-mac-arm64.dmg",
+      "bytes": 563452081,
+      "sha256": "e40695dd8b173c722c2c10e123166a210ef147a6a892e28ce391e56f816c0424",
+      "sha512_base64": "a2NOS6rJhYfJ1XU2HFZsbyEqsL5Ai69sip1QeLXbEZNcAWBfYU1P/tP5g8P//I/F+xFhFrTzpWyWzU/73vXIAA=="
+    },
+    {
+      "name": "latest-mac.yml",
+      "bytes": 513,
+      "sha256": "b2a63926aaac5d34592d1ce1395ea33d90f034bc51e7d697712d8fc3a4557a3b",
+      "sha512_base64": "5WHJ5iRTGtehHVv1Km27WgCYkh045C7I+eRWozMQc5wi5BXlVdYZmtgL/YjvbaAGnJJFiBLO0fy4KPoiX7X2xg=="
+    }
+  ],
+  "installed": {
+    "status": "verified",
+    "performed_by": "user",
+    "source_fixture": "Signed current-code 2.1.46 fixture",
+    "version": "2.1.47",
+    "build_id": "20261124T002643Z",
+    "native_update": "User-performed native download/install/relaunch; Squirrel.Mac delivery confirmed in retained logs",
+    "postflight": "passed",
+    "identity": "matches final release build",
+    "health_doctor_launchd": "passed; sole listener is launchd-owned",
+    "signature_staple": "passed",
+    "served_ui": "matches final artifact",
+    "production_update_url": "https://stackos.flowmonkey.io/StackOS/",
+    "state_preservation": "passed with qualified native refreshes",
+    "managed_continuation": "continued; unfenced; no recovery required",
+    "fresh_cua_visual_walkthrough": false,
+    "second_normal_quit_reopen": "not performed or claimed"
+  },
+  "publication": {
+    "status": "published",
+    "staging": "success",
+    "versioned_https_readback": "passed",
+    "staged_https_readback": "passed",
+    "alias_promotion": "success",
+    "feed_promotion": "success after alias promotion",
+    "public_readback": "passed"
+  },
+  "independent_review": {
+    "artifact_disposition": "pass",
+    "release_disposition": "pass",
+    "qualifications_ref": "verification.md#evidence-limits-and-custody",
+    "installed_preservation_disposition": "pass",
+    "reviewer": "release_route_audit",
+    "required_repairs": []
+  },
+  "limitations": [
+    "Disposable setup run does not establish successful fresh update-mode behavior",
+    "No fresh CUA visual walkthrough or second normal quit/reopen claimed",
+    "Local-feed differential download fell back to successful full ZIP download; production differential behavior not established",
+    "Native authentication/cache refreshes are qualified rather than claimed byte-identical",
+    "No private state hashes or credential/account identifiers included"
+  ],
+  "preservation": {
+    "missing_project_or_account_identities": 0,
+    "encrypted_credential_payload_values": "unchanged",
+    "host_account_identities": "unchanged",
+    "seed_and_daemon_token": "unchanged",
+    "retained_terminal_ticket_receipts": 780,
+    "telegram_changes": "Only runtime generation and update timestamp fields",
+    "claude_changes": "Exact baseline backup comparison: only six cache fields changed; OAuth identity, settings and MCP configuration unchanged",
+    "grok_changes": "Current stable identity matches unchanged baseline saved profile; token/time fields differ from that profile",
+    "qualification": "Baseline global Grok file was hash-only; no exact before/after global field-level comparison or blanket native-auth byte identity claimed"
+  },
+  "released_on": "2026-11-23",
+  "action_call_ids": {
+    "upload": 14905,
+    "promote_alias": 14906,
+    "promote_feed": 14907
+  },
+  "public_readback": {
+    "passed": true,
+    "checked_at_unix": 1795488003.370615,
+    "method": "Full HTTPS downloads and local SHA256 comparisons; versioned artifacts and staged files verified before alias/feed promotion; live alias/feed verified afterward",
+    "accepted_source": "d3f4a5599f1f0351489d2a8d3c25e40ead830fdc",
+    "build_id": "20261124T002643Z"
+  }
+}
