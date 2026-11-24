@@ -107,14 +107,33 @@ unrelated health, shell, or status requests queue behind it.
 
 Delivery trend timing queries combine per-ticket inventory counters and in-range
 receipt selections via `UNION ALL` in a single statement rather than joining two
-derived subqueries without an index. Request routes and UI bearer-token checks
+derived subqueries without an index. Completion and stop queries use the shared
+fixed JSON expressions and covering `ix_tracker_revisions_delivery_stats` index.
+They read the required status, scope and ordering scalars without fetching the
+large before/after snapshots. SQLite maintains this index with ordinary revision
+writes; there is no second history writer or projection table. Migration 0053
+builds it once over retained history. Verify the actual bound queries with
+`EXPLAIN`/VDBE, including absence of revision-table blob reads, rather than relying
+on an index name or timing alone. Existing completion, coverage and stop semantics
+remain owned by the same reader.
+
+Request routes and UI bearer-token checks
 reuse each FastAPI app's isolated `app.state.operation_registry` rather than
 rebuilding the operation catalog per request. Host inspection avoids login-shell
 forks when `PATH`, common paths, or app bundles already locate a binary, caches
 login-shell `PATH` briefly, runs fresh parallel adapter inspections without
 caching mutable launcher probes or coalescing across registrations, and reuses
 the warm daemon's `hostMcp.status` operation from the desktop shell before
-falling back to a cold CLI subprocess. Overview queues fast local reads ahead of
+falling back to a cold CLI subprocess. Overview requests `include_models=false`
+through both web and desktop paths. Inspection still returns connection and
+execution availability for account controls, but does not run native model-list
+commands. Agent settings and Setup Launch retain the full-catalog default.
+Executable/version observations are reused only inside their current inspection;
+later refreshes and admission checks retain their identity and freshness fences.
+The shared UI loader retains reduced and full responses separately so a Home read
+cannot replace a model picker's catalog.
+
+Overview queues fast local reads ahead of
 slow native-CLI `hostMcp.subscriptions` probes so HTTP/1.1 connection slots stay
 available for primary supervision widgets. Empty-demand `ui_demand={"projects":{}}`
 SSE transports query tracker revisions directly without hydrating full
@@ -164,6 +183,14 @@ same six-slot desktop grid as the status response.
 The existing setup reader also retains Home's last same-project reminder and
 update count, so return content is not displaced while setup revalidates.
 It does not retain setup state, attempts or launch readiness.
+Project Home requests `projectSetup.get(summary_only=true, response_mode=raw)`.
+The existing repository computes the same readiness, diagnostics and complete
+workflow membership, omitting source snapshots and historical result bodies
+before constructing the response. Canonical source checks still read the inputs
+needed to establish readiness. Generic compact response limits do not apply to
+this complete UI summary. Setup keeps full detail by default; opening Launch
+from Home fetches full detail before enabling submission or showing versions.
+Failed or foreign-project detail responses cannot enable launch.
 Project Home also reserves the reminder region on a cold mount, using an initial
 skeleton. The region keeps its space when no reminder applies, so a slow setup
 read cannot insert or remove space above already-visible tasks and Usage.
