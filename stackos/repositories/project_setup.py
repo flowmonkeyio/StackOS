@@ -615,6 +615,7 @@ class SetupWorkOut(BaseModel):
 
 class ProjectSetupOut(BaseModel):
     project_id: int
+    summary_only: bool = False
     eligible: bool
     folder_status: Literal["directoryless", "available", "unavailable"]
     status: Literal[
@@ -2174,13 +2175,14 @@ class ProjectSetupRepository:
         *,
         project: Any | None = None,
         source_cache: dict[str, Any] | None = None,
+        summary_only: bool = False,
     ) -> SetupWorkflowOut:
         out = SetupWorkflowOut(
             workflow_key=workflow_key,
             receipt_id=row.id if row else None,
             revision=row.revision if row else 0,
-            successful=row.successful_json if row else None,
-            latest_result=row.latest_result_json if row else None,
+            successful=row.successful_json if row and not summary_only else None,
+            latest_result=row.latest_result_json if row and not summary_only else None,
             status="unknown",
         )
         if row:
@@ -2214,7 +2216,7 @@ class ProjectSetupRepository:
                 if row and row.successful_json
                 else []
             )
-            out.available_sources = self.inspect_sources(
+            available_sources = self.inspect_sources(
                 project_id,
                 workflow_key,
                 selected_optional_presets=optional,
@@ -2222,6 +2224,8 @@ class ProjectSetupRepository:
                 _project=project,
                 _source_cache=source_cache,
             )
+            if not summary_only:
+                out.available_sources = available_sources
         except (RepositoryError, ValueError, yaml.YAMLError, OSError) as exc:
             out.status = "source_unavailable"
             if out.requested_scope == "ready_to_use":
@@ -2247,7 +2251,7 @@ class ProjectSetupRepository:
             applied = VerifiedSetup.model_validate(row.successful_json["verification"])
             out.status = (
                 "current"
-                if self._identity(applied.sources) == self._identity(out.available_sources)
+                if self._identity(applied.sources) == self._identity(available_sources)
                 else "update_available"
             )
             if out.status == "update_available" and out.requested_scope == "ready_to_use":
@@ -2264,7 +2268,7 @@ class ProjectSetupRepository:
                 else:
                     try:
                         self._validate_activation(
-                            project_id, applied, current_sources=out.available_sources
+                            project_id, applied, current_sources=available_sources
                         )
                     except (ConflictError, ValidationError):
                         out.status = "activation_pending"
@@ -2275,7 +2279,9 @@ class ProjectSetupRepository:
                         )
         return out
 
-    def get(self, project_id: int, *, workflow_key: str | None = None) -> ProjectSetupOut:
+    def get(
+        self, project_id: int, *, workflow_key: str | None = None, summary_only: bool = False
+    ) -> ProjectSetupOut:
         from stackos.repositories.tracker import TrackerRepository
 
         projects = ProjectRepository(self._s)
@@ -2328,11 +2334,16 @@ class ProjectSetupRepository:
                 key,
                 project=project,
                 source_cache=source_cache,
+                summary_only=summary_only,
             )
             for key in sorted(keys)
         ]
         aggregate = [item for item in workflows if item.workflow_key in aggregate_keys]
-        configured = sum(item.successful is not None for item in aggregate)
+        configured = sum(
+            item.successful_json is not None
+            for item in receipts
+            if item.workflow_key in aggregate_keys
+        )
         updates = sum(item.status == "update_available" for item in aggregate) if eligible else 0
         unknown = sum(
             item.status != "current" and item.status != "update_available" for item in aggregate
@@ -2365,6 +2376,7 @@ class ProjectSetupRepository:
 
         return ProjectSetupOut(
             project_id=project_id,
+            summary_only=summary_only,
             eligible=eligible,
             folder_status=folder,
             status=status,

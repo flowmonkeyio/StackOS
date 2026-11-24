@@ -11,9 +11,10 @@ export function setupErrorMessage(cause: unknown, fallback: string): string {
   return cause instanceof ApiError ? cause.detail : formatApiError(cause, fallback)
 }
 
-export function readProjectSetup(projectId: number, resolveLaunchPreferences = false): Promise<SchemaProjectSetupOut> {
+export function readProjectSetup(projectId: number, resolveLaunchPreferences = false, summaryOnly = false): Promise<SchemaProjectSetupOut> {
   return callOperation<SchemaProjectSetupOut>('projectSetup.get', {
     project_id: projectId, ...(resolveLaunchPreferences ? { resolve_launch_preferences: true } : {}),
+    ...(summaryOnly ? { summary_only: true } : {}),
   })
 }
 
@@ -36,7 +37,7 @@ function setupReady(value: SchemaProjectSetupOut | null): boolean {
     && (!value.current_attempt || (value.current_attempt.status === 'success' && value.current_attempt.requested_scope === 'ready_to_use'))
 }
 
-export function useProjectSetup(projectId: Ref<number>, options: { retainReminder?: boolean } = {}) {
+export function useProjectSetup(projectId: Ref<number>, options: { retainReminder?: boolean; summaryOnly?: boolean } = {}) {
   const app = getCurrentInstance()?.appContext.app
   const previous = app && options.retainReminder ? retainedReminders.get(app) : null
   const initialReminder = computed(() => previous?.projectId === projectId.value ? previous : null)
@@ -59,7 +60,7 @@ export function useProjectSetup(projectId: Ref<number>, options: { retainReminde
     const current = revision
     const id = projectId.value
     try {
-      const result = await readProjectSetup(id)
+      const result = await readProjectSetup(id, false, options.summaryOnly)
       if (disposed || current !== revision || id !== projectId.value || result.project_id !== id) return
       state.value = result
       readError.value = null

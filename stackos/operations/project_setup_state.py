@@ -40,6 +40,12 @@ class ProjectSetupGetInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(strict=True, ge=1)
     workflow_key: str | None = Field(default=None, min_length=1, max_length=200)
+    summary_only: bool = Field(
+        default=False,
+        strict=True,
+        description="Keep every workflow's canonical status and diagnostics without constructing "
+        "source snapshots or historical result output. Full detail remains the default.",
+    )
     resolve_launch_preferences: bool = Field(
         default=False,
         strict=True,
@@ -444,6 +450,7 @@ async def project_setup_get(
         ProjectSetupRepository(ctx.session).get,
         inp.project_id,
         workflow_key=inp.workflow_key,
+        summary_only=inp.summary_only,
     )
     if inp.resolve_launch_preferences:
         from stackos.project_setup_execution import resolve_preferences
@@ -669,6 +676,8 @@ def operation_specs() -> list[OperationSpec]:
             returns=(
                 "Compact keeps counts, receipt revisions, diagnostics and raw detail refs.",
                 "Raw includes source snapshots, checks, adaptations and latest partial results.",
+                "summary_only omits workflow source/result bodies at their owner while retaining "
+                "complete membership and the same readiness checks; use raw for the Home summary.",
                 "Unknown provenance is not proof that local setup is missing.",
                 "Console-only resolve_launch_preferences previews effective launch choices "
                 "through the launch resolver; normal reads do not inspect native hosts.",

@@ -7443,6 +7443,12 @@ export interface components {
              */
             run_token: string | null;
             /**
+             * Summary Only
+             * @description Keep every workflow's canonical status and diagnostics without constructing source snapshots or historical result output. Full detail remains the default.
+             * @default false
+             */
+            summary_only: boolean;
+            /**
              * Workflow Key
              * @default null
              */
@@ -7512,6 +7518,11 @@ export interface components {
              * @enum {string}
              */
             status: ProjectSetupOutStatus;
+            /**
+             * Summary Only
+             * @default false
+             */
+            summary_only: boolean;
             /**
              * Unknown Count
              * @default 0

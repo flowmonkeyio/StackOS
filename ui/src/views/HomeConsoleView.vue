@@ -17,7 +17,7 @@ import ProjectSetupLaunchDialog from './project-setup/ProjectSetupLaunchDialog.v
 
 const { projectId } = useProjectRouteScope()
 const router = useRouter()
-const setup = useProjectSetup(projectId, { retainReminder: true })
+const setup = useProjectSetup(projectId, { retainReminder: true, summaryOnly: true })
 const { state: setupState, error: setupError, writing: setupWriting, actionLabel, reminder, reminderUpdateCount } = setup
 const launchOpen = ref(false)
 function openSetup(): void {
@@ -180,6 +180,7 @@ async function refreshAll(): Promise<void> {
     />
     <ProjectSetupLaunchDialog
       v-if="launchOpen && setupState"
+      :key="projectId"
       :state="setupState"
       :pending="setupWriting"
       :error="setupError"

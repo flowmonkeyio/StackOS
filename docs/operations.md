@@ -211,6 +211,15 @@ scope. Directoryless projects return `ineligible` with no update count; a select
 unavailable folder returns `folder_unavailable`, retained evidence/preferences and
 an actionable folder diagnostic. Existing adaptations without receipts are unknown.
 
+Project Home sends `summary_only: true` with raw response mode. The repository
+uses the same source comparison and activation checks for every workflow, but
+does not construct workflow source snapshots or historical result bodies in the
+response. The explicit `summary_only` marker distinguishes this complete status
+list from full detail; it does not use generic compact list truncation. Setup
+keeps the default full read. Opening Launch from Home loads full names, versions
+and required launch preferences before submission; `detail_ref` also returns the
+full default read. No new readiness, polling or cache owner is introduced.
+
 Compact/raw modes are supported; ack is refused. Compact keeps project eligibility,
 counts, permanent reminder timestamps, workflow receipt IDs/revisions, latest outcome,
 partial-change flags, attempt/result refs and `detail_ref` for full evidence. Raw

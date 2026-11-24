@@ -2,13 +2,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { callOperation } from '@/lib/operations'
 import { ProjectSetupOutStatus } from '@/api'
+import type { SchemaProjectSetupOut, SchemaSetupWorkflowOut } from '@/api'
 import type { DesktopAgentExecutionCapabilities, DesktopMcpHostStatus } from '@/lib/desktop'
 import Dialog from './ProjectSetupLaunchDialog.vue'
 import { setupFixture } from './setupFixtures'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 let wrapper: VueWrapper | undefined
-beforeEach(() => vi.mocked(callOperation).mockReset())
+beforeEach(() => { vi.mocked(callOperation).mockReset() })
 afterEach(() => { wrapper?.unmount(); document.body.innerHTML = '' })
 
 // Capability combinations from the canonical host catalog, without requiring
@@ -260,6 +261,81 @@ it.each([ProjectSetupOutStatus.setup_needed, ProjectSetupOutStatus.updates_avail
   await flushPromises()
   await button(status === 'updates_available' ? 'Update workflows' : 'Start setup').trigger('click')
   expect(start).toHaveBeenLastCalledWith({ host_key: 'grok', model: null, model_reasoning_effort: null, provider: null, profile: null })
+})
+
+it.each([false, true])('loads full Home summary detail before launch with a saved host: %s', async hasHost => {
+  const preferences = { model: 'custom/model', provider: 'configured', profile: 'project-profile' }
+  const effective = { host_key: 'hermes', ...preferences }
+  const summary = setupFixture({ summary_only: true, launch_preferences: hasHost ? effective : preferences })
+  let finish!: (value: SchemaProjectSetupOut) => void
+  const heldDetail = new Promise<SchemaProjectSetupOut>(resolve => { finish = resolve })
+  vi.mocked(callOperation).mockImplementation(async name => {
+    if (name === 'hostMcp.status') return { items: hosts }
+    if (name === 'projectSetup.get') return heldDetail
+    throw new Error(`Unexpected operation: ${name}`)
+  })
+  const start = vi.fn().mockResolvedValue(null)
+  wrapper = mount(Dialog, { props: { state: summary, pending: false, error: null, start },
+    attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  expect(button('Start setup').attributes('disabled')).toBeDefined()
+  expect(wrapper.text()).not.toContain('Version details')
+  expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'projectSetup.get')).toEqual([
+    ['projectSetup.get', { project_id: 1, ...(!hasHost ? { resolve_launch_preferences: true } : {}) }],
+  ])
+  finish(setupFixture({ launch_preferences: effective, workflows: [{
+    workflow_key: 'sample.workflow', status: 'update_available', revision: 1,
+    receipt_id: 1, diagnostic: null, latest_result: null, latest_status: 'success', partial_changes: false,
+    attempt_ref: null, result_ref: null, requested_scope: 'ready_to_use', activation_status: 'pending', missing_activation_claims: ['current_sources'],
+    successful: { verification: { sources: [{ key: 'sample.workflow', version: '1.0' }] } },
+    available_sources: [{ kind: 'template', key: 'sample.workflow', version: '2.0', origin: 'repo', ref: 'fixture/workflow', digest: 'a'.repeat(64), content: { name: 'Readable workflow' } }],
+  } as SchemaSetupWorkflowOut] }))
+  await flushPromises()
+  expect(wrapper.text()).toContain('Readable workflow')
+  expect(wrapper.text()).toContain('Applied: sample.workflow: 1.0')
+  expect(wrapper.text()).toContain('Available: sample.workflow: 2.0')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenCalledWith({ ...effective, model_reasoning_effort: null })
+})
+
+it('keeps a failed detail read blocked, then retries without accepting a summary as full detail', async () => {
+  const summary = setupFixture({ summary_only: true, launch_preferences: { host_key: 'native' } })
+  let detailReads = 0
+  vi.mocked(callOperation).mockImplementation(async name => {
+    if (name === 'hostMcp.status') return { items: hosts }
+    if (++detailReads === 1) throw new Error('Detail read failed')
+    return summary
+  })
+  const start = vi.fn()
+  wrapper = mount(Dialog, { props: { state: summary, pending: false, error: null, start },
+    global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Detail read failed')
+  expect(button('Start setup').attributes('disabled')).toBeDefined()
+  await button('Check again').trigger('click'); await flushPromises()
+  expect(wrapper.text()).toContain('Project setup details could not be loaded.')
+  expect(button('Start setup').attributes('disabled')).toBeDefined()
+  expect(start).not.toHaveBeenCalled()
+})
+
+it('does not apply a held detail response after the bound project changes', async () => {
+  const summary = setupFixture({ summary_only: true, launch_preferences: { host_key: 'native' } })
+  let finish!: (value: SchemaProjectSetupOut) => void
+  const heldDetail = new Promise<SchemaProjectSetupOut>(resolve => { finish = resolve })
+  vi.mocked(callOperation).mockImplementation(async name => {
+    if (name === 'hostMcp.status') return { items: hosts }
+    if (name === 'projectSetup.get') return heldDetail
+    throw new Error(`Unexpected operation: ${name}`)
+  })
+  const start = vi.fn()
+  wrapper = mount(Dialog, { props: { state: summary, pending: false, error: null, start },
+    global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  await wrapper.setProps({ state: { ...summary, project_id: 2 } })
+  finish(setupFixture({ launch_preferences: { host_key: 'native' } }))
+  await flushPromises()
+  expect(button('Start setup').attributes('disabled')).toBeDefined()
+  expect(start).not.toHaveBeenCalled()
 })
 
 it('preserves saved reasoning when the resolver supplies the omitted host', async () => {

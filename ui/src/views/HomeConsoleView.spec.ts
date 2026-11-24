@@ -61,6 +61,7 @@ describe('project Home active work', () => {
       ? new Promise(resolve => { finish = resolve }) : read(name, args))
     const { wrapper } = await mountProject()
     try {
+      expect(callOperation).toHaveBeenCalledWith('projectSetup.get', { project_id: 1, summary_only: true })
       const slot = wrapper.get('.home-setup-slot').element
       const actions = wrapper.get('.home-header-actions').element
       const setupAction = wrapper.get('.home-setup-action').element

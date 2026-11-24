@@ -65,7 +65,7 @@ def test_default_native_registration_admits_bound_project_without_global_root_pi
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(service, "default_home", lambda: home)
     monkeypatch.setattr(bridge, "default_home", lambda: home)
-    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda: "/fixture/agy")
+    monkeypatch.setattr(antigravity, "resolve_antigravity_bin", lambda **_: "/fixture/agy")
     monkeypatch.setattr(antigravity, "token_preflight", lambda _home: None)
     monkeypatch.setattr(install, "stackos_skill_is_current", lambda *a, **kw: True)
     monkeypatch.setattr(install, "stackos_skill_is_owned", lambda *a, **kw: True)
@@ -933,6 +933,111 @@ def test_source_parse_errors_keep_registered_read_and_reminder_responses_truthfu
     assert reminder.json()["data"]["setup_reminder_dismissed_at"]
     assert reminder.json()["data"]["configured_count"] == 1
     assert reminder.json()["data"]["workflows"][0]["status"] == "source_unavailable"
+
+    summary = api.post(
+        "/api/v1/operations/projectSetup.get/call",
+        json={
+            "arguments": {"project_id": project_id, "summary_only": True, "response_mode": "raw"}
+        },
+        headers=ui,
+    )
+    assert summary.status_code == 200, summary.text
+    summary_workflow = summary.json()["workflows"][0]
+    assert summary_workflow["status"] == workflow["status"]
+    assert summary_workflow["diagnostic"] == workflow["diagnostic"]
+    assert summary_workflow["successful"] is None
+    assert summary.json()["configured_count"] == 1
+
+
+def test_home_summary_keeps_all_workflows_without_constructing_detail_output(
+    api, project_id, settings, tmp_path, monkeypatch
+):
+    from stackos.repositories import project_setup
+    from stackos.repositories.project_setup import SetupResult
+
+    root = tmp_path / "repo"
+    sources = root / ".stackos" / "workflows"
+    sources.mkdir(parents=True)
+    keys = [f"sample.workflow-{i:02}" for i in range(29)]
+    for key in keys:
+        (sources / f"{key}.yaml").write_text(
+            "schema_version: stackos.workflow-template.v1\n"
+            f"key: {key}\nname: Workflow {key}\nversion: 0.1.0\n"
+            "steps:\n  - id: work\n    title: Work\n    instructions:\n      - "
+            + "Synthetic guidance. " * 500
+            + "\noutputs:\n  - key: summary\n    type: object\n"
+        )
+    with Session(api.app.state.engine) as session:
+        binding = (
+            WorkspaceRepository(session)
+            .connect(
+                project_id=project_id, repo_fingerprint=f"path:{root}", last_known_root=str(root)
+            )
+            .data
+        )
+        ProjectRepository(session).update(project_id, primary_workspace_binding_id=binding.id)
+        repo = ProjectSetupRepository(session)
+        for key in keys:
+            result = (
+                SetupResult(
+                    attempt_ref="fixture/partial",
+                    result_ref="fixture/partial",
+                    status="unfinished",
+                    changes=["partial edit"],
+                )
+                if key == keys[-1]
+                else verified_result(repo, project_id, key)
+            )
+            repo.record_result(project_id, key, expected_revision=0, result=result)
+        repo.set_reminders(project_id, dismiss_updates=True)
+    changed = sources / f"{keys[-3]}.yaml"
+    changed.write_text(changed.read_text().replace("version: 0.1.0", "version: 0.2.0"))
+    (sources / f"{keys[-2]}.yaml").unlink()
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def read(**arguments):
+        response = api.post(
+            "/api/v1/operations/projectSetup.get/call",
+            json={"arguments": {"project_id": project_id, "response_mode": "raw", **arguments}},
+            headers=ui,
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    detail = read()
+    output_type = project_setup.SetupWorkflowOut
+    constructed = []
+
+    def summary_output(**values):
+        # Guard the producer, not just the serialized response: no source/report
+        # dictionaries may enter the heavy output model on a Home read.
+        assert values.get("successful") is None
+        assert values.get("latest_result") is None
+        assert not values.get("available_sources")
+        constructed.append(values["workflow_key"])
+        return output_type(**values)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(project_setup, "SetupWorkflowOut", summary_output)
+        summary = read(summary_only=True)
+    assert constructed == keys
+    assert summary["summary_only"] is True and detail["summary_only"] is False
+    assert len(summary["workflows"]) == 29
+    assert summary["configured_count"] == 28
+    assert summary["update_count"] == 1
+    assert summary["unknown_count"] == 2
+    assert summary["status"] == "setup_needed"
+    for slim, full in zip(summary["workflows"], detail["workflows"], strict=True):
+        assert slim == {**full, "successful": None, "latest_result": None, "available_sources": []}
+    assert {item["status"] for item in summary["workflows"]} == {
+        "current",
+        "update_available",
+        "source_unavailable",
+        "unknown",
+    }
+    assert summary == {**detail, "summary_only": True, "workflows": summary["workflows"]}
+    assert len(json.dumps(summary)) < len(json.dumps(detail)) / 20
+    assert read(**summary["detail_ref"]["arguments"]) == detail
 
 
 @pytest.mark.asyncio

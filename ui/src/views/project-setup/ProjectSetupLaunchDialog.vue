@@ -22,6 +22,10 @@ const { hostStatuses, loadHostStatuses } = useHomeAgentHostStatuses(isDesktopShe
 const hosts = computed<DesktopMcpHostStatus[]>(() => hostStatuses.value.items)
 const loading = ref(true)
 const catalogError = ref<string | null>(null)
+const loadedDetails = ref<SchemaProjectSetupOut | null>(null)
+const details = computed(() => props.state.summary_only
+  ? (loadedDetails.value?.project_id === props.state.project_id ? loadedDetails.value : null)
+  : props.state)
 const saved = props.state.launch_preferences ?? {}
 const hostKey = ref(typeof saved.host_key === 'string' ? saved.host_key : '')
 const model = ref(typeof saved.model === 'string' ? saved.model : '')
@@ -47,7 +51,8 @@ const reasoningChoices = computed(() => capabilityReasoningChoices(catalog.value
 const reasoningOptions = computed(() => capabilityReasoningOptions(catalog.value, model.value, reasoning.value, 'Agent default'))
 const selectionError = computed(() => reasoning.value && !reasoningChoices.value.includes(reasoning.value)
   ? `Reasoning ${reasoning.value} is unavailable for this model. Choose a supported level or Agent default.` : null)
-const ready = computed(() => props.state.folder_status === 'available' && executionAvailable(host.value) && !selectionError.value
+const ready = computed(() => props.state.folder_status === 'available' && details.value?.folder_status === 'available'
+  && !catalogError.value && executionAvailable(host.value) && !selectionError.value
   && (!usesCustomModel.value || !!model.value.trim())
   && (!catalog.value?.requires_provider_model || (provider.value.trim() && model.value.trim())))
 const hostOptions = computed(() => supported.value.map(item => ({ value: item.host_key, label: item.display_name || item.host_key, disabled: !executionAvailable(item) })))
@@ -99,15 +104,21 @@ function changeHost(value: string | number | null): void {
 async function loadHosts(): Promise<void> {
   loading.value = true
   catalogError.value = null
+  const projectId = props.state.project_id
   try {
-    await loadHostStatuses()
-    if (disposed) return
+    const [, preview] = await Promise.all([
+      loadHostStatuses(),
+      props.state.summary_only || !hostKey.value ? readProjectSetup(projectId, !hostKey.value) : null,
+    ])
+    if (disposed || props.state.project_id !== projectId) return
     if (hostStatuses.value.kind === 'error') throw new Error(hostStatuses.value.message)
+    if (preview) {
+      if (preview.project_id !== projectId || preview.summary_only) throw new Error('Project setup details could not be loaded.')
+      loadedDetails.value = preview
+    }
     // Initial host inheritance belongs to the launch resolver, not the user
     // change handler (which intentionally clears incompatible selections).
-    if (!hostKey.value) {
-      const preview = await readProjectSetup(props.state.project_id, true)
-      if (disposed) return
+    if (!hostKey.value && preview) {
       const effective = preview.launch_preferences ?? {}
       const effectiveHost = typeof effective.host_key === 'string' ? effective.host_key : ''
       if (Object.keys(saved).length) {
@@ -157,11 +168,11 @@ async function submit(): Promise<void> {
         {{ state.status === 'updates_available' ? `${state.update_count} workflows have new setup guidance. Your agent will update and verify them.` : 'Your agent will prepare your workflows and verify they are ready to use.' }}
       </p>
       <div
-        v-if="state.workflows?.length"
+        v-if="details?.workflows?.length"
         class="divide-y divide-border-subtle rounded-lg border border-default"
       >
         <div
-          v-for="workflow in state.workflows"
+          v-for="workflow in details.workflows"
           :key="workflow.workflow_key"
           class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs"
         >
@@ -187,7 +198,7 @@ async function submit(): Promise<void> {
         </div>
       </div>
       <details
-        v-if="state.workflows?.length"
+        v-if="details?.workflows?.length"
         class="text-xs text-fg-muted"
       >
         <summary class="focus-ring cursor-pointer">
@@ -195,7 +206,7 @@ async function submit(): Promise<void> {
         </summary>
         <dl class="mt-2 space-y-3 break-words">
           <div
-            v-for="workflow in state.workflows"
+            v-for="workflow in details.workflows"
             :key="workflow.workflow_key"
           >
             <dt class="font-medium text-fg-default">

@@ -3,7 +3,7 @@ import { ProjectSetupOutFolder_status, ProjectSetupOutStatus } from '@/api'
 
 export function setupFixture(patch: Partial<SchemaProjectSetupOut> = {}): SchemaProjectSetupOut {
   return {
-    project_id: 1, eligible: true, folder_status: ProjectSetupOutFolder_status.available,
+    project_id: 1, summary_only: false, eligible: true, folder_status: ProjectSetupOutFolder_status.available,
     status: ProjectSetupOutStatus.setup_needed, binding_id: 1, project_folder_issue: null,
     configured_count: 0, unknown_count: 0, update_count: 0, current_attempt: null, work: null,
     setup_reminder_dismissed_at: null, update_reminder_dismissed_at: null,
