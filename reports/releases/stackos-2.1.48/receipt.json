@@ -1,0 +1,166 @@
+{
+  "version": "2.1.48",
+  "status": "published_verified",
+  "source_commit": "c2a4979adcc0014af9bfc6ce0fe344c4bf879b28",
+  "accepted_runtime_commit": "2604fc5f24cc9eab7b253f768ee36a72a97e2d37",
+  "previous_release_source": "d3f4a5599f1f0351489d2a8d3c25e40ead830fdc",
+  "included_commit_count": 10,
+  "authority": "Operator authorized local reinstall, recovery of current work, then deployment for other users to update.",
+  "public_base": "https://stackos.flowmonkey.io/StackOS/",
+  "tag": {
+    "name": "v2.1.48",
+    "verified": true,
+    "annotated_object": "69f41c6ea21954a4e5a5378d6dda47ad45bbfe39",
+    "peeled_commit": "c2a4979adcc0014af9bfc6ce0fe344c4bf879b28",
+    "verification_owner": "main release owner, remote readback"
+  },
+  "build_id": "20261124T182416Z",
+  "built_at": "2026-11-24T18:26:41Z",
+  "source_verification": {
+    "status": "passed",
+    "candidate": "c2a4979adcc0014af9bfc6ce0fe344c4bf879b28",
+    "command": "make signoff",
+    "exit_code": 0,
+    "python_passed": 9275,
+    "python_skipped": 4,
+    "ui_passed": 1902,
+    "lint_format_types_ui_build": "passed",
+    "desktop_checks": "passed",
+    "prior_failure_resolution": "The earlier shared-pool timeline assertion was repaired to observe the stream-owned connection lifecycle. The final complete source gate passed; the earlier failed gate remains historical evidence."
+  },
+  "changes": [
+    "Use a covering scalar revision index for delivery statistics without rewriting retained revision JSON.",
+    "Keep Home connection inspection free of live model-list probes and load bounded setup summaries.",
+    "Retain valid clean committed candidates from blocked delivery and admit explicit unchanged-candidate recovery from validated legacy receipts, preserving original base, sessions, history, repair allowance and independent review."
+  ],
+  "notarization": {
+    "status": "Accepted",
+    "signing_team": "TSHN26FR48",
+    "app_submission": "0792c9d8-1468-4cf5-be1b-041cddde599b",
+    "dmg_submission": "f6597755-2769-42b6-a343-69fce3c028c5"
+  },
+  "artifact_verification": {
+    "status": "passed",
+    "source_ui_template_matches": 110,
+    "signature_staple_gatekeeper_cli": "passed",
+    "final_hashes_independently_rechecked": true,
+    "independent_review": "approve",
+    "reviewer": "/root/home_read_review"
+  },
+  "artifacts": [
+    {
+      "name": "stackos-2.1.48-mac-arm64.dmg",
+      "bytes": 563440364,
+      "sha256": "edf457350c14fecb6d75008fefba05ec00f46322b82ae22a059d9d0c51941006",
+      "sha512_base64": "OswYsM8PenCm7gw9br2RrU0TEZBftTMTIhAv84DI3oA18A1FRIusvqw9Tc6zls9zPy+ZrxUOdbwkvsgctOkzsg=="
+    },
+    {
+      "name": "stackos-2.1.48-mac-arm64.zip",
+      "bytes": 552050005,
+      "sha256": "0c879f5a09287c643744663144b2d39846dacf983512a3215a87a7ee51d965fa",
+      "sha512_base64": "kQmhR4I/oH21CldcBZ+JgkWzzf4MTy4bUVjr/Tp0agLU6m4xaCXD8oNr+m25RoAZDMbhvjTj80+uGzxUkoAP4A=="
+    },
+    {
+      "name": "stackos-2.1.48-mac-arm64.dmg.blockmap",
+      "bytes": 586352,
+      "sha256": "0a0b9b6c48314f3ec246a175ae5e13235ef34f74b708277eb8106bd1896ecfb0",
+      "sha512_base64": "k1SiFo8CUJLOKeiMIg/tdwZcR9nWBq/cPxrqGw5EA6DEr24tHlZHdo8XmnTTnwSVqctg06iqYoZAv1DSAuolwQ=="
+    },
+    {
+      "name": "stackos-2.1.48-mac-arm64.zip.blockmap",
+      "bytes": 562260,
+      "sha256": "a0cbc74c9bb951271fc1e213bec513dcec6495163d0485aae242ceec3390d752",
+      "sha512_base64": "TdoX47XKTCv36ppipF7XUEKAPnnFwojD3/DZ+eQ17P7ZlEhsPp5XHUsZ+OITdMKs/WcpS1xGCV/XOesuGQhxwQ=="
+    },
+    {
+      "name": "stackos-latest-mac-arm64.dmg",
+      "bytes": 563440364,
+      "sha256": "edf457350c14fecb6d75008fefba05ec00f46322b82ae22a059d9d0c51941006",
+      "sha512_base64": "OswYsM8PenCm7gw9br2RrU0TEZBftTMTIhAv84DI3oA18A1FRIusvqw9Tc6zls9zPy+ZrxUOdbwkvsgctOkzsg=="
+    },
+    {
+      "name": "latest-mac.yml",
+      "bytes": 513,
+      "sha256": "132c97d3b6a1bbb945224f7d4401e4d26f56906a5ab11f5179568d812b358995",
+      "sha512_base64": "iz12CYaC+b3HNJIDyY0m0RdE/wYO+fwBiCORKq/7Sw3BZb6ZtSXOYkSAje8nGlcELyOPBZva1DlR7D7o3k9hlw=="
+    }
+  ],
+  "installed": {
+    "status": "verified_unsigned_local_build",
+    "performed_by": "main release owner",
+    "version": "2.1.48",
+    "build_id": "20261124T180722Z",
+    "source_commit": "c2a4979adcc0014af9bfc6ce0fe344c4bf879b28",
+    "identity": "Local unsigned build; not the final signed/notarized release artifact",
+    "health_doctor": "passed",
+    "managed_continuation": "continued; unfenced; no recovery required",
+    "recovery_module_source_identity": "exact match to reviewed task_delivery.py",
+    "state_preservation": "passed with qualified native state changes",
+    "fresh_cua_visual_walkthrough": false,
+    "fresh_signed_native_updater_proof": false
+  },
+  "preservation": {
+    "missing_project_or_account_identities": 0,
+    "encrypted_credential_payload_values": "unchanged",
+    "saved_host_account_identities": "unchanged",
+    "seed_and_daemon_token": "unchanged",
+    "retained_terminal_ticket_receipts": 785,
+    "telegram_changes": "Only telegram_auth.generation and telegram_auth.updated_at changed in two configurations, verified against the consistent private database backup.",
+    "claude_changes": "Current stable account identity matches the unchanged saved profile; global configuration hash changed.",
+    "qualification": "The preinstall global Claude file was retained as a hash only. Its exact field-level difference and cause are unproven; no cache-only or complete native-settings preservation claim is made. Agent-session counts alone do not prove absence of replacement or classify new sessions."
+  },
+  "installed_recovery_proof": {
+    "status": "passed",
+    "outcome": "Existing blocked committed work resumed unchanged through its original delivery and independent review; the child was accepted and advanced to workflow verification.",
+    "attempt_and_repair_allowance": "preserved",
+    "acceptance_boundary": "Candidate admission did not accept the child; current independent review did.",
+    "remaining_work": "Related workflows completed their separately owned combined integration. The recovered workflow passed verification, review and audit and reached active closeout; this snapshot does not claim its closeout completed. No current stop was observed in the release owner snapshot."
+  },
+  "updater_proof_reuse": {
+    "prior_release": "2.1.47",
+    "prior_receipt": "reports/releases/stackos-2.1.47/receipt.json",
+    "basis": "Updater controller, build wrapper, signing hook, artifact alias and notarized metadata refresh sources are unchanged between the prior released source and this candidate. Prior signed native download/install/relaunch evidence is retained for those unchanged mechanics. Current local install verifies the new payload and migration separately.",
+    "limit": "No fresh signed 2.1.48 native updater installation or final-public-artifact local installation was performed. Reused proof does not make the unsigned local build a signed update occurrence."
+  },
+  "publication": {
+    "status": "published",
+    "staging": "success",
+    "versioned_https_readback": "passed",
+    "staged_https_readback": "passed",
+    "alias_promotion": "success",
+    "feed_promotion": "success after alias promotion",
+    "public_readback": "passed"
+  },
+  "independent_review": {
+    "source_disposition": "pass",
+    "installed_preservation_disposition": "pass_with_qualification",
+    "artifact_disposition": "pass",
+    "release_disposition": "pass",
+    "required_repairs": [],
+    "artifact_reviewer": "/root/home_read_review",
+    "release_reviewer": "/root/home_read_review"
+  },
+  "action_call_ids": {
+    "upload": 15205,
+    "promote_alias": 15206,
+    "promote_feed": 15207
+  },
+  "public_readback": {
+    "passed": true,
+    "checked_at_unix": 1795547362.530943,
+    "method": "Full HTTPS downloads and accepted local SHA256 comparisons; four versioned artifacts and both staged files verified before alias/feed promotion; final live installer and feed verified afterward.",
+    "staged_files_verified": 6,
+    "final_files_verified": 2,
+    "accepted_source": "c2a4979adcc0014af9bfc6ce0fe344c4bf879b28",
+    "build_id": "20261124T182416Z"
+  },
+  "limitations": [
+    "Publication, source/artifacts, Apple trust, HTTPS readback, remote release tag and independent release review are verified.",
+    "No fresh visual walkthrough or signed 2.1.48 native updater occurrence is claimed.",
+    "Native Claude global-file changes are qualified; private state hashes and credential/account identifiers are excluded.",
+    "Related combined integration completed; recovered workflow closeout remained active in the recorded snapshot."
+  ],
+  "private_evidence_root": "/private/tmp/stackos-release-2.1.48",
+  "recorded_at": "2026-11-24T19:11:00.138649+00:00",
+  "released_on": "2026-11-24"
+}
