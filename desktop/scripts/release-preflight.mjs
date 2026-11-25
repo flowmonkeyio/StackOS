@@ -264,8 +264,10 @@ console.log("Commands:");
 console.log("  dev unsigned: pnpm --dir desktop run dist:mac:dev");
 console.log("  signed local: pnpm --dir desktop run dist:mac:signed");
 console.log("  signed local pinned: CSC_NAME='Name (TEAMID)' pnpm --dir desktop run dist:mac:signed");
-console.log("  notarized release: CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' pnpm --dir desktop run dist:mac:release");
-console.log("  validate notary profile: STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 CSC_NAME='Name (TEAMID)' APPLE_KEYCHAIN_PROFILE='profile' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' pnpm --dir desktop run release:preflight");
+console.log("  repository API-key release (from repo root): CSC_NAME='Name (TEAMID)' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' .venv/bin/python scripts/desktop-release.py build");
+console.log("  validate existing API-key credentials: STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 CSC_NAME='Name (TEAMID)' STACKOS_UPDATE_URL='https://stackos.flowmonkey.io/StackOS/' .venv/bin/python scripts/desktop-release.py preflight");
+console.log("  The repository wrapper privately loads APPLE_*/CSC_* from .env.local; it requires the API-key trio and clears competing methods. Inspect existing successful release configuration before requesting setup.");
+console.log("  Explicit keychain-profile or Apple-ID alternatives use the package commands directly with exactly one method; see docs/desktop-distribution.md. A missing profile does not block a configured API-key route.");
 console.log("");
 
 if (issues.length > 0) {

@@ -75,13 +75,19 @@ archives. The integration owner freezes the final accepted host source after
 ticket review, retaining excluded work and rollback references as described in
 [release signoff](release-signoff.md#accepted-sources-and-release-identity).
 
-Run the preflight before public release packaging:
+This repository's established release route uses the existing App Store Connect
+API key in private `.env.local` and the Developer ID identity already in the
+keychain. Inspect the latest successful release receipt and existing local
+configuration before requesting new setup. A missing example notarytool profile
+does not block this API-key route. Do not print or copy `.env.local` or key
+contents into logs, receipts, or chat.
+
+Run the preflight from the repository root before public release packaging:
 
 ```bash
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run release:preflight
+.venv/bin/python scripts/desktop-release.py preflight
 ```
 
 The preflight prints only whether required inputs are visible; it does not print
@@ -89,10 +95,9 @@ secret values. To also validate notarization credentials with Apple:
 
 ```bash
 STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 \
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run release:preflight
+.venv/bin/python scripts/desktop-release.py preflight
 ```
 
 ## Build Commands
@@ -342,36 +347,39 @@ signatures and the production update endpoint, while
 `STACKOS_SKIP_NOTARIZATION=1` is supplied by the script. This is distinct from
 an App Store submission. It is also distinct from a notarized direct download:
 macOS Gatekeeper can still warn or reject a signed-but-not-notarized app on a
-different Mac. When a notarytool credential profile is added, use
-`dist:mac:release` for the smooth public-download path.
+different Mac. Use the configured API-key release route below for notarized
+public downloads; it does not require a notarytool keychain profile.
 
 Every completed macOS build also refreshes
 `stackos-latest-mac-arm64.dmg` from the finished versioned DMG. Release builds
 create this alias only after notarization and stapling, so the stable website
 download is byte-identical to the verified release artifact.
 
-### One-time notarization profile setup
+### Repository API-key release
 
-Notarization is an automated Apple security scan for Developer ID software
-distributed outside the App Store; it is not an App Store submission. Create
-an app-specific password for the release Apple ID, then run this command in a
-local terminal. Do not put the password in the command or repository. When
-prompted, enter the app-specific password securely:
+Notarization is Apple's security scan for Developer ID software distributed
+outside the App Store. The existing repository configuration uses
+`APPLE_API_KEY` (the private key file path), `APPLE_API_KEY_ID`, and
+`APPLE_API_ISSUER` in `.env.local`. No new password or keychain profile is
+required when that route is configured.
 
-```bash
-xcrun notarytool store-credentials stackos-notary \
-  --apple-id "YOUR_APPLE_ID" \
-  --team-id "TSHN26FR48"
-```
+`scripts/desktop-release.py` reads `.env.local` as literal dotenv data and loads
+only `APPLE_*` and `CSC_*` variables into its child environment. Explicit caller
+values take precedence. It requires the complete API-key trio, removes competing
+profile/Apple-ID settings and signing/notarization bypass flags, and enables the
+strict release requirements. It never reads the `.p8` contents or prints these
+values. Public signing identity and update URL stay explicit nonsecret inputs.
+The wrapper delegates to `release:preflight` or `dist:mac:release`; the existing
+desktop scripts remain the validation and packaging owners. Direct `pnpm`
+commands do not load `.env.local` themselves.
 
-Validate the stored profile and all release inputs:
+Validate the existing API credentials and all release inputs:
 
 ```bash
 STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 \
 CSC_NAME="SERGEY RURA (TSHN26FR48)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run release:preflight
+.venv/bin/python scripts/desktop-release.py preflight
 ```
 
 Then build, submit, wait for acceptance, staple, and validate the public
@@ -379,18 +387,8 @@ release artifacts:
 
 ```bash
 CSC_NAME="SERGEY RURA (TSHN26FR48)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run dist:mac:release
-```
-
-Build signed and notarized release artifacts:
-
-```bash
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
-STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run dist:mac:release
+.venv/bin/python scripts/desktop-release.py build
 ```
 
 Public release builds require `CSC_NAME` and a non-localhost HTTPS
@@ -419,8 +417,11 @@ metadata.
 
 ## Signing and Notarization Environment
 
-Do not commit Apple credentials or paste them into agent chat. Pass them through
-the shell environment, a local secret manager, or CI secrets.
+Do not commit Apple credentials or paste them into agent chat. The repository
+wrapper privately loads the existing `.env.local` API-key route. Other operators
+and CI may supply credentials directly through the environment or a secret
+manager; the following alternatives are explicit setup choices, not requirements
+to replace this repository's working configuration.
 
 Signing accepts one of these inputs:
 
@@ -460,30 +461,33 @@ export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 export APPLE_TEAM_ID="ABCDE12345"
 ```
 
-Or store credentials in the macOS keychain with `xcrun notarytool
-store-credentials`, then pass the profile:
+Alternatively, explicitly select a macOS keychain profile. This is not the
+repository's default route. In a local terminal, enter the app-specific password
+at the secure prompt; do not put it in the command:
 
 ```bash
-xcrun notarytool store-credentials stackos-notary \
+xcrun notarytool store-credentials "YOUR_CHOSEN_PROFILE" \
   --apple-id "developer@example.com" \
-  --team-id "ABCDE12345" \
-  --password "app-specific-password"
+  --team-id "ABCDE12345"
 
-export APPLE_KEYCHAIN_PROFILE="stackos-notary"
+export APPLE_KEYCHAIN_PROFILE="YOUR_CHOSEN_PROFILE"
 export APPLE_KEYCHAIN="login.keychain"
 ```
+
+Select only one method in that child environment: unset the API-key and Apple-ID
+variables when choosing a profile. Run the canonical `pnpm --dir desktop run
+release:preflight` and `pnpm --dir desktop run dist:mac:release` commands with
+`CSC_NAME` and the HTTPS update URL explicitly supplied. The API-key wrapper
+deliberately does not select or fall back to these alternative methods.
 
 For a strict release dry-run that validates the env contract without invoking
 electron-builder:
 
 ```bash
 STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
-STACKOS_REQUIRE_SIGNING=1 \
-STACKOS_REQUIRE_UPDATE_URL=1 \
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-node desktop/scripts/build-mac.mjs
+.venv/bin/python scripts/desktop-release.py build
 ```
 
 Each build writes generated Electron and update configuration into its own
@@ -706,17 +710,15 @@ module is a dependency setup failure, not a successful scaffold-only check.
 Do not install dependencies concurrently with checks or packaging that use the
 same dependency directory.
 
-Release checks, once dependencies and signing are configured:
+Release checks, using the configured private API-key route:
 
 ```bash
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run release:preflight
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+.venv/bin/python scripts/desktop-release.py preflight
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run dist:mac:release
+.venv/bin/python scripts/desktop-release.py build
 ```
 
 Build-config smoke without invoking electron-builder:
@@ -727,16 +729,13 @@ STACKOS_UPDATE_URL="http://127.0.0.1:8765/stackos/macos" \
 node desktop/scripts/build-mac.mjs
 ```
 
-Strict release-config smoke:
+Strict release-config smoke with the same private API-key loader:
 
 ```bash
 STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
-STACKOS_REQUIRE_SIGNING=1 \
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_API_KEY="/absolute/path/to/AuthKey_XXXXXXXXXX.p8" \
-APPLE_API_KEY_ID="XXXXXXXXXX" \
-APPLE_API_ISSUER="00000000-0000-0000-0000-000000000000" \
-node desktop/scripts/build-mac.mjs
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
+STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
+.venv/bin/python scripts/desktop-release.py build
 ```
 
 After building signed artifacts, verify signatures and stapling before sharing

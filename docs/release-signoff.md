@@ -562,24 +562,27 @@ Doctor can be satisfied by any healthy local daemon process.
 
 For desktop release candidates, also build the Python payload and macOS
 artifacts after dependencies, signing, notarization, and the custom update
-endpoint are configured:
+endpoint are configured. This repository already uses App Store Connect API-key
+credentials in private `.env.local`; inspect successful release receipts and
+existing configuration before requesting another method. A missing example
+keychain profile is not an API-key blocker. The maintained loader below privately
+loads only `APPLE_*`/`CSC_*`, requires API-key authentication, clears competing
+methods and bypass flags, and delegates the canonical package commands. It does
+not print credentials. For explicitly selected alternate methods, follow
+[signing environment](desktop-distribution.md#signing-and-notarization-environment).
 
 ```bash
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+STACKOS_PREFLIGHT_VALIDATE_NOTARY=1 \
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run release:preflight
+.venv/bin/python scripts/desktop-release.py preflight
 STACKOS_DESKTOP_BUILD_DRY_RUN=1 \
-STACKOS_REQUIRE_SIGNING=1 \
-STACKOS_REQUIRE_UPDATE_URL=1 \
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-node desktop/scripts/build-mac.mjs
-CSC_NAME="Example Org (ABCDE12345)" \
-APPLE_KEYCHAIN_PROFILE="stackos-notary" \
+.venv/bin/python scripts/desktop-release.py build
+CSC_NAME="SERGEY RURA (TSHN26FR48)" \
 STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
-pnpm --dir desktop run dist:mac:release
+.venv/bin/python scripts/desktop-release.py build
 ```
 
 Before public desktop distribution, record the managed-update evidence:
@@ -596,7 +599,7 @@ Before public desktop distribution, record the managed-update evidence:
   mirrored or redirected through one higher-version bridge release so already
   installed apps can receive the new packaged endpoint.
 - The strict release dry-run passed with signing and notarization env supplied
-  through the environment or CI secrets, and no Apple credential values were
+  through the private loader, environment or CI secrets, and no Apple credential values were
   written into generated config files or logs.
 - Apple signing and notarization status is recorded for each published macOS
   artifact. Include `codesign --verify --deep --strict`, `spctl --assess`, and

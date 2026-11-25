@@ -331,13 +331,25 @@ fresh install happy path. Verify the lifecycle state machine end to end:
   `STACKOS_SKIP_NOTARIZATION`. Do not ask users to paste Apple certificates,
   `.p8` contents, app-specific passwords, or certificate passwords into chat;
   accept them only through local environment variables, keychain profiles, or CI
-  secrets. Public release builds must pin signing with `CSC_NAME` or `CSC_LINK`,
-  set a non-localhost HTTPS `STACKOS_UPDATE_URL`, and use the package release
-  command:
+  secrets. This repository's established release route uses the existing App
+  Store Connect API-key trio in private `.env.local`, with its Developer ID
+  identity already in the keychain. Inspect the latest successful release
+  receipt and existing configuration before requesting new credentials or a
+  notarytool profile; a missing example profile is not a blocker for this route.
+  Use the maintained wrapper to load only `APPLE_*`/`CSC_*` values privately and
+  delegate to the package release commands. It selects API-key authentication,
+  removes conflicting profile/Apple-ID and bypass flags, preserves explicit
+  caller values, and never prints credentials. Public release builds must pin
+  `CSC_NAME` (with `CSC_LINK` optional for import) and use a non-localhost HTTPS
+  update URL:
   ```bash
-  CSC_NAME="Example Org (ABCDE12345)" APPLE_KEYCHAIN_PROFILE="stackos-notary" STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" pnpm --dir desktop run release:preflight
-  CSC_NAME="Example Org (ABCDE12345)" APPLE_KEYCHAIN_PROFILE="stackos-notary" STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" pnpm --dir desktop run dist:mac:release
+  CSC_NAME="SERGEY RURA (TSHN26FR48)" STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" .venv/bin/python scripts/desktop-release.py preflight
+  CSC_NAME="SERGEY RURA (TSHN26FR48)" STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" .venv/bin/python scripts/desktop-release.py build
   ```
+  Add `STACKOS_PREFLIGHT_VALIDATE_NOTARY=1` to preflight for live Apple credential
+  validation. Keychain-profile and Apple-ID routes remain explicit alternatives
+  for other operators through the documented package commands; do not mix them
+  into this repository's API-key wrapper.
 - Optional agent hosts are advisory when absent or unsupported. They should not
   block install/repair unless StackOS owns an unsafe/stale entry that requires
   repair. Claude Desktop config writes require restarting Claude Desktop before
