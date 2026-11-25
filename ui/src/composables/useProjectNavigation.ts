@@ -12,12 +12,14 @@ import {
 } from '@/lib/stackos/projectNavigation'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import { useProjectsStore, type Project } from '@/stores/projects'
+import { useAuthStore } from '@/stores/auth'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 
 export function useProjectNavigation() {
   const route = useRoute()
   const router = useRouter()
   const projects = useProjectsStore()
+  const auth = useAuthStore()
   const catalog = useStackOsCatalogStore()
   const { items: projectItems, activeProject } = storeToRefs(projects)
   const { enabledPlugins, pluginProjectId } = storeToRefs(catalog)
@@ -64,6 +66,7 @@ export function useProjectNavigation() {
   }
 
   function synchronizeSuccessfulRoute(to: RouteLocationNormalized): void {
+    if (auth.mode === 'server' && !auth.ready) return
     const projectId = projectIdFromRoute(to)
     if (projectId !== null && !projects.isProjectDeleted(projectId)) projects.setActiveProjectId(projectId)
     const navigationId = to.path.startsWith('/projects/')

@@ -18,7 +18,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiRadioGroup` | keyboard arrows |
 | `UiRange` | tick marks optional |
 | `UiSecretInput` | reveal + copy |
-| `UiFormField` | label + control + help/error/dirty |
+| `UiFormField` | label + control + help/error/dirty; `label-actions` slot for context-relevant secondary controls |
 | `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; `describedBy` links body-owned descriptions; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
 | `UiConfirmDialog` | builds on Dialog; accessible explanation and supplemental slot in body above cancel/confirm actions |
 | `UiSidePanel` | left/right; 480/720 |
@@ -397,6 +397,16 @@ cards/header use `executionStatus` from the existing execution presentation owne
 Stopped is a state badge, with the actual reason in card context/header inspection.
 It never becomes a fictional prerequisite. Resuming clears the stopped presentation.
 Graph focus remains available; only the recorded stopped ticket gets its marker.
+
+The same execution projection carries the connected computer's observed
+`connection_state` and the invocation's `stop_requested` flag through the existing
+usage stream and tracker reads. Board, Graph and details distinguish Disconnected,
+Outcome unknown and Stop pending without changing tracker status. Persisted
+delivery uncertainty and unconfirmed cancellation remain visible after the
+invocation exits, until explicit reconciliation. The usage indicator's Live label
+describes the update feed; it yields to a known runtime warning and never proves
+process termination. No consumer opens another connection or poller; retained
+totals, Input/Cache/Output colors and item elapsed time keep their existing owners.
 
 Route views are composition roots, not feature implementations. Use the
 following ownership split for new work and when a touched view has accumulated

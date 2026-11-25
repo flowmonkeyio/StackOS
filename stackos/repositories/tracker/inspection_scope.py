@@ -7,9 +7,10 @@ import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, false, func, or_, true
+from sqlalchemy import String, and_, cast, false, or_, true
 from sqlmodel import Session, col, select
 
+from stackos.db.json_expressions import json_kind, json_value
 from stackos.db.models import (
     ExecutionContext,
     ExecutionContextLink,
@@ -34,8 +35,8 @@ def validate_limit(limit: int) -> None:
 def typed_match(column: Any, key: str, values: Any, *, numeric: bool = False) -> Any:
     """No coercion of malformed legacy IDs, bools, or nested/lookalike keys."""
     return and_(
-        func.json_type(column, f"$.{key}") == ("integer" if numeric else "text"),
-        func.json_extract(column, f"$.{key}").in_(list(values)),
+        json_kind(column, key) == ("integer" if numeric else "text"),
+        cast(json_value(column, key).as_string(), String).in_([str(value) for value in values]),
     )
 
 

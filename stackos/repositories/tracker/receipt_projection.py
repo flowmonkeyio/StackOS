@@ -11,7 +11,8 @@ from functools import lru_cache
 from typing import Any
 
 from sqlalchemy import delete, inspect, select
-from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
 from sqlmodel import col
 
@@ -215,6 +216,7 @@ def sync_receipt_projection(
         ).mappings()
     }
     changes, removed = _projection_changes(ticket_id, evidence, previous_evidence, old)
+    insert = postgres_insert if connection.dialect.name == "postgresql" else sqlite_insert
     for values in changes:
         statement = insert(table).values(**values)
         connection.execute(

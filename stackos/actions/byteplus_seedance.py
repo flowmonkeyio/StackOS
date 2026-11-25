@@ -283,7 +283,14 @@ class BytePlusSeedanceVideoActionConnector:
             asset_dir = request.asset_dir or Settings().generated_assets_dir
             try:
                 paths = [
-                    artifact_path(asset_dir, str(ref), label="input_image_refs") for ref in refs
+                    artifact_path(
+                        asset_dir,
+                        str(ref),
+                        label="input_image_refs",
+                        session=request.session,
+                        project_id=request.project_id,
+                    )
+                    for ref in refs
                 ]
                 for path in paths:
                     BytePlusArkIntegration.ensure_seedance_image_preflight(path)
@@ -392,7 +399,16 @@ class BytePlusSeedanceVideoActionConnector:
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         refs = payload.get("input_image_refs")
         image_paths: list[Path] = (
-            [artifact_path(asset_dir, str(ref), label="input_image_refs") for ref in refs]
+            [
+                artifact_path(
+                    asset_dir,
+                    str(ref),
+                    label="input_image_refs",
+                    session=request.session,
+                    project_id=request.project_id,
+                )
+                for ref in refs
+            ]
             if isinstance(refs, list)
             else []
         )

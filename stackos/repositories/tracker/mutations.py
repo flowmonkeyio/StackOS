@@ -734,9 +734,13 @@ class TrackerMutationMixin:
         ).hexdigest()
         operation = "tracker.updateTaskContent"
         try:
-            # Reserve the SQLite writer before reading the task, revision or
-            # receipt. Concurrent callers cannot append from the same snapshot.
-            self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            # Reserve before reading the task, revision or receipt, including
+            # absent intent keys. Release with the existing commit/rollback.
+            connection = self._s.connection()
+            if connection.dialect.name == "postgresql":
+                connection.exec_driver_sql("LOCK TABLE tracker_tasks IN SHARE ROW EXCLUSIVE MODE")
+            else:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
             self._s.expire_all()
             tracker = self._tracker_or_none(project_id=project_id)
             if tracker is None:

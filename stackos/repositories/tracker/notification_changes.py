@@ -3,6 +3,7 @@
 from sqlalchemy import case, func, select
 from sqlmodel import Session, col
 
+from stackos.db.json_expressions import json_kind, json_value
 from stackos.db.models import Project, TaskTracker, TrackerRevision, TrackerTask
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.tracker.board import valid_delivery_json
@@ -25,8 +26,8 @@ def notification_changes(
             col(Project.id) == project_id,
             col(Project.is_active).is_(True),
             (
-                func.json_type(Project.cleanup_json).is_(None)
-                | (func.json_type(Project.cleanup_json) == "null")
+                json_kind(Project.cleanup_json).is_(None)
+                | (json_kind(Project.cleanup_json) == "null")
             ),
         )
     ).scalar_one_or_none()
@@ -68,7 +69,7 @@ def notification_changes(
     )
 
     def delivery(column):
-        status = func.json_extract(column, "$.metadata_json.delivery.status")
+        status = json_value(column, "metadata_json", "delivery", "status").as_string()
         return case(
             (
                 valid_delivery_json(column, "$.metadata_json.delivery")
@@ -83,9 +84,9 @@ def notification_changes(
             revisions.c.rev,
             col(TrackerTask.id),
             col(TrackerTask.key),
-            func.substr(func.json_extract(revisions.c.after_json, "$.title"), 1, 200),
-            func.json_extract(revisions.c.before_json, "$.status"),
-            func.json_extract(revisions.c.after_json, "$.status"),
+            func.substr(json_value(revisions.c.after_json, "title").as_string(), 1, 200),
+            json_value(revisions.c.before_json, "status").as_string(),
+            json_value(revisions.c.after_json, "status").as_string(),
             delivery(revisions.c.before_json),
             delivery(revisions.c.after_json),
         )

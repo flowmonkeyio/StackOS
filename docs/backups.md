@@ -1,6 +1,27 @@
 # Backup and recovery
 
-StackOS creates encrypted local backups of its database, matching credential
+## Availability
+
+The archive commands and desktop controls below support standalone SQLite
+installations only. Postgres servers and connected runtimes refuse legacy
+full-instance backup, archive/key export and restore with
+`unsupported_backup_backend`, before opening local state, SQLite, keys or
+archives. The online Backups page explains this limit and offers no local
+backup controls. Sign-in does not grant all-user export or local administration.
+
+There is no Postgres backup subsystem, historical importer or automatic rollback
+framework. A legacy archive cannot seed an online account. Existing standalone
+installations, keys and archives stay in place; encrypted v2/v3 recovery remains
+available in an explicitly selected standalone environment. Plaintext ZIPs remain
+unchanged and are still rejected by encrypted restore.
+
+For a fresh isolated environment, follow [local Supabase setup](setup.md#isolated-local-supabase-environments)
+and [the first connected flow](setup.md#first-connected-flow-and-manual-attention).
+Production Compose StackOS with hosted Supabase is a separate deployment task.
+
+## Standalone coverage
+
+In standalone mode, StackOS creates encrypted local backups of its database, matching credential
 seed and daemon token, all managed project files under `data/projects/`, and
 every explicitly enrolled external folder. Project Finance records, invoices,
 receipts, schemas, reviews and exports are included automatically. No Finance

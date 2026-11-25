@@ -52,7 +52,7 @@ def test_project_order_migration_preserves_visible_order_and_nonorder_data(tmp_p
     engine.dispose()
     # A committed upgrade with a lost version stamp must not reset saved moves.
     with sqlite3.connect(settings.db_path) as connection:
-        connection.execute("UPDATE alembic_version SET version_num='0037_schedule_id_nonreuse'")
+        connection.execute("UPDATE alembic_version SET version_num='0041_account_owners'")
     command.upgrade(config, "head")
     engine = make_engine(settings.db_path)
     with Session(engine) as session:

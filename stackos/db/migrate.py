@@ -10,7 +10,7 @@ from alembic.config import Config
 from sqlalchemy import inspect, text
 
 from stackos.config import Settings, get_settings
-from stackos.db.connection import make_engine
+from stackos.db.connection import database_url, make_engine, make_settings_engine
 
 
 @dataclass(frozen=True)
@@ -25,14 +25,15 @@ def _alembic_ini_path() -> Path:
 
 
 def alembic_config(settings: Settings) -> Config:
-    """Build an Alembic config pinned to the configured SQLite database."""
+    """Build an Alembic config pinned to the selected application database."""
     repo_root = Path(__file__).resolve().parents[2]
     cfg_path = _alembic_ini_path()
     migrations_path = Path(__file__).resolve().parent / "migrations"
     cfg = Config(str(cfg_path)) if cfg_path.exists() else Config()
     cfg.set_main_option("script_location", str(migrations_path))
     cfg.set_main_option("prepend_sys_path", str(repo_root))
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")
+    # ConfigParser interpolates percent-escaped URL credentials unless escaped again.
+    cfg.set_main_option("sqlalchemy.url", database_url(settings).replace("%", "%%"))
     cfg.attributes["stackos_settings"] = settings
     return cfg
 
@@ -64,7 +65,7 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
     Retain the known pre-catalog baseline, then let the normal catalog
     migrations complete both missing and older tables before claiming head.
     """
-    if not settings.db_path.exists():
+    if settings.process_role != "standalone" or not settings.db_path.exists():
         return False
 
     required_tables = {
@@ -116,9 +117,9 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
 def upgrade_to_head(settings: Settings) -> MigrationResult:
     """Upgrade the configured database to Alembic head.
 
-    Handles pre-Alembic create_all-shaped local databases before invoking
-    Alembic's normal upgrade machinery, so fresh and existing local installs
-    land on a version-tracked schema.
+    Handles pre-Alembic create_all-shaped standalone databases before invoking
+    Alembic's normal upgrade machinery. Selected Postgres always runs migrations;
+    it never adopts unversioned tables by inference.
     """
     settings.ensure_dirs()
     cfg = alembic_config(settings)
@@ -129,9 +130,9 @@ def upgrade_to_head(settings: Settings) -> MigrationResult:
 
 def current_alembic_version(settings: Settings) -> str | None:
     """Return the current version row, or None when version tracking is absent."""
-    if not settings.db_path.exists():
+    if settings.process_role == "standalone" and not settings.db_path.exists():
         return None
-    engine = make_engine(settings.db_path)
+    engine = make_settings_engine(settings)
     try:
         with engine.connect() as conn:
             if not inspect(conn).has_table("alembic_version"):

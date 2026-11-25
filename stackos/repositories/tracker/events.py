@@ -7,10 +7,11 @@ from typing import Any
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import and_, case, func
+from sqlalchemy import JSON, String, and_, case, cast, column, literal
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, col
 
+from stackos.db.json_expressions import json_array_members, json_kind, json_value
 from stackos.db.models import ProjectEvent, TrackerItemStatus, TrackerTask, TrackerTicket
 from stackos.events import StackOSEvent, StackOSEventSource
 from stackos.host_mcp.service import ActiveInvocation
@@ -61,21 +62,21 @@ def tracker_batch_task_filter(*, task_key: str, task_id: int | None = None) -> A
     Activity additionally verifies the persisted task ID. Guard JSON shape so
     nested lookalikes, strings and malformed member values cannot establish scope.
     """
-    members = func.json_each(ProjectEvent.metadata_json, "$.affected_tasks").table_valued(
-        "value", "type"
-    )
-    member = case((members.c.type == "object", members.c.value), else_="{}")
+    members = json_array_members(
+        json_value(ProjectEvent.metadata_json, "affected_tasks")
+    ).table_valued(column("value", JSON), column("type", String))
+    member = case((members.c.type == "object", members.c.value), else_=literal({}, JSON))
     filters = [
-        func.json_type(member, "$.task_key") == "text",
-        func.json_extract(member, "$.task_key") == task_key,
-        func.json_type(member, "$.task_id") == "integer",
+        json_kind(member, "task_key") == "text",
+        json_value(member, "task_key").as_string() == task_key,
+        json_kind(member, "task_id") == "integer",
     ]
     if task_id is not None:
-        filters.append(func.json_extract(member, "$.task_id") == task_id)
+        filters.append(cast(json_value(member, "task_id").as_string(), String) == str(task_id))
     return and_(
         col(ProjectEvent.event_type) == TRACKER_TASKS_CHANGED,
         col(ProjectEvent.source_type) == "tracker",
-        func.json_type(ProjectEvent.metadata_json, "$.affected_tasks") == "array",
+        json_kind(ProjectEvent.metadata_json, "affected_tasks") == "array",
         sa_select(1).select_from(members).where(*filters).exists(),
     )
 

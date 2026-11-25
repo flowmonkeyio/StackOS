@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import JSON, Boolean, DateTime, Integer, LargeBinary, delete
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, LargeBinary, delete
 from sqlmodel import Session, SQLModel, select
 
 from stackos.browser.runtime import BrowserRuntime, _profile_lock, browser_profile_dir
@@ -598,6 +598,8 @@ def _seed_graph(session, project_id):
                 values[col.name] = False
             elif isinstance(col.type, Integer):
                 values[col.name] = 1
+            elif isinstance(col.type, Float):
+                values[col.name] = 1.0
             elif isinstance(col.type, LargeBinary):
                 values[col.name] = b"fixture-only"
             else:

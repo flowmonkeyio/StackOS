@@ -17,6 +17,8 @@ import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiToast from '@/components/ui/UiToast.vue'
 import { useTaskNotifications } from '@/composables/useTaskNotifications'
+import { UiButton } from '@/components/ui'
+import SignInView from '@/views/SignInView.vue'
 import { useProjectNavigation } from '@/composables/useProjectNavigation'
 import { useAuthStore } from '@/stores/auth'
 import { useToastsStore } from '@/stores/toasts'
@@ -108,10 +110,23 @@ function dismissToast(id: number): void {
 }
 
 const isAuthErrorRoute = computed(() => route.name === 'auth-error')
+const logoutError = ref('')
+async function signOut(): Promise<void> {
+  try {
+    await auth.logout()
+    window.location.assign('/sign-in')
+  } catch {
+    logoutError.value = 'Could not sign out. Try again.'
+  }
+}
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-bg-app text-fg-default md:flex-row">
+  <SignInView v-if="auth.mode === 'server' && (!auth.ready || route.name === 'sign-in')" />
+  <div
+    v-else
+    class="flex min-h-screen flex-col bg-bg-app text-fg-default md:flex-row"
+  >
     <a
       href="#cs-main"
       class="sr-only z-toast rounded-sm bg-accent px-3 py-2 text-sm font-medium text-fg-on-accent focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
@@ -191,7 +206,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
                 StackOS
               </div>
               <div class="text-2xs leading-tight text-sb-muted">
-                Local runtime
+                {{ auth.mode === 'server' ? 'Private workspace' : 'Local runtime' }}
               </div>
             </div>
           </RouterLink>
@@ -248,6 +263,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
         </nav>
 
         <nav
+          v-if="auth.mode !== 'server'"
           aria-label="App navigation"
           class="shrink-0 border-t border-sb-border px-3 pb-2 pt-3"
         >
@@ -307,6 +323,25 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             <span>Patterns</span>
           </RouterLink>
         </nav>
+
+        <div
+          v-if="auth.mode === 'server'"
+          class="border-t border-sb-border px-4 py-3"
+        >
+          <UiButton
+            variant="secondary"
+            @click="signOut"
+          >
+            Sign out
+          </UiButton>
+          <p
+            v-if="logoutError"
+            class="mt-2 text-xs text-sb-fg"
+            role="alert"
+          >
+            {{ logoutError }}
+          </p>
+        </div>
 
         <div class="flex shrink-0 items-center justify-between gap-2 border-t border-sb-border px-4 py-3">
           <span class="text-2xs text-sb-muted">{{ theme === 'dark' ? 'Dark' : 'Light' }} theme</span>
@@ -369,7 +404,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
       <RouterView :key="routeViewKey" />
     </main>
 
-    <DesktopUpdatePrompt />
+    <DesktopUpdatePrompt v-if="auth.mode !== 'server'" />
   </div>
 </template>
 

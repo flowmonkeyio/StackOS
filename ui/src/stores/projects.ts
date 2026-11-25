@@ -7,7 +7,7 @@ import { apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { parseStackOsDate } from '@/lib/stackos/time'
 import { changesOrder, type ReorderMove } from '@/components/ui/verticalReorder'
-import type { SchemaProjectCreateRequest, SchemaWriteEnvelopeProjectCleanupResult, SchemaWriteResponseProjectOut, components } from '@/api'
+import type { SchemaWriteEnvelopeProjectCleanupResult, SchemaWriteResponseProjectOut, components } from '@/api'
 
 export type Project = components['schemas']['ProjectOut']
 export type ProjectCleanupResult = components['schemas']['ProjectCleanupResult']
@@ -256,31 +256,6 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
-  async function createProject(body: SchemaProjectCreateRequest): Promise<Project> {
-    if (managementPending.value || loading.value) throw new Error('Wait for the current project update.')
-    loading.value = true
-    error.value = null
-    try {
-      const response = await apiFetch<SchemaWriteResponseProjectOut>('/api/v1/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      items.value = [
-        ...items.value.filter((project) => project.id !== response.data.id),
-        response.data,
-      ]
-      totalEstimate.value = Math.max(totalEstimate.value + 1, items.value.length)
-      activeProjectId.value = response.data.id
-      return response.data
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to create project'
-      throw err
-    } finally {
-      loading.value = false
-    }
-  }
-
   function setActiveProjectId(id: number | null): void {
     activeProjectId.value = id
   }
@@ -307,7 +282,6 @@ export const useProjectsStore = defineStore('projects', () => {
     isProjectDeleted,
     reconcileProjectMetadata,
     moveProject,
-    createProject,
     setActiveProjectId,
     getById,
   }

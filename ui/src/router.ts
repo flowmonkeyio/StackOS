@@ -3,6 +3,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import HomeView from './views/HomeView.vue'
 import LocalSetupView from './views/LocalSetupView.vue'
 import AuthErrorView from './views/AuthErrorView.vue'
+import SignInView from './views/SignInView.vue'
 import ProjectDetailView from './views/ProjectDetailView.vue'
 import HomeConsoleView from './views/HomeConsoleView.vue'
 import ProjectSetupView from './views/project-setup/ProjectSetupView.vue'
@@ -23,6 +24,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/setup', name: 'local-setup', component: LocalSetupView },
   { path: '/auth-error', name: 'auth-error', component: AuthErrorView },
+  { path: '/sign-in', name: 'sign-in', component: SignInView },
   { path: '/accounts', name: 'accounts', component: AccountsView },
   { path: '/patterns/:patternId?', name: 'patterns', component: PatternsView },
   { path: '/projects', redirect: '/' },

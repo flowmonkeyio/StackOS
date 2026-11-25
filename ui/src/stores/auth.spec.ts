@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { useAuthStore } from './auth'
+import { registerAuthStoreWithClient, useAuthStore } from './auth'
+import { apiFetch, apiStream, clearAuthStore } from '@/lib/client'
 
 const ORIG_FETCH = globalThis.fetch
 
@@ -13,6 +14,7 @@ describe('auth store', () => {
   })
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
+    clearAuthStore()
     vi.restoreAllMocks()
   })
 
@@ -24,7 +26,8 @@ describe('auth store', () => {
   })
 
   it('fetches the token via /api/v1/auth/ui-token and flips to ready', async () => {
-    globalThis.fetch = vi.fn(async () => {
+    globalThis.fetch = vi.fn(async (path) => {
+      if (path === '/api/v1/auth/session') return json({}, 404)
       return new Response(JSON.stringify({ token: 'abc' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -35,6 +38,86 @@ describe('auth store', () => {
     expect(auth.token).toBe('abc')
     expect(auth.state.kind).toBe('ready')
     expect(auth.ready).toBe(true)
+  })
+
+  it('uses online cookies and CSRF without ever bootstrapping a console bearer', async () => {
+    const session = { status: 'authenticated', user_id: 'u1', environment_id: 'A', csrf_token: 'csrf' }
+    globalThis.fetch = vi.fn(async (path) => path === '/api/v1/auth/ui-token'
+      ? json({ detail: { code: 'sign_in_required' } }, 401) : json(session)) as typeof fetch
+    const auth = useAuthStore()
+    registerAuthStoreWithClient(auth)
+    await auth.bootstrap()
+    expect(auth.ready).toBe(true)
+    expect(auth.mode).toBe('server')
+    expect(auth.token).toBeNull()
+    await apiFetch('/api/v1/projects', { method: 'POST', body: '{}' })
+    const calls = vi.mocked(fetch).mock.calls
+    expect(calls.map(([path]) => path)).toEqual(['/api/v1/auth/ui-token', '/api/v1/auth/session', '/api/v1/projects'])
+    const init = calls[2]![1]!
+    expect(new Headers(init.headers).get('X-CSRF-Token')).toBe('csrf')
+    expect(new Headers(init.headers).has('Authorization')).toBe(false)
+    expect(init.credentials).toBe('same-origin')
+    expect(init.redirect).toBe('error')
+  })
+
+  it.each([401, 403, 503])('never falls back from an online rejection (%s)', async (status) => {
+    globalThis.fetch = vi.fn(async () => json({ detail: { code: 'auth_unavailable' } }, status)) as typeof fetch
+    const auth = useAuthStore()
+    auth.mode = 'server'
+    await auth.bootstrap()
+    expect(auth.ready).toBe(false)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(auth.state.kind).toBe(status === 401 ? 'signed_out' : 'error')
+  })
+
+  it('does not interpret an unrelated 401 as online mode or retry another bootstrap', async () => {
+    globalThis.fetch = vi.fn(async () => json({ detail: 'unauthorized' }, 401)) as typeof fetch
+    const auth = useAuthStore()
+    await auth.bootstrap()
+    expect(auth.state.kind).toBe('error')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the private shell when logout discovers an already expired session', async () => {
+    globalThis.fetch = vi.fn(async () => json({}, 401)) as typeof fetch
+    const auth = useAuthStore(); auth.mode = 'server'; auth.state = {kind:'ready'}
+    await auth.logout()
+    expect(auth.state.kind).toBe('signed_out')
+  })
+
+  it('keeps successful login gated until a fresh document bootstraps its session', async () => {
+    const auth = useAuthStore()
+    auth.mode = 'server'; auth.state = {kind:'signed_out'}
+    const session = {status:'authenticated',user_id:'u2',environment_id:'A',csrf_token:'u2-csrf'}
+    globalThis.fetch = vi.fn(async () => json(session)) as typeof fetch
+    await auth.submit('login',{email:'u2@example.test',password:'synthetic-password'})
+    expect(auth.ready).toBe(false)
+    expect(auth.userId).toBeNull()
+    expect(auth.csrfToken).toBeNull()
+    // The next document has new Pinia stores; only its session bootstrap may
+    // admit private content after the browser has replaced the old document.
+    const fresh = useAuthStore(createPinia())
+    fresh.mode = 'server'
+    await fresh.bootstrap()
+    expect(fresh.ready).toBe(true)
+    expect(fresh.userId).toBe('u2')
+  })
+
+  it('keeps recovery outside the private shell and invalidates access on a later 401', async () => {
+    globalThis.fetch = vi.fn(async (path) => path === '/api/v1/auth/ui-token'
+      ? json({ detail: { code: 'sign_in_required' } }, 401)
+      : json({ status: 'recovery_required', user_id: 'u1', environment_id: 'A', csrf_token: 'csrf' })) as typeof fetch
+    const auth = useAuthStore()
+    registerAuthStoreWithClient(auth)
+    await auth.bootstrap()
+    expect(auth.state.kind).toBe('recovery')
+    expect(auth.ready).toBe(false)
+    await auth.submit('login', { email: 'u1@example.test', password: 'synthetic' })
+    globalThis.fetch = vi.fn(async () => json({}, 401)) as typeof fetch
+    await expect(apiFetch('/api/v1/projects')).rejects.toThrow()
+    expect(auth.state.kind).toBe('signed_out')
+    expect(auth.userId).toBeNull()
+    expect(auth.csrfToken).toBeNull()
   })
 
   it('records an error state when the bootstrap call fails', async () => {
@@ -53,4 +136,65 @@ describe('auth store', () => {
     }
     expect(auth.ready).toBe(false)
   })
+
+  it('renews expired provider access once for concurrent reads and never replays writes', async () => {
+    const auth = useAuthStore(); auth.mode = 'server'; auth.csrfToken = 'csrf'; auth.state = {kind:'ready'}
+    registerAuthStoreWithClient(auth)
+    let refreshed = false
+    let finish!: () => void
+    const pending = new Promise<void>(resolve => { finish = resolve })
+    globalThis.fetch = vi.fn(async (path) => {
+      if (path === '/api/v1/auth/refresh') { await pending; refreshed = true; return json({status:'authenticated',csrf_token:'csrf'}) }
+      return refreshed ? json({items:[]}) : json({detail:{code:'authentication_failed'}},401)
+    }) as typeof fetch
+    const first = apiFetch('/api/v1/projects'), second = apiFetch('/api/v1/projects/1')
+    await vi.waitFor(() => expect(auth.state.kind).toBe('renewing'))
+    finish()
+    await Promise.all([first,second])
+    expect(vi.mocked(fetch).mock.calls.filter(c=>c[0]==='/api/v1/auth/refresh')).toHaveLength(1)
+    expect(auth.ready).toBe(true)
+    refreshed = false
+    await expect(apiFetch('/api/v1/operations/example/call',{method:'POST'})).rejects.toThrow()
+    expect(vi.mocked(fetch).mock.calls.filter(c=>c[0]==='/api/v1/operations/example/call')).toHaveLength(1)
+  })
+
+  it('retains a reconnect state during temporary renewal failure and rejects old renewal after logout', async () => {
+    const auth = useAuthStore(); auth.mode = 'server'; auth.csrfToken = 'csrf'; auth.state = {kind:'ready'}
+    registerAuthStoreWithClient(auth)
+    globalThis.fetch = vi.fn(async () => json({detail:{code:'auth_unavailable'}},503)) as typeof fetch
+    expect(await auth.refreshSession()).toBe(false)
+    expect(auth.state.kind).toBe('error')
+    expect(auth.csrfToken).toBe('csrf')
+    let finish!: (value: Response) => void
+    globalThis.fetch = vi.fn(() => new Promise<Response>(resolve => {finish=resolve})) as typeof fetch
+    const renewal = auth.refreshSession()
+    auth.expire()
+    finish(json({status:'authenticated'}))
+    expect(await renewal).toBe(false)
+    expect(auth.ready).toBe(false)
+    expect(auth.state.kind).toBe('signed_out')
+  })
+
+  it('renews private Account reads and stream admission, but never loops after another 401', async () => {
+    const auth = useAuthStore(); auth.mode = 'server'; auth.csrfToken = 'csrf'; auth.state = {kind:'ready'}
+    registerAuthStoreWithClient(auth)
+    let refreshed = false
+    globalThis.fetch = vi.fn(async path => {
+      if (path === '/api/v1/auth/refresh') { refreshed = true; return json({status:'authenticated',csrf_token:'csrf'}) }
+      return refreshed ? json({items:[]}) : json({detail:{code:'authentication_failed'}},401)
+    }) as typeof fetch
+    await apiFetch('/api/v1/auth/accounts')
+    expect(auth.ready).toBe(true)
+    refreshed = false
+    await apiStream('/api/v1/projects/7/timeline/stream')
+    expect(auth.ready).toBe(true)
+    globalThis.fetch = vi.fn(async path => path === '/api/v1/auth/refresh' ? json({status:'authenticated',csrf_token:'csrf'}) : json({},401)) as typeof fetch
+    await expect(apiFetch('/api/v1/projects')).rejects.toThrow()
+    expect(auth.state.kind).toBe('signed_out')
+    expect(fetch).toHaveBeenCalledTimes(3)
+  })
 })
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+}

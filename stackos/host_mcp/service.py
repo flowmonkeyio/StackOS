@@ -85,11 +85,22 @@ class AgentExecutionScope:
     attempt: int | None = None
     phase: str | None = None
     request_id: int | None = None
+    remote_invocation_id: str | None = None
 
     def __post_init__(self) -> None:
         if type(self.project_id) is not int or self.project_id <= 0 or not self.agent.strip():
             raise ValueError("Execution requires a project and agent")
-        if self.request_id is not None:
+        if self.remote_invocation_id is not None:
+            if (
+                not isinstance(self.remote_invocation_id, str)
+                or not 1 <= len(self.remote_invocation_id) <= 64
+                or self.remote_invocation_id != self.remote_invocation_id.strip()
+                or self.request_id is not None
+                or self.task_key is not None
+                or self.ticket_key is not None
+            ):
+                raise ValueError("Remote invocation attribution must be exact and exclusive")
+        elif self.request_id is not None:
             if (
                 type(self.request_id) is not int
                 or self.request_id <= 0
@@ -137,6 +148,8 @@ class ActiveInvocation:
     session_error: str | None = None
     account_switch: _AccountSwitch | None = None
     restart_of: str | None = None
+    # The connected transport owns liveness; readers only observe its snapshot.
+    observe_connection: Callable[[], dict[str, Any]] | None = None
 
     def projection(self, *, include_usage: bool = True) -> dict[str, Any]:
         return {
@@ -158,6 +171,7 @@ class ActiveInvocation:
                 if self.scope.request_id is not None
                 else {}
             ),
+            "stop_requested": self.cancelled.is_set(),
             "live_usage": {
                 "usage": {
                     "unit": "tokens",
@@ -411,6 +425,18 @@ def _unregister(call: ActiveInvocation) -> None:
         call.retired.set()
 
 
+def retire_reconciled_invocation(call: ActiveInvocation) -> None:
+    """Release an exact remote handle after its owner confirms native work stopped."""
+    with _active_invocations_lock:
+        if not call.finished or call.observe_connection is None:
+            raise ValueError("Only finished remote invocations can be reconciled")
+        if _active_invocations.get(call.invocation_id) is not call:
+            return
+        call.process_retirement = {"outcome": "stopped"}
+        if call.cleanup_complete:
+            _unregister(call)
+
+
 def retire_invocation(call: ActiveInvocation, *, cancel: bool = True) -> str:
     """Stop the registered handle and release an exceptional retirement hold only on proof."""
     with _active_invocations_lock:
@@ -513,37 +539,62 @@ atexit.register(shutdown_usage)
 def usage_executions(project_id: int | None = None) -> list[dict[str, Any]]:
     """Safe transient transport state; no native I/O or durable samples."""
     with _active_invocations_lock:
-        return [
-            {
-                "project_id": call.scope.project_id,
-                "task_key": call.scope.task_key,
-                **call.projection(),
-            }
+        snapshots = [
+            (call, call.projection())
             for call in _active_invocations.values()
             if not call.finished and (project_id is None or call.scope.project_id == project_id)
         ]
+    return [
+        {
+            "project_id": call.scope.project_id,
+            "task_key": call.scope.task_key,
+            **_observe_execution(call, projection),
+        }
+        for call, projection in snapshots
+    ]
+
+
+def _observe_execution(call: ActiveInvocation, projection: dict[str, Any]) -> dict[str, Any]:
+    # Never acquire the exchange lock under the registry lock: native telemetry
+    # takes those locks in the opposite order. No native I/O or SQL is performed.
+    if call.observe_connection is not None:
+        observed = call.observe_connection()
+        projection["connection_state"] = observed["connection_state"]
+        if "observed_at" in projection and observed["connection_state"] != "connected":
+            last_seen = observed.get("last_seen_at")
+            projection["observed_at"] = max(
+                call.started_at,
+                datetime.fromtimestamp(last_seen, UTC).isoformat()
+                if last_seen
+                else call.started_at,
+            )
+    return projection
 
 
 def invocation_timings() -> list[dict[str, Any]]:
     """Copy owned timing through the synchronous final-receipt handoff, without I/O."""
     with _active_invocations_lock:
         observed_at = datetime.now(UTC).isoformat()
-        return [
-            {
-                "project_id": call.scope.project_id,
-                "task_key": call.scope.task_key,
-                "attempt": call.scope.attempt,
-                "phase": call.scope.phase,
-                "finished_at": call.finished_at,
-                "observed_at": observed_at,
-                **{
-                    key: value
-                    for key, value in call.projection(include_usage=False).items()
-                    if key != "live_usage"
+        snapshots = [
+            (
+                call,
+                {
+                    "project_id": call.scope.project_id,
+                    "task_key": call.scope.task_key,
+                    "attempt": call.scope.attempt,
+                    "phase": call.scope.phase,
+                    "finished_at": call.finished_at,
+                    "observed_at": observed_at,
+                    **{
+                        key: value
+                        for key, value in call.projection(include_usage=False).items()
+                        if key != "live_usage"
+                    },
                 },
-            }
+            )
             for call in _active_invocations.values()
         ]
+    return [_observe_execution(call, projection) for call, projection in snapshots]
 
 
 type ProvisionalUsage = dict[tuple[int, str], list[tuple[int | None, str | None, dict[str, Any]]]]
@@ -582,7 +633,9 @@ def active_execution(
             and not call.finished
             and (ticket_key is None or call.scope.ticket_key == ticket_key)
         ]
-        return max(matches, key=lambda call: call.started_at).projection() if matches else None
+        call = max(matches, key=lambda call: call.started_at) if matches else None
+        projection = call.projection() if call else None
+    return _observe_execution(call, projection) if call and projection else None
 
 
 def _notify_execution(
@@ -980,6 +1033,7 @@ def run_agent(
     native_settings: dict[str, Any] | None = None,
     launch_allowed: Callable[[], bool] | None = None,
     request_execution: AgentRequestExecution | None = None,
+    invocation_transport: Callable[[ActiveInvocation], AgentRunResult] | None = None,
 ) -> AgentRunResult:
     """Keep the controller's assignment while restarting an account-switched child."""
     restart_of = None
@@ -1017,6 +1071,7 @@ def run_agent(
             native_settings=native_settings,
             launch_allowed=launch_allowed,
             request_execution=request_execution,
+            invocation_transport=invocation_transport,
             _restart_of=restart_of,
         )
         if observed is None or observed.account_switch is None:
@@ -1062,8 +1117,15 @@ def _run_agent_once(
     launch_allowed: Callable[[], bool] | None = None,
     request_execution: AgentRequestExecution | None = None,
     _restart_of: str | None = None,
+    invocation_transport: Callable[[ActiveInvocation], AgentRunResult] | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
+    from stackos.config import get_settings
+
+    if get_settings().process_role == "server" and invocation_transport is None:
+        return AgentRunResult(
+            None, error="Native execution requires an authorized connected computer."
+        )
     if not instructions.strip():
         return AgentRunResult(None, error="Project-agent instructions must not be empty.")
     request_id = execution_scope.request_id if execution_scope else None
@@ -1076,7 +1138,11 @@ def _run_agent_once(
         )
     ):
         return AgentRunResult(None, error="Request execution requires its exact repository owner.")
-    if (mcp_config_ref is not None or mcp_route_identity is not None) and host_key != "codex":
+    if (
+        invocation_transport is None
+        and (mcp_config_ref is not None or mcp_route_identity is not None)
+        and host_key != "codex"
+    ):
         try:
             actual_route = task_mcp_route(
                 host_key, Path(project_dir).resolve(), mcp_config_ref, profile=profile
@@ -1117,7 +1183,8 @@ def _run_agent_once(
     # Exact resumes retain their admitted choices. Fresh native listings and
     # selectors share the same reader; no model/account substitution occurs.
     if (
-        resume_thread_id is None
+        invocation_transport is None
+        and resume_thread_id is None
         and definition is not None
         and definition.native_models
         and provider is None
@@ -1173,7 +1240,11 @@ def _run_agent_once(
     result: AgentRunResult | None = None
     registered = False
     request_admitted = False
-    if call is not None and host_key in {"codex", "antigravity", "claude-code", "grok"}:
+    if (
+        call is not None
+        and invocation_transport is None
+        and host_key in {"codex", "antigravity", "claude-code", "grok"}
+    ):
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
             call, session_id, Path(project_dir), resume_thread_id, on_session_attached
         )
@@ -1201,7 +1272,9 @@ def _run_agent_once(
                                 call,
                                 {
                                     "host_key": host_key,
-                                    "project_dir": str(Path(project_dir).expanduser().resolve()),
+                                    "project_dir": None
+                                    if invocation_transport is not None
+                                    else str(Path(project_dir).expanduser().resolve()),
                                     "instructions": instructions,
                                     "prompt": prompt,
                                     "output_schema": output_schema,
@@ -1221,24 +1294,29 @@ def _run_agent_once(
                         _notify_execution(on_execution_change, call, True)
                         break
                 switch.released.wait()
-        result = definition.run_agent(
-            Path(project_dir).expanduser().resolve(),
-            instructions,
-            prompt,
-            output_schema,
-            sandbox=sandbox,
-            **progress_kwargs,
-            **{
-                key: value
-                for key, value in {
-                    "model": model,
-                    "provider": provider,
-                    "profile": profile,
-                    "resume_thread_id": resume_thread_id,
-                }.items()
-                if value is not None
-            },
-        )
+        if invocation_transport is not None:
+            if call is None:
+                raise ValueError("connected execution requires an invocation scope")
+            result = invocation_transport(call)
+        else:
+            result = definition.run_agent(
+                Path(project_dir).expanduser().resolve(),
+                instructions,
+                prompt,
+                output_schema,
+                sandbox=sandbox,
+                **progress_kwargs,
+                **{
+                    key: value
+                    for key, value in {
+                        "model": model,
+                        "provider": provider,
+                        "profile": profile,
+                        "resume_thread_id": resume_thread_id,
+                    }.items()
+                    if value is not None
+                },
+            )
         if call is not None and call.session_error is not None:
             # Keep rejected native IDs out of terminal-only recovery fallback.
             # Hosts with no early-ID event never set this rejection.
@@ -1255,28 +1333,32 @@ def _run_agent_once(
             )
     finally:
         if call is not None and registered:
-            retirement = call.process_control.retirement_status()
-            if (
-                result is None
-                or result.exit_code is None
-                or retirement == "unconfirmed"
-                or call.process_control.stop_error is not None
-                or (
-                    retirement != "prevented" and managed_execution_error(call.host_key) is not None
-                )
-            ):
-                # Returned adapter errors can hide failed post-spawn I/O too.
-                # Reconcile the actual group before releasing either owner.
-                # Successful post-exit cleanup must preserve the completed result.
-                outcome = retire_invocation(call, cancel=not bool(result and result.ok))
-                if result is not None and outcome == "unconfirmed":
-                    result = replace(
-                        result, error=result.error or "Native process retirement is unconfirmed"
+            # Only the local native owner can infer process exit. An unknown
+            # transport result preserves its fence; it is not a stop request.
+            if invocation_transport is None:
+                retirement = call.process_control.retirement_status()
+                if (
+                    result is None
+                    or result.exit_code is None
+                    or retirement == "unconfirmed"
+                    or call.process_control.stop_error is not None
+                    or (
+                        retirement != "prevented"
+                        and managed_execution_error(call.host_key) is not None
                     )
-            elif call.process_retirement is not None:
-                # A concurrent cancellation's stop may finish before its registry
-                # update. Persist this current observation, never a stale pending.
-                call.process_retirement = {"outcome": retirement}
+                ):
+                    # Returned adapter errors can hide failed post-spawn I/O too.
+                    # Reconcile the actual group before releasing either owner.
+                    # Successful post-exit cleanup must preserve the completed result.
+                    outcome = retire_invocation(call, cancel=not bool(result and result.ok))
+                    if result is not None and outcome == "unconfirmed":
+                        result = replace(
+                            result, error=result.error or "Native process retirement is unconfirmed"
+                        )
+                elif call.process_retirement is not None:
+                    # A concurrent cancellation's stop may finish before its registry
+                    # update. Persist this current observation, never a stale pending.
+                    call.process_retirement = {"outcome": retirement}
             finished_at = datetime.now(UTC).isoformat()
             try:
                 _sample_invocations()
@@ -1297,7 +1379,7 @@ def _run_agent_once(
                 # identity/reader. Cleanup also runs if the callback fails.
                 _notify_execution(on_execution_change, call, False)
             except BaseException:
-                if call.process_retirement is None:
+                if invocation_transport is None and call.process_retirement is None:
                     retire_invocation(call)
                 raise
             finally:

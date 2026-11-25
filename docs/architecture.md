@@ -183,6 +183,15 @@ the caller to stop. Daemon shutdown stops owned request processes and retains th
 registry until their final handoff. Project cleanup's existing native-invocation
 blocker also covers these calls. No second process registry or polling loop exists.
 
+## Server and Connected-Computer Placement
+
+The consolidated local client/server foundation shares the existing operation,
+repository and native execution owners. See the
+[current feature placement map](server-placement.md) for supported flows, missing
+connected adaptations and proposed ownership of features added since that
+foundation. It distinguishes source support from hosted deployment and installed
+proof; standalone operation remains available under the product contract.
+
 ## Native Desktop Schedule Admission
 
 Electron main owns one authenticated availability stream through
@@ -193,7 +202,14 @@ cannot advertise native presence. Suspend and Quit close the connection;
 resume/start and transport reconnection open a new one. No presence field,
 heartbeat, lease, or occurrence replay is persisted.
 
-`WorkflowScheduleRuntime` holds the current connection and generation in daemon
+For a selected server, Electron holds the same endpoint on the runtime-only
+local service with its private disk token. That service forwards only the
+stream to the selected server using the bound computer credential. Server
+streams apply only to schedules selecting that connection ID; a browser user
+session cannot open them. The current invocation exchange also checks fresh
+computer polling, authorization and unresolved work at admission.
+
+`WorkflowScheduleRuntime` holds each current connection's opaque identity in daemon
 memory and uses the existing APScheduler memory jobstore. One stable job ID per
 schedule carries its exact next cron instant in a date trigger with one-second
 misfire tolerance. Execution or misfire rearms strictly after the current time.

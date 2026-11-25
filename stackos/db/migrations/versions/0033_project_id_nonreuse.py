@@ -20,6 +20,9 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        # Postgres sequences already allocate beyond deleted IDs.
+        return
     # A retry after the rebuild committed but before Alembic stamped the version
     # must retain the sequence, including IDs already deleted since the rebuild.
     ddl = bind.execute(

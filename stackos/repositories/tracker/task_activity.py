@@ -9,6 +9,7 @@ from sqlmodel import Session, col, select
 
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.context.repository import ContextRepository
+from stackos.db.json_expressions import json_value
 from stackos.db.models import ProjectEvent, TrackerRevision
 from stackos.repositories.tracker.events import TRACKER_TASKS_CHANGED, tracker_batch_task_filter
 from stackos.repositories.tracker.inspection_schema import TaskActivityItem, TaskActivityOut
@@ -48,9 +49,9 @@ def _value(data: Any, path: str) -> Any:
 
 
 def _changed(column_before: Any, column_after: Any, path: str) -> Any:
-    return func.coalesce(func.json_extract(column_before, f"$.{path}"), "") != func.coalesce(
-        func.json_extract(column_after, f"$.{path}"), ""
-    )
+    return func.coalesce(
+        json_value(column_before, *path.split(".")).as_string(), ""
+    ) != func.coalesce(json_value(column_after, *path.split(".")).as_string(), "")
 
 
 class TaskActivityMixin:

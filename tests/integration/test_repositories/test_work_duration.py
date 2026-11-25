@@ -213,7 +213,10 @@ def test_missing_and_anomalous_endpoints_are_disclosed(session, project_id, brok
     assert unknown.coverage == "unavailable"
 
 
-def test_owned_live_without_tokens_and_final_replacement(session, project_id, monkeypatch):
+@pytest.mark.parametrize("connection_state", [None, "disconnected", "needs_attention"])
+def test_owned_live_without_tokens_and_final_replacement(
+    session, project_id, monkeypatch, connection_state
+):
     now = datetime.now(UTC)
     start = (now - timedelta(seconds=10)).isoformat()
     execution = {
@@ -236,6 +239,12 @@ def test_owned_live_without_tokens_and_final_replacement(session, project_id, mo
                 "task_key": "overview",
                 "attempt": 2,
                 "phase": "delivery",
+                "connection_state": connection_state,
+                **(
+                    {"observed_at": (now - timedelta(seconds=3)).isoformat()}
+                    if connection_state
+                    else {}
+                ),
                 **execution,
             }
         ],
@@ -243,9 +252,12 @@ def test_owned_live_without_tokens_and_final_replacement(session, project_id, mo
     # The projection observes the real registry API, independently of token telemetry.
     repo = TrackerRepository(session)
     live = repo.brief(project_id=project_id, ticket_key="live").ticket.work_duration
-    assert 10 <= live.total_seconds < 20
+    assert live.total_seconds == 7 if connection_state else 10 <= live.total_seconds < 20
     assert live.coverage == "complete"
-    assert live.live[0].invocation_id == "owned"
+    if connection_state:
+        assert live.live == []
+    else:
+        assert live.live[0].invocation_id == "owned"
     assert live.endpoint_at == live.observed_at
     current["finished_at"] = (now - timedelta(seconds=1)).isoformat()
     current["exit_code"] = 0

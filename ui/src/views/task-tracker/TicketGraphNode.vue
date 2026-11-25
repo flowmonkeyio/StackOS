@@ -10,8 +10,7 @@ import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 
 const props = withDefaults(defineProps<{ data: TrackerVueNodeData; metricsVisible?: boolean }>(), { metricsVisible: true })
 const isBlocked = computed(() => !isTerminalTrackerStatus(props.data.status) && (props.data.blockedBy?.length ?? 0) > 0)
-const state = computed(() => executionStatus(props.data.status, props.data.activeExecution, props.data.deliveryStopped
-  ? { status: 'stopped', ticketKey: props.data.itemKey, reason: props.data.deliveryStopReason ?? null } : null))
+const state = computed(() => executionStatus(props.data.status, props.data.activeExecution, props.data.taskDelivery))
 const blocker = computed(() => `Blocked by: ${props.data.blockedBy?.join(', ')}`)
 </script>
 
@@ -54,7 +53,7 @@ const blocker = computed(() => `Blocked by: ${props.data.blockedBy?.join(', ')}`
         :tone="state.tone"
         :dot="true"
         variant="outline"
-        :title="data.deliveryStopped ? data.deliveryStopReason ?? undefined : data.recentlyUpdated ? 'Updated' : undefined"
+        :title="state.description ?? (data.deliveryStopped ? data.deliveryStopReason ?? undefined : data.recentlyUpdated ? 'Updated' : undefined)"
       >
         {{ state.label }}
       </UiBadge>

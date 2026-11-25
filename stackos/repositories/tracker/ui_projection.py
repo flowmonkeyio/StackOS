@@ -9,6 +9,7 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.orm import load_only
 from sqlmodel import col, select
 
+from stackos.db.json_expressions import json_kind, json_value
 from stackos.db.models import TrackerTask, TrackerTicket
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
@@ -34,35 +35,42 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
     ]
     source_paths = ("template_key", "template_version", "run_plan_key", "run_plan_id")
     # Validate the canonical handoff shape without transporting its frozen instructions.
-    delivery_paths = ("status", "ticket_key", "reason")
+    delivery_paths = (
+        ("status",),
+        ("ticket_key",),
+        ("reason",),
+        ("uncertain_invocation",),
+        ("cancellation", "status"),
+    )
     context_paths = [
-        "code",
-        "phase",
-        "next_owner",
-        "next_action",
-        "resume_condition",
-        *(f"facts[{i}]" for i in range(4)),
-        *(f"evidence_refs[{i}]" for i in range(8)),
+        ("code",),
+        ("phase",),
+        ("next_owner",),
+        ("next_action",),
+        ("resume_condition",),
+        *(("facts", i) for i in range(4)),
+        *(("evidence_refs", i) for i in range(8)),
     ]
     valid = valid_delivery_json(TrackerTask.metadata_json)
     statement = (
         sa_select(
             TrackerTask,
-            *[func.json_extract(TrackerTask.source_json, f"$.{path}") for path in source_paths],
+            *[json_value(TrackerTask.source_json, path).as_json() for path in source_paths],
             valid,
             *[
-                func.json_extract(TrackerTask.metadata_json, f"$.delivery.{path}")
+                json_value(TrackerTask.metadata_json, "delivery", *path).as_json()
                 for path in delivery_paths
             ],
+            json_kind(TrackerTask.metadata_json, "delivery", "needs_attention"),
             *[
                 case(
                     (
-                        func.json_type(TrackerTask.metadata_json, f"$.delivery.stop_context.{path}")
+                        json_kind(TrackerTask.metadata_json, "delivery", "stop_context", *path)
                         == "text",
                         func.substr(
-                            func.json_extract(
-                                TrackerTask.metadata_json, f"$.delivery.stop_context.{path}"
-                            ),
+                            json_value(
+                                TrackerTask.metadata_json, "delivery", "stop_context", *path
+                            ).as_string(),
                             1,
                             161,
                         ),
@@ -73,11 +81,11 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
             ],
             case(
                 (
-                    func.json_type(TrackerTask.metadata_json, "$.delivery_scope.resume_condition")
+                    json_kind(TrackerTask.metadata_json, "delivery_scope", "resume_condition")
                     == "text",
-                    func.json_extract(
-                        TrackerTask.metadata_json, "$.delivery_scope.resume_condition"
-                    ),
+                    json_value(
+                        TrackerTask.metadata_json, "delivery_scope", "resume_condition"
+                    ).as_string(),
                 ),
                 else_=None,
             ),
@@ -91,8 +99,8 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
         statement = statement.where(col(TrackerTask.status).in_(statuses))
     if workflow_key is not None:
         statement = statement.where(
-            (func.json_extract(TrackerTask.source_json, "$.template_key") == workflow_key)
-            | (func.json_extract(TrackerTask.source_json, "$.run_plan_key") == workflow_key)
+            (json_value(TrackerTask.source_json, "template_key").as_string() == workflow_key)
+            | (json_value(TrackerTask.source_json, "run_plan_key").as_string() == workflow_key)
         )
     rows = session.execute(
         statement.order_by(col(TrackerTask.order_index), col(TrackerTask.id))
@@ -104,25 +112,33 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
             for key, value in zip(source_paths, values[:4], strict=True)
             if isinstance(value, (str, int))
         }
-        valid, status, ticket_key, reason = values[4:8]
-        context_values = dict(zip(context_paths, values[8 : 8 + len(context_paths)], strict=True))
+        valid, status, ticket_key, reason, uncertain, cancellation, attention_kind = values[4:11]
+        context_values = dict(zip(context_paths, values[11 : 11 + len(context_paths)], strict=True))
         resume_condition = values[-1]
-        context = {key: context_values[key] for key in context_paths[:5]}
+        context = {key[0]: context_values[key] for key in context_paths[:5]}
         context.update(
             facts=[
-                context_values[f"facts[{i}]"]
+                context_values[("facts", i)]
                 for i in range(4)
-                if context_values[f"facts[{i}]"] is not None
+                if context_values[("facts", i)] is not None
             ],
             evidence_refs=[
-                context_values[f"evidence_refs[{i}]"]
+                context_values[("evidence_refs", i)]
                 for i in range(8)
-                if context_values[f"evidence_refs[{i}]"] is not None
+                if context_values[("evidence_refs", i)] is not None
             ],
         )
         delivery = None
         if valid and status in {"queued", "running", "stopped", "complete"}:
             delivery = TaskDeliveryStateOut(
+                **TaskDeliveryStateOut.attention_flags(
+                    {
+                        "status": status,
+                        "needs_attention": {"true": True, "false": False}.get(attention_kind),
+                        "uncertain_invocation": uncertain,
+                        "cancellation": {"status": cancellation},
+                    }
+                ),
                 status=status,
                 ticketKey=ticket_key.strip()
                 if isinstance(ticket_key, str) and ticket_key.strip()
@@ -198,7 +214,7 @@ def ui_snapshot(
             repo._s.execute(
                 select(
                     TrackerTicket,
-                    func.json_extract(TrackerTicket.metadata_json, "$.resume_condition"),
+                    json_value(TrackerTicket.metadata_json, "resume_condition").as_json(),
                 )
                 .where(
                     TrackerTicket.tracker_id == tracker.id,

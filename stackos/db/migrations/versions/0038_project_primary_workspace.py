@@ -22,18 +22,24 @@ def upgrade() -> None:
         column = columns["primary_workspace_binding_id"]
         # SQLite's own metadata retains inline ON DELETE actions that generic
         # reflection can omit for a column added with REFERENCES.
-        foreign_keys = bind.exec_driver_sql("PRAGMA foreign_key_list(projects)").mappings()
-        if not (
-            isinstance(column["type"], sa.Integer)
-            and column["nullable"]
-            and any(
+        if bind.dialect.name == "sqlite":
+            foreign_keys = bind.exec_driver_sql("PRAGMA foreign_key_list(projects)").mappings()
+            has_reference = any(
                 key["from"] == "primary_workspace_binding_id"
                 and key["table"] == "workspace_bindings"
                 and key["to"] == "id"
                 and key["on_delete"] == "SET NULL"
                 for key in foreign_keys
             )
-        ):
+        else:
+            has_reference = any(
+                key["constrained_columns"] == ["primary_workspace_binding_id"]
+                and key["referred_table"] == "workspace_bindings"
+                and key["referred_columns"] == ["id"]
+                and key.get("options", {}).get("ondelete") == "SET NULL"
+                for key in sa.inspect(bind).get_foreign_keys("projects")
+            )
+        if not (isinstance(column["type"], sa.Integer) and column["nullable"] and has_reference):
             raise RuntimeError(
                 "Existing primary project folder reference has an incompatible schema"
             )

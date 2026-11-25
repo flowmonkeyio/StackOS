@@ -42,21 +42,21 @@ from .paths import _doctor_home
 @app.command()
 def serve(
     host: Annotated[
-        str,
+        str | None,
         typer.Option("--host", help="Loopback address to bind"),
-    ] = "127.0.0.1",
-    port: Annotated[int, typer.Option("--port", help="TCP port")] = 5180,
+    ] = None,
+    port: Annotated[int | None, typer.Option("--port", help="TCP port")] = None,
     log_level: Annotated[
-        str,
+        str | None,
         typer.Option("--log-level", help="Log level (DEBUG/INFO/WARNING/ERROR)"),
-    ] = "INFO",
+    ] = None,
 ) -> None:
     """Run the daemon foreground.
 
     Refuses non-loopback hosts at parse time so `0.0.0.0` exits with code 1
     and a one-line explanation rather than uvicorn binding publicly.
     """
-    if host not in _LOOPBACK_HOSTS:
+    if host is not None and host not in _LOOPBACK_HOSTS:
         # Try one more parse for edge cases like 0:0:0:0:0:0:0:1.
         import ipaddress
 
@@ -80,17 +80,23 @@ def serve(
     # uvicorn — pydantic-settings will read these.
     env_overrides = ("STACKOS_HOST", "STACKOS_PORT", "STACKOS_LOG_LEVEL")
     previous_env = {key: os.environ.get(key) for key in env_overrides}
-    os.environ["STACKOS_HOST"] = host
-    os.environ["STACKOS_PORT"] = str(port)
-    os.environ["STACKOS_LOG_LEVEL"] = log_level.upper()
-
+    settings = None
     try:
+        if os.environ.get("STACKOS_ENV_FILE") is None:
+            for key, value in zip(env_overrides, (host, port, log_level), strict=True):
+                if value is not None:
+                    os.environ[key] = str(value)
+        settings = get_settings()
+        _require_selected_listener(settings, host, port, log_level)
+        host, port, log_level = settings.host, settings.port, settings.log_level
         # Late-import uvicorn so `--help` is fast and the heavy import only
         # happens on actual serve.
         import uvicorn
 
         config = uvicorn.Config(
-            "stackos.server:create_app",
+            "stackos.local_runtime.service:create_app"
+            if settings.process_role == "runtime"
+            else "stackos.server:create_app",
             host=host,
             port=port,
             factory=True,
@@ -130,7 +136,7 @@ def serve(
                 raise typer.Exit(code=3) from exc
             settings = get_settings()
             settings.ensure_dirs()
-            daemon_processes._write_pid_file(settings.pid_path, os.getpid())
+            daemon_processes._write_pid_file(settings.pid_path, os.getpid(), settings=settings)
             try:
                 server = uvicorn.Server(config)
                 logging.getLogger("uvicorn.error").info(
@@ -149,6 +155,55 @@ def serve(
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def _require_selected_listener(
+    settings: Settings, host: str | None, port: int | None, log_level: str | None = None
+) -> None:
+    if settings.process_role != "standalone" and (
+        (host is not None and host != settings.host)
+        or (port is not None and port != settings.port)
+        or (log_level is not None and log_level.upper() != settings.log_level)
+    ):
+        raise typer.BadParameter("selected environment listener/settings cannot be overridden")
+
+
+def _process_blocker_message(settings: Settings, port: int, pids: list[int]) -> str:
+    reason = (
+        "processes with foreign or uncertain selected runtime ownership"
+        if settings.process_role == "runtime"
+        else "non-StackOS process pid(s)"
+    )
+    return f"error: port {port} is held by {reason}: {', '.join(str(pid) for pid in pids)}"
+
+
+def _require_runtime_launchd_process(settings: Settings, pids: list[int]) -> None:
+    if settings.process_role != "runtime":
+        return
+    pid = launchd._loaded_launchd_pid()
+    if pid is None or pid not in pids or not daemon_processes._runtime_process_owned(settings, pid):
+        typer.echo("error: loaded runtime job ownership is uncertain; refusing unload", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(name="runtime-config")
+def runtime_config() -> None:
+    """Read safe desktop startup settings without opening application state."""
+    settings = get_settings()
+    if not os.environ.get("STACKOS_ENV_FILE") or settings.process_role != "runtime":
+        raise typer.BadParameter("select a private runtime settings file with STACKOS_ENV_FILE")
+    typer.echo(
+        json.dumps(
+            {
+                "process_role": settings.process_role,
+                "environment_id": settings.environment_id,
+                "server_url": settings.server_url,
+                "host": settings.host,
+                "port": settings.port,
+                "state_dir": str(settings.state_dir),
+            }
+        )
+    )
 
 
 def _autostart_bridge_daemon(settings: Settings, host: str, port: int) -> tuple[bool, str]:
@@ -301,6 +356,7 @@ def start(
     daemon_host = host or settings.host
     daemon_port = port or settings.port
     daemon_log_level = (log_level or settings.log_level).upper()
+    _require_selected_listener(settings, host, port, log_level)
 
     if not daemon_processes._is_loopback_host(daemon_host):
         typer.echo(
@@ -312,9 +368,7 @@ def start(
     daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
-            "error: port "
-            f"{daemon_port} is held by non-StackOS process pid(s): "
-            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            _process_blocker_message(settings, daemon_port, blocker_pids),
             err=True,
         )
         raise typer.Exit(code=1)
@@ -325,8 +379,13 @@ def start(
 
     if daemon_pids or daemon_processes._tcp_can_connect(daemon_host, daemon_port, timeout=0.25):
         typer.echo(
-            "error: daemon process or port is present but health is not ready; "
-            "run `stackos restart`.",
+            "error: selected runtime listener ownership or readiness is unconfirmed; "
+            "check its environment and process before retrying."
+            if settings.process_role == "runtime"
+            else (
+                "error: daemon process or port is present but health is not ready; "
+                "run `stackos restart`."
+            ),
             err=True,
         )
         raise typer.Exit(code=1)
@@ -370,6 +429,7 @@ def stop(
     settings.ensure_dirs()
     daemon_host = host or settings.host
     daemon_port = port or settings.port
+    _require_selected_listener(settings, host, port)
 
     if not daemon_processes._is_loopback_host(daemon_host):
         typer.echo(
@@ -386,20 +446,25 @@ def stop(
     loaded_launchd_plist = (
         launchd._loaded_launchd_plist(_doctor_home()) if launchd_plist is not None else None
     )
+    daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(settings, daemon_port)
+    if blocker_pids:
+        typer.echo(_process_blocker_message(settings, daemon_port, blocker_pids), err=True)
+        raise typer.Exit(code=1)
     if loaded_launchd_plist is not None:
+        _require_runtime_launchd_process(settings, daemon_pids)
         ok, message = launchd._launchd_bootout(loaded_launchd_plist, wait_timeout=timeout)
         if not ok:
             typer.echo(f"stop: launchd bootout failed: {message}", err=True)
             raise typer.Exit(code=1)
         detail = f"; {message}" if message else ""
         typer.echo(f"stop: unloaded launchd job{detail}")
+        daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(
+            settings, daemon_port
+        )
 
-    daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
-            "error: port "
-            f"{daemon_port} is held by non-StackOS process pid(s): "
-            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            _process_blocker_message(settings, daemon_port, blocker_pids),
             err=True,
         )
         raise typer.Exit(code=1)
@@ -418,10 +483,13 @@ def stop(
         daemon_pids,
         timeout=timeout,
         force=force,
+        **({"settings": settings} if settings.process_role == "runtime" else {}),
     )
     if not ok:
         typer.echo(f"stop: {message}", err=True)
         raise typer.Exit(code=1)
+    for pid in daemon_pids:
+        daemon_processes._remove_pid_file(settings.pid_path, pid)
     typer.echo(f"stop: {message}")
 
 
@@ -454,6 +522,7 @@ def restart(
     daemon_host = host or settings.host
     daemon_port = port or settings.port
     daemon_log_level = (log_level or settings.log_level).upper()
+    _require_selected_listener(settings, host, port, log_level)
 
     if not daemon_processes._is_loopback_host(daemon_host):
         typer.echo(
@@ -475,9 +544,7 @@ def restart(
     daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
-            "error: port "
-            f"{daemon_port} is held by non-StackOS process pid(s): "
-            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            _process_blocker_message(settings, daemon_port, blocker_pids),
             err=True,
         )
         raise typer.Exit(code=1)
@@ -487,7 +554,11 @@ def restart(
     from .upgrade_commands import finish_pending_upgrade, prepare_for_upgrade
 
     requested_settings = settings.model_copy(update={"host": daemon_host, "port": daemon_port})
-    maintenance = prepare_for_upgrade(requested_settings, runtime_identity(), only_if_changed=True)
+    maintenance = (
+        prepare_for_upgrade(requested_settings, runtime_identity(), only_if_changed=True)
+        if settings.process_role == "standalone"
+        else None
+    )
     if maintenance:
         typer.echo(
             f"restart: managed upgrade {maintenance.get('upgrade_id', maintenance['status'])}; "
@@ -495,6 +566,7 @@ def restart(
         )
 
     if launchd_plist is not None and launchd_loaded:
+        _require_runtime_launchd_process(settings, daemon_pids)
         ok, message = launchd._launchd_bootout(launchd_plist, wait_timeout=timeout)
         if not ok:
             typer.echo(f"restart: launchd bootout failed: {message}", err=True)
@@ -506,11 +578,7 @@ def restart(
         )
 
     if blocker_pids:
-        message = (
-            "error: port "
-            f"{daemon_port} is held by non-StackOS process pid(s): "
-            f"{', '.join(str(pid) for pid in blocker_pids)}"
-        )
+        message = _process_blocker_message(settings, daemon_port, blocker_pids)
         if restart_via_launchd:
             assert launchd_plist is not None
             _abort_restart_after_launchd_bootout(launchd_plist, message)
@@ -522,6 +590,7 @@ def restart(
             daemon_pids,
             timeout=timeout,
             force=force,
+            **({"settings": settings} if settings.process_role == "runtime" else {}),
         )
         if not ok:
             error_message = f"restart: {message}"
@@ -601,6 +670,7 @@ def autostart_install(
     daemon_host = host or settings.host
     daemon_port = port or settings.port
     daemon_log_level = (log_level or settings.log_level).upper()
+    _require_selected_listener(settings, host, port, log_level)
     home = _doctor_home()
     if not daemon_processes._is_loopback_host(daemon_host):
         typer.echo(
@@ -618,7 +688,11 @@ def autostart_install(
         typer.echo(f"autostart: {issue}", err=True)
         raise typer.Exit(code=1)
     requested_settings = settings.model_copy(update={"host": daemon_host, "port": daemon_port})
-    maintenance = prepare_for_upgrade(requested_settings, runtime_identity())
+    maintenance = (
+        prepare_for_upgrade(requested_settings, runtime_identity())
+        if settings.process_role == "standalone"
+        else None
+    )
     ok, message = launchd._install_launchd_autostart(
         settings,
         home=home,
@@ -672,6 +746,10 @@ def autostart_status(
 
 @app.command(name="mcp-bridge")
 def mcp_bridge(
+    env_file: Annotated[
+        Path | None,
+        typer.Option("--env-file", help="Explicit private environment settings file."),
+    ] = None,
     host: Annotated[
         str | None,
         typer.Option("--host", help="Daemon host; defaults to configured loopback host."),
@@ -710,6 +788,15 @@ def mcp_bridge(
     attempt_id = bridge_attempt_id(os.environ.get("STACKOS_BRIDGE_ATTEMPT_ID"))
     import httpx
 
+    if env_file is not None:
+        selected = os.environ.get("STACKOS_ENV_FILE")
+        if selected is not None and Path(selected) != env_file:
+            raise typer.BadParameter("conflicting selected environment files")
+        os.environ["STACKOS_ENV_FILE"] = str(env_file)
+    if os.environ.get("STACKOS_ENV_FILE") and any(
+        value is not None for value in (host, port, data_dir, state_dir)
+    ):
+        raise typer.BadParameter("selected environment file cannot be mixed with bridge overrides")
     if data_dir is not None:
         os.environ["STACKOS_DATA_DIR"] = str(data_dir)
     if state_dir is not None:
@@ -732,15 +819,61 @@ def mcp_bridge(
         phase = "token_read"
         lifecycle.stage(phase)
         started_at = time.monotonic()
-        token = settings.token_path.read_text(encoding="utf-8").strip()
+        connected_project_id = None
+        headers_provider = None
+        browser_call = None
+        if settings.process_role == "runtime":
+            from stackos.cli.server_session import ServerSession
+            from stackos.local_runtime.connection import LocalConnectionStore
+
+            selected_session = ServerSession(settings)
+            local_workspace = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
+            if not local_workspace.get("cwd"):
+                raise ValueError("select an existing local workspace folder")
+            selected_folder = Path(local_workspace["cwd"])
+            binding = LocalConnectionStore(settings.state_dir).load()
+            if binding is None:
+                raise ValueError("connect this computer and existing folder with `stackos connect`")
+
+            def connected_headers():
+                return selected_session.headers(
+                    require_connection=True, folder=selected_folder, expected_binding=binding
+                )
+
+            headers = connected_headers()
+            connected_project_id = binding.project_id
+            headers_provider = connected_headers
+            from stackos.local_runtime.browser import call_browser
+
+            def connected_browser(name, arguments):
+                return call_browser(
+                    settings,
+                    name,
+                    arguments,
+                    expected_binding=binding,
+                    folder=selected_folder,
+                    surface="mcp",
+                )
+
+            browser_call = connected_browser
+            url = selected_session.origin + "/mcp"
+        elif settings.process_role == "server":
+            raise ValueError("native stdio MCP requires the computer's runtime environment")
+        else:
+            token = settings.token_path.read_text(encoding="utf-8").strip()
+            headers = {"Authorization": f"Bearer {token}"}
         phase = "workspace_hints"
         lifecycle.stage(phase)
         started_at = time.monotonic()
-        workspace_hints = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
+        workspace_hints = (
+            {}
+            if connected_project_id is not None
+            else _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
+        )
         proxy = AgentBridgeProxy(
             url=url,
             headers={
-                "Authorization": f"Bearer {token}",
+                **headers,
                 "Accept": "application/json, text/event-stream",
                 "Content-Type": "application/json",
             },
@@ -749,6 +882,9 @@ def mcp_bridge(
             startup_timeout_seconds=settings.bridge_startup_timeout_seconds,
             diagnostic_log_path=diagnostic_log_path,
             attempt_id=attempt_id,
+            connected_project_id=connected_project_id,
+            headers_provider=headers_provider,
+            browser_call=browser_call,
             **workspace_hints,
         )
     except Exception as exc:
@@ -833,6 +969,7 @@ def mcp_bridge(
                         and has_request_id
                         and isinstance(original_exc, (httpx.ConnectError, httpx.ConnectTimeout))
                         and not autostart_attempted
+                        and settings.process_role == "standalone"
                         and daemon_processes._is_loopback_host(bridge_host)
                     ):
                         try:

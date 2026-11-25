@@ -400,7 +400,7 @@ def operation_specs():
             input_model=ScheduleSetInput,
             output_model=WriteEnvelope[ScheduledJobOut],
             handler=_schedule_set,
-            purpose="Use this for explicit local-admin recurring job setup.",
+            purpose="Use this for explicit project recurring job setup.",
             prerequisites=(
                 "Use a stable kind/key; set replaces the complete configuration.",
                 "Enabling requires name, goal, IANA timezone, the selected project folder "
@@ -408,6 +408,8 @@ def operation_specs():
                 "The project main agent resolves workflow inputs and roles. execution_json "
                 "accepts only an optional host_key, MCP route and saved-folder migration fence; "
                 "no delivery/reviewer instructions or model pins are inherited.",
+                "On a selected server use an owned connection_id instead of local folder/MCP "
+                "settings; the connected computer retains its private source binding.",
                 "Strict preflight is read-only; it creates no request, run plan or task. "
                 "Disabled incomplete drafts remain inert. Normal grants and approvals still apply.",
             ),

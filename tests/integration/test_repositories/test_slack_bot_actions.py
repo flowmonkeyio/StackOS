@@ -13,10 +13,11 @@ from sqlmodel import Session
 from stackos.actions import ActionRepository
 from stackos.actions.connectors import ActionConnectorRequest
 from stackos.actions.slack_bot import SlackBotActionConnector
+from stackos.actions.slack_bot.files import _delete_uploaded_artifacts, _file_items
 from stackos.actions.slack_bot.results import _safe_history_message
 from stackos.auth_providers import AuthRepository
 from stackos.communications import communication_surface_binding_external_id
-from stackos.db.models import ActionCall
+from stackos.db.models import ActionCall, Artifact, Project
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.resources import ResourceRepository
@@ -93,9 +94,67 @@ def test_slack_cannot_upload_private_imap_evidence(
                 credential_ref=credential_ref,
             )
         )
-    assert "private IMAP" in failed.value.data["error"]
+    assert "private staging" in failed.value.data["error"]
     assert httpx_mock.get_requests() == []
     assert private.read_bytes() == b"private MIME"
+
+
+def test_slack_rejects_foreign_managed_file_before_upload_or_delete(
+    session: Session, project_id: int, httpx_mock: HTTPXMock, tmp_path
+) -> None:
+    credential_ref = _slack_credential_ref(session, project_id)
+    _slack_communication_profile(session, project_id)
+    project = session.get(Project, project_id)
+    project.environment_id = "private-file-test"
+    project.owner_user_id = "owner"
+    session.add(project)
+    uri = f"/generated-assets/projects/{project_id + 1}/private.png"
+    path = tmp_path / uri.removeprefix("/generated-assets/")
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"foreign image")
+    # An owned metadata row cannot confer ownership of another project's bytes.
+    session.add(Artifact(project_id=project_id, kind="image", uri=uri, status="approved"))
+    session.commit()
+    with pytest.raises(ConflictError):
+        asyncio.run(
+            ActionRepository(session, asset_dir=tmp_path).execute(
+                project_id=project_id,
+                action_ref="communications.slack-bot.file.upload",
+                input_json={
+                    "profile_ref": "communication-profile:support-agent",
+                    "channel_ref": "slack-channel:C123",
+                    "file": {"artifact_ref": uri},
+                    "delete_after_upload": True,
+                },
+                credential_ref=credential_ref,
+            )
+        )
+    assert httpx_mock.get_requests() == []
+    assert path.read_bytes() == b"foreign image"
+    own_uri = f"/generated-assets/projects/{project_id}/upload.png"
+    own_path = tmp_path / own_uri.removeprefix("/generated-assets/")
+    own_path.parent.mkdir(parents=True)
+    own_path.write_bytes(b"authorized upload")
+    request = ActionConnectorRequest(
+        project_id=project_id,
+        plugin_slug="communications",
+        action_key="slack-bot.file.upload",
+        action_ref="communications.slack-bot.file.upload",
+        provider_key="slack-bot",
+        operation="file.upload",
+        input_json={"file": {"artifact_ref": own_uri}},
+        config_json={},
+        asset_dir=tmp_path,
+        session=session,
+    )
+    uploaded = _file_items(request)
+    # A replaced path after upload must not redirect cleanup to foreign bytes.
+    own_path.unlink()
+    own_path.symlink_to(path)
+    with pytest.raises(ValidationError):
+        _delete_uploaded_artifacts(request, uploaded)
+    assert own_path.is_symlink()
+    assert path.read_bytes() == b"foreign image"
 
 
 def _slack_credential_ref(
@@ -642,15 +701,24 @@ def test_slack_provider_error_redacts_token_text(
     assert "Bearer [redacted]" in exc.value.data["error"]
 
 
+@pytest.mark.parametrize("server", [False, True])
 def test_slack_file_upload_keeps_comment_and_files_in_one_provider_call(
     session: Session,
     project_id: int,
     httpx_mock: HTTPXMock,
     tmp_path,
+    server: bool,
 ) -> None:
     credential_ref = _slack_credential_ref(session, project_id)
     _slack_communication_profile(session, project_id)
-    asset = tmp_path / "communication-media" / "issue.png"
+    if server:
+        project = session.get(Project, project_id)
+        project.environment_id = "private-file-test"
+        project.owner_user_id = "owner"
+        session.add(project)
+        session.commit()
+    relative = f"projects/{project_id}/issue.png" if server else "communication-media/issue.png"
+    asset = tmp_path / relative
     asset.parent.mkdir(parents=True)
     asset.write_bytes(b"image-bytes")
     httpx_mock.add_response(
@@ -696,7 +764,7 @@ def test_slack_file_upload_keeps_comment_and_files_in_one_provider_call(
                 "initial_comment": "Customer attached this screenshot.",
                 "files": [
                     {
-                        "artifact_ref": "/generated-assets/communication-media/issue.png",
+                        "artifact_ref": "/generated-assets/" + relative,
                         "filename": "issue.png",
                         "title": "Issue screenshot",
                         "mime_type": "image/png",

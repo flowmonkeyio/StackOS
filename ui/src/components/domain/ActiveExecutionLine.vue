@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { ActiveExecution } from '@/lib/task-tracker/types'
 import type { SchemaExecutionIdentityOut, SchemaWorkDurationOut } from '@/api'
-import { activeExecutionTitle, executionRole } from '@/lib/task-tracker/execution'
+import { activeExecutionTitle, executionRole, executionAttention } from '@/lib/task-tracker/execution'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import { resolveAgentHostLogo, resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
 import { UiIcon, UiTooltip } from '@/components/ui'
@@ -17,6 +17,7 @@ const agent = computed(() => identity.value ? executionRole(identity.value.agent
 const logo = computed(() => identity.value ? resolveAgentHostLogo(identity.value.host_key) : resolveAgentOwnerLogo(props.owner))
 const workTime = ref<InstanceType<typeof WorkTime> | null>(null)
 const full = computed(() => identity.value ? activeExecutionTitle(identity.value) : `Assigned: ${props.owner ?? 'Unassigned'}`)
+const currentLabel = computed(() => executionAttention(props.execution)?.label ?? 'Active now')
 </script>
 
 <template>
@@ -27,7 +28,7 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
     class="active-execution-line focus-ring"
     :class="{ 'active-execution-line--detailed': detailed, 'active-execution-line--last': !execution && identity }"
     :title="full"
-    :aria-label="`${identity ? `${execution ? 'Active now' : 'Last'}: ${full}` : full}${item && workTime ? ` · ${workTime.label}` : ''}`"
+    :aria-label="`${identity ? `${execution ? currentLabel : 'Last'}: ${full}` : full}${item && workTime ? ` · ${workTime.label}` : ''}`"
     :tabindex="focusable ? 0 : undefined"
     :data-active-execution="execution ? '' : undefined"
     :data-last-execution="!execution && identity ? '' : undefined"
@@ -69,6 +70,7 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
       <UsageLiveIndicator
         v-if="execution"
         :active="metricsActive && !isTerminalTrackerStatus(item?.status ?? '')"
+        :execution="execution"
       />
     </span>
   </UiTooltip>

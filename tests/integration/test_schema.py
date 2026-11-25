@@ -5,30 +5,333 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import secrets
 import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from pydantic import SecretStr
 from sqlmodel import Session
 
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, browser_profile_dir
 from stackos.communication_surface_bindings import communication_surface_binding_external_id
 from stackos.config import Settings
-from stackos.db.connection import make_engine
-from stackos.db.migrate import alembic_config, upgrade_to_head
+from stackos.db.connection import database_url, make_engine, make_settings_engine
+from stackos.db.migrate import alembic_config, current_alembic_version, upgrade_to_head
 from tests.helpers.sqlite_schema import (
     SQLiteSnapshot,
     capture_database_snapshot,
     restore_database_snapshot,
 )
+
+
+def test_account_owner_migration_preserves_legacy_custody(isolated_alembic: Path) -> None:
+    _run_alembic(["upgrade", "0040_local_runtime_connections"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        connection.execute(
+            "INSERT INTO integration_credentials "
+            "(id, encrypted_payload, nonce, created_at, updated_at) "
+            "VALUES (1, ?, ?, '2026-11-10', '2026-11-10')",
+            (b"preserved-ciphertext", b"nonce"),
+        )
+        connection.execute(
+            "INSERT INTO credentials (id, integration_credential_id, credential_ref, provider_key, "
+            "display_name, display_name_key, auth_type, auth_method_key, status, "
+            "created_at, updated_at) "
+            "VALUES (1, 1, 'cred_legacy', 'openrouter', 'Legacy', 'legacy', 'api_key', 'api_key', "
+            "'connected', '2026-11-10', '2026-11-10')"
+        )
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert connection.execute(
+            "SELECT owner_user_id, environment_id FROM credentials"
+        ).fetchone() == (None, None)
+        assert connection.execute(
+            "SELECT encrypted_payload, nonce FROM integration_credentials"
+        ).fetchone() == (b"preserved-ciphertext", b"nonce")
+        connection.execute(
+            "UPDATE credentials SET owner_user_id='synthetic-user', environment_id='synthetic-env'"
+        )
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        _run_alembic(["downgrade", "0040_local_runtime_connections"])
+    assert "Refusing to discard private Account ownership" in refused.value.stderr
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert connection.execute("SELECT owner_user_id FROM credentials").fetchone() == (
+            "synthetic-user",
+        )
+
+
+def test_database_target_refuses_runtime_and_preserves_url_escaping(tmp_path: Path) -> None:
+    """Target selection is shared by sessions, startup and ConfigParser/Alembic."""
+    standalone = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    assert database_url(standalone) == f"sqlite:///{standalone.db_path}"
+    # URL handling only; real role/target validation has separate coverage.
+    selected = standalone.model_copy(
+        update={
+            "process_role": "server",
+            "database_url": SecretStr(
+                "postgresql://postgres:fixture%25password@127.0.0.1:18922/postgres"
+            ),
+        }
+    )
+    expected = "postgresql+psycopg://postgres:fixture%25password@127.0.0.1:18922/postgres"
+    assert database_url(selected) == expected
+    assert alembic_config(selected).get_main_option("sqlalchemy.url") == expected
+    with pytest.raises(ValueError, match="runtime has no application database"):
+        make_settings_engine(standalone.model_copy(update={"process_role": "runtime"}))
+
+
+@pytest.fixture
+def postgres_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
+    """Opt in with a prepared disposable Supabase server.env; never use defaults."""
+    env_file = os.environ.get("STACKOS_TEST_POSTGRES_ENV_FILE")
+    if not env_file:
+        pytest.skip("real Postgres requires explicit STACKOS_TEST_POSTGRES_ENV_FILE")
+    from stackos.config import get_settings
+
+    monkeypatch.setenv("STACKOS_ENV_FILE", env_file)
+    selected = get_settings()
+    assert selected.process_role == "server"
+    return selected
+
+
+def test_postgres_migrate_cli_reports_safe_success(postgres_settings: Settings) -> None:
+    """The real migration command must succeed after its database mutation."""
+    result = subprocess.run(
+        [sys.executable, "-m", "stackos", "migrate"],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "migrate: alembic upgraded to head (Postgres)."
+    assert current_alembic_version(postgres_settings) == "0054_online_current_merge"
+    assert postgres_settings.database_url is not None
+    url = postgres_settings.database_url.get_secret_value()
+    password = sa.engine.make_url(url).password
+    assert password
+    output = result.stdout + result.stderr
+    assert url not in output
+    assert password not in output
+
+
+def test_postgres_migration_repositories_and_private_schema(postgres_settings: Settings) -> None:
+    """Real driver, Alembic chain, repositories, reconnect, FKs and client denial."""
+    import httpx
+    from sqlmodel import Session, SQLModel
+
+    from stackos.db.models import Project, Run, RunKind
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.runs import RunRepository
+
+    selected = postgres_settings
+    assert upgrade_to_head(selected).stamped_existing_schema is False
+    assert current_alembic_version(selected) == "0054_online_current_merge"
+    engine = make_settings_engine(selected)
+    assert engine.dialect.name == "postgresql"
+    try:
+        with engine.connect() as connection:
+            assert set(sa.inspect(connection).get_table_names()) >= EXPECTED_TABLES
+            assert set(SQLModel.metadata.tables) <= set(sa.inspect(connection).get_table_names())
+            assert connection.exec_driver_sql("SELECT current_schema()").scalar_one() == "stackos"
+        SQLModel.metadata.create_all(engine)
+        payload = {"nested": {"unicode": "持久化", "values": [None, True, 1, 1.25]}, "empty": {}}
+        slug = f"pg-{uuid4().hex[:16]}"
+        with Session(engine) as session:
+            project = (
+                ProjectRepository(session)
+                .create(
+                    slug=slug, name="Postgres proof", domain="example.test", schedule_json=payload
+                )
+                .data
+            )
+            from stackos.repositories.tracker import TrackerRepository
+
+            tracker = TrackerRepository(session)
+            tracker.create_task(project_id=project.id, key="proof", title="Revision proof")
+            tracker.update_task(
+                project_id=project.id, task_key="proof", patch_json={"status": "in-progress"}
+            )
+            tracker.create_ticket(
+                project_id=project.id, task_key="proof", key="proof-ticket", title="Ticket"
+            )
+            tracker.update_ticket(
+                project_id=project.id,
+                ticket_key="proof-ticket",
+                patch_json={"status": "in-progress"},
+            )
+            completion = {"status": "complete", "completion_evidence_json": {"summary": "proof"}}
+            tracker.update_ticket(
+                project_id=project.id, ticket_key="proof-ticket", patch_json=completion
+            )
+            # Completing the sole child also completes its parent. Keep a
+            # separate task for the uncommitted revision/rollback proof.
+            tracker.create_task(project_id=project.id, key="writer", title="Writer")
+            tracker.update_task(
+                project_id=project.id, task_key="writer", patch_json={"status": "in-progress"}
+            )
+            tracker.update_task(
+                project_id=project.id, task_key="writer", patch_json=completion, commit=False
+            )
+            assert (
+                tracker.agent_stats(
+                    project_id=project.id
+                ).delivery_trends.totals.completed_tasks.total
+                == 2
+            )
+            session.rollback()
+            assert (
+                tracker.agent_stats(
+                    project_id=project.id
+                ).delivery_trends.totals.completed_tasks.total
+                == 1
+            )
+            tracker.update_task(project_id=project.id, task_key="writer", patch_json=completion)
+            for delivery_status in ("running", "stopped", "stopped"):
+                tracker.update_task(
+                    project_id=project.id,
+                    task_key="proof",
+                    patch_json={"metadata_json": {"delivery": {"status": delivery_status}}},
+                )
+            trends = tracker.agent_stats(project_id=project.id).delivery_trends.totals
+            assert trends.completed_tasks.total == 2
+            assert trends.completed_tickets.total == 1
+            assert trends.stops.total == 1
+            run = (
+                RunRepository(session)
+                .start(project_id=project.id, kind=RunKind.ACTION, metadata_json=payload)
+                .data
+            )
+            assert project.id and run.id
+        engine.dispose()
+        # New engine/session, persisted repository values and exact timestamps.
+        engine = make_settings_engine(selected)
+        assert upgrade_to_head(selected).stamped_existing_schema is False
+        with Session(engine) as session:
+            loaded = ProjectRepository(session).get(project.id)
+            assert loaded.schedule_json == payload
+            assert loaded.created_at == project.created_at
+            assert loaded.updated_at == project.updated_at
+            loaded_run = RunRepository(session).get(run_id=run.id)
+            assert loaded_run.metadata_json == payload
+            assert loaded_run.started_at == run.started_at
+            assert loaded_run.started_at.tzinfo is None
+            session.add(Run(project_id=-1, kind=RunKind.ACTION))
+            with pytest.raises(sa.exc.IntegrityError):
+                session.commit()
+            session.rollback()
+            session.delete(session.get(Run, run.id))
+            session.delete(session.get(Project, project.id))
+            session.commit()
+            replacement = (
+                ProjectRepository(session)
+                .create(slug=slug, name="Replacement", domain="example.test")
+                .data
+            )
+            assert replacement.id > project.id
+            session.delete(session.get(Project, replacement.id))
+            session.commit()
+        with engine.begin() as connection:
+            for role in ("anon", "authenticated", "service_role"):
+                with connection.begin_nested():
+                    connection.exec_driver_sql(f'SET LOCAL ROLE "{role}"')
+                    with (
+                        pytest.raises(sa.exc.ProgrammingError, match="permission denied"),
+                        connection.begin_nested(),
+                    ):
+                        connection.exec_driver_sql("SELECT id FROM stackos.projects LIMIT 1")
+                    connection.exec_driver_sql("RESET ROLE")
+        assert selected.supabase_anon_key and selected.supabase_service_role_key
+        service_key = selected.supabase_service_role_key.get_secret_value()
+        admin_headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+        credentials = {"email": f"{slug}@example.test", "password": secrets.token_urlsafe(24)}
+        with httpx.Client(timeout=10, trust_env=False) as client:
+            # A real valid Auth session ensures the Data API denies the schema,
+            # rather than merely rejecting an invalid bearer before authorization.
+            created = client.post(
+                f"{selected.supabase_url}/auth/v1/admin/users",
+                headers=admin_headers,
+                json=credentials | {"email_confirm": True},
+            )
+            assert created.status_code == 200
+            user_id = created.json()["id"]
+            try:
+                anon_key = selected.supabase_anon_key.get_secret_value()
+                login = client.post(
+                    f"{selected.supabase_url}/auth/v1/token?grant_type=password",
+                    headers={"apikey": anon_key},
+                    json=credentials,
+                )
+                assert login.status_code == 200
+                token = login.json()["access_token"]
+                response = client.get(
+                    f"{selected.supabase_url}/rest/v1/projects?select=id",
+                    headers={
+                        "apikey": anon_key,
+                        "Authorization": f"Bearer {token}",
+                        "Accept-Profile": "stackos",
+                    },
+                )
+                assert response.status_code == 406
+                assert response.json()["code"] == "PGRST106"
+            finally:
+                deleted = client.delete(
+                    f"{selected.supabase_url}/auth/v1/admin/users/{user_id}",
+                    headers=admin_headers,
+                )
+                assert deleted.status_code == 200
+        assert not (selected.data_dir / "stackos.db").exists()
+    finally:
+        engine.dispose()
+
+
+def test_postgres_application_restart_reads_persisted_data(postgres_settings: Settings) -> None:
+    """Exercise the real application lifespan and session dependency on Postgres."""
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session
+
+    from stackos.db.models import Project
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.server import create_app
+
+    selected = postgres_settings
+    slug = f"restart-{uuid4().hex[:16]}"
+    for attempt in range(2):
+        app = create_app(selected)
+        with TestClient(app, base_url=selected.server_url) as client:
+            health = client.get("/api/v1/health")
+            assert health.status_code == 200
+            assert health.json()["db_status"] == "ok"
+            assert health.json()["scheduler_running"] is True
+            assert app.state.engine.dialect.name == "postgresql"
+            with Session(app.state.engine) as session:
+                repository = ProjectRepository(session)
+                if attempt == 0:
+                    project = repository.create(
+                        slug=slug,
+                        name="Restart persistence",
+                        domain="example.test",
+                        schedule_json={"persisted": True},
+                    ).data
+                else:
+                    loaded = repository.get(slug)
+                    assert loaded.id == project.id
+                    assert loaded.schedule_json == {"persisted": True}
+                    assert loaded.created_at == project.created_at
+                    session.delete(session.get(Project, loaded.id))
+                    session.commit()
+        assert not app.state.scheduler_running
+    assert not (selected.data_dir / "stackos.db").exists()
 
 
 @pytest.fixture(params=["standalone", "explicit-settings"])
@@ -95,6 +398,8 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "approval_requests",
         "artifacts",
         "auth_providers",
+        "user_sessions",
+        "local_runtime_connections",
         "browser_action_receipts",
         "browser_profiles",
         "browser_sessions",
@@ -267,6 +572,34 @@ def _run_alembic(
         text=True,
         env=os.environ.copy() if env is None else env,
     )
+
+
+@contextmanager
+def _legacy_project_session(engine):
+    """Use the historical Project projection while preparing pre-0039 fixtures.
+
+    These fixtures deliberately execute current unchanged repositories against
+    older schemas. Ownership did not exist there. Defer only those two new
+    fields in this session; retain real rows, FKs and all migration assertions.
+    This is test setup, never a production legacy-schema fallback.
+    """
+    from sqlalchemy.orm import defer
+    from sqlmodel import Session
+
+    from stackos.db.models import Project
+
+    with Session(engine) as session:
+
+        @sa.event.listens_for(session, "do_orm_execute")
+        def historical_projection(state):
+            if state.is_select and any(
+                item.get("expr") is Project for item in state.statement.column_descriptions
+            ):
+                state.statement = state.statement.options(
+                    defer(Project.environment_id), defer(Project.owner_user_id)
+                )
+
+        yield session
 
 
 def _insert_legacy_project(
@@ -685,7 +1018,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0053_revision_delivery_index",
+            "0054_online_current_merge",
         )
     finally:
         conn.close()
@@ -1586,6 +1919,8 @@ def _historical_project_fixture_session(engine) -> Iterator[Session]:
         additions = [
             (name, ddl)
             for name, ddl in (
+                ("environment_id", "VARCHAR(63)"),
+                ("owner_user_id", "VARCHAR(36)"),
                 ("order_index", "INTEGER DEFAULT 0"),
                 ("cleanup_json", "JSON"),
                 ("setup_reminder_dismissed_at", "DATETIME"),
@@ -1600,7 +1935,7 @@ def _historical_project_fixture_session(engine) -> Iterator[Session]:
         for name, ddl in additions:
             connection.exec_driver_sql(f"ALTER TABLE projects ADD COLUMN {name} {ddl}")
     try:
-        with Session(engine) as session:
+        with _legacy_project_session(engine) as session:
             yield session
     finally:
         with engine.begin() as connection:
@@ -1619,7 +1954,6 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
     from stackos.db.models import (
         Action,
         ActionCall,
-        Credential,
         Plugin,
         ProjectCredential,
         Provider,
@@ -1628,21 +1962,29 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
     )
 
     _run_alembic(["upgrade", "0030_durable_action_runtime"])
-    with sqlite3.connect(isolated_alembic) as conn:
-        _insert_legacy_project(conn, project_id=1, now="2026-11-05")
+    with sqlite3.connect(isolated_alembic) as connection:
+        _insert_legacy_project(connection, project_id=1, now="2026-11-10 00:00:00")
+        connection.execute("UPDATE projects SET slug='cutover', name='Cutover' WHERE id=1")
     engine = make_engine(isolated_alembic)
-    with _historical_project_fixture_session(engine) as session:
+    with Session(engine) as session:
         session.add(Plugin(id=1, slug="communications", name="Communications", source="builtin"))
         session.commit()
         session.add(Provider(id=1, plugin_id=1, key="telegram-bot", name="Old Telegram"))
         session.add(Provider(id=2, plugin_id=1, key="slack-bot", name="Slack"))
-        session.add(
-            Credential(
+        # This fixture intentionally targets the pre-ownership credential schema.
+        legacy_credentials = sa.Table("credentials", sa.MetaData(), autoload_with=engine)
+        session.execute(
+            legacy_credentials.insert().values(
                 id=1,
                 provider_key="telegram-bot",
                 credential_ref="cred_old_bot",
                 display_name="Old bot",
                 display_name_key="old bot",
+                auth_type="none",
+                auth_method_key="default",
+                status="connected",
+                created_at=sa.func.current_timestamp(),
+                updated_at=sa.func.current_timestamp(),
             )
         )
         session.commit()
@@ -1798,7 +2140,7 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
     assert not (tables & LEGACY_TABLES)
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0053_revision_delivery_index",)
+            ("0054_online_current_merge",)
         ]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert {"order_index", "cleanup_json", "primary_workspace_binding_id"} <= _table_columns(
@@ -1879,7 +2221,7 @@ def test_project_folder_migration_requires_explicit_adoption_and_preserves_state
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("UPDATE projects SET primary_workspace_binding_id=1 WHERE id=1")
-        conn.execute("UPDATE alembic_version SET version_num='0037_schedule_id_nonreuse'")
+        conn.execute("UPDATE alembic_version SET version_num='0041_account_owners'")
     # A lost stamp must preserve an explicitly selected reference on retry.
     _run_alembic(["upgrade", "head"])
     with sqlite3.connect(isolated_alembic) as conn:
@@ -2097,7 +2439,6 @@ def test_ownership_migration_preserves_existing_data_and_refuses_history_loss(
 def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
     isolated_alembic: Path,
 ) -> None:
-    from sqlmodel import Session
 
     from stackos.db.models import AgentRequest, RunPlan, ScheduledJob
     from stackos.repositories.agent_requests import AgentRequestRepository
@@ -2135,10 +2476,10 @@ def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
             .data
         )
     engine.dispose()
-    _run_alembic(["upgrade", "head"])
-    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         row = session.get(ScheduledJob, 41)
         assert row.project_id == 1 and row.kind == "old-review" and row.cron_expr == "0 9 * * 1"
         assert row.enabled is False and row.next_run_at is None
@@ -2166,7 +2507,7 @@ def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
     with sqlite3.connect(isolated_alembic) as conn:
         conn.execute("UPDATE scheduled_jobs SET enabled=1, name='Configured after migration'")
         conn.execute("UPDATE alembic_version SET version_num='0035_generic_task_delivery'")
-    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT enabled, name FROM scheduled_jobs").fetchone() == (
             1,
@@ -2270,10 +2611,10 @@ def test_schedule_id_upgrade_retains_removed_history_and_sequence(
         if not keep_live_schedule:
             schedules.remove(live.id, project_id=1)
     engine.dispose()
-    _run_alembic(["upgrade", "head"])
-    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         schedules = ScheduledJobRepository(session)
         assert schedules.list(1) == ([live] if keep_live_schedule else [])
         replacement = schedules.set(
@@ -2473,6 +2814,8 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
     _run_alembic(["upgrade", "head"])
     with sqlite3.connect(isolated_alembic) as conn:
         assert _list_tables(isolated_alembic) == tables_before | {
+            "user_sessions",
+            "local_runtime_connections",
             "task_delivery_capacity",
             "managed_upgrades",
             "patterns",
@@ -2772,3 +3115,86 @@ def test_browser_replacement_preserves_historic_rows_and_profile_path(
     assert BROWSER_PROFILE_DIRNAME == "playwright-chromium"
     assert profile_sentinel.read_text(encoding="utf-8") == "preserve-profile"
     assert external_cookie.read_text(encoding="utf-8") == "do-not-touch"
+
+
+def test_project_owner_migration_preserves_unassigned_data_and_refuses_owner_loss(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0038_user_sessions"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        _insert_legacy_project(connection, project_id=7, now="2026-11-10 00:00:00")
+        project_columns = ",".join(
+            row[1] for row in connection.execute("PRAGMA table_info(projects)")
+        )
+        before = connection.execute(
+            f"SELECT {project_columns} FROM projects WHERE id = 7"
+        ).fetchone()
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        after = connection.execute(
+            f"SELECT {project_columns} FROM projects WHERE id = 7"
+        ).fetchone()
+        assert after == before
+        assert connection.execute(
+            "SELECT owner_user_id, environment_id FROM projects WHERE id = 7"
+        ).fetchone() == (None, None)
+        connection.execute(
+            "UPDATE projects SET owner_user_id = ?, environment_id = ? WHERE id = 7",
+            ("00000000-0000-0000-0000-000000000001", "synthetic-owner-migration"),
+        )
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        _run_alembic(["downgrade", "0038_user_sessions"])
+    assert "Refusing to discard private project ownership" in refused.value.stderr
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert set(connection.execute("SELECT version_num FROM alembic_version").fetchall()) == {
+            ("0039_project_owners",),
+            ("0053_revision_delivery_index",),
+        }
+        assert connection.execute(
+            "SELECT owner_user_id, environment_id FROM projects WHERE id = 7"
+        ).fetchone() == ("00000000-0000-0000-0000-000000000001", "synthetic-owner-migration")
+
+
+def test_computer_authorization_migration_preserves_data_and_refuses_loss(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0039_project_owners"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        _insert_legacy_project(connection, project_id=7, now="2026-11-10 00:00:00")
+        project_columns = ",".join(
+            row[1] for row in connection.execute("PRAGMA table_info(projects)")
+        )
+        before = connection.execute(
+            f"SELECT {project_columns} FROM projects WHERE id = 7"
+        ).fetchone()
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert (
+            connection.execute(f"SELECT {project_columns} FROM projects WHERE id = 7").fetchone()
+            == before
+        )
+        assert connection.execute("SELECT * FROM local_runtime_connections").fetchall() == []
+        connection.execute(
+            "INSERT INTO local_runtime_connections "
+            "(id, project_id, owner_user_id, environment_id, server_origin, credential_digest, "
+            "created_at, expires_at) VALUES (?, 7, ?, ?, ?, ?, ?, ?)",
+            (
+                "connection",
+                "owner",
+                "synthetic",
+                "http://127.0.0.1:19960",
+                "digest",
+                "2026-11-10 00:00:00",
+                2000000000,
+            ),
+        )
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        _run_alembic(["downgrade", "0039_project_owners"])
+    assert "Refusing to discard computer authorizations" in refused.value.stderr
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert connection.execute("SELECT id FROM local_runtime_connections").fetchall() == [
+            ("connection",)
+        ]
+        assert ("0040_local_runtime_connections",) in connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchall()

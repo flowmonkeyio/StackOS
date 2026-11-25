@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import HomeView from './HomeView.vue'
 import { activeTasksFixture } from './home/activeTaskFixtures'
 import { agentStatsFixture } from './home/agentStatsFixtures'
+import { useAuthStore } from '@/stores/auth'
 
 const ORIG_FETCH = globalThis.fetch
 
@@ -377,10 +378,22 @@ describe('HomeView', () => {
   })
 })
 
-async function mountHome() {
+it('opens online projects without manual creation or local readiness requests', async () => {
+  globalThis.fetch = vi.fn(async input => defaultFetch(String(input))) as typeof fetch
+  const wrapper = await mountHome(true)
+  expect(wrapper.find('[aria-label="System status"]').exists()).toBe(false)
+  expect(vi.mocked(fetch).mock.calls.every(([url]) => !String(url).includes('hostMcp') && !String(url).includes('StatsAll') && !String(url).includes('CountsAll'))).toBe(true)
+  expect(wrapper.text()).not.toContain('Create project')
+  expect(wrapper.find('input[pattern]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+async function mountHome(server = false) {
+  const pinia = createPinia()
+  if (server) { const auth = useAuthStore(pinia); auth.mode = 'server'; auth.state = {kind:'ready'} }
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: HomeView }, { path: '/projects/:id/tasks', component: { template: '<div>Task graph</div>' } }],
+    routes: [{ path: '/', component: HomeView }, { path: '/projects/:id/tasks', component: { template: '<div>Task graph</div>' } }, { path: '/projects/:id', component: { template: '<p>Opened private project</p>' } }],
   })
   await router.push('/')
   await router.isReady()
@@ -388,7 +401,7 @@ async function mountHome() {
     { template: '<RouterView />' },
     {
       global: {
-        plugins: [router, createPinia()],
+        plugins: [router, pinia],
         stubs: { teleport: true, TicketStatusChart: true, AgentActivityChart: true, DeliveryTrendChart: true },
       },
     },

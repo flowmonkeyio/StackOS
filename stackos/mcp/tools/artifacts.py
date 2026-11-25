@@ -8,8 +8,10 @@ from typing import Any, Literal
 
 from pydantic import ConfigDict, Field
 
+from stackos.artifacts.files import generated_file_path
 from stackos.artifacts.json_path import select_json_path
 from stackos.config import Settings
+from stackos.db.models import Artifact
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry
@@ -294,25 +296,23 @@ async def _artifact_read(
     asset_root = Path(
         getattr(settings, "generated_assets_dir", Settings().generated_assets_dir)
     ).resolve()
-    path = (asset_root / uri.removeprefix("/generated-assets/")).resolve()
-    try:
-        path.relative_to(asset_root)
-    except ValueError as exc:
-        raise ValidationError("artifact path escaped generated assets") from exc
+    online = getattr(settings, "process_role", None) == "server"
+    path = generated_file_path(asset_root, uri, project_id=project_id if online else None)
 
-    metadata = artifact.metadata_json if isinstance(artifact.metadata_json, dict) else {}
+    stored = ctx.session.get(Artifact, inp.artifact_id)
+    metadata = stored.metadata_json if stored is not None and stored.metadata_json else {}
     metadata_path = metadata.get("absolute_path") or metadata.get("path")
     if isinstance(metadata_path, str) and Path(metadata_path).resolve() != path:
         return {
             **base,
-            "path": str(path),
+            **({} if online else {"path": str(path)}),
             "content_available": False,
             "error": "artifact metadata path does not match generated asset URI",
         }
     if not path.exists() or not path.is_file():
         return {
             **base,
-            "path": str(path),
+            **({} if online else {"path": str(path)}),
             "content_available": False,
             "error": "artifact file is missing",
         }
@@ -334,7 +334,7 @@ async def _artifact_read(
     else:
         return {
             **base,
-            "path": str(path),
+            **({} if online else {"path": str(path)}),
             "content_available": False,
             "content_type": mime_type or None,
             "bytes": len(raw),
@@ -348,7 +348,7 @@ async def _artifact_read(
         content = encoded[: inp.max_bytes].decode("utf-8", errors="ignore")
     return {
         **base,
-        "path": str(path),
+        **({} if online else {"path": str(path)}),
         "json_path": selected_json_path if _is_json_artifact(mime_type, path) else None,
         "content_available": True,
         "content_type": mime_type or "application/octet-stream",

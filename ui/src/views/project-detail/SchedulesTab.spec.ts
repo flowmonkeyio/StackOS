@@ -197,6 +197,19 @@ describe('Automations and Runs', () => {
     expect(w.get('table').findAll('a').map(link => link.attributes('href'))).toEqual(['/projects/1/tasks?view=graph&task=workflow-12'])
   })
 
+  it('preserves a connected computer target when editing without a server-local folder', async () => {
+    const connected = { ...job, execution_json: { connection_id: '00000000-0000-0000-0000-000000000001', host_key: 'codex' } }
+    mockFetch([connected])
+    const w = await mountTab()
+    await w.get('table [data-dropdown-trigger]').trigger('click')
+    await w.get('table [role="menuitem"]').trigger('click')
+    await flushPromises()
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
+    await w.getComponent(ScheduleEditor).get('form').trigger('submit')
+    await flushPromises()
+    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: connected.execution_json }))
+  })
+
   it('does not present a failed initial read as an empty history', async () => {
     globalThis.fetch = vi.fn(async () => json({ detail: 'Read unavailable' }, 503)) as typeof fetch
     const w = await mountTab()

@@ -43,7 +43,13 @@ from .filesystem import (
     source_lock,
 )
 from .format import MANIFEST_SCHEMA, allowed_member_name, valid_project_id
-from .models import BackupError, BackupPolicy, BackupTarget, parse_public_key
+from .models import (
+    BackupError,
+    BackupPolicy,
+    BackupTarget,
+    parse_public_key,
+    require_standalone_backup,
+)
 
 POLICY_FILE = "backup-policy.json"
 OUTCOME_FILE = "backup-outcome.json"
@@ -54,6 +60,7 @@ MAX_PRIVATE_PEM_BYTES = 8192
 
 
 def load_policy(settings: Settings) -> BackupPolicy:
+    require_standalone_backup(settings)
     try:
         return BackupPolicy.model_validate(read_json(settings.state_dir / POLICY_FILE, {}))
     except ValidationError as exc:
@@ -192,6 +199,7 @@ def _validate_policy(
 
 
 def save_policy(settings: Settings, policy: BackupPolicy) -> BackupPolicy:
+    require_standalone_backup(settings)
     # Exclusion state has a separate owner and cannot be overwritten by an API patch.
     with backup_lock(settings.state_dir):
         validated = _validate_policy(
@@ -205,6 +213,7 @@ def update_policy(
     settings: Settings, patch: dict[str, Any], *, upsert_target: BackupTarget | None = None
 ) -> BackupPolicy:
     """Apply explicit fields against current durable state under one lock."""
+    require_standalone_backup(settings)
     with backup_lock(settings.state_dir):
         saved = load_policy(settings)
         if patch == {"enabled": False} and upsert_target is None:
@@ -230,6 +239,7 @@ def update_policy(
 
 
 def backup_status(settings: Settings) -> dict[str, Any]:
+    require_standalone_backup(settings)
     policy = load_policy(settings)
     ready = policy.recipient_public_key is not None
     readiness_error: dict[str, str] | None = None
@@ -348,6 +358,7 @@ def recovery_key_custody(
     reserve: bool = False,
 ) -> dict[str, Any]:
     """Inspect custody without writes, or durably reserve it before native staging."""
+    require_standalone_backup(settings)
     with backup_lock(settings.state_dir) if reserve else nullcontext():
         policy = _custody_policy(
             settings,
@@ -391,6 +402,7 @@ def initialize_backups(
     destination: Path | None = None,
 ) -> BackupPolicy:
     """Activate a first-time setup only after both recovery copies are durable."""
+    require_standalone_backup(settings)
     with backup_lock(settings.state_dir):
         policy = _custody_policy(settings, first_time=True, destination=destination)
         private, protected = _custody_paths(
@@ -428,6 +440,7 @@ def generate_recovery_key(
     protected_paths: Sequence[Path] = (),
     destination: Path | None = None,
 ) -> dict[str, str]:
+    require_standalone_backup(settings)
     private, public = canonical(private_key_path), canonical(public_key_path)
     with backup_lock(settings.state_dir):
         policy = _custody_policy(settings, first_time=first_time, destination=destination)
@@ -491,6 +504,7 @@ def export_recovery_key(
     expected_recipient: str | None = None,
 ) -> dict[str, str]:
     """Export only the configured key, never regenerate or rotate a missing key."""
+    require_standalone_backup(settings)
     with backup_lock(settings.state_dir):
         policy = _custody_policy(settings, expected_recipient=expected_recipient)
         if policy.recipient_public_key is None:
@@ -527,6 +541,7 @@ def export_recovery_key(
 
 def export_latest_backup(settings: Settings, output: Path) -> dict[str, Any]:
     """Copy the last successful archive only after its saved receipt is verified."""
+    require_standalone_backup(settings)
     with backup_lock(settings.state_dir):
         policy = load_policy(settings)
         outcome = _load_outcome(settings)
@@ -946,6 +961,7 @@ def create_backup(
     recipient_public_key: str | None = None,
     extra_targets: Sequence[BackupTarget] = (),
 ) -> dict[str, Any]:
+    require_standalone_backup(settings)
     with backup_lock(settings.state_dir):
         policy = load_policy(settings)
         if extra_targets:
@@ -988,6 +1004,7 @@ def _prune(settings: Settings, policy: BackupPolicy, outcome: dict[str, Any]) ->
 
 
 def run_due_backup(settings: Settings, *, now: datetime | None = None) -> dict[str, Any]:
+    require_standalone_backup(settings)
     now = now or datetime.now(UTC)
     if now.tzinfo is None:
         raise BackupError("invalid_time", "Backup scheduling requires a timezone-aware time.")
