@@ -1,0 +1,180 @@
+{
+  "version": "2.1.49",
+  "status": "published_verified",
+  "source_commit": "858b690139b3d51f061e06c0c809ad8bc17a50e1",
+  "previous_release_source": "c2a4979adcc0014af9bfc6ce0fe344c4bf879b28",
+  "included_fixes": [
+    "3dbf31ad4c861c9035b5cc4cf64dfd606ed3a72f",
+    "11787ac5aaea8f0c04a2c1d4251b74b33d28c9ea"
+  ],
+  "excluded": "Server consolidation remains reverted from main; net release diff excludes it.",
+  "authority": "Operator requested commit/push, deployment of another version, and comprehensive correction of local release documentation.",
+  "public_base": "https://stackos.flowmonkey.io/StackOS/",
+  "tag": {
+    "name": "v2.1.49",
+    "verified": true,
+    "annotated_object": "438d23cf59ec1530e28bcfab6d1e0546f1142d05",
+    "peeled_commit": "858b690139b3d51f061e06c0c809ad8bc17a50e1",
+    "verification": "git ls-remote remote readback"
+  },
+  "build_id": "20261125T070359Z",
+  "built_at": "2026-11-25T07:06:04Z",
+  "build": {
+    "command": "scripts/desktop-release.py build -> pnpm --dir desktop run dist:mac:release",
+    "exit_code": 0,
+    "source_commit": "858b690139b3d51f061e06c0c809ad8bc17a50e1"
+  },
+  "changes": [
+    "Stop inherited workspace ownership at nested Git/worktree boundaries; require explicit connection instead of selecting an unrelated ancestor or auto-creating a replacement project.",
+    "Retain archive candidate validation and review-recovery fixes from accepted main.",
+    "Align all active local release instructions and preflight help with existing App Store Connect API credentials; add a tested private environment loader."
+  ],
+  "source_verification": {
+    "status": "passed_for_runtime_and_version_delta",
+    "runtime_candidate": "11787ac5aaea8f0c04a2c1d4251b74b33d28c9ea",
+    "version_candidate": "00822ebdc3512ce29d4031ab1adf0903331d8076",
+    "full_signoff": {
+      "command": "TPF_LLM_TOOL=codex tpf make signoff",
+      "exit_code": 0,
+      "execution_session": 23467,
+      "terminal_output_chunk": "38e297",
+      "evidence_owner": "root tool execution transcript; successful TPF output was not retained as a separate full log",
+      "coverage": [
+        "Ruff lint and format",
+        "mypy",
+        "complete Python suite",
+        "UI unit tests",
+        "production UI build"
+      ],
+      "counts": "not retained in filtered terminal output; no inferred counts",
+      "sandbox_attempt": "First invocation failed to access uv cache. Authorized escalated rerun passed."
+    },
+    "independent_fix_review": {
+      "reviewer": "/root/review_worktree_fix",
+      "verdict": "approve",
+      "focused_tests_passed": 118,
+      "affected_file_ruff": "passed",
+      "files_aggregate_sha256": "88296d62f3327598f22fae1700ef12489f99c6a8cdd0e8e38a6b098e7c2375ef"
+    },
+    "version_delta": {
+      "changed_files": [
+        "pyproject.toml",
+        "stackos/__init__.py",
+        "desktop/package.json",
+        "uv.lock"
+      ],
+      "command": ".venv/bin/python -m pytest -n0 tests/unit/test_version_alignment.py tests/unit/test_health.py -q",
+      "exit_code": 0,
+      "passed": 22,
+      "execution_session": 93050,
+      "desktop_doctor": {
+        "command": "make desktop-doctor",
+        "exit_code": 0,
+        "execution_session": 25246
+      }
+    },
+    "reuse_basis": "Runtime, tests and UI are unchanged between full-signoff candidate and version-only candidate; independent reviewer verified version-only diff and retained approved fix digest.",
+    "remaining_delta": "Completed: guidance/helper independently reviewed with 31 passing tests, lint/format, JS syntax and desktop build-config checks; live maintained-helper preflight and notarized build passed.",
+    "installation": "Not performed. Shared live runtime remains unchanged."
+  },
+  "release_guidance_verification": {
+    "reviewer": "/root/review_worktree_fix",
+    "verdict": "approve",
+    "tests_passed": 31,
+    "ruff": "passed",
+    "node_syntax": "passed",
+    "build_config_smoke": "passed",
+    "content_sha256": "d0c890a87738dcd37b4bd9ddbd86990e20a0fee619938f724cc64b4e3a156c2d"
+  },
+  "notarization": {
+    "status": "Accepted",
+    "method": "Existing App Store Connect API-key configuration loaded privately by scripts/desktop-release.py",
+    "new_credentials_required": false,
+    "signing_team": "TSHN26FR48",
+    "app_submission": "1072a2f9-d799-4bea-b6c6-e9740ae13972",
+    "dmg_submission": "3c174f49-5fb3-4cfc-bd7e-c06f345cd9a7"
+  },
+  "artifact_verification": {
+    "status": "passed",
+    "independent_reviewer": "/root/review_worktree_fix",
+    "source_ui_template_matches": 104,
+    "external_checks_passed": 20,
+    "coverage": [
+      "Final app, extracted ZIP and mounted DMG",
+      "Fresh signatures, stapling and Gatekeeper acceptance",
+      "Isolated packaged CLI with hostile Python environment",
+      "Connector pins, source contents, production update URL",
+      "Feed sizes/SHA512 and stable installer equality"
+    ]
+  },
+  "artifacts": [
+    {
+      "name": "stackos-2.1.49-mac-arm64.dmg",
+      "size": 563447377,
+      "sha256": "25e67fd1fcb091e2e95ab40cf54ec0e95f43babbd3eda25c9c90d641129497b3",
+      "sha512": "zq4A3wdN3MJeFlWY/cFdRC+FskaJM8c2rsgxJvjEs7xYZ0LfqGsKvu6JgTPRFZ2D4Sp1Vn6XOA6/8qGdWCruPg=="
+    },
+    {
+      "name": "stackos-2.1.49-mac-arm64.zip",
+      "size": 552056719,
+      "sha256": "f7a4d89a184c3e634ba5bb9fea8e36270cc1adafb1e9bed5fdad431c5dd66051",
+      "sha512": "EgrD/SWNUst7TC5pvQIAMtwarm1KBTruyk4HjY0xHaT/iQD+tCqUbxNg4BLPvW8+yxeYOgdiBJmCe/c3erzEmA=="
+    },
+    {
+      "name": "stackos-2.1.49-mac-arm64.dmg.blockmap",
+      "size": 583822,
+      "sha256": "568821d93723d7c72d428bf5e09f10e1f3fa1f9dbcc6320269fb93abcc647065",
+      "sha512": "8sYPsAHpjPp/HCW9IBDOeKCn9reL4P0dokByVgyystaPd3bHHqguK2CSpBgYFmqihv5NAEGkq1unBTOURXSyNA=="
+    },
+    {
+      "name": "stackos-2.1.49-mac-arm64.zip.blockmap",
+      "size": 562293,
+      "sha256": "59de4d6c3326f47a22635958f1e1da9030b889d9ea4533dde1fe230ce6a0fcac",
+      "sha512": "/6+7dTXdGzEFmCPddIPZZ2lTLCbq39KSn5Y+1LfYnsQX3a5EOnprDBRhKq1IpZc2R/SKxt3pvpFROTbtuqQJAA=="
+    },
+    {
+      "name": "stackos-latest-mac-arm64.dmg",
+      "size": 563447377,
+      "sha256": "25e67fd1fcb091e2e95ab40cf54ec0e95f43babbd3eda25c9c90d641129497b3",
+      "sha512": "zq4A3wdN3MJeFlWY/cFdRC+FskaJM8c2rsgxJvjEs7xYZ0LfqGsKvu6JgTPRFZ2D4Sp1Vn6XOA6/8qGdWCruPg=="
+    },
+    {
+      "name": "latest-mac.yml",
+      "size": 513,
+      "sha256": "38cb89724a2e6e775af75a80bc917f6f3c17b4089a75a1316f928bf2a0c9f789",
+      "sha512": "rflKD5b7Tv72/LkOsIvFbN3wF8G9o4yynK8ZOulkWE66OnPOkUfPUlkbQzZh6vJuQj1qIKPMslJt+WTEg2CYiQ=="
+    }
+  ],
+  "publication": {
+    "status": "published",
+    "staging": "success: six completed, zero failed or skipped",
+    "staged_https_readback": "six full downloads match local SHA256",
+    "alias_promotion": "success",
+    "feed_promotion": "success after alias",
+    "final_https_readback": "installer and feed full downloads match local SHA256",
+    "ordinary_feed_url": "2.1.49 confirmed without a cache-busting query"
+  },
+  "action_call_ids": {
+    "upload": 15209,
+    "promote_alias": 15210,
+    "promote_feed": 15211
+  },
+  "public_readback": {
+    "passed": true,
+    "staged_files_verified": 6,
+    "final_files_verified": 2,
+    "accepted_source": "858b690139b3d51f061e06c0c809ad8bc17a50e1",
+    "checked_at_unix": 1795592642.969307
+  },
+  "installed": {
+    "status": "not_performed",
+    "reason": "Public release only; current shared installed app and running sessions were not replaced or restarted."
+  },
+  "limitations": [
+    "No fresh local installation or native updater install/relaunch occurrence is claimed.",
+    "Full runtime signoff evidence is retained in the tool transcript; filtered output did not retain complete suite counts. Version and release-guidance changes have separate current checks and independent review."
+  ],
+  "auth_diagnostic_correction": "The initial missing stackos-notary diagnosis checked an example auth method. Prior successful release evidence identified the existing API-key route; live validation and this release succeeded without new credentials. Canonical guidance now prevents that mistaken default.",
+  "private_evidence_root": "/private/tmp/stackos-release-2.1.49",
+  "recorded_at": "2026-11-25T07:45:13.832986+00:00"
+}
