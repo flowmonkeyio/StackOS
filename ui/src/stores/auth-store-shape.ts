@@ -4,7 +4,4 @@
 
 export interface AuthStoreLike {
   readonly token: string | null
-  readonly csrfToken?: string | null
-  readonly mode?: 'standalone' | 'server'
-  onUnauthorized?: (error?: unknown, renewed?: boolean) => Promise<boolean> | void
 }

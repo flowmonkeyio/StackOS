@@ -330,13 +330,10 @@ def _audio_artifact(request: ActionConnectorRequest) -> tuple[Path, str]:
     audio_format = _AUDIO_MIME_FORMATS.get(mime_type)
     if audio_format is None:
         raise ValidationError("Audio artifact has an unsupported MIME type")
-    root = request.asset_dir or Settings().generated_assets_dir
     path = artifact_path(
-        root,
+        request.asset_dir or Settings().generated_assets_dir,
         artifact.uri,
         label="audio artifact",
-        session=request.session,
-        project_id=request.project_id,
     )
     if not 0 < path.stat().st_size <= MAX_AUDIO_BYTES:
         raise ValidationError("Audio file must be nonempty and at most 20 MiB")

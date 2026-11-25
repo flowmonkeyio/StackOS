@@ -207,9 +207,7 @@ class TrackerStartDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     project_id: int
     task_key: str = Field(min_length=1)
-    project_dir: str | None = Field(default=None, min_length=1)
-    connection_id: str | None = Field(default=None, min_length=36, max_length=36)
-    base_commit_sha: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    project_dir: str = Field(min_length=1)
     mcp_config_ref: TaskMcpConfigRef | None = Field(
         default=None,
         description=(
@@ -236,10 +234,6 @@ class TrackerStartDeliveryInput(MCPInput):
 
     @model_validator(mode="after")
     def workflow_scope_pair(self):
-        if (self.project_dir is None) == (self.connection_id is None):
-            raise ValueError("select exactly one local directory or connected computer")
-        if self.connection_id and self.mcp_config_ref:
-            raise ValueError("connected computer MCP configuration stays local")
         if (self.run_plan_id is None) != (self.step_id is None):
             raise ValueError("run_plan_id and step_id must be provided together")
         if self.replace_review is not None and any(

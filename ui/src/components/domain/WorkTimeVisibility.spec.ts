@@ -15,7 +15,7 @@ import { activeTaskFixture } from '@/views/home/activeTaskFixtures'
 
 enableAutoUnmount(afterEach)
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
-const execution = { live_usage: null, connection_state: null, stop_requested: false, invocation_id: 'call-1', agent: 'sdlc_delivery', host_key: 'codex', model: 'fixture', started_at: '2026-11-08T01:08:00Z', ticket_key: 'child' }
+const execution = { live_usage: null, invocation_id: 'call-1', agent: 'sdlc_delivery', host_key: 'codex', model: 'fixture', started_at: '2026-11-08T01:08:00Z', ticket_key: 'child' }
 const duration = { coverage: WorkDurationOutCoverage.complete, total_seconds: 840, observed_at: '2026-11-08T01:22:00Z', endpoint_at: '2026-11-08T01:22:00Z', recorded_intervals: 2, unavailable_intervals: 0, issues: [], live: [execution] }
 function task(id: number): TrackerTask {
   return { id, project_id: 1, tracker_id: 1, key: `hidden-${id}`, title: `Hidden ${id}`, goal: '', description: '', status: 'complete',

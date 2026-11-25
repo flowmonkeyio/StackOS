@@ -123,7 +123,7 @@ function changeSort(value: string | number | null): void {
     <UiEmptyState
       v-if="!loading && !error && !items.length && !search && filters.is_active === true && !filters.ticket_status"
       title="Ready for your first project"
-      description="Open your project folder in your AI tool and ask the agent to connect it to StackOS. Your projects will appear here; browsing needs no connected computer."
+      description="Open a project in your AI tool and ask the agent to connect it to StackOS."
       icon="folder"
       class="mt-3"
     >

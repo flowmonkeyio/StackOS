@@ -40,15 +40,7 @@ class ManagedProcessControl:
         self._on_spawn = on_spawn
         self.identity: dict[str, Any] | None = None
         self._stop_lock = RLock()
-        self._remote_stop: Callable[[float], str] | None = None
         self.stop_error: str | None = None
-
-    def delegate_stop(self, handler: Callable[[float], str]) -> None:
-        """Attach the exact transport handoff instead of a local process handle."""
-        with managed_launch_lock:
-            if self._process is not None or self._remote_stop is not None:
-                raise RuntimeError("Managed invocation already has a process owner")
-            self._remote_stop = handler
 
     def spawn(self, command: list[str], **kwargs: Any) -> subprocess.Popen[str]:
         spawned = False
@@ -63,8 +55,6 @@ class ManagedProcessControl:
                     raise InvocationCancelled("Invocation cancelled before launch")
                 if self._process is not None:
                     raise RuntimeError("Managed invocation already launched")
-                if self._remote_stop is not None:
-                    raise RuntimeError("Managed invocation belongs to a connected computer")
                 self._process = subprocess.Popen(
                     command, start_new_session=os.name == "posix", **kwargs
                 )
@@ -172,15 +162,6 @@ class ManagedProcessControl:
                 # or failed root cannot become successful through cleanup.
                 if not cancel and process is not None and process.poll() != 0:
                     self.cancelled.set()
-                remote_stop = self._remote_stop
-            if remote_stop is not None:
-                outcome = remote_stop(timeout)
-                if outcome not in {"stopped", "prevented"}:
-                    self.stop_error = (
-                        "Connected computer has not confirmed owned process termination"
-                    )
-                    return "unconfirmed"
-                return outcome
             if process is None:
                 return "prevented"
             if os.name != "posix":

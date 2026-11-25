@@ -12,7 +12,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session
-from starlette.concurrency import run_in_threadpool
 
 from stackos.api.deps import get_session
 from stackos.api.envelopes import WriteResponse, write_response
@@ -92,8 +91,7 @@ async def abort_run(
     from stackos.task_delivery import abort_audit_run
 
     return write_response(
-        await run_in_threadpool(
-            abort_audit_run,
+        abort_audit_run(
             session,
             run_id,
             cascade=cascade,

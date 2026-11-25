@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell, UiSegmentedControl } from '@/components/ui'
-import { useAuthStore } from '@/stores/auth'
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { useStackOsCatalogStore } from '@/stores/plugins'
@@ -17,7 +16,6 @@ import AgentActivitySection from './home/AgentActivitySection.vue'
 import { useAgentStats } from './home/useAgentStats'
 
 const isShell = isDesktopShell()
-const auth = useAuthStore()
 const repairOpen = ref(false)
 const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
 const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
@@ -48,22 +46,20 @@ onMounted(() => {
   // connection slots are not held ahead of primary Overview data. Active-task
   // and usage readers coalesce synchronous mount callers across one microtask,
   // so queue quotas after that microtask boundary with zero timer delay.
+  void agents.load()
+  void loadHealth()
   void catalog.refreshHomeAccounts()
-  if (auth.mode !== 'server') {
-    void agents.load()
-    void loadHealth()
-    void loadHostStatuses()
-    queueMicrotask(() => {
-      if (!unmounted) void quotas.load()
-    })
-  }
+  void loadHostStatuses()
+  queueMicrotask(() => {
+    if (!unmounted) void quotas.load()
+  })
 })
 
 const refreshing = ref(false)
 async function refresh(): Promise<void> {
   refreshing.value = true
   try {
-    await Promise.all([projects.loadAll(), activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), ...(auth.mode === 'server' ? [] : [agents.load(), loadHealth(), refreshHostPanel()])])
+    await Promise.all([projects.loadAll(), activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), agents.load(), loadHealth(), refreshHostPanel()])
   } finally { refreshing.value = false }
 }
 function confirmRepair(): void {
@@ -76,7 +72,7 @@ function confirmRepair(): void {
   <UiPageShell>
     <UiPageHeader
       title="Overview"
-      :description="auth.mode === 'server' ? 'Your private projects' : 'Your local runtime and projects'"
+      description="Your local runtime and projects"
     >
       <template #actions>
         <DeliveryCapacityControl ref="capacityControl" />
@@ -103,7 +99,6 @@ function confirmRepair(): void {
       </template>
     </UiPageHeader>
     <HomeSystemStatusCard
-      v-if="auth.mode !== 'server'"
       :health="health"
       :is-shell="isShell"
       :status-tone="statusTone"
@@ -120,7 +115,6 @@ function confirmRepair(): void {
     />
     <ActiveTaskList ref="activeTasks" />
     <AgentActivitySection
-      v-if="auth.mode !== 'server'"
       :summary="agentSummary"
       :loading="agentsLoading"
       :error="agentsError"

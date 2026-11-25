@@ -278,7 +278,6 @@ def test_managed_file_migration_preserves_old_refs_and_existing_custody(tmp_path
             "UPDATE artifacts SET managed_file_json=?", (json.dumps({"path": "kept"}),)
         )
         connection.execute("UPDATE alembic_version SET version_num='0039_project_cleanup'")
-        connection.execute("INSERT INTO alembic_version VALUES ('0041_account_owners')")
     command.upgrade(config, "head")
     with sqlite3.connect(settings.db_path) as connection:
         assert json.loads(

@@ -32,7 +32,6 @@ from typing import Any
 
 from sqlmodel import Session
 
-from stackos.auth import UserPrincipal
 from stackos.db.models import Run
 from stackos.mcp.permissions import resolve_run_token
 
@@ -75,7 +74,6 @@ class MCPContext:
     idempotency_key: str | None = None
     skill_name: str = "__system__"
     expected_etag: str | None = None
-    principal: UserPrincipal | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 
     def to_log_dict(self) -> dict[str, Any]:
@@ -124,7 +122,6 @@ def build_context(
         idempotency_key=idempotency_key,
         skill_name=skill_name,
         expected_etag=expected_etag,
-        principal=session.info.get("user_principal"),
         extras=dict(session.info.get("operation_services", {})),
     )
 

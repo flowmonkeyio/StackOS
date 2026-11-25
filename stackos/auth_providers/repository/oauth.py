@@ -98,8 +98,6 @@ class OAuthLifecycleMixin:
         assert method is not None
         setup_required = provider.auth_type not in {"none", "local"}
         if not method.interactive:
-            if credential_ref is not None:
-                self._global_credential(credential_ref)
             return Envelope(
                 data=AuthStartOut(
                     attach_project_id=attach_project_id,
@@ -231,8 +229,6 @@ class OAuthLifecycleMixin:
             .values(consumed_at=now)
         )
         state_row = OAuthState(
-            owner_user_id=credential.owner_user_id,
-            environment_id=credential.environment_id,
             attach_project_id=attach_project_id,
             return_surface=return_surface,
             provider_key=provider_key,
@@ -615,21 +611,11 @@ class OAuthLifecycleMixin:
         return True
 
     def consume_oauth_state(self, *, state: str) -> OAuthState | None:
-        from stackos.repositories.project_access import user_principal
-
         digest = self._state_digest(state)
         now = utcnow()
-        principal = user_principal(self._s)
-        owner_filters = []
-        if principal is not None:
-            owner_filters = [
-                col(OAuthState.owner_user_id) == principal.user_id,
-                col(OAuthState.environment_id) == principal.environment_id,
-            ]
         result = self._s.exec(
             update(OAuthState)
             .where(
-                *owner_filters,
                 col(OAuthState.state) == digest,
                 col(OAuthState.consumed_at).is_(None),
                 or_(col(OAuthState.expires_at).is_(None), col(OAuthState.expires_at) > now),
@@ -661,16 +647,6 @@ class OAuthLifecycleMixin:
             raise ConflictError("OAuth transaction credential binding is invalid")
         if state_row.provider_key != credential.provider_key:
             raise ConflictError("OAuth transaction binding does not match credential")
-        from .access import require_account_owner
-
-        require_account_owner(self._s, credential)
-        if (
-            state_row.owner_user_id != credential.owner_user_id
-            or state_row.environment_id != credential.environment_id
-        ):
-            raise ConflictError("OAuth transaction ownership changed")
-        if state_row.attach_project_id is not None:
-            self._require_project(state_row.attach_project_id)
         return credential
 
     def _replace_scopes(

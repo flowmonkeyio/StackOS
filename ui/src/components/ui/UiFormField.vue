@@ -85,12 +85,6 @@ provide('uiFormField', {
         >(optional)</span>
       </label>
       <span
-        v-if="$slots['label-actions']"
-        class="ml-auto"
-      >
-        <slot name="label-actions" />
-      </span>
-      <span
         v-if="dirty"
         class="inline-flex items-center gap-1 text-2xs font-medium uppercase tracking-wide text-warning-fg"
         aria-label="Unsaved changes"

@@ -15,12 +15,9 @@ import {
 } from '@/components/ui'
 import { desktop, type DesktopBackupAction, type DesktopBackupResult } from '@/lib/desktop'
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
-import { useAuthStore } from '@/stores/auth'
 
 import { formatApiError } from '@/lib/client'
 import { configureBackups, createBackup, loadBackupStatus, type BackupStatus } from '@/lib/backups'
-const auth = useAuthStore()
-const online = computed(() => auth.mode === 'server')
 const status = ref<BackupStatus | null>(null)
 const loading = ref(true)
 const current = ref(false)
@@ -49,10 +46,6 @@ function applyStatus(value: BackupStatus): void {
 }
 
 async function refresh(): Promise<void> {
-  if (online.value) {
-    loading.value = false
-    return
-  }
   loading.value = true
   current.value = false
   error.value = ''
@@ -119,7 +112,7 @@ async function backupNow(): Promise<void> {
 }
 
 async function runNative(action: DesktopBackupAction): Promise<void> {
-  if (online.value || disabled.value || !desktop.hasBackupAction(action)) return
+  if (disabled.value || !desktop.hasBackupAction(action)) return
   if (action === 'setupBackups' && (!current.value || status.value?.configured)) return
   busy.value = action
   try {
@@ -238,7 +231,6 @@ async function withActionFocus(
 
 <template>
   <section
-    v-if="!online"
     aria-label="Local backups"
     :aria-busy="disabled"
     class="space-y-5"
@@ -680,23 +672,5 @@ async function withActionFocus(
         </p>
       </div>
     </UiSidePanel>
-  </section>
-  <section
-    v-else
-    aria-label="Server backups"
-    class="space-y-5"
-  >
-    <UiPageHeader
-      title="Backups"
-      description="Backup availability for this server."
-    />
-    <UiCallout
-      tone="info"
-      title="Server backups unavailable"
-    >
-      Full-instance backup, archive and key export, and restore are unavailable for this
-      online environment. Existing local archives stay with the standalone installation.
-      Postgres backup and history import are not implemented.
-    </UiCallout>
   </section>
 </template>

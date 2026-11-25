@@ -34,40 +34,6 @@ and supported explicit manual-token methods keep their shared host boundaries.
 
 ## Model
 
-In a selected online server, an Account belongs to the creating verified user
-and environment. Inventory, edit, attach/detach, test, revoke, OAuth start and
-completion, and credential resolution enforce that owner. Project ownership is
-checked independently; an attachment cannot authorize a foreign Account. Names
-are unique per provider within the owner/environment. Missing, foreign and
-ownerless legacy Accounts are unavailable to signed-in users. Signup never
-adopts local Accounts. Standalone local administration keeps its existing scope.
-
-Attachment validation errors retain the caller's `credential_ref`, `project_id`
-and requested `provider_key` with repair guidance. Missing, foreign and ownerless
-Accounts return the same not-found message and context shape; this context comes
-from the request and contains no stored Account identity or secret material.
-
-Account setup remains a direct human REST operation: an authenticated owner may
-manage their Accounts without receiving local-admin authority or run grants.
-Agent tests still require an owned project attachment and existing grants.
-Computer credentials cannot browse Accounts or obtain provider secrets. Native
-Telegram authorization remains local-only; online signup does not adopt its
-application configuration or native session. Agent subscriptions, browser
-profiles and host MCP credentials remain on the connected computer.
-
-OAuth state binds the initiating user/environment and Account. A server callback
-first shows a continuation link without consuming state or exchanging a code.
-The same-origin `/api/v1/auth/oauth/complete` hop requires the initiating user's
-session (including after a cross-site redirect with Strict cookies). A foreign
-user or environment cannot consume the attempt. Final redirects use the selected
-server origin. Standalone callbacks keep their existing local flow.
-
-Encrypted backing retains AES-GCM with Account/provider authenticated identity
-and the environment-owned server seed. Ownership migration adds no secret
-export or re-encryption. Safe responses contain refs/status and presence flags,
-never raw credentials or ciphertext. Payload `$secret_ref` remains a separate
-project-scoped server resolution path; Account refs are not native MCP credentials.
-
 The auth-provider layer uses:
 
 - `auth_providers`: provider metadata synced from plugin manifests.
@@ -85,8 +51,8 @@ The auth-provider layer uses:
 - `credential_refresh_events`: redacted audit trail for OAuth/refresh attempts.
 
 The stable identifier is `credential_ref`, for example `cred_...`. Accounts
-have a user-facing `display_name`; names are unique per provider and owner scope
-using case-insensitive normalized comparison. Agents may also see auth method keys,
+have a user-facing `display_name`; names are unique per provider using
+case-insensitive normalized comparison. Agents may also see auth method keys,
 status, scopes, safe account metadata, and attached project ids. They never
 receive credential field values.
 

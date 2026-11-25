@@ -29,7 +29,6 @@ from stackos.db.model_auth import (
     OAuthState,
     ProjectCredential,
     TelegramApplication,
-    UserSession,
 )
 from stackos.db.model_browser import BrowserActionReceipt, BrowserProfile, BrowserSession
 from stackos.db.model_context import (
@@ -107,7 +106,6 @@ from stackos.db.model_runtime import (
     AgentRequest,
     AgentSession,
     IdempotencyKey,
-    LocalRuntimeConnection,
     Run,
     RunStep,
     RunStepCall,
@@ -193,7 +191,6 @@ __all__ = [
     "IntegrationBudget",
     "IntegrationCredential",
     "Learning",
-    "LocalRuntimeConnection",
     "ManagedUpgrade",
     "MetricSnapshot",
     "OAuthState",
@@ -242,7 +239,6 @@ __all__ = [
     "TrackerTicketLink",
     "TrackerTicketReference",
     "TrackerTombstone",
-    "UserSession",
     "WorkItemOwnership",
     "WorkflowTemplate",
     "WorkflowTemplateExtension",

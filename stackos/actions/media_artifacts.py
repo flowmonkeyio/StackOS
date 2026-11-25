@@ -8,17 +8,14 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from sqlmodel import Session
 from stackos_connectors import CallOptions
 from stackos_connectors.shared.base import IntegrationCallResult
 
 from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
 from stackos.actions.package_bridge import PackageActionConnector
-from stackos.artifacts.files import generated_file_path, generated_output_path
 from stackos.config import Settings
 from stackos.integrations._rate_limit import get_bucket
-from stackos.repositories.base import NotFoundError, ValidationError
-from stackos.repositories.project_access import require_project
+from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
 LEGACY_MEDIA_CONNECTORS = frozenset(
@@ -78,9 +75,7 @@ async def execute_media_native(
 
     prepared = {key: plain(value) for key, value in data.items() if value is not None}
     asset_root = (request.asset_dir or Settings().generated_assets_dir).resolve()
-    output_dir = generated_output_path(
-        asset_root, Path(output_subdir), session=request.session, project_id=request.project_id
-    )
+    output_dir = asset_root / output_subdir
     bridge = PackageActionConnector(
         connector,
         options=CallOptions(
@@ -164,24 +159,8 @@ def media_projection_failure(exc: Exception, result: IntegrationCallResult) -> A
     )
 
 
-def artifact_path(
-    asset_dir: Path,
-    artifact_ref: str,
-    *,
-    label: str = "media ref",
-    session: Session | None = None,
-    project_id: int | None = None,
-) -> Path:
-    """Resolve provider input through the same project custody as private downloads."""
-    project = require_project(session, project_id) if session is not None and project_id else None
-    if project is not None and project.environment_id is not None:
-        try:
-            candidate = generated_file_path(asset_dir, artifact_ref, project_id=project_id)
-        except NotFoundError:
-            raise ValidationError(f"{label} is unavailable in this project") from None
-        if not candidate.is_file():
-            raise ValidationError(f"{label} does not point to a file")
-        return candidate
+def artifact_path(asset_dir: Path, artifact_ref: str, *, label: str = "media ref") -> Path:
+    """Resolve a generated-assets ref without allowing directory escape."""
     if artifact_ref.startswith("/generated-assets/"):
         relative = artifact_ref.removeprefix("/generated-assets/")
     elif artifact_ref.startswith("generated-assets/"):
@@ -235,7 +214,7 @@ def register_generated_media_artifacts(
         if not isinstance(uri, str) or not uri.startswith("/generated-assets/"):
             registered_items.append(item)
             continue
-        path = artifact_path(asset_dir, uri, session=request.session, project_id=request.project_id)
+        path = artifact_path(asset_dir, uri)
         file_format = str(item.get("file_format") or path.suffix.removeprefix(".") or "bin")
         metadata = {
             "provider_key": provider_key,

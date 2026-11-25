@@ -135,11 +135,9 @@ def build_operation_registry() -> OperationRegistry:
         desktop,
         discovery,
         execution_contexts,
-        files,
         finance,
         guides,
         integrations,
-        local_runtime,
         maintenance,
         patterns,
         project_agents,
@@ -161,10 +159,6 @@ def build_operation_registry() -> OperationRegistry:
 
     registry = OperationRegistry()
     for spec in patterns.operation_specs():
-        registry.register(spec)
-    for spec in files.operation_specs():
-        registry.register(spec)
-    for spec in local_runtime.operation_specs():
         registry.register(spec)
     for spec in desktop.operation_specs():
         registry.register(spec)

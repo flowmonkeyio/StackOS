@@ -10,7 +10,7 @@ from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
 from stackos.config import Settings
-from stackos.db.models import AuthProvider, Plugin, ProjectPlugin, Provider
+from stackos.db.models import AuthProvider, Plugin, Project, ProjectPlugin, Provider
 from stackos.provider_setup import sanitize_provider_setup_config
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 
@@ -116,12 +116,7 @@ class ProviderMetadataMixin:
         provider_key: str,
     ) -> str:
         path = f"/projects/{project_id}/connections" if project_id is not None else "/accounts"
-        origin = (
-            settings.server_url
-            if settings.process_role == "server"
-            else (f"http://{settings.host}:{settings.port}")
-        )
-        return f"{origin}{path}?provider_key={provider_key}"
+        return f"http://{settings.host}:{settings.port}{path}?provider_key={provider_key}"
 
     def _get_provider(
         self,
@@ -318,6 +313,5 @@ class ProviderMetadataMixin:
         return public or None
 
     def _require_project(self, project_id: int) -> None:
-        from stackos.repositories.project_access import require_project
-
-        require_project(self._s, project_id)
+        if self._s.get(Project, project_id) is None:
+            raise NotFoundError(f"project {project_id} not found")

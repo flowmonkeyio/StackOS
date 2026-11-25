@@ -6,77 +6,10 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 
-let DAEMON_HOST = process.env.STACKOS_DESKTOP_DAEMON_HOST || "127.0.0.1";
-let DAEMON_PORT = Number.parseInt(process.env.STACKOS_DESKTOP_DAEMON_PORT || "5180", 10);
-let DAEMON_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/`;
-let HEALTH_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/api/v1/health`;
-// An explicitly selected server is the app's sole navigation/session origin.
-// Local runtime setup is a separate concern and must not be a login prerequisite.
-let SERVER_URL = process.env.STACKOS_SERVER_URL === undefined
-  ? null : selectedServerUrl(process.env.STACKOS_SERVER_URL);
-let APP_URL = SERVER_URL || DAEMON_URL;
-let runtimeConfig = null;
-
-async function configureSelectedRuntime() {
-  if (process.env.STACKOS_ENV_FILE === undefined) return;
-  const result = await runStackos(["runtime-config"]);
-  const config = parseJsonResult(result);
-  if (!result.ok || !config || config.process_role !== "runtime" ||
-      config.host !== "127.0.0.1" || !Number.isInteger(config.port) ||
-      !config.environment_id || !path.isAbsolute(config.state_dir || "") ||
-      process.env.STACKOS_DESKTOP_DAEMON_HOST || process.env.STACKOS_DESKTOP_DAEMON_PORT) {
-    throw new Error("Select a valid private runtime environment file without desktop listener overrides.");
-  }
-  SERVER_URL = selectedServerUrl(config.server_url);
-  APP_URL = SERVER_URL;
-  DAEMON_HOST = config.host;
-  DAEMON_PORT = config.port;
-  DAEMON_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/`;
-  HEALTH_URL = `${DAEMON_URL}api/v1/health`;
-  runtimeConfig = config;
-}
-
-async function prepareConnectedRuntime(options = {}) {
-  if (!runtimeConfig) return { ok: true, browsingOnly: true };
-  // Use the existing service and host-registration owners. No full install,
-  // plugin/skill synchronization or application database is needed.
-  const registration = await repairMcpRegistrations(options);
-  if (!registration.ok) return { ok: false, phase: "registration", registration };
-  return ensureDaemonReady(options);
-}
-
-function selectedServerUrl(value) {
-  const parsed = new URL(value);
-  const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname);
-  if (!(parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback)) ||
-      parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
-    throw new Error("STACKOS_SERVER_URL must be an exact HTTPS origin or an isolated loopback HTTP origin");
-  }
-  return `${parsed.origin}/`;
-}
-
-function isAppUrl(candidate) {
-  try {
-    const parsed = new URL(candidate);
-    return parsed.origin === new URL(APP_URL).origin && !parsed.username && !parsed.password;
-  } catch {
-    return false;
-  }
-}
-
-async function checkSelectedServer() {
-  try {
-    const response = await fetch(new URL("/api/v1/auth/session", APP_URL), {
-      credentials: "omit", redirect: "error", signal: AbortSignal.timeout(5000)
-    });
-    const body = await response.json();
-    // No cookie is sent by the main process. A selected server must request
-    // user sign-in, never offer the standalone console-token fallback.
-    return response.status === 401 && body?.detail?.code === "session_expired_or_invalid";
-  } catch {
-    return false;
-  }
-}
+const DAEMON_HOST = process.env.STACKOS_DESKTOP_DAEMON_HOST || "127.0.0.1";
+const DAEMON_PORT = Number.parseInt(process.env.STACKOS_DESKTOP_DAEMON_PORT || "5180", 10);
+const DAEMON_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/`;
+const HEALTH_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/api/v1/health`;
 const INSTALL_STATE_FILE = "install-state.json";
 const PAYLOAD_BUILD_INFO_FILE = "build-info.json";
 const STACKOS_STATE_DIR =
@@ -447,18 +380,8 @@ function checkHealth(timeoutMs = 1000) {
         body += chunk;
       });
       res.on("end", () => {
-        let targetMatches = true;
-        if (runtimeConfig) {
-          try {
-            const payload = JSON.parse(body);
-            targetMatches = ["process_role", "environment_id", "server_url"]
-              .every((key) => payload[key] === runtimeConfig[key]);
-          } catch {
-            targetMatches = false;
-          }
-        }
         resolve({
-          ok: res.statusCode >= 200 && res.statusCode < 300 && targetMatches,
+          ok: res.statusCode >= 200 && res.statusCode < 300,
           statusCode: res.statusCode,
           body: trimOutput(body, 2000)
         });
@@ -478,7 +401,7 @@ function checkHealth(timeoutMs = 1000) {
 }
 
 function authTokenPath() {
-  return runtimeConfig ? path.join(runtimeConfig.state_dir, "auth.token") : AUTH_TOKEN_PATH;
+  return AUTH_TOKEN_PATH;
 }
 
 function readAuthToken() {
@@ -548,7 +471,6 @@ function authenticatedJsonPost(pathname, json, options = {}) {
 }
 
 function openDesktopAvailability(onDisconnect) {
-  if (SERVER_URL && !runtimeConfig) throw new Error("Connect the selected local runtime first.");
   let closed = false;
   const disconnected = () => {
     if (closed) return;
@@ -1016,18 +938,12 @@ async function inspectMcpHosts(options = {}) {
 }
 
 function daemonLogPath() {
-  return path.join(runtimeConfig ? runtimeConfig.state_dir : STACKOS_STATE_DIR, "daemon.log");
+  return path.join(os.homedir(), ".local", "state", "stackos", "daemon.log");
 }
 
 module.exports = {
-  get APP_URL() { return APP_URL; },
-  get SERVER_URL() { return SERVER_URL; },
-  configureSelectedRuntime,
-  prepareConnectedRuntime,
-  isAppUrl,
-  checkSelectedServer,
-  get DAEMON_URL() { return DAEMON_URL; },
-  get HEALTH_URL() { return HEALTH_URL; },
+  DAEMON_URL,
+  HEALTH_URL,
   authenticatedJsonGet,
   authenticatedJsonPost,
   openDesktopAvailability,

@@ -157,7 +157,7 @@ async def test_existing_producer_files_recover_from_action_audit_after_upgrade_a
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE artifacts DROP COLUMN managed_file_json"))
         cfg = alembic_config(settings)
-        command.stamp(cfg, ["0039_project_cleanup", "0041_account_owners"])
+        command.stamp(cfg, "0039_project_cleanup")
         command.upgrade(cfg, "head")
         session.expire_all()
         assert session.get(Artifact, artifact.id).managed_file_json is None

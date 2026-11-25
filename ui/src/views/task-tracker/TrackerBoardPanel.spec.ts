@@ -34,7 +34,6 @@ describe('Board header labels and counts', () => {
       if (['Starting', 'Reviewing', 'Delivering', 'Active now'].includes(label)) record.active_execution = {
         invocation_id: record.key, ticket_key: record.key, agent: label === 'Reviewing' ? 'sdlc_delivery_reviewer' : label === 'Delivering' ? 'sdlc_delivery' : 'worker',
         host_key: 'codex', model: 'recorded-model', started_at: '2026-11-13T00:00:00Z',
-        connection_state: null, stop_requested: false,
         live_usage: label === 'Starting' ? null : { measured_at: '2026-11-13T00:00:00Z', usage: { unit: 'tokens', status: 'measured', measured: agentStatsFixture().totals.reported_usage } },
       }
       record.source_kind = linked ? 'workflow' : 'manual'
@@ -149,7 +148,7 @@ describe('Work board presentation', () => {
   })
   it('retains last actual execution and suppresses task-level blocking while a sibling executes', async () => {
     const metrics = agentStatsFixture().totals
-    const execution = { invocation_id: 'actual-call', ticket_key: 'child', agent: 'sdlc_delivery_reviewer', host_key: 'claude-code', model: 'recorded-model', started_at: '2026-11-08T01:00:00Z', live_usage: null, connection_state: null, stop_requested: false }
+    const execution = { invocation_id: 'actual-call', ticket_key: 'child', agent: 'sdlc_delivery_reviewer', host_key: 'claude-code', model: 'recorded-model', started_at: '2026-11-08T01:00:00Z', live_usage: null }
     metrics.last_execution = execution
     const record = { ...task('in-progress'), metadata_json: automaticMetadata, agent_stats: metrics, active_execution: execution }
     record.ticket_summary = { ...record.ticket_summary!, blocked_by_titles: ['Actual prerequisite title'] }

@@ -3,7 +3,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("stackosDesktop", {
-  openAccount: (flow) => ipcRenderer.invoke("stackos:open-account", flow),
   setupBackups: () => ipcRenderer.invoke("stackos:backups:setup"),
   openBackupFolder: () => ipcRenderer.invoke("stackos:backups:open-folder"),
   exportLatestBackup: () => ipcRenderer.invoke("stackos:backups:export-latest"),

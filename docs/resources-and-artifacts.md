@@ -180,43 +180,6 @@ No universal download or filesystem/proxy endpoint is added.
 
 ## File-Backed Action Outputs
 
-### Private files and explicit local downloads
-
-On a selected online server, Artifact and ActionCall identifiers resolve through
-their persisted project owner before retrieval. A supplied project or URI never
-grants access. Generated asset URLs are not public online. File reads reject
-traversal, encoded aliases, symlinks, and the private `imap-transfers` and
-`stripe-invoice-transfers` staging trees. Online managed Artifact files use
-`projects/<project_id>/` beneath generated assets; sanitized action outputs use
-the existing `action-outputs/project-<project_id>/` owner. Arbitrary server paths
-and legacy local-only references cannot be adopted through an Artifact row.
-The existing shared media writer, HubSpot export writer, and Telegram managed
-file copy place fresh authenticated outputs in that same project namespace.
-Standalone producer paths remain unchanged; previously stored files are not moved.
-
-Use `artifact.download` with `project_id` and `artifact_id`, or
-`actionCall.download` with `project_id` and `action_call_id`. These raw-only read
-operations return an authenticated `download_uri`, byte size, and SHA-256.
-The URI requires current access to the underlying session/project; it is not a
-public or bearer-in-URL link. The file route rechecks ownership on every fetch
-and returns an attachment with `Cache-Control: no-store`.
-
-For an actual local file, call the operation through the native MCP bridge with
-`destination_path` naming an absolute **new file** in an existing local directory.
-The bridge removes that host-only argument before dispatch, downloads only from
-the selected StackOS server, refuses redirects, verifies size and checksum, and
-publishes without overwriting an existing file. Only then does it return
-`local_path`. Workflow calls require the corresponding current step grant.
-REST/CLI callers omit `destination_path` and download the authenticated URI
-using their selected StackOS session; the server never writes a client path.
-An unsupported local-only target fails explicitly and never uses server loopback
-as the user's computer.
-
-Online action-output pointers contain `uri`, `download_operation`, and
-`download_arguments`; they contain no local filesystem path. An online
-`output_policy_json.path` is rejected before connector execution. Standalone
-local action outputs retain their existing local path behavior.
-
 External provider actions executed through `action.run` or `action.execute`
 write sanitized request+response envelopes to generated-assets files by default.
 Execution contexts or one-off action calls can still set `output_policy_json`:
@@ -239,9 +202,8 @@ request/response envelope. If the agent needs the envelope schema, call
 `schema.get` with the returned `schema_ref`; do not depend on StackOS source
 file paths.
 
-These default response files are not artifacts or resources. Standalone agents
-can read the returned filesystem path; online agents explicitly download through
-`actionCall.download`. Use `artifact.read` only
+These default response files are not artifacts or resources. Agents should read
+them through the returned filesystem path when needed. Use `artifact.read` only
 for intentional artifact rows created by `artifact.create` or connector actions
 that deliberately return artifact ids.
 

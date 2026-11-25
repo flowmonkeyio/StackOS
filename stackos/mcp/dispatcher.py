@@ -99,19 +99,6 @@ class MCPDispatcher:
 
         engine = self._engine_resolver()
         with Session(engine) as session:
-            if self._settings_resolver is not None:
-                settings = self._settings_resolver()
-                if getattr(settings, "process_role", "standalone") == "server":
-                    request = request_context.request if request_context is not None else None
-                    if request is None or spec.operation_name is None:
-                        return self._repo_error(
-                            ToolNotGrantedError("MCP requires an authenticated operation request")
-                        )
-                    from stackos.api.project_access import bind_user_session
-
-                    bind_user_session(session, request, settings)
-                    if session.info.get("user_principal") is None:
-                        return self._repo_error(ToolNotGrantedError("verified user required"))
             if self._services_resolver is not None:
                 session.info["operation_services"] = self._services_resolver()
             if spec.operation_name is not None:

@@ -9,9 +9,8 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy import select as sa_select
 from sqlmodel import col, select
 
-from stackos.db.models import Project, ProjectEvent
+from stackos.db.models import ProjectEvent
 from stackos.repositories.base import Page, ValidationError
-from stackos.repositories.project_access import project_owner_filter, user_principal
 from stackos.repositories.tracker.events import (
     TRACKER_EXECUTION_CHANGED,
     TRACKER_TASK_CHANGED,
@@ -35,13 +34,6 @@ from .utils import (
 
 
 class ContextQueryMixin(ContextRepositorySupport):
-    def _event_owner_filter(self):
-        if user_principal(self._s) is None:
-            return True
-        return col(ProjectEvent.project_id).in_(
-            select(Project.id).where(project_owner_filter(self._s))
-        )
-
     def query_context(
         self,
         *,
@@ -164,7 +156,6 @@ class ContextQueryMixin(ContextRepositorySupport):
             TRACKER_USAGE_CHANGED,
         ]
         filters: list[Any] = [
-            self._event_owner_filter(),
             col(ProjectEvent.event_type).in_(event_types),
         ]
         if project_id is not None:
@@ -211,7 +202,7 @@ class ContextQueryMixin(ContextRepositorySupport):
         """Read an event ID and its non-reused project identity, latest by default."""
         if project_id is not None:
             self._require_project(project_id)
-        stmt = select(ProjectEvent.id, ProjectEvent.project_id).where(self._event_owner_filter())
+        stmt = select(ProjectEvent.id, ProjectEvent.project_id)
         if project_id is not None:
             stmt = stmt.where(ProjectEvent.project_id == project_id)
         if event_id is not None:
@@ -236,7 +227,6 @@ class ContextQueryMixin(ContextRepositorySupport):
             TRACKER_USAGE_CHANGED,
         ]
         filters: list[Any] = [
-            self._event_owner_filter(),
             col(ProjectEvent.event_type).in_(event_types),
         ]
         if project_id is not None:

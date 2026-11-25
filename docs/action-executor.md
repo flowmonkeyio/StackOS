@@ -421,16 +421,6 @@ Direct one-action execution operation:
 - `communication.send`
 - `communication.reply`
 
-On a selected online server, action discovery, validation and execution require
-one persisted owner/environment project, resolved before grants or replay.
-An Account must belong to that user/environment and be attached to the selected
-project. Payload-secret refs and execution-context refs resolve only within that
-project, including when supplied inside action inputs or context defaults.
-MCP and selected-server REST/CLI use the same dispatcher; computer credentials
-cannot call these operations. Server response files require authenticated
-retrieval; `output_policy_json.path` cannot select a server-local directory.
-The existing direct-action and run-plan step policies below still apply.
-
 `action.run` is direct execution for one explicit action. Non-read actions
 require `confirm_direct=true` and `intent_summary`; callers may pass
 `intent_id` or `idempotency_key` for stable retries. External provider action

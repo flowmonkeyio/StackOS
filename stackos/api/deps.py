@@ -70,13 +70,6 @@ def get_session(request: Request, engine: Engine = Depends(get_engine)) -> Itera
     with Session(engine) as session:
         session.info["operation_services"] = getattr(request.app.state, "operation_services", {})
         session.info["operation_registry"] = getattr(request.app.state, "operation_registry", None)
-        session.info["user_principal"] = getattr(request.state, "principal", None)
-        session.info["local_runtime_connection_id"] = getattr(
-            request.state, "local_runtime_connection_id", None
-        )
-        settings = getattr(request.app.state, "settings", None)
-        if settings is not None and settings.process_role == "server":
-            session.info["server_environment_id"] = settings.environment_id
         yield session
 
 

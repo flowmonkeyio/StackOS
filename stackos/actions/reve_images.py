@@ -14,11 +14,7 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
-from stackos.actions.media_artifacts import (
-    artifact_path,
-    execute_media_native,
-    media_projection_failure,
-)
+from stackos.actions.media_artifacts import execute_media_native, media_projection_failure
 from stackos.config import Settings
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
@@ -109,9 +105,7 @@ class ReveImagesActionConnector:
     ) -> list[ActionValidationIssue]:
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         try:
-            image_path = artifact_path(
-                asset_dir, artifact_ref, session=request.session, project_id=request.project_id
-            )
+            image_path = _artifact_path(asset_dir, artifact_ref)
             ReveImagesIntegration.ensure_image_preflight(image_path)
         except (IntegrationDownError, ValidationError) as exc:
             return [
@@ -132,14 +126,7 @@ class ReveImagesActionConnector:
         paths: list[Path] = []
         for index, artifact_ref in enumerate(refs):
             try:
-                paths.append(
-                    artifact_path(
-                        asset_dir,
-                        artifact_ref,
-                        session=request.session,
-                        project_id=request.project_id,
-                    )
-                )
+                paths.append(_artifact_path(asset_dir, artifact_ref))
             except ValidationError as exc:
                 return [
                     ActionValidationIssue(
@@ -250,11 +237,8 @@ class ReveImagesActionConnector:
                         request,
                         {
                             "edit_instruction": str(payload["edit_instruction"]),
-                            "reference_image_path": artifact_path(
-                                asset_dir,
-                                str(payload["input_image_ref"]),
-                                session=request.session,
-                                project_id=request.project_id,
+                            "reference_image_path": _artifact_path(
+                                asset_dir, str(payload["input_image_ref"])
                             ),
                             "aspect_ratio": str(payload["aspect_ratio"])
                             if isinstance(payload.get("aspect_ratio"), str)
@@ -274,12 +258,7 @@ class ReveImagesActionConnector:
                         {
                             "prompt": str(payload["prompt"]),
                             "reference_image_paths": [
-                                artifact_path(
-                                    asset_dir,
-                                    str(ref),
-                                    session=request.session,
-                                    project_id=request.project_id,
-                                )
+                                _artifact_path(asset_dir, str(ref))
                                 for ref in payload["input_image_refs"]
                             ],
                             "aspect_ratio": str(payload["aspect_ratio"])
@@ -321,6 +300,22 @@ class ReveImagesActionConnector:
             raise media_projection_failure(exc, result) from None
 
 
+def _artifact_path(asset_dir: Path, artifact_ref: str) -> Path:
+    if artifact_ref.startswith("/generated-assets/"):
+        relative = artifact_ref.removeprefix("/generated-assets/")
+    elif artifact_ref.startswith("generated-assets/"):
+        relative = artifact_ref.removeprefix("generated-assets/")
+    else:
+        relative = artifact_ref.lstrip("/")
+    base = asset_dir.resolve()
+    candidate = (base / relative).resolve()
+    if base != candidate and base not in candidate.parents:
+        raise ValidationError("image refs must stay inside generated assets")
+    if not candidate.is_file():
+        raise ValidationError(f"image ref {artifact_ref!r} does not point to a file")
+    return candidate
+
+
 def _register_generated_image_artifacts(
     request: ActionConnectorRequest,
     output_json: dict[str, Any],
@@ -342,7 +337,7 @@ def _register_generated_image_artifacts(
         if not isinstance(uri, str) or not uri.startswith("/generated-assets/"):
             registered_items.append(item)
             continue
-        path = artifact_path(asset_dir, uri, session=request.session, project_id=request.project_id)
+        path = _artifact_path(asset_dir, uri)
         file_format = str(item.get("file_format") or path.suffix.removeprefix(".") or "png")
         artifact = repository.create_generated_file(
             asset_root=asset_dir,

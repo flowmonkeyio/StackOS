@@ -15,12 +15,11 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic import ValidationError as ModelValidationError
-from sqlalchemy import case, or_
+from sqlalchemy import func, or_
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from stackos.agents.loader import AgentPresetLoader
-from stackos.db.json_expressions import json_kind, json_value
 from stackos.db.models import (
     AgentRequest,
     AgentRequestAttentionStatus,
@@ -659,35 +658,27 @@ class ProjectSetupRepository:
         report, snapshot or native-result bodies, nor grants a writer claim.
         """
         metadata = AgentRequest.metadata_json
-        status = json_value(metadata, "project_setup", "status").as_string()
-        reservation = json_kind(metadata, "project_setup", "managed", "slot_reserved")
-        managed = json_kind(metadata, "project_setup", "managed")
-        entry_kind = json_value(metadata, "project_setup", "entry_kind").as_string()
-        admission = json_value(metadata, "project_setup", "managed", "admission_id").as_string()
-        tracked_admission = json_kind(metadata, "project_setup", "workflow_admission")
-        tracked_plan = json_value(
-            metadata, "project_setup", "workflow_admission", "run_plan_id"
-        ).as_json()
-        tracked_task = json_value(
-            metadata, "project_setup", "workflow_admission", "task_id"
-        ).as_json()
+        status = func.json_extract(metadata, "$.project_setup.status")
+        reservation = func.json_type(metadata, "$.project_setup.managed.slot_reserved")
+        managed = func.json_type(metadata, "$.project_setup.managed")
+        entry_kind = func.json_extract(metadata, "$.project_setup.entry_kind")
+        admission = func.json_extract(metadata, "$.project_setup.managed.admission_id")
+        tracked_admission = func.json_type(metadata, "$.project_setup.workflow_admission")
+        tracked_plan = func.json_extract(metadata, "$.project_setup.workflow_admission.run_plan_id")
+        tracked_task = func.json_extract(metadata, "$.project_setup.workflow_admission.task_id")
         query = (
             sa_select(
                 col(AgentRequest.project_id),
                 col(AgentRequest.id).label("request_id"),
                 entry_kind.label("entry_kind"),
-                json_value(metadata, "project_setup", "project_id")
-                .as_json()
-                .label("owner_project_id"),
-                json_value(metadata, "project_setup", "request_id")
-                .as_json()
-                .label("owner_request_id"),
+                func.json_extract(metadata, "$.project_setup.project_id").label("owner_project_id"),
+                func.json_extract(metadata, "$.project_setup.request_id").label("owner_request_id"),
                 status.label("status"),
                 reservation.label("reservation"),
                 admission.label("admission_id"),
-                json_value(metadata, "project_setup", "managed", "settings", "project_dir")
-                .as_string()
-                .label("project_dir"),
+                func.json_extract(metadata, "$.project_setup.managed.settings.project_dir").label(
+                    "project_dir"
+                ),
                 col(AgentRequest.source_kind).label("source_kind"),
                 col(AgentRequest.status).label("request_status"),
                 col(AgentRequest.run_plan_id).label("run_plan_id"),
@@ -697,30 +688,17 @@ class ProjectSetupRepository:
                 col(RunPlan.project_id).label("plan_project_id"),
                 col(TrackerTask.project_id).label("task_project_id"),
                 col(TrackerTask.key).label("task_key"),
-                json_value(TrackerTask.source_json, "run_plan_id")
-                .as_json()
-                .label("task_run_plan_id"),
+                func.json_extract(TrackerTask.source_json, "$.run_plan_id").label(
+                    "task_run_plan_id"
+                ),
             )
             .select_from(AgentRequest)
             .outerjoin(RunPlan, col(RunPlan.id) == col(AgentRequest.run_plan_id))
-            .outerjoin(
-                TrackerTask,
-                col(TrackerTask.id)
-                == case(
-                    (
-                        json_kind(metadata, "project_setup", "workflow_admission", "task_id")
-                        == "integer",
-                        json_value(
-                            metadata, "project_setup", "workflow_admission", "task_id"
-                        ).as_integer(),
-                    ),
-                    else_=None,
-                ),
-            )
+            .outerjoin(TrackerTask, col(TrackerTask.id) == tracked_task)
             .where(
                 or_(
                     col(AgentRequest.source_kind) == SETUP_NAMESPACE,
-                    json_kind(metadata, "project_setup").is_not(None),
+                    func.json_type(metadata, "$.project_setup").is_not(None),
                 ),
                 # Only an established external attempt is outside managed
                 # ownership. Unclassified setup is not evidence of free work.
@@ -750,7 +728,7 @@ class ProjectSetupRepository:
             )
         if job_ref is not None:
             query = query.where(
-                json_value(metadata, "project_setup", "managed", "job_ref").as_string() == job_ref
+                func.json_extract(metadata, "$.project_setup.managed.job_ref") == job_ref
             )
         # Tracked setup has an admission record, not a second native owner.
         # Validate fresh immutable linkage, including historical rows, without
@@ -1012,7 +990,7 @@ class ProjectSetupRepository:
                 AgentRequest.project_id == project_id,
                 or_(
                     col(AgentRequest.source_kind) == SETUP_NAMESPACE,
-                    json_kind(AgentRequest.metadata_json, "project_setup").is_not(None),
+                    func.json_type(AgentRequest.metadata_json, "$.project_setup").is_not(None),
                 ),
             )
             .order_by(col(AgentRequest.id).desc())

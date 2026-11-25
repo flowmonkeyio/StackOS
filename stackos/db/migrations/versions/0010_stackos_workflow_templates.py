@@ -82,7 +82,7 @@ def upgrade() -> None:
         sa.Column("project_id", sa.Integer(), nullable=False),
         sa.Column("template_id", sa.Integer(), nullable=False),
         sa.Column("active_version_id", sa.Integer(), nullable=True),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
         sa.Column("config_json", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),

@@ -656,16 +656,11 @@ class BrowserRuntime:
         )
 
     async def discover_sessions(
-        self,
-        *,
-        project_id: int,
-        data_dir: Path | None = None,
-        state_root: Path | None = None,
+        self, *, project_id: int, data_dir: Path | None = None
     ) -> dict[str, NativeSessionState]:
         """Inspect deterministic StackOS state only; ambient gstack is never adopted."""
         root = self._resolve_data_dir(data_dir)
-        storage = state_root or root
-        project_root = storage / "browser-state" / "gstack" / f"project-{project_id}"
+        project_root = root / "browser-state" / "gstack" / f"project-{project_id}"
         if not project_root.is_dir():
             return {}
         found: dict[str, NativeSessionState] = {}
@@ -678,7 +673,7 @@ class BrowserRuntime:
                 session_ref=session_ref,
                 profile_ref=profile_ref,
                 profile_dir=browser_profile_dir(
-                    storage, project_id=project_id, profile_key=profile_key
+                    root, project_id=project_id, profile_key=profile_key
                 ),
                 state_file=state_file,
                 data_dir=root,

@@ -7,8 +7,6 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from stackos.config import Settings
-
 from . import limits
 
 
@@ -23,18 +21,6 @@ class BackupError(ValueError):
 
     def as_dict(self) -> dict[str, str]:
         return {"code": self.code, "message": self.message, "next_action": self.next_action}
-
-
-def require_standalone_backup(settings: Settings) -> None:
-    """Refuse whole-installation custody before touching local paths or keys."""
-    if settings.process_role != "standalone" or settings.database_url is not None:
-        raise BackupError(
-            "unsupported_backup_backend",
-            "Legacy full-instance backup, export and restore are unavailable for "
-            "Postgres servers and connected runtimes.",
-            "Keep the standalone installation and existing archives intact. "
-            "See docs/backups.md; Postgres backup and history import are not implemented.",
-        )
 
 
 def parse_public_key(value: str) -> X25519PublicKey:

@@ -104,9 +104,6 @@ export const deliveryStatus = defineStatuses({
   running: { label: 'Delivering', tone: 'info', icon: 'loader', dot: true, inFlight: true },
   stopped: { label: 'Delivery stopped', tone: 'warning', icon: 'pause' },
   complete: { label: 'Delivery complete', tone: 'success', icon: 'check-circle' },
-  disconnected: { label: 'Disconnected', tone: 'warning', icon: 'plug', description: 'Computer disconnected; showing last-known work. Restore the connection and wait for its result; do not relaunch.' },
-  needs_attention: { label: 'Outcome unknown', tone: 'warning', icon: 'alert-triangle', description: 'Confirm the native outcome and that owned work has stopped before explicit reconciliation.' },
-  stop_unconfirmed: { label: 'Stop pending', tone: 'warning', icon: 'pause', description: 'Owned process termination is not confirmed. New work is fenced; confirm the native outcome.' },
 });
 
 export const projectState = defineStatuses({

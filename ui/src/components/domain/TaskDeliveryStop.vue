@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { UiBadge } from '@/components/ui'
-import { resolveStatus } from '@/design/status'
-import { executionAttention } from '@/lib/task-tracker/execution'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { stopContextAction, stopContextReason, stopContextResume, taskDeliveryState, type TaskDeliveryState } from '@/lib/task-tracker/delivery'
 import type { TrackerTicket } from '@/lib/task-tracker/types'
 
@@ -14,19 +12,19 @@ const props = defineProps<{
 const ticketLabel = computed(() => props.tickets?.find(ticket => ticket.key === props.delivery?.ticketKey)?.title || props.delivery?.ticketKey)
 const publicDelivery = computed(() => taskDeliveryState({ delivery: props.delivery }))
 const context = computed(() => publicDelivery.value?.stop_context)
-const attention = computed(() => executionAttention(null, props.delivery))
-const state = computed(() => attention.value ?? resolveStatus('delivery', 'stopped'))
-const reason = computed(() => [publicDelivery.value?.reason, attention.value?.description].filter(Boolean).join(' '))
 </script>
 
 <template>
   <span
-    v-if="delivery?.status === 'stopped' || attention"
+    v-if="delivery?.status === 'stopped'"
     class="task-delivery-stop"
-    :title="reason || undefined"
+    :title="publicDelivery?.reason ?? undefined"
   >
     <span class="task-delivery-stop__summary">
-      <UiBadge :tone="state.tone">{{ state.label }}</UiBadge>
+      <StatusBadge
+        domain="delivery"
+        status="stopped"
+      />
       <span
         v-if="ticketLabel"
         class="task-delivery-stop__ticket"
@@ -34,9 +32,9 @@ const reason = computed(() => [publicDelivery.value?.reason, attention.value?.de
       >{{ ticketLabel }}</span>
     </span>
     <span
-      v-if="detailed && reason"
+      v-if="detailed && publicDelivery?.reason"
       class="task-delivery-stop__reason"
-    >{{ reason }}</span>
+    >{{ publicDelivery.reason }}</span>
     <span v-if="detailed && context" class="task-delivery-stop__context">
       <span>{{ stopContextReason(context) }}</span>
       <span v-if="context.phase" class="text-fg-muted">Phase: {{ context.phase }}</span>

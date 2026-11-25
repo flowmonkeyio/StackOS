@@ -138,7 +138,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="account.create",
-            summary="Create a private server Account or standalone local Account through REST.",
+            summary="Create one named reusable Account through local-admin REST.",
             input_model=AccountCreateInput,
             output_model=WriteEnvelope[AuthCredentialSetOut],
             handler=account_create,
@@ -151,8 +151,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             when_to_use=("An operator explicitly creates an Account in the local UI.",),
             prerequisites=(
-                "Requires standalone local-admin REST or a direct verified server owner session. "
-                "Server creation binds the user/environment; native authorization stays local.",
+                "Requires local-admin authority.",
                 "Credential fields are write-only and must never be returned or logged.",
             ),
             returns=("A sanitized Account and opaque credential_ref.",),
@@ -173,7 +172,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="account.get",
-            summary="Read safe Account edit state through owner-authorized REST.",
+            summary="Read safe Account edit state through local-admin REST.",
             input_model=AccountGetInput,
             output_model=AuthCredentialEditOut,
             handler=account_get,
@@ -182,7 +181,6 @@ def operation_specs() -> list[OperationSpec]:
                 "Populate the Account editor with non-secret fields and secret-presence flags."
             ),
             when_to_use=("An operator explicitly opens an existing Account for editing.",),
-            prerequisites=("Server users can read only their own environment's Accounts.",),
             returns=(
                 "Safe editable values, immutable auth method metadata, and secret-presence flags.",
             ),
@@ -198,7 +196,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="account.update",
-            summary="Update one reusable Account through owner-authorized REST.",
+            summary="Update one reusable Account through local-admin REST.",
             input_model=AccountUpdateInput,
             output_model=WriteEnvelope[AuthCredentialSetOut],
             handler=account_update,
@@ -209,7 +207,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             when_to_use=("An operator explicitly saves changes in the Account editor.",),
             prerequisites=(
-                "Requires standalone local-admin REST or a direct verified server owner session.",
+                "Requires local-admin authority.",
                 "Omitted secret fields preserve their current daemon-held value.",
                 "For Telegram connection fields, explicitly disconnect the shared Account "
                 "session first, then save and reconnect. Renaming remains available while "
@@ -390,8 +388,7 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Use account.list to obtain the opaque credential_ref.",
                 "For an MCP or CLI test, pass the project_id to which the Account is attached; "
-                "trusted standalone local-admin REST or direct verified owner REST may test "
-                "an unattached Account. Server ownership is always required.",
+                "explicit trusted local-admin REST may test a global Account.",
                 "Do not ask the operator to paste secrets into chat.",
             ),
             returns=("Sanitized provider and account probe evidence.",),
@@ -545,10 +542,6 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=("Grant one project explicit access to a daemon-held reusable Account."),
             when_to_use=("After the operator selects an existing Account for a project.",),
-            prerequisites=(
-                "Requires standalone local-admin REST or a direct verified server owner session. "
-                "The server checks both Account and project ownership independently.",
-            ),
             returns=("The sanitized Account with its updated attached project ids.",),
             examples=(
                 OperationExample(
@@ -574,7 +567,6 @@ def operation_specs() -> list[OperationSpec]:
             when_to_use=("The operator explicitly removes a project Connection.",),
             prerequisites=(
                 "Active project consumers must be rebound or disabled before detaching.",
-                "Requires standalone local-admin REST or a direct verified server owner session.",
             ),
             returns=("The sanitized Account with its updated attached project ids.",),
             examples=(
@@ -604,7 +596,7 @@ def operation_specs() -> list[OperationSpec]:
             when_to_use=("The operator explicitly revokes an Account.",),
             prerequisites=(
                 "Detach the Account from every project first.",
-                "Requires standalone local-admin REST or a direct verified server owner session.",
+                "Requires local-admin authority.",
             ),
             returns=("A sanitized revoke receipt; encrypted backing is removed.",),
             examples=(

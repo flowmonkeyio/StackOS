@@ -247,13 +247,7 @@ class KlingVideoActionConnector:
             if not isinstance(ref, str):
                 continue
             try:
-                candidate = artifact_path(
-                    asset_dir,
-                    ref,
-                    label=path_key,
-                    session=request.session,
-                    project_id=request.project_id,
-                )
+                candidate = artifact_path(asset_dir, ref, label=path_key)
                 suffix = candidate.suffix.lower().lstrip(".")
                 if suffix not in KlingVideoIntegration.INPUT_IMAGE_FORMATS:
                     raise ValidationError(f"{path_key} must reference a PNG or JPEG asset")
@@ -333,20 +327,12 @@ class KlingVideoActionConnector:
                     and (not isinstance(payload.get("cfg_scale"), bool))
                     else None,
                     "input_image_path": artifact_path(
-                        asset_dir,
-                        str(payload["input_image_ref"]),
-                        label="input_image_ref",
-                        session=request.session,
-                        project_id=request.project_id,
+                        asset_dir, str(payload["input_image_ref"]), label="input_image_ref"
                     )
                     if isinstance(payload.get("input_image_ref"), str)
                     else None,
                     "image_tail_path": artifact_path(
-                        asset_dir,
-                        str(payload["image_tail_ref"]),
-                        label="image_tail_ref",
-                        session=request.session,
-                        project_id=request.project_id,
+                        asset_dir, str(payload["image_tail_ref"]), label="image_tail_ref"
                     )
                     if isinstance(payload.get("image_tail_ref"), str)
                     else None,

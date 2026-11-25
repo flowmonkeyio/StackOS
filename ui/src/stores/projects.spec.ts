@@ -87,6 +87,38 @@ describe('projects store', () => {
     expect(store.items).toHaveLength(1)
   })
 
+  it('creates a project and marks it active', async () => {
+    const postedBodies: unknown[] = []
+    globalThis.fetch = vi.fn(async (_input, init) => {
+      if (init?.body) postedBodies.push(JSON.parse(String(init.body)))
+      return new Response(
+        JSON.stringify({
+          data: PAGE.items[0],
+          run_id: null,
+          project_id: PAGE.items[0].id,
+        }),
+        {
+          status: 201,
+          headers: { 'content-type': 'application/json' },
+        },
+      )
+    }) as typeof fetch
+    const store = useProjectsStore()
+    const created = await store.createProject({
+      slug: 'alpha',
+      name: 'Alpha',
+      domain: 'alpha.test',
+      niche: null,
+      locale: 'en-US',
+      schedule_json: null,
+    })
+
+    expect(created.id).toBe(1)
+    expect(store.items[0].name).toBe('Alpha')
+    expect(store.activeProjectId).toBe(1)
+    expect(postedBodies[0]).toMatchObject({ slug: 'alpha', domain: 'alpha.test' })
+  })
+
   it('exposes activeProject via getter', () => {
     const store = useProjectsStore()
     store.items = PAGE.items as never
@@ -325,13 +357,14 @@ describe('projects store', () => {
     expect(store.managementPending).toBe(false)
   })
 
-  it('retains persisted order/selection while loading unseen pages and newly created projects', async () => {
+  it('appends new projects and retains persisted order/selection while loading unseen pages', async () => {
     const row = (id: number, order_index: number) => ({ ...PAGE.items[0], id, order_index })
     const first = Array.from({ length: 50 }, (_, i) => row(i + 1, i + 1))
     const unseen = Array.from({ length: 25 }, (_, i) => row(i + 51, i + 51))
     const created = row(76, 76)
     const responses = [
       { items: first, next_cursor: 50, total_estimate: 75 },
+      { data: created, run_id: null, project_id: 76 },
       { items: [...unseen, created], next_cursor: null, total_estimate: 76 },
     ]
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(responses.shift()), {
@@ -339,12 +372,13 @@ describe('projects store', () => {
     }))
     const store = useProjectsStore()
     await store.refresh()
-    store.activeProjectId = 1
+    await store.createProject({ slug: 'new', name: 'New', domain: 'new.test', locale: 'en-US' })
+    expect(store.totalEstimate).toBe(76)
+    expect(store.items.map((p) => p.id)).toEqual([...first.map((p) => p.id), 76])
     await store.loadMore()
     expect(store.items.map((p) => p.id)).toEqual(Array.from({ length: 76 }, (_, i) => i + 1))
-    expect(store.totalEstimate).toBe(76)
-    expect(store.activeProjectId).toBe(1)
-    expect(store.activeProject?.id).toBe(1)
+    expect(store.activeProjectId).toBe(76)
+    expect(store.activeProject?.id).toBe(76)
   })
 
   it('confirms one immutable deletion target, excludes late catalog rows, and leaves routing to its owner', async () => {

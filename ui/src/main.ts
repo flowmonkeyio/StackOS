@@ -13,8 +13,8 @@ import router from './router'
 
 import './design/colors_and_type.css'
 import './style.css'
-import { ApiError } from '@/lib/client'
-import { authDestination, registerAuthStoreWithClient, useAuthStore } from '@/stores/auth'
+import { ApiError, clearAuthStore } from '@/lib/client'
+import { registerAuthStoreWithClient, useAuthStore } from '@/stores/auth'
 import { useToastsStore } from '@/stores/toasts'
 import { useProjectsStore } from '@/stores/projects'
 
@@ -22,20 +22,16 @@ async function start(): Promise<void> {
   const app = createApp(App)
   const pinia = createPinia()
   app.use(pinia)
+  app.use(router)
+
   const auth = useAuthStore()
   registerAuthStoreWithClient(auth)
   await auth.bootstrap()
-  router.beforeEach((to) => {
-    if (auth.mode === 'server' && !auth.ready && to.name !== 'sign-in') return { path: '/sign-in', query: { returnTo: authDestination(to.fullPath) } }
-    if (auth.ready && to.name === 'sign-in' && to.query.auth !== 'callback' && !to.query.flow) return authDestination(to.query.returnTo)
-  })
-  app.use(router)
-  await router.isReady()
 
   const shouldResolveProjectRoute =
     router.currentRoute.value.path === '/' || router.currentRoute.value.path === '/projects'
   let projects: ReturnType<typeof useProjectsStore> | null = null
-  if (auth.ready && router.currentRoute.value.name !== 'sign-in') {
+  if (auth.ready) {
     projects = useProjectsStore()
     const refresh = projects.refresh()
     if (shouldResolveProjectRoute) await refresh
@@ -46,7 +42,8 @@ async function start(): Promise<void> {
   app.config.errorHandler = (err: unknown) => {
     if (err instanceof ApiError) {
       if (err.status === 401) {
-        if (auth.mode !== 'server') { auth.expire(); void router.replace('/auth-error') }
+        clearAuthStore()
+        void router.replace('/auth-error')
       } else {
         toasts.error('Request failed', err.message)
       }
@@ -55,7 +52,7 @@ async function start(): Promise<void> {
     }
   }
 
-  if (!auth.ready && auth.mode !== 'server' && router.currentRoute.value.name !== 'auth-error') {
+  if (!auth.ready && router.currentRoute.value.name !== 'auth-error') {
     await router.replace('/auth-error')
   }
 

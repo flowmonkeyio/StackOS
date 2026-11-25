@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from starlette.concurrency import run_in_threadpool
-
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
@@ -217,10 +215,7 @@ async def run_plan_abort(
 ) -> WriteEnvelope[RunPlanAbortOut]:
     from stackos.task_delivery import abort_run_plan
 
-    # The request session is used sequentially while this adapter awaits. Stop
-    # confirmation must not occupy the event loop serving computer poll/report.
-    env, cancellation = await run_in_threadpool(
-        abort_run_plan,
+    env, cancellation = abort_run_plan(
         ctx.session,
         run_plan_id=inp.run_plan_id,
         project_id=inp.project_id,

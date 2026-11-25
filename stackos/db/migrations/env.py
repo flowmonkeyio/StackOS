@@ -1,7 +1,8 @@
 """Alembic environment.
 
-Reads the selected database from Settings unless explicitly pinned by the
-programmatic caller. Importing `stackos.db.models` registers tables on
+Reads the DB URL from `Settings.db_path` (env-overridable via
+`STACKOS_*`) instead of `alembic.ini`. Importing
+`stackos.db.models` registers all 30 tables on
 `SQLModel.metadata`, which Alembic's autogenerate uses as the target.
 """
 
@@ -11,7 +12,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import Connection
+from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
 # Importing the models package as a side effect populates
@@ -19,7 +20,7 @@ from sqlmodel import SQLModel
 # `alembic check` and autogenerate run against an empty metadata.
 import stackos.db.models  # noqa: F401  (import for side effect)
 from stackos.config import get_settings
-from stackos.db.connection import database_url, make_engine
+from stackos.db.connection import make_engine
 
 # this is the Alembic Config object, which provides access to values within
 # the .ini file in use.
@@ -46,7 +47,7 @@ def _resolve_db_url() -> str:
         return explicit
     settings = get_settings()
     settings.ensure_dirs()
-    return database_url(settings)
+    return f"sqlite:///{settings.db_path}"
 
 
 def run_migrations_offline() -> None:
@@ -63,39 +64,29 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def _prepare_postgres_schema(connection: Connection) -> None:
-    """Keep application tables private and support existing long revision IDs."""
-    connection.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS stackos")
-    connection.exec_driver_sql("REVOKE ALL ON SCHEMA stackos FROM PUBLIC")
-    # Supabase client roles must never use the server's application schema,
-    # including its service-role Data API. Generic Postgres need not have them.
-    for role in ("anon", "authenticated", "service_role"):
-        if connection.exec_driver_sql("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).first():
-            connection.exec_driver_sql(f'REVOKE ALL ON SCHEMA stackos FROM "{role}"')
-    # Alembic's default VARCHAR(32) cannot hold our established revision names.
-    connection.exec_driver_sql(
-        "CREATE TABLE IF NOT EXISTS stackos.alembic_version "
-        "(version_num VARCHAR(128) NOT NULL PRIMARY KEY)"
-    )
+def _make_online_engine():
+    """Build the migration engine from explicit config or Settings."""
+    explicit = config.get_main_option("sqlalchemy.url")
+    if explicit:
+        if explicit.startswith("sqlite:///"):
+            return make_engine(Path(explicit.removeprefix("sqlite:///")))
+        return create_engine(explicit)
+    settings = get_settings()
+    settings.ensure_dirs()
+    return make_engine(settings.db_path)
 
 
 def run_migrations_online() -> None:
-    """Run migrations on the same target and search path as application sessions."""
-    engine = make_engine(_resolve_db_url())
-    try:
-        with engine.connect() as connection:
-            if engine.dialect.name == "postgresql":
-                with connection.begin():
-                    _prepare_postgres_schema(connection)
-            context.configure(
-                connection=connection,
-                target_metadata=target_metadata,
-                render_as_batch=True,
-            )
-            with context.begin_transaction():
-                context.run_migrations()
-    finally:
-        engine.dispose()
+    """Run migrations in 'online' mode using a fresh engine + WAL PRAGMAs."""
+    engine = _make_online_engine()
+    with engine.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
 
 
 if context.is_offline_mode():

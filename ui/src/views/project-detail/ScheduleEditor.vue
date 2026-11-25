@@ -22,8 +22,7 @@ const goal = ref(job?.goal ?? '')
 const cron = ref(job?.cron_expr ?? '0 9 * * *')
 const timezone = ref(job?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
 const savedTarget = ref(job?.execution_json?.project_dir ?? null)
-const connectionId = job?.execution_json?.connection_id ?? null
-const projectDir = computed(() => scopeChanged.value ? '' : savedTarget.value ?? (connectionId ? '' : configuredDir.value))
+const projectDir = computed(() => scopeChanged.value ? '' : savedTarget.value ?? configuredDir.value)
 const targetMismatch = computed(() => !!savedTarget.value && !!configuredDir.value && savedTarget.value !== configuredDir.value)
 const confirmTargetChange = ref(false)
 function reconcileTarget() {
@@ -104,9 +103,9 @@ async function save(): Promise<void> {
   submitted.value = true
   try {
     if (scopeChanged.value || disposed) throw new Error('Project changed. Reopen this automation from the current project.')
-    if (enabled.value && !connectionId && folderLoading.value) throw new Error('Wait for the project folder to load.')
-    if (enabled.value && !connectionId && folderIssue.value) throw new Error(folderIssue.value)
-    if (enabled.value && !connectionId && !projectDir.value) throw new Error(folderIssue.value || 'Set the project folder once in project setup before enabling this automation.')
+    if (enabled.value && folderLoading.value) throw new Error('Wait for the project folder to load.')
+    if (enabled.value && folderIssue.value) throw new Error(folderIssue.value)
+    if (enabled.value && !projectDir.value) throw new Error(folderIssue.value || 'Set the project folder once in project setup before enabling this automation.')
     if (goalError.value || templateError.value) return
     const configuration: ScheduleConfiguration = {
       kind,
@@ -235,11 +234,11 @@ async function save(): Promise<void> {
         </UiFormField>
       </div>
       <UiLoadingState
-        v-if="!connectionId && folderLoading"
+        v-if="folderLoading"
         label="Loading project folder…"
       />
       <UiCallout
-        v-else-if="!connectionId && folderIssue"
+        v-else-if="folderIssue"
         tone="warning"
         title="Project folder needs setup"
       >

@@ -49,7 +49,7 @@ def test_consolidation_preserves_both_prior_heads_and_reruns_once(tmp_path, prio
     settings.ensure_dirs()
     config = alembic_config(settings)
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0054_online_current_merge"]
+    assert script.get_heads() == ["0053_revision_delivery_index"]
     assert script.get_revision("0041_ui804_consolidation").down_revision == (
         "0040_artifact_managed_files",
         "0039_tracker_board_arrivals",
@@ -132,7 +132,7 @@ def test_consolidation_preserves_both_prior_heads_and_reruns_once(tmp_path, prio
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0054_online_current_merge",)
+            ("0053_revision_delivery_index",)
         ]
         assert {
             table: connection.execute(f"SELECT {names} FROM {table} ORDER BY id").fetchall()

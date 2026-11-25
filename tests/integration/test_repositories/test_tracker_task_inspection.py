@@ -23,47 +23,6 @@ def seed_inspection(session: Session, project_id: int) -> TrackerRepository:
 
 
 @pytest.mark.parametrize(
-    ("facts", "attention", "unconfirmed"),
-    [
-        ({"uncertain_invocation": "private-invocation"}, True, False),
-        ({"needs_attention": True}, True, False),
-        ({"needs_attention": 1}, False, False),
-        ({"uncertain_invocation": "   "}, False, False),
-        ({"cancellation": {"status": "stop_unconfirmed"}}, False, True),
-        ({"needs_attention": False, "cancellation": {"status": "stop_unconfirmed"}}, False, False),
-    ],
-)
-def test_connection_attention_survives_full_and_light_projection(
-    session, project_id, facts, attention, unconfirmed
-):
-    repo = seed_inspection(session, project_id)
-    agent = {"name": "fixture", "instructions": "private frozen prompt"}
-    _update_delivery(
-        repo,
-        project_id,
-        "inspect",
-        status="stopped",
-        job_ref="fixture",
-        delivery_agent=agent,
-        review_agent=agent,
-        reason="Check /private/tmp/native",
-        **facts,
-    )
-    full = repo.get(project_id=project_id, task_key="inspect", include_graph=False)
-    light = repo.get(
-        project_id=project_id, task_key="inspect", projection="ui", include_graph=False
-    )
-    assert full.tasks[0].delivery == light.tasks[0].delivery
-    delivery = light.tasks[0].delivery
-    assert delivery.needs_attention is attention
-    assert delivery.stop_unconfirmed is unconfirmed
-    safe = light.model_dump_json()
-    assert "private frozen prompt" not in safe
-    assert "private-invocation" not in safe
-    assert "/private/tmp/native" not in safe
-
-
-@pytest.mark.parametrize(
     "raw",
     [
         None,

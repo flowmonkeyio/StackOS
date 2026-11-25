@@ -774,14 +774,8 @@ async def account_test(
     local_admin_rest = (
         ctx.extras.get("surface") == "rest" and ctx.extras.get("trusted_local_admin") is True
     )
-    owner_rest = (
-        ctx.principal is not None
-        and ctx.extras.get("surface") == "rest"
-        and ctx.extras.get("auth_scope") == "verified-user"
-        and ctx.run_token is None
-    )
     test_project_id: int | None = None
-    if not (local_admin_rest or owner_rest):
+    if not local_admin_rest:
         if ctx.project_id is None:
             raise ConflictError(
                 "Account test requires an attached project",

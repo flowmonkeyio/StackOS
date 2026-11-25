@@ -37,7 +37,6 @@ from stackos.db.models import (
     IntegrationCredential,
     Plugin,
     PluginSource,
-    Project,
     ProjectCredential,
     Provider,
     Run,
@@ -910,71 +909,6 @@ def test_dispatcher_persists_progress_and_completes_parent_action_call(
         assert call.response_json is not None
         assert call.response_json["completed_count"] == 1
     engine.dispose()
-
-
-@pytest.mark.parametrize("stage", ["seal", "dispatch"])
-def test_durable_media_scope_rejects_foreign_bytes_with_owned_metadata(
-    tmp_path: Path, fake_credential_resolution: None, stage: str
-) -> None:
-    engine, project_id, credential_ref, action_call_id = _seed_database(tmp_path)
-    now = datetime(2026, 9, 22, 18, tzinfo=UTC).replace(tzinfo=None)
-    assets = tmp_path / "custom-assets"
-    uri = f"/generated-assets/projects/{project_id + 1}/private.jpg"
-    source = assets / uri.removeprefix("/generated-assets/")
-    source.parent.mkdir(parents=True)
-    source.write_bytes(b"retained foreign media")
-    try:
-        with Session(engine) as session:
-            ArtifactRepository(session).create(
-                project_id=project_id,
-                plugin_slug="communications",
-                kind="file",
-                uri=uri,
-                status="approved",
-            )
-            project = session.get(Project, project_id)
-            if stage == "seal":
-                project.environment_id = "private-file-test"
-                project.owner_user_id = "owner"
-                session.add(project)
-                session.commit()
-            args = {
-                "project_id": project_id,
-                "action_call_id": action_call_id,
-                "credential_ref": credential_ref,
-                "action_ref": "durable-dispatcher-test.message.send",
-                "items": [
-                    {
-                        "destination_ref": "destination:media",
-                        "input_json": {"file": {"artifact_ref": uri}},
-                    }
-                ],
-                "due_at": now,
-            }
-            repo = ActionRepository(session, asset_dir=assets)
-            if stage == "seal":
-                with pytest.raises(ValidationError):
-                    repo.create_durable_action_job(**args)
-            else:
-                job = repo.create_durable_action_job(**args)
-                project.environment_id = "private-file-test"
-                project.owner_user_id = "owner"
-                session.add(project)
-                session.commit()
-        if stage == "dispatch":
-            connector = _DispatchConnector()
-            assert (
-                asyncio.run(_dispatcher(engine, connector, asset_dir=assets).run_once(now=now)) == 1
-            )
-            assert connector.requests == []
-            with Session(engine) as session:
-                item = ActionRepository(session).list_durable_action_items(
-                    project_id=project_id, job_id=job.id
-                )[0]
-                assert item.state == "failed"
-        assert source.read_bytes() == b"retained foreign media"
-    finally:
-        engine.dispose()
 
 
 def test_dispatcher_rejects_changed_sealed_media_before_connector_effect(

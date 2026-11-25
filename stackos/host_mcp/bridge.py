@@ -21,10 +21,6 @@ def default_home() -> Path:
 
 
 def token_path(home: Path | None = None) -> Path:
-    if os.environ.get("STACKOS_ENV_FILE") is not None:
-        from stackos.config import get_settings
-
-        return get_settings().token_path
     if os.environ.get("STACKOS_STATE_DIR"):
         try:
             from stackos.config import get_settings
@@ -79,9 +75,7 @@ def resolve_bridge_command(
     override = os.environ.get(BRIDGE_COMMAND_ENV)
     if override:
         return _with_runtime(
-            [part for part in override.split(os.pathsep) if part]
-            + (settings_args if os.environ.get("STACKOS_ENV_FILE") else [])
-            + workspace_root_arg,
+            [part for part in override.split(os.pathsep) if part] + workspace_root_arg,
             runtime,
         )
     return _with_runtime(
@@ -219,17 +213,12 @@ def _with_runtime(command: list[str], runtime: str | None) -> list[str]:
 
 def _settings_args() -> list[str]:
     args: list[str] = []
-    selected = os.environ.get("STACKOS_ENV_FILE")
-    if selected is not None:
+    try:
         from stackos.config import get_settings
 
-        get_settings()  # Invalid selection must never register the installed default.
-        return ["--env-file", selected]
-    from stackos.config import get_settings
-
-    settings = get_settings()
-    if settings.process_role != "standalone":
-        raise ValueError("online host registration requires an explicit STACKOS_ENV_FILE")
+        settings = get_settings()
+    except Exception:
+        return args
     if os.environ.get("STACKOS_HOST"):
         args.extend(["--host", settings.host])
     if os.environ.get("STACKOS_PORT"):

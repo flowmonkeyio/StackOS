@@ -15,10 +15,8 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.media_artifacts import artifact_path
 from stackos.actions.package_bridge import PackageActionConnector, host_result
-from stackos.artifacts.files import generated_output_path
 from stackos.config import Settings
 from stackos.repositories.base import NotFoundError, ValidationError
-from stackos.repositories.project_access import require_project
 from stackos.repositories.resources import ArtifactRepository
 
 _AUDIO_OPERATIONS = {"speech.generate", "voices.design"}
@@ -77,17 +75,9 @@ class ElevenLabsActionConnector(PackageActionConnector):
                 "project artifact storage is required before generating audio"
             )
         root = (request.asset_dir or Settings().generated_assets_dir).resolve()
-        project = require_project(request.session, request.project_id)
-        output_dir = (
-            generated_output_path(
-                root, Path("elevenlabs"), session=request.session, project_id=request.project_id
-            )
-            if project.environment_id is not None
-            else root
-        )
-        native = await self.execute_native(replace(request, asset_dir=output_dir))
+        native = await self.execute_native(replace(request, asset_dir=root))
         try:
-            output = _register_audio(request, native, root, output_dir)
+            output = _register_audio(request, native, root)
         except Exception:
             raise ActionConnectorError(
                 "ElevenLabs returned audio but artifact registration failed. "
@@ -111,13 +101,10 @@ def _alignment_request(request: ActionConnectorRequest) -> ActionConnectorReques
     if not artifact.uri.startswith("/generated-assets/"):
         raise ValidationError("audio artifact must reference managed generated assets")
     mime_type = (artifact.mime_type or "").split(";", 1)[0].strip().lower()
-    root = request.asset_dir or Settings().generated_assets_dir
     path = artifact_path(
-        root,
+        request.asset_dir or Settings().generated_assets_dir,
         artifact.uri,
         label="audio artifact",
-        session=request.session,
-        project_id=request.project_id,
     )
     if not 0 < path.stat().st_size < _MAX_AUDIO_BYTES:
         raise ValidationError("audio file must be nonempty and under 1 GB")
@@ -131,18 +118,14 @@ def _alignment_request(request: ActionConnectorRequest) -> ActionConnectorReques
     )
 
 
-def _register_audio(
-    request: ActionConnectorRequest, native: ConnectorResult, root: Path, output_dir: Path
-) -> dict:
+def _register_audio(request: ActionConnectorRequest, native: ConnectorResult, root: Path) -> dict:
     assert request.session is not None
     repository = ArtifactRepository(request.session)
 
     def save(descriptor: ConnectorFile, metadata: dict) -> int:
         path = Path(descriptor.path)
-        if not path.resolve().is_relative_to(output_dir.resolve()):
-            raise ValidationError("audio descriptor escaped its output directory")
         uri = "/generated-assets/" + path.relative_to(root).as_posix()
-        artifact_path(root, uri, session=request.session, project_id=request.project_id)
+        artifact_path(root, uri)
         return repository.create_generated_file(
             asset_root=root,
             path=path,

@@ -218,7 +218,7 @@ async def test_home_bulk_and_initial_feed_share_a_scoped_read_fence(
         return False
 
     arguments = {
-        "request": SimpleNamespace(is_disconnected=connected, app=api.app, state=SimpleNamespace()),
+        "request": SimpleNamespace(is_disconnected=connected),
         "after": None,
         "ui_demand": json.dumps({"projects": {}}),
         "engine": api.app.state.engine,
@@ -410,7 +410,7 @@ async def test_admitted_global_ui_reconciles_removed_project_without_losing_stat
         return False
 
     response = await context.global_context_timeline_stream(
-        SimpleNamespace(is_disconnected=connected, app=api.app, state=SimpleNamespace()),
+        SimpleNamespace(is_disconnected=connected),
         after=baseline,
         ui_demand=json.dumps(request_demand),
         engine=api.app.state.engine,
@@ -465,7 +465,7 @@ async def test_admitted_global_ui_reconciles_removed_project_without_losing_stat
         # was reconciled rather than relaxed for new foreign/missing demand.
         with pytest.raises(HTTPException) as rejected:
             await context.global_context_timeline_stream(
-                SimpleNamespace(is_disconnected=connected, app=api.app, state=SimpleNamespace()),
+                SimpleNamespace(is_disconnected=connected),
                 after=None,
                 ui_demand=json.dumps(request_demand),
                 engine=api.app.state.engine,
@@ -569,7 +569,7 @@ async def test_global_ui_feed_replaces_complete_composite_scope(api, project_id)
     engine = api.app.state.engine
     event.listen(engine, "before_cursor_execute", observe)
     response = await global_context_timeline_stream(
-        SimpleNamespace(is_disconnected=connected, app=api.app, state=SimpleNamespace()),
+        SimpleNamespace(is_disconnected=connected),
         after=None,
         ui_demand=json.dumps(
             {
@@ -651,7 +651,7 @@ async def test_empty_ui_demand_stream_skips_ui_snapshot_while_keeping_revisions_
     for is_global in (True, False):
         response = (
             await context.global_context_timeline_stream(
-                SimpleNamespace(is_disconnected=connected, app=api.app, state=SimpleNamespace()),
+                SimpleNamespace(is_disconnected=connected),
                 after=None,
                 ui_demand=empty_demand,
                 engine=api.app.state.engine,
@@ -659,7 +659,7 @@ async def test_empty_ui_demand_stream_skips_ui_snapshot_while_keeping_revisions_
             if is_global
             else await context.context_timeline_stream(
                 project_id,
-                SimpleNamespace(is_disconnected=connected, app=api.app, state=SimpleNamespace()),
+                SimpleNamespace(is_disconnected=connected),
                 task_key=None,
                 after=None,
                 limit=25,

@@ -126,7 +126,7 @@ def test_native_session_commit_rejects_stale_receipt_without_mutation(
 )
 @pytest.mark.parametrize("handoff_at", ["before_capture", "after_capture", "after_receipt_read"])
 def test_overlapping_receipt_handoff_keeps_inflight_projections_consistent(
-    session, project_id, monkeypatch, tmp_path, mode, handoff_at, settings
+    session, project_id, monkeypatch, tmp_path, mode, handoff_at
 ):
     import asyncio
 
@@ -296,11 +296,7 @@ def test_overlapping_receipt_handoff_keeps_inflight_projections_consistent(
 
                         stream = _timeline_stream(
                             project_id,
-                            SimpleNamespace(
-                                app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
-                                state=SimpleNamespace(),
-                                is_disconnected=disconnected,
-                            ),
+                            SimpleNamespace(is_disconnected=disconnected),
                             None,
                             None,
                             25,
@@ -602,7 +598,7 @@ def test_provisional_ticket_task_project_daily_groups_and_final_race(session, pr
 
 @pytest.mark.asyncio
 async def test_task_scoped_usage_stream_isolates_initial_reconnect_exit_and_receipt_updates(
-    stream_session, project_id, settings
+    stream_session, project_id
 ):
     session = stream_session
     import asyncio
@@ -649,11 +645,7 @@ async def test_task_scoped_usage_stream_isolates_initial_reconnect_exit_and_rece
     def stream(task_key, after=None, pid=project_id):
         return _timeline_stream(
             pid,
-            SimpleNamespace(
-                app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
-                state=SimpleNamespace(),
-                is_disconnected=disconnected,
-            ),
+            SimpleNamespace(is_disconnected=disconnected),
             task_key,
             after,
             25,
@@ -757,7 +749,7 @@ async def test_task_scoped_usage_stream_isolates_initial_reconnect_exit_and_rece
 
 @pytest.mark.asyncio
 async def test_usage_stream_initial_and_reconnect_replace_state_with_safe_projection(
-    stream_session, project_id, settings
+    stream_session, project_id
 ):
     session = stream_session
     from stackos.api.context import _timeline_stream
@@ -802,11 +794,7 @@ async def test_usage_stream_initial_and_reconnect_replace_state_with_safe_projec
     async def first():
         response = _timeline_stream(
             project_id,
-            SimpleNamespace(
-                app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
-                state=SimpleNamespace(),
-                is_disconnected=disconnected,
-            ),
+            SimpleNamespace(is_disconnected=disconnected),
             None,
             None,
             25,
@@ -989,7 +977,7 @@ def test_native_exit_hands_usage_to_receipt_before_return_without_active_resourc
 
 @pytest.mark.asyncio
 async def test_timing_only_corrections_reach_connected_scoped_stream_without_noop_events(
-    stream_session, project_id, settings
+    stream_session, project_id
 ):
     session = stream_session
     import asyncio
@@ -1032,11 +1020,7 @@ async def test_timing_only_corrections_reach_connected_scoped_stream_without_noo
 
     iterator = _timeline_stream(
         project_id,
-        SimpleNamespace(
-            app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
-            state=SimpleNamespace(),
-            is_disconnected=disconnected,
-        ),
+        SimpleNamespace(is_disconnected=disconnected),
         "overview",
         None,
         25,
@@ -1105,7 +1089,7 @@ async def test_timing_only_corrections_reach_connected_scoped_stream_without_noo
 
 @pytest.mark.asyncio
 async def test_receipt_only_commit_refreshes_existing_and_reconnected_streams(
-    stream_session, project_id, settings
+    stream_session, project_id
 ):
     session = stream_session
     import asyncio
@@ -1136,11 +1120,7 @@ async def test_receipt_only_commit_refreshes_existing_and_reconnected_streams(
     def stream(pid):
         return _timeline_stream(
             pid,
-            SimpleNamespace(
-                app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
-                state=SimpleNamespace(),
-                is_disconnected=disconnected,
-            ),
+            SimpleNamespace(is_disconnected=disconnected),
             None,
             None,
             25,

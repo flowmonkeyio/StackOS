@@ -15,7 +15,6 @@ from stackos.actions.connectors import (
     ActionConnectorRequest,
     ActionConnectorResult,
 )
-from stackos.actions.media_artifacts import artifact_path
 from stackos.artifacts import redact_secrets
 from stackos.config import Settings
 from stackos.repositories.base import ValidationError
@@ -130,19 +129,25 @@ def _file_items(request: ActionConnectorRequest) -> list[_SlackUploadFile]:
 
 
 def _artifact_path(request: ActionConnectorRequest, artifact_ref: str) -> Path:
-    if not artifact_ref.startswith(("/generated-assets/", "generated-assets/")):
+    if artifact_ref.startswith("/generated-assets/"):
+        relative = artifact_ref.removeprefix("/generated-assets/")
+    elif artifact_ref.startswith("generated-assets/"):
+        relative = artifact_ref.removeprefix("generated-assets/")
+    else:
         raise ValidationError(
             "file.artifact_ref must be a generated asset URI such as "
             "/generated-assets/communication-media/image.png"
         )
     root = (request.asset_dir or Settings().generated_assets_dir).resolve()
-    return artifact_path(
-        root,
-        artifact_ref,
-        label="file.artifact_ref",
-        session=request.session,
-        project_id=request.project_id,
-    )
+    path = (root / relative).resolve()
+    if root != path and root not in path.parents:
+        raise ValidationError("file.artifact_ref must stay inside generated assets")
+    private_root = (root / "imap-transfers").resolve()
+    if path == private_root or private_root in path.parents:
+        raise ValidationError("file.artifact_ref cannot expose private IMAP transfer evidence")
+    if not path.is_file():
+        raise ValidationError("file.artifact_ref does not point to an existing file")
+    return path
 
 
 def _safe_filename(value: Any) -> str:
@@ -154,15 +159,16 @@ def _delete_uploaded_artifacts(
     request: ActionConnectorRequest,
     files: list[_SlackUploadFile],
 ) -> list[str]:
+    root = (request.asset_dir or Settings().generated_assets_dir).resolve()
     deleted: list[str] = []
     seen: set[Path] = set()
     for item in files:
-        if not item.path.exists():
-            continue
-        path = _artifact_path(request, item.artifact_ref)
+        path = item.path.resolve()
         if path in seen:
             continue
         seen.add(path)
+        if root != path and root not in path.parents:
+            continue
         try:
             path.unlink()
         except FileNotFoundError:

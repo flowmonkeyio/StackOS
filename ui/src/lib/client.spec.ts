@@ -1,19 +1,8 @@
 // @vitest-environment node
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { apiFetch, apiStream, ApiError, clearAuthStore, formatApiError, setAuthStore } from './client'
-
-afterEach(() => { clearAuthStore(); vi.unstubAllGlobals() })
-
-it.each(['http://127.0.0.1:9999/api/v1/projects', '//other.test/private', 'https://example.test/private'])('refuses credentials to another origin: %s', async (target) => {
-  const fetch = vi.fn()
-  vi.stubGlobal('fetch', fetch)
-  setAuthStore({ token: 'local-token', csrfToken: 'csrf', mode: 'server' })
-  await expect(apiFetch(target)).rejects.toThrow('selected app origin')
-  await expect(apiStream(target)).rejects.toThrow('selected app origin')
-  expect(fetch).not.toHaveBeenCalled()
-})
+import { ApiError, formatApiError } from './client'
 
 describe('client error formatting', () => {
   it('uses backend error detail and hint from the standard envelope', () => {

@@ -9,14 +9,13 @@ const ROOT = dirname(fileURLToPath(import.meta.url))
 const SCOPES = ['components', 'composables', 'lib', 'stores', 'views']
 const WRITE_PATTERNS = [/\bapiWrite\b/, /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/]
 const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
-const USER_AUTH_STORE = join(ROOT, 'stores', 'auth.ts')
+const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
-const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
-const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, USER_AUTH_STORE, OPERATIONS_CLIENT])
 const TASK_BOARD_CLIENT = join(ROOT, 'lib', 'stackos', 'taskBoard.ts')
 const CAPACITY_CONTROL = join(ROOT, 'views', 'home', 'DeliveryCapacityControl.vue')
 const PROJECT_SETUP_CONTROLLER = join(ROOT, 'views', 'project-setup', 'useProjectSetup.ts')
+const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
 function filesUnder(dir: string): string[] {
   const out: string[] = []
@@ -110,28 +109,12 @@ describe('restricted UI write contract', () => {
     }
   })
 
-  it('limits shared user-auth writes to the selected server auth endpoints', () => {
-    const text = readFileSync(USER_AUTH_STORE, 'utf8')
-    expect(text).not.toMatch(/\bapiWrite\b/)
-    const calls = [...text.matchAll(/\bapiFetch(?:<[^>]+>)?\(\s*([`'"])(.*?)\1\s*,\s*\{([\s\S]*?)\}\)/g)]
-    const writes = calls.filter(call => /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/.test(call[3]!))
-    expect(writes.map(call => [call[2], call[3]!.match(/method:\s*'([^']+)'/)?.[1]])).toEqual([
-      ['/api/v1/auth/refresh', 'POST'],
-      ['/api/v1/auth/${action}', 'POST'],
-      ['/api/v1/auth/logout', 'POST'],
-    ])
-    // The dynamic endpoint has a closed action union. Adding another endpoint
-    // or another write in this otherwise permitted owner must fail this guard.
-    expect(text.match(/async function submit\(action: ([^,]+),/)?.[1]).toBe(
-      "'register' | 'login' | 'resend' | 'recover' | 'password' | 'verify'",
-    )
-    expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(writes.length)
-  })
-
-  it('keeps project creation agent-owned and management operations within the bounded contracts', () => {
+  it('limits project store direct writes to creation and management operations to the bounded contracts', () => {
     const text = readFileSync(PROJECTS_STORE, 'utf8')
 
-    expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(0)
+    expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
+    expect(text).toContain("apiFetch<SchemaWriteResponseProjectOut>('/api/v1/projects'")
+    expect(text).toContain("method: 'POST'")
     expect([...text.matchAll(/callOperation<[^\n]+>\('([^']+)'/g)].map((match) => match[1])).toEqual(['project.update', 'project.delete', 'project.move'])
     expect(text).toContain("project_id: id, patch: { name }, scope: 'catalog'")
     expect(text).toContain("placement: move.placement, scope: 'catalog'")

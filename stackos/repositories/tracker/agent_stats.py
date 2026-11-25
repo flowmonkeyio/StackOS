@@ -51,7 +51,6 @@ def usage_read_token(session: Session, project_id: int | None) -> str | None:
     """
     from stackos.context import ContextRepository
     from stackos.repositories.base import NotFoundError
-    from stackos.repositories.project_access import project_owner_filter
 
     live = host_service.usage_executions(project_id)
     try:
@@ -73,14 +72,9 @@ def usage_read_token(session: Session, project_id: int | None) -> str | None:
             (col(TaskTracker.project_id) == col(Project.id))
             & (col(TaskTracker.key) == DEFAULT_TRACKER_KEY),
         )
-        .where(
-            col(Project.id) == project_id if project_id is not None else true(),
-            project_owner_filter(session),
-        )
+        .where(col(Project.id) == project_id if project_id is not None else true())
         .order_by(col(Project.id))
     ).all()
-    owned_project_ids = {row[0] for row in scopes}
-    live = [call for call in live if call["project_id"] in owned_project_ids]
     return sha256(
         json.dumps(
             [project_id, position, [tuple(row) for row in scopes], live],
@@ -322,11 +316,7 @@ def work_intervals(
                     reason = "future_endpoint"
                 else:
                     intervals.append((start, end))
-                    if (
-                        owned is not None
-                        and owned.get("finished_at") is None
-                        and owned.get("connection_state") in {None, "connected"}
-                    ):
+                    if owned is not None and owned.get("finished_at") is None:
                         live[owned["invocation_id"]] = ExecutionIdentityOut.model_validate(owned)
             if reason:
                 missing += 1

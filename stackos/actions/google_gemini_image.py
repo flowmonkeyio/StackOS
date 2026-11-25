@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, ClassVar
 
 import httpx
@@ -15,11 +16,7 @@ from stackos.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
-from stackos.actions.media_artifacts import (
-    artifact_path,
-    execute_media_native,
-    media_projection_failure,
-)
+from stackos.actions.media_artifacts import execute_media_native, media_projection_failure
 from stackos.config import Settings
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
@@ -146,12 +143,7 @@ class GoogleGeminiImageActionConnector:
             ]
         asset_dir = request.asset_dir or Settings().generated_assets_dir
         try:
-            paths = [
-                artifact_path(
-                    asset_dir, ref, session=request.session, project_id=request.project_id
-                )
-                for ref in refs
-            ]
+            paths = [_artifact_path(asset_dir, ref) for ref in refs]
             prompt = payload.get("prompt")
             GoogleGeminiImageIntegration.ensure_inline_image_preflight(
                 prompt=prompt if isinstance(prompt, str) else "",
@@ -202,12 +194,7 @@ class GoogleGeminiImageActionConnector:
                     {
                         "prompt": str(payload["prompt"]),
                         "input_image_paths": [
-                            artifact_path(
-                                asset_dir,
-                                str(ref),
-                                session=request.session,
-                                project_id=request.project_id,
-                            )
+                            _artifact_path(asset_dir, str(ref))
                             for ref in payload["input_image_refs"]
                         ],
                         "model": model,
@@ -256,6 +243,22 @@ class GoogleGeminiImageActionConnector:
         return raw if isinstance(raw, str) else GoogleGeminiImageIntegration.DEFAULT_MODEL
 
 
+def _artifact_path(asset_dir: Path, artifact_ref: str) -> Path:
+    if artifact_ref.startswith("/generated-assets/"):
+        relative = artifact_ref.removeprefix("/generated-assets/")
+    elif artifact_ref.startswith("generated-assets/"):
+        relative = artifact_ref.removeprefix("generated-assets/")
+    else:
+        relative = artifact_ref.lstrip("/")
+    base = asset_dir.resolve()
+    candidate = (base / relative).resolve()
+    if base != candidate and base not in candidate.parents:
+        raise ValidationError("input_image_refs must stay inside generated assets")
+    if not candidate.is_file():
+        raise ValidationError(f"input image ref {artifact_ref!r} does not point to a file")
+    return candidate
+
+
 def _register_generated_image_artifacts(
     request: ActionConnectorRequest,
     output_json: dict[str, Any],
@@ -277,7 +280,7 @@ def _register_generated_image_artifacts(
         if not isinstance(uri, str) or not uri.startswith("/generated-assets/"):
             registered_items.append(item)
             continue
-        path = artifact_path(asset_dir, uri, session=request.session, project_id=request.project_id)
+        path = _artifact_path(asset_dir, uri)
         file_format = str(item.get("file_format") or path.suffix.removeprefix(".") or "png")
         artifact = repository.create_generated_file(
             asset_root=asset_dir,

@@ -45,26 +45,21 @@ class CredentialResolutionMixin:
         require_connected: bool = True,
     ) -> Credential:
         """Validate one Account through the sole project-attachment boundary."""
-        self._require_project(project_id)
         credential = self._s.exec(
             select(Credential).where(col(Credential.credential_ref) == credential_ref)
         ).first()
-        from .access import require_account_owner
-
-        try:
-            credential = require_account_owner(self._s, credential)
-        except NotFoundError:
-            # Preserve attachment callers' repair context without exposing
-            # whether the supplied ref exists for another owner/environment.
+        if credential is None:
             raise NotFoundError(
-                "Account not found",
+                f"Account {credential_ref!r} not found",
                 data={
                     "project_id": project_id,
                     "credential_ref": credential_ref,
                     "provider_key": provider_key,
-                    "next_action": "Select an existing Account or create one in Accounts setup.",
+                    "next_action": (
+                        "Select an existing Account or create one in the local Accounts setup."
+                    ),
                 },
-            ) from None
+            )
         assert credential.id is not None
         attachment = self._s.exec(
             select(ProjectCredential).where(

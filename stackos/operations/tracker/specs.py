@@ -368,8 +368,6 @@ def operation_specs() -> list[OperationSpec]:
                 "Ordinary work retains independent review and up to three "
                 "same-session scoped repairs. "
                 "Workflow mirrors execute their frozen contracts through the run-plan owner. "
-                "Online servers select an owned polling connection_id instead of project_dir; "
-                "native folder/MCP routes stay local. Unknown work requires manual reconciliation. "
                 "Explicit unsuccessful results or native failures stop the same task."
                 " Only explicit operator-authorized replace_review validates a quiescent stopped "
                 "ordinary review and clean exact delivered candidate, then launches review only. "

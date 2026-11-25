@@ -6,7 +6,7 @@ import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 import type { RunAbortTarget } from '@/composables/useRunAbort'
 import UsageLiveIndicator from '@/components/domain/UsageLiveIndicator.vue'
 import { computed } from 'vue'
-import { executionStatus, executionAttention } from '@/lib/task-tracker/execution'
+import { executionStatus } from '@/lib/task-tracker/execution'
 import type { ActiveExecution } from '@/lib/task-tracker/types'
 import type { TaskDeliveryState } from '@/lib/task-tracker/delivery'
 import type { AgentStatsMetrics } from '@/lib/agentActivity'
@@ -111,7 +111,7 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
       <div
         v-if="taskAvailable"
         class="tracker-command-panel__progress"
-        :title="state.description ?? taskDelivery?.reason ?? undefined"
+        :title="taskDelivery?.reason ?? undefined"
       >
         <span class="tracker-command-panel__state">
           <UiBadge
@@ -121,11 +121,7 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
           >
             {{ state.label }}
           </UiBadge>
-          <UsageLiveIndicator
-            v-if="!executionAttention(activeExecution, taskDelivery)"
-            :active="!!activeExecution"
-            :execution="activeExecution"
-          />
+          <UsageLiveIndicator :active="!!activeExecution" />
         </span>
         <span>{{ completedCount ?? 0 }}/{{ totalCount ?? 0 }} complete</span>
       </div>

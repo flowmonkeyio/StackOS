@@ -49,7 +49,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 282
+    assert len(names) == 273
     assert {
         "maintenance.prepareUpgrade",
         "maintenance.upgradeStatus",
@@ -119,8 +119,6 @@ def test_operation_registry_documents_core_operations() -> None:
         "artifact.archive",
         "artifact.supersede",
         "artifact.read",
-        "artifact.download",
-        "actionCall.download",
         "context.query",
         "learning.query",
         "decision.record",
@@ -624,13 +622,6 @@ def test_operation_registry_surface_filter() -> None:
         "projectSetup.answer",
         "projectSetup.continue",
         "projectSetup.cancel",
-        "localRuntime.authorize",
-        "localRuntime.list",
-        "localRuntime.status",
-        "localRuntime.revoke",
-        "localRuntime.reconcile",
-        "localRuntime.poll",
-        "localRuntime.report",
         "projectAgent.list",
         "projectAgent.get",
         "projectAgent.create",

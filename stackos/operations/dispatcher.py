@@ -23,11 +23,9 @@ from stackos.operations.responses import resolve_response_mode, shape_operation_
 from stackos.repositories.base import (
     ConflictError,
     IdempotencyReplayError,
-    NotFoundError,
     RepositoryError,
     ValidationError,
 )
-from stackos.repositories.project_access import authorize_operation
 from stackos.repositories.runs import IdempotencyKeyRepository
 from stackos.validation_errors import safe_validation_errors
 from stackos.workflows.run_plan_grants import RUN_PLAN_OWNER_TOOL_NAMES
@@ -70,8 +68,6 @@ class OperationDispatcher:
                 data={"operation": name, "errors": safe_validation_errors(exc.errors())},
             ) from exc
 
-        if settings is not None and settings.process_role == "server":
-            session.info["server_environment_id"] = settings.environment_id
         ctx = build_context(arguments, session)
         ctx.extras["surface"] = surface
         ctx.extras["client_surface"] = response_surface
@@ -79,23 +75,10 @@ class OperationDispatcher:
         ctx.extras["auth_scope"] = auth_scope
         if settings is not None:
             ctx.extras["settings"] = settings
-            if settings.process_role == "server" and ctx.principal is None:
-                raise ToolNotGrantedError("server operations require a verified user principal")
         # A permanent-delete handler can purge this very Run. Keep scope as
         # immutable request data rather than refreshing an expired ORM row later.
         run_project_id = ctx.run.project_id if ctx.run is not None else None
         with bind_context(ctx):
-            project_id = authorize_operation(session, spec.name, parsed.model_dump(), run=ctx.run)
-            if project_id is not None:
-                if "project_id" not in type(parsed).model_fields:
-                    raise ToolNotGrantedError("operation input cannot carry an owned project scope")
-                # Carry the verified persisted scope into the actual query, not
-                # just the guard. Global counts and empty pages cannot be made
-                # private by inspecting the handler's response afterward.
-                parsed = parsed.model_copy(update={"project_id": project_id})
-                ctx.project_id = project_id
-            if ctx.principal is not None and trusted_local_admin:
-                raise ToolNotGrantedError("verified users do not have local-admin authority")
             if (
                 ctx.run is not None
                 and ctx.project_id is not None
@@ -166,8 +149,6 @@ class OperationDispatcher:
             if run_project_id is not None:
                 seen = _find_mismatched_project_id(payload, run_project_id)
                 if seen is not None:
-                    if ctx.principal is not None:
-                        raise NotFoundError("project or child not found")
                     raise ToolNotGrantedError(
                         "run_token cannot access data from another project",
                         data={

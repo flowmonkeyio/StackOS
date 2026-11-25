@@ -87,40 +87,6 @@ def test_cancelled_usage_invalidation_preserves_ownership_fences(fence):
         assert invocation.samples
 
 
-def test_connection_observation_changes_shared_projections_without_tokens_or_registry_lock():
-    invocation = call()
-    state = ["connected"]
-
-    def observe():
-        assert not service._active_invocations_lock._is_owned()
-        return {
-            "connection_state": state[0],
-            "last_seen_at": datetime(2026, 11, 8, 1, 1, tzinfo=UTC).timestamp(),
-        }
-
-    invocation.observe_connection = observe
-    service._active_invocations[invocation.invocation_id] = invocation
-    before = service.usage_executions(1)
-    for expected in ("connected", "disconnected", "needs_attention"):
-        state[0] = expected
-        active = service.active_execution(1, "task", "child")
-        assert active["connection_state"] == expected
-        assert active["live_usage"] is None
-        assert service.usage_executions(1)[0]["connection_state"] == expected
-        timing = service.invocation_timings()[0]
-        assert timing["connection_state"] == expected
-        if expected != "connected":
-            assert timing["observed_at"] == "2026-11-08T01:01:00+00:00"
-        assert service.active_execution(2, "task", "child") is None
-    assert before != service.usage_executions(1)
-    invocation.cancelled.set()
-    assert service.active_execution(1, "task")["stop_requested"] is True
-    assert not invocation.process_control.cancelled.is_set()
-    invocation.finished = True
-    assert service.active_execution(1, "task") is None
-    assert service.usage_executions(1) == []
-
-
 def counter(i, *, stamp=None):
     return (
         stamp or (datetime(2026, 11, 8, 1, tzinfo=UTC) + timedelta(seconds=i * 5)).isoformat(),

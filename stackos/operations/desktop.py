@@ -34,10 +34,7 @@ def operation_specs() -> list[OperationSpec]:
                 rest=OperationSurface(
                     enabled=True,
                     path=AVAILABILITY_PATH,
-                    notes=(
-                        "POST stream; native disk token locally, bound computer credential "
-                        "on the selected server. Not a JSON operation call."
-                    ),
+                    notes="POST stream; daemon-admin token only. Not a JSON operation call.",
                 )
             ),
             purpose=(
@@ -45,8 +42,7 @@ def operation_specs() -> list[OperationSpec]:
                 "future workflow timers."
             ),
             prerequisites=(
-                "Native local authentication or exact server computer authorization; "
-                "browser login and console tokens are refused.",
+                "Native local daemon authentication; browser console tokens are refused.",
             ),
             returns=("Transient ready event; no persisted presence, replay, heartbeat or lease.",),
             examples=(OperationExample(title="Native main-process stream", arguments={}),),

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from html import escape
 from typing import Annotated, Any, Literal
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Body, Depends, Query, Request, Response, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
@@ -32,7 +31,6 @@ from stackos.operations.auth_handlers import TelegramApplicationStatusOut
 from stackos.operations.dispatcher import OperationDispatcher
 from stackos.operations.registry import build_operation_registry
 from stackos.repositories.base import RepositoryError
-from stackos.repositories.project_access import user_principal
 
 router = APIRouter(prefix="/api/v1", tags=["auth-providers"])
 
@@ -64,8 +62,7 @@ async def _dispatch_auth_operation(
         session=session,
         surface="rest",
         settings=settings,
-        trusted_local_admin=user_principal(session) is None,
-        auth_scope="verified-user" if user_principal(session) is not None else None,
+        trusted_local_admin=True,
     )
     return result.payload
 
@@ -317,9 +314,7 @@ async def auth_authorization_cancel(
     response_class=RedirectResponse,
     status_code=status.HTTP_303_SEE_OTHER,
 )
-@router.get("/auth/oauth/complete", response_class=RedirectResponse, include_in_schema=False)
 async def auth_oauth_callback(
-    request: Request,
     state_value: str | None = Query(default=None, alias="state", max_length=512),
     code: str | None = Query(default=None, max_length=4096),
     provider_error: str | None = Query(default=None, alias="error", max_length=200),
@@ -333,33 +328,9 @@ async def auth_oauth_callback(
     ),
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
-) -> Response:
+) -> RedirectResponse:
     """Complete one bound OAuth transaction and immediately leave the callback URL."""
 
-    if settings.process_role == "server" and request.url.path.endswith("/callback"):
-        # Strict cookies do not accompany cross-site provider redirects. Land
-        # without consuming anything, then make a deliberate same-origin hop
-        # with the owner's normal authenticated session. No provider code is
-        # exchanged until the repository verifies the transaction's owner.
-        query_values: list[tuple[str, str]] = []
-        for key, value in (("state", state_value), ("code", code), ("error", provider_error)):
-            if value is not None:
-                query_values.append((key, value))
-        query_values.extend(("realmId", value) for value in realm_ids or [])
-        target = "/api/v1/auth/oauth/complete?" + urlencode(query_values)
-        return HTMLResponse(
-            "<!doctype html><html><head><title>Continue Account connection</title></head>"
-            "<body><p>Continue with the StackOS user who started this Account connection.</p>"
-            f'<a href="{escape(target, quote=True)}">Continue Account connection</a></body></html>',
-            headers={
-                "Cache-Control": "no-store",
-                "Referrer-Policy": "no-referrer",
-                "Content-Security-Policy": (
-                    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
-                ),
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
     result = None
     if state_value is not None:
         try:
@@ -391,19 +362,17 @@ async def auth_oauth_callback(
     query: dict[str, str] = {"oauth_status": status_label}
     if result is not None and result.provider_key is not None:
         query["provider_key"] = result.provider_key
-    origin = (
-        settings.server_url
-        if settings.process_role == "server"
-        else (f"http://{settings.host}:{settings.port}")
-    )
     if (
         result is not None
         and result.return_surface == "project-connections"
         and result.attach_project_id is not None
     ):
-        destination = f"{origin}/projects/{result.attach_project_id}/connections?{urlencode(query)}"
+        destination = (
+            f"http://{settings.host}:{settings.port}/projects/"
+            f"{result.attach_project_id}/connections?{urlencode(query)}"
+        )
     else:
-        destination = f"{origin}/accounts?{urlencode(query)}"
+        destination = f"http://{settings.host}:{settings.port}/accounts?{urlencode(query)}"
     return RedirectResponse(
         destination,
         status_code=status.HTTP_303_SEE_OTHER,

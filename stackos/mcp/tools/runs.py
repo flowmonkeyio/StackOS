@@ -10,7 +10,6 @@ import secrets
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-from starlette.concurrency import run_in_threadpool
 
 from stackos.db.models import RunKind, RunStatus
 from stackos.mcp.context import MCPContext
@@ -215,8 +214,7 @@ async def _run_abort(
 ) -> WriteEnvelope[RunOut]:
     from stackos.task_delivery import abort_audit_run
 
-    env = await run_in_threadpool(
-        abort_audit_run,
+    env = abort_audit_run(
         ctx.session,
         inp.run_id,
         cascade=inp.cascade,

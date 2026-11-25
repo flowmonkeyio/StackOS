@@ -90,24 +90,6 @@ class AgentRequest(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
-class LocalRuntimeConnection(SQLModel, table=True):
-    """Revocable server authorization; local folders and native state stay local."""
-
-    __tablename__ = "local_runtime_connections"
-
-    id: str = Field(primary_key=True, max_length=36)
-    project_id: int = Field(
-        sa_column=Column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
-    )
-    owner_user_id: str = Field(max_length=36)
-    environment_id: str = Field(max_length=63)
-    server_origin: str = Field(max_length=500)
-    credential_digest: str = Field(max_length=64, unique=True)
-    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
-    expires_at: float
-    revoked_at: datetime | None = None
-
-
 class WorkspaceBinding(SQLModel, table=True):
     """Daemon-owned mapping from an external repo/workspace to a project.
 
@@ -371,7 +353,6 @@ __all__ = [
     "AgentRequest",
     "AgentSession",
     "IdempotencyKey",
-    "LocalRuntimeConnection",
     "Run",
     "RunStep",
     "RunStepCall",

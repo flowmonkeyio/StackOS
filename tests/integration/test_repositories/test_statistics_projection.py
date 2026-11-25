@@ -34,38 +34,6 @@ def test_home_read_token_tracks_live_counters_and_scope_without_exposing_them(
     assert len(before) == 64 and "owned-call" not in before
 
 
-def test_global_home_read_token_ignores_other_owners(session, project_id, monkeypatch):
-    from uuid import uuid4
-
-    from stackos.auth import UserPrincipal
-    from stackos.repositories.projects import ProjectRepository
-
-    own = session.get(Project, project_id)
-    own.owner_user_id = str(uuid4())
-    own.environment_id = "read-token-test"
-    session.add(own)
-    session.commit()
-    foreign = (
-        ProjectRepository(session)
-        .create(slug="foreign-token", name="Foreign", domain="example.test")
-        .data.id
-    )
-    session.info["user_principal"] = UserPrincipal(own.owner_user_id, own.environment_id)
-    calls = [{"project_id": foreign, "invocation_id": "foreign-call", "live_usage": {"total": 10}}]
-    monkeypatch.setattr(stats.host_service, "usage_executions", lambda _: calls)
-    before = stats.usage_read_token(session, None)
-    calls[0]["live_usage"]["total"] = 11
-    row = session.get(Project, foreign)
-    row.is_active = not row.is_active
-    session.add(row)
-    session.commit()
-    assert stats.usage_read_token(session, None) == before
-    own.is_active = not own.is_active
-    session.add(own)
-    session.commit()
-    assert stats.usage_read_token(session, None) != before
-
-
 def test_full_year_retains_daily_groups_exact_totals_and_bounded_reads(
     session, project_id, monkeypatch
 ):

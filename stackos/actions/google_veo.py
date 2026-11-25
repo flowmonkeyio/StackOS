@@ -240,13 +240,7 @@ class GoogleVeoVideoActionConnector:
             if not isinstance(ref, str):
                 continue
             try:
-                candidate = artifact_path(
-                    asset_dir,
-                    ref,
-                    label=path_key,
-                    session=request.session,
-                    project_id=request.project_id,
-                )
+                candidate = artifact_path(asset_dir, ref, label=path_key)
                 if (
                     candidate.suffix.lower().lstrip(".")
                     not in GoogleVeoIntegration.INPUT_IMAGE_FORMATS
@@ -323,20 +317,12 @@ class GoogleVeoVideoActionConnector:
                     if isinstance(payload.get("resolution"), str)
                     else None,
                     "input_image_path": artifact_path(
-                        asset_dir,
-                        str(payload["input_image_ref"]),
-                        label="input_image_ref",
-                        session=request.session,
-                        project_id=request.project_id,
+                        asset_dir, str(payload["input_image_ref"]), label="input_image_ref"
                     )
                     if isinstance(payload.get("input_image_ref"), str)
                     else None,
                     "last_frame_path": artifact_path(
-                        asset_dir,
-                        str(payload["last_frame_ref"]),
-                        label="last_frame_ref",
-                        session=request.session,
-                        project_id=request.project_id,
+                        asset_dir, str(payload["last_frame_ref"]), label="last_frame_ref"
                     )
                     if isinstance(payload.get("last_frame_ref"), str)
                     else None,

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,14 +33,12 @@ from stackos.actions import DEFAULT_ACTION_CONNECTORS, ActionConnectorRegistry, 
 from stackos.actions.durable_dispatcher import DurableActionDispatcher
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.api import register_routers
-from stackos.api.deps import get_session
-from stackos.artifacts.files import FileSource, resolve_file
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
 from stackos.backups import run_due_backup
 from stackos.config import Settings, get_settings
 from stackos.crypto import cleanup_old_backup
 from stackos.crypto.aes_gcm import configure_seed_path
-from stackos.db.connection import make_settings_engine
+from stackos.db.connection import make_engine
 from stackos.db.migrate import upgrade_to_head
 from stackos.install import bundled_patterns_source
 from stackos.integrations.telegram_tdlib.daemon import (
@@ -265,11 +263,11 @@ def _build_lifespan(
         cleanup_old_backup(settings.seed_path)
         token = ensure_token(settings.token_path)
 
-        # Bring the selected database to the tracked Alembic head on every daemon
+        # Bring the SQLite schema to the tracked Alembic head on every daemon
         # boot. The follow-up ``create_all`` remains a no-op safety net for
         # tests and partially-initialised dev databases.
         upgrade_to_head(settings)
-        engine = make_settings_engine(settings)
+        engine = make_engine(settings.db_path)
 
         SQLModel.metadata.create_all(engine)
         try:
@@ -298,21 +296,14 @@ def _build_lifespan(
             connectors=connectors,
             asset_dir=settings.generated_assets_dir,
         )
-        from stackos.local_runtime.exchange import InvocationExchange
-
         app.state.operation_services = {
             "settings": settings,
             "telegram_runtime": telegram_runtime,
             "action_connectors": connectors,
             "durable_dispatcher": delivery,
-            "local_invocations": InvocationExchange(),
         }
 
         with Session(engine) as session:
-            if settings.process_role == "server":
-                from stackos.task_delivery import mark_interrupted_connected_deliveries
-
-                mark_interrupted_connected_deliveries(session)
             reconciled_actions = ActionRepository(session).reconcile_running_calls()
             if reconciled_actions:
                 log.info(
@@ -329,9 +320,7 @@ def _build_lifespan(
 
         upgrade_runtime(scheduler)  # Identify loaded target generation; never continue at startup.
         app.state.scheduler = scheduler
-        workflow_schedules = WorkflowScheduleRuntime(
-            scheduler, lambda: Session(engine), operation_services=app.state.operation_services
-        )
+        workflow_schedules = WorkflowScheduleRuntime(scheduler, lambda: Session(engine))
         app.state.workflow_schedules = workflow_schedules
         app.state.operation_services.update(
             scheduler=scheduler,
@@ -399,8 +388,8 @@ def _build_lifespan(
             yield
         finally:
             log.info("daemon.shutdown.clean")
-            for connection in list(workflow_schedules.connections.values()):
-                workflow_schedules.disconnect(connection)
+            if workflow_schedules.connection is not None:
+                workflow_schedules.disconnect(workflow_schedules.connection)
             from stackos.host_mcp.service import shutdown_usage
 
             shutdown_usage()
@@ -436,10 +425,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     production, callers pass `None` and we resolve the global Settings.
     """
     settings = settings or get_settings()
-    if settings.process_role == "runtime":
-        from stackos.local_runtime.service import create_app as create_runtime_app
-
-        return create_runtime_app(settings)
     # Pre-flight ensure so the token exists before middleware reads it.
     settings.ensure_dirs()
     _ensure_seed(settings.seed_path)
@@ -454,7 +439,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         summary="Local StackOS runtime for agents and humans.",
         description=(
-            "A Python daemon (FastAPI + selected database + MCP Streamable HTTP) "
+            "A local Python daemon (FastAPI + SQLite/WAL + MCP Streamable HTTP) "
             "plus Vue UI for projects, plugins, workflow templates, run plans, "
             "resources, actions, and auditable runs."
         ),
@@ -464,7 +449,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/api/openapi.json",
     )
     app.state.ui_token = ui_token
-    app.state.settings = settings
     app.dependency_overrides[get_settings] = lambda: settings
 
     # Middleware order — Starlette runs the *last-added* first on the
@@ -485,28 +469,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestTimingMiddleware)
 
     register_routers(app)
-
-    @app.get("/api/v1/projects/{project_id}/files/{source}/{file_id}")
-    async def download_project_file(
-        request: Request,
-        project_id: int,
-        source: FileSource,
-        file_id: int,
-        session: Session = Depends(get_session),
-    ) -> FileResponse:
-        stored = resolve_file(
-            session,
-            request.app.state.settings,
-            project_id=project_id,
-            source=source,
-            file_id=file_id,
-        )
-        return FileResponse(
-            stored.path,
-            media_type=stored.content_type,
-            filename=stored.path.name,
-            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
-        )
 
     # Mount the MCP Streamable HTTP transport at /mcp. Bearer-token
     # middleware already covers ``/mcp/*`` via ``PROTECTED_PREFIXES``,

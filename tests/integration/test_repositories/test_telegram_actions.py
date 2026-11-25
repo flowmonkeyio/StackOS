@@ -26,14 +26,7 @@ from stackos.actions.telegram import (
 )
 from stackos.actions.telegram_schema import TelegramButton
 from stackos.auth_providers import AuthRepository
-from stackos.db.models import (
-    ActionCall,
-    Artifact,
-    Credential,
-    DurableActionJob,
-    Project,
-    ResourceRecord,
-)
+from stackos.db.models import ActionCall, Artifact, Credential, DurableActionJob, ResourceRecord
 from stackos.integrations.telegram_tdlib.service import TelegramTdlibServiceError
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ProjectRepository
@@ -1638,45 +1631,6 @@ async def test_telegram_profile_facet_must_remain_enabled(
             )
         )
     assert runtime.calls == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("foreign", [False, True])
-async def test_telegram_managed_media_uses_persisted_project_scope(
-    session: Session, project_id: int, tmp_path, foreign: bool
-) -> None:
-    request = await _sender_send_request(
-        session, project_id, _account(session, project_id), sender_ref=None
-    )
-    project = session.get(Project, project_id)
-    project.environment_id = "private-file-test"
-    project.owner_user_id = "owner"
-    session.add(project)
-    uri = f"/generated-assets/projects/{project_id + int(foreign)}/photo.jpg"
-    path = tmp_path / uri.removeprefix("/generated-assets/")
-    path.parent.mkdir(parents=True)
-    path.write_bytes(b"media bytes")
-    session.add(Artifact(project_id=project_id, kind="image", uri=uri, status="approved"))
-    session.commit()
-    request = replace(
-        request,
-        asset_dir=tmp_path,
-        input_json={
-            **request.input_json,
-            "content": {"kind": "photo", "file": {"artifact_ref": uri}},
-        },
-    )
-    runtime = FakeTelegram()
-    connector = TelegramActionConnector(runtime)
-    if foreign:
-        with pytest.raises(ValidationError):
-            await connector.prepare_delivery(request)
-        assert runtime.calls == []
-    else:
-        prepared = await connector.prepare_delivery(request)
-        assert prepared[0]["input_json"]["content"]["file"]["artifact_ref"] == uri
-        assert runtime.calls
-    assert path.read_bytes() == b"media bytes"
 
 
 @pytest.mark.asyncio

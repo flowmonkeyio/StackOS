@@ -142,8 +142,6 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "artifact.get",
         "artifact.query",
         "artifact.read",
-        "artifact.download",
-        "actionCall.download",
         "account.list",
         "account.session.status",
         "account.session.connect",

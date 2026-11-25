@@ -131,7 +131,7 @@ function priorityItems(row: TaskProgressRow) {
             <div
               class="tracker-board__card"
               :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
-              :title="state(row).description ?? (row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined)"
+              :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
               :aria-busy="columnPending(column.status) || undefined"
             >
               <span class="tracker-board__identity tracker-board__identity--header">
@@ -178,7 +178,7 @@ function priorityItems(row: TaskProgressRow) {
                 <UiBadge
                   class="tracker-board__state"
                   :tone="state(row).tone"
-                  :title="state(row).description ?? state(row).label"
+                  :title="state(row).label"
                   :aria-label="state(row).label"
                   :dot="true"
                   variant="outline"
@@ -192,7 +192,7 @@ function priorityItems(row: TaskProgressRow) {
               <button
                 type="button"
                 class="tracker-board__open focus-ring"
-                :aria-label="`Open graph for task #${row.id}: ${row.task.title}${row.task.active_execution ? `; ${state(row).label}: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
+                :aria-label="`Open graph for task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
                 @click="$emit('openGraph', row.key)"
               >
                 <span

@@ -11,28 +11,11 @@ from sqlalchemy import (
     Index,
     LargeBinary,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.types import JSON
 from sqlmodel import Field, SQLModel
 
 from stackos.db.model_base import _utcnow
-
-
-class UserSession(SQLModel, table=True):
-    """Opaque browser sessions; Supabase credentials never leave the server."""
-
-    __tablename__ = "user_sessions"
-
-    token_digest: str = Field(primary_key=True, max_length=64)
-    environment_id: str = Field(max_length=63)
-    server_origin: str = Field(max_length=200)
-    user_id: str = Field(max_length=36)
-    csrf_digest: str = Field(max_length=64)
-    encrypted_payload: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
-    nonce: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
-    expires_at: int
-    recovery: bool = False
 
 
 class AuthProvider(SQLModel, table=True):
@@ -70,19 +53,9 @@ class Credential(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("credential_ref", name="uq_credentials_ref"),
         UniqueConstraint(
-            "environment_id",
-            "owner_user_id",
             "provider_key",
             "display_name_key",
             name="uq_credentials_provider_display_name",
-        ),
-        Index(
-            "uq_credentials_local_provider_display_name",
-            "provider_key",
-            "display_name_key",
-            unique=True,
-            sqlite_where=text("owner_user_id IS NULL AND environment_id IS NULL"),
-            postgresql_where=text("owner_user_id IS NULL AND environment_id IS NULL"),
         ),
         UniqueConstraint(
             "integration_credential_id",
@@ -107,8 +80,6 @@ class Credential(SQLModel, table=True):
         ),
     )
     credential_ref: str = Field(max_length=120)
-    owner_user_id: str | None = Field(default=None, max_length=36, index=True)
-    environment_id: str | None = Field(default=None, max_length=63, index=True)
     provider_key: str = Field(max_length=160)
     display_name: str = Field(max_length=200)
     display_name_key: str = Field(max_length=200)
@@ -235,8 +206,6 @@ class OAuthState(SQLModel, table=True):
         ),
     )
     state: str = Field(max_length=200)
-    owner_user_id: str | None = Field(default=None, max_length=36)
-    environment_id: str | None = Field(default=None, max_length=63)
     redirect_uri: str | None = Field(default=None, max_length=2048)
     expires_at: datetime | None = Field(default=None)
     consumed_at: datetime | None = Field(default=None)

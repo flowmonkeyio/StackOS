@@ -164,7 +164,6 @@ export type DesktopBackupAction =
 interface DesktopBridge {
   onTaskNotice?(listener: (notice: DesktopTaskNotice) => void): () => void
   openNotificationTask?(target: Pick<DesktopTaskNotice, 'projectId' | 'taskId' | 'taskKey'>): Promise<DesktopCommandResult>
-  openAccount?(flow: 'register' | 'recover'): Promise<void>
   status(): Promise<DesktopStatus>
   installOrRepair(): Promise<DesktopCommandResult>
   restartService(): Promise<DesktopCommandResult>
@@ -216,7 +215,6 @@ export const desktop = {
   openNotificationTask: (target: Pick<DesktopTaskNotice, 'projectId' | 'taskId' | 'taskKey'>) =>
     safe((b) => b.openNotificationTask?.(target) ?? Promise.resolve({ ok: false })),
   isShell: isDesktopShell,
-  openAccount: (flow: 'register' | 'recover') => safe((b) => b.openAccount ? b.openAccount(flow) : Promise.reject(new Error('Account browser navigation is unavailable.'))),
   status: () => safe((b) => b.status()),
   installOrRepair: () => safe((b) => b.installOrRepair()),
   restartService: () => safe((b) => b.restartService()),

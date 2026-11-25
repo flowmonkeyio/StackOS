@@ -33,7 +33,6 @@ from stackos.actions.connectors import (
 )
 from stackos.actions.telegram_payloads import (
     formatted_text,
-    input_file,
     message_content,
     reply_markup,
     send_options,
@@ -57,7 +56,6 @@ from stackos.actions.telegram_schema import (
     telegram_file_ref,
 )
 from stackos.actions.telegram_storage import store_sent_messages
-from stackos.artifacts.files import generated_output_path
 from stackos.auth_providers import ResolvedCredential
 from stackos.auth_providers.repository import AuthRepository
 from stackos.communications import (
@@ -341,22 +339,10 @@ class TelegramActionConnector:
                 )
             self._surface(request, cast(TelegramProfileInput, payload).profile_ref, surface_ref)
         if isinstance(payload, TelegramMessageSend):
-            await message_content(
-                client,
-                payload.content,
-                asset_dir=request.asset_dir,
-                session=request.session,
-                project_id=request.project_id,
-            )
+            await message_content(client, payload.content, asset_dir=request.asset_dir)
         elif isinstance(payload, TelegramAlbumSend):
             for content in payload.contents:
-                await message_content(
-                    client,
-                    content,
-                    asset_dir=request.asset_dir,
-                    session=request.session,
-                    project_id=request.project_id,
-                )
+                await message_content(client, content, asset_dir=request.asset_dir)
         destination_ref = surface_ref
         if destination_ref is None:
             callback_query_id = getattr(payload, "callback_query_id", None)
@@ -621,13 +607,7 @@ class TelegramActionConnector:
         destinations = [_canonical_broadcast_destination(ref) for ref in payload.recipients]
         if len(set(destinations)) != len(destinations):
             raise ValidationError("Different recipient refs identify the same Telegram chat")
-        await message_content(
-            client,
-            payload.content,
-            asset_dir=request.asset_dir,
-            session=request.session,
-            project_id=request.project_id,
-        )
+        await message_content(client, payload.content, asset_dir=request.asset_dir)
         items = []
         message = TelegramBroadcastMessage.model_validate(
             payload.model_dump(exclude={"target_ref", "recipients"})
@@ -800,7 +780,6 @@ class TelegramActionConnector:
                 artifact_ref = getattr(file, "artifact_ref", None) if file is not None else None
                 if artifact_ref is None:
                     continue
-                assert file is not None
                 artifact = session.exec(
                     select(Artifact).where(
                         col(Artifact.project_id) == request.project_id,
@@ -812,7 +791,6 @@ class TelegramActionConnector:
                         "Telegram upload artifact is not an active artifact in this project",
                         data={"artifact_ref": artifact_ref},
                     )
-                input_file(file, request.asset_dir, session=session, project_id=request.project_id)
 
     def _assert_native_file_ownership(self, request: ActionConnectorRequest, payload: Any) -> None:
         """Reject an ``inputFileId`` that belongs to a different TDLib Account."""
@@ -1500,13 +1478,7 @@ class TelegramActionConnector:
                     "@type": "sendMessageAlbum",
                     **query,
                     "input_message_contents": [
-                        await message_content(
-                            client,
-                            content,
-                            asset_dir=request.asset_dir,
-                            session=request.session,
-                            project_id=request.project_id,
-                        )
+                        await message_content(client, content, asset_dir=request.asset_dir)
                         for content in payload.contents
                     ],
                 }
@@ -1515,11 +1487,7 @@ class TelegramActionConnector:
                 **query,
                 "reply_markup": reply_markup(payload.buttons),
                 "input_message_content": await message_content(
-                    client,
-                    payload.content,
-                    asset_dir=request.asset_dir,
-                    session=request.session,
-                    project_id=request.project_id,
+                    client, payload.content, asset_dir=request.asset_dir
                 ),
             }
         base: dict[str, Any] = {"chat_id": chat_id}
@@ -1558,11 +1526,7 @@ class TelegramActionConnector:
                 "@type": "editMessageText" if payload.kind == "text" else "editMessageMedia",
                 **base,
                 "input_message_content": await message_content(
-                    client,
-                    payload.content,
-                    asset_dir=request.asset_dir,
-                    session=request.session,
-                    project_id=request.project_id,
+                    client, payload.content, asset_dir=request.asset_dir
                 ),
             }
         if payload.kind == "caption":
@@ -1576,13 +1540,7 @@ class TelegramActionConnector:
             return {"@type": "editMessageReplyMarkup", **base}
         location = None
         if payload.location is not None:
-            content = await message_content(
-                client,
-                payload.location,
-                asset_dir=request.asset_dir,
-                session=request.session,
-                project_id=request.project_id,
-            )
+            content = await message_content(client, payload.location, asset_dir=request.asset_dir)
             if content["@type"] != "inputMessageLiveLocation":
                 raise ValidationError("Live location edits require a nonzero live_period")
             location = content["location"]
@@ -1720,14 +1678,12 @@ class TelegramActionConnector:
             raise ActionConnectorError("Telegram returned a file outside this Account's storage")
         suffix = source.suffix if re.fullmatch(r"\.[a-zA-Z0-9]{1,10}", source.suffix) else ".bin"
         relative = Path("telegram") / str(request.project_id) / (uuid.uuid4().hex + suffix)
-        destination = generated_output_path(
-            request.asset_dir, relative, session=session, project_id=request.project_id
-        )
+        destination = request.asset_dir.resolve() / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.resolve().is_relative_to(request.asset_dir.resolve()):
             raise ValidationError("Telegram artifact storage path is outside generated assets")
         shutil.copyfile(source, destination)
-        uri = "/generated-assets/" + destination.relative_to(request.asset_dir.resolve()).as_posix()
+        uri = "/generated-assets/" + relative.as_posix()
         artifact = (
             ArtifactRepository(session)
             .create_generated_file(

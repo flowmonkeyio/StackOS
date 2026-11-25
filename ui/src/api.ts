@@ -216,58 +216,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Verification Callback */
-        get: operations["verification_callback_api_v1_auth_callback_get"];
-        put?: never;
-        /** Consume Callback */
-        post: operations["consume_callback_api_v1_auth_callback_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Login */
-        post: operations["login_api_v1_auth_login_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Logout */
-        post: operations["logout_api_v1_auth_logout_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/auth/oauth/callback": {
         parameters: {
             query?: never;
@@ -288,23 +236,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reset Password */
-        post: operations["reset_password_api_v1_auth_password_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/auth/providers": {
         parameters: {
             query?: never;
@@ -317,91 +248,6 @@ export interface paths {
          * @description List provider auth metadata synced from StackOS plugin manifests.
          */
         get: operations["list_auth_providers_api_v1_auth_providers_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/recover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Recover */
-        post: operations["recover_api_v1_auth_recover_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Refresh */
-        post: operations["refresh_api_v1_auth_refresh_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Register */
-        post: operations["register_api_v1_auth_register_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/resend": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Resend */
-        post: operations["resend_api_v1_auth_resend_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** User Session */
-        get: operations["user_session_api_v1_auth_session_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -448,23 +294,6 @@ export interface paths {
         get: operations["get_ui_token_api_v1_auth_ui_token_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/verify": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Verify */
-        post: operations["verify_api_v1_auth_verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1185,23 +1014,6 @@ export interface paths {
          * @description Record supplied experiment observation data without interpreting it.
          */
         post: operations["record_experiment_observation_api_v1_projects__project_id__experiments_observations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/projects/{project_id}/files/{source}/{file_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Download Project File */
-        get: operations["download_project_file_api_v1_projects__project_id__files__source___file_id__get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2787,40 +2599,6 @@ export interface components {
             /** Risk Level */
             risk_level: string;
         };
-        /** ActionOutputDownloadInput */
-        ActionOutputDownloadInput: {
-            /** Action Call Id */
-            action_call_id: number;
-            /**
-             * Destination Path
-             * @description Optional absolute NEW local file path, written only by the native MCP bridge.
-             * @default null
-             */
-            destination_path: string | null;
-            /**
-             * Expected Etag
-             * @default null
-             */
-            expected_etag: string | null;
-            /**
-             * Idempotency Key
-             * @default null
-             */
-            idempotency_key: string | null;
-            /** Project Id */
-            project_id: number;
-            /**
-             * Response Mode
-             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
-             * @default null
-             */
-            response_mode: ActionOutputDownloadInputResponse_modeAnyOf0 | null;
-            /**
-             * Run Token
-             * @default null
-             */
-            run_token: string | null;
-        };
         /**
          * ActiveExecutionOut
          * @description Actual host-call identity; absent when no call is registered in this daemon.
@@ -2828,11 +2606,6 @@ export interface components {
         ActiveExecutionOut: {
             /** Agent */
             agent: string;
-            /**
-             * Connection State
-             * @default null
-             */
-            connection_state: ActiveExecutionOutConnection_stateAnyOf0 | null;
             /** Host Key */
             host_key: string;
             /** Invocation Id */
@@ -2843,11 +2616,6 @@ export interface components {
             model: string | null;
             /** Started At */
             started_at: string;
-            /**
-             * Stop Requested
-             * @default false
-             */
-            stop_requested: boolean;
             /** Ticket Key */
             ticket_key: string;
         };
@@ -4492,11 +4260,6 @@ export interface components {
          * @enum {string}
          */
         DurableActionJobStatus: DurableActionJobStatus;
-        /** EmailInput */
-        EmailInput: {
-            /** Email */
-            email: string;
-        };
         /** EnrollmentView */
         EnrollmentView: {
             /**
@@ -6239,16 +6002,6 @@ export interface components {
             /** Thread Ref */
             thread_ref: string;
         };
-        /** LoginInput */
-        LoginInput: {
-            /** Email */
-            email: string;
-            /**
-             * Password
-             * Format: password
-             */
-            password: string;
-        };
         /**
          * MainAgentPreferences
          * @description Launch choices only; instructions and specialist contracts have other owners.
@@ -6739,14 +6492,6 @@ export interface components {
              * @default 0
              */
             total_estimate: number;
-        };
-        /** PasswordInput */
-        PasswordInput: {
-            /**
-             * Password
-             * Format: password
-             */
-            password: string;
         };
         /** PatternDeleteInput */
         PatternDeleteInput: {
@@ -8530,8 +8275,6 @@ export interface components {
          * @description Native launch settings; project_dir only fences a saved legacy target.
          */
         ScheduleExecution: {
-            /** Connection Id */
-            connection_id?: string | null;
             /** Host Key */
             host_key?: string | null;
             mcp_config_ref?: components["schemas"]["TaskMcpConfigRef"] | null;
@@ -9687,11 +9430,6 @@ export interface components {
          */
         TaskDeliveryStateOut: {
             /**
-             * Needs Attention
-             * @default false
-             */
-            needs_attention: boolean;
-            /**
              * Reason
              * @default null
              */
@@ -9703,11 +9441,6 @@ export interface components {
             status: TaskDeliveryStateOutStatus;
             /** @default null */
             stop_context: components["schemas"]["TaskDeliveryStopContextOut"] | null;
-            /**
-             * Stop Unconfirmed
-             * @default false
-             */
-            stop_unconfirmed: boolean;
             /**
              * Ticketkey
              * @default null
@@ -11319,19 +11052,6 @@ export interface components {
             /** Error Type */
             type: string;
         };
-        /** VerificationInput */
-        VerificationInput: {
-            /**
-             * Token Hash
-             * Format: password
-             */
-            token_hash: string;
-            /**
-             * Type
-             * @enum {string}
-             */
-            type: VerificationInputType;
-        };
         /**
          * WorkDurationOut
          * @description Union of recorded invocation wall intervals, never lifecycle elapsed time.
@@ -12467,7 +12187,6 @@ export type SchemaActionListInput = components['schemas']['ActionListInput'];
 export type SchemaActionListItemOut = components['schemas']['ActionListItemOut'];
 export type SchemaActionListOut = components['schemas']['ActionListOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
-export type SchemaActionOutputDownloadInput = components['schemas']['ActionOutputDownloadInput'];
 export type SchemaActiveExecutionOut = components['schemas']['ActiveExecutionOut'];
 export type SchemaActiveTaskOut = components['schemas']['ActiveTaskOut'];
 export type SchemaActiveTaskProjectOut = components['schemas']['ActiveTaskProjectOut'];
@@ -12528,7 +12247,6 @@ export type SchemaDeliveryWorkTimeOut = components['schemas']['DeliveryWorkTimeO
 export type SchemaDesiredAccount = components['schemas']['DesiredAccount'];
 export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
 export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
-export type SchemaEmailInput = components['schemas']['EmailInput'];
 export type SchemaEnrollmentView = components['schemas']['EnrollmentView'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
 export type SchemaExecutionIdentityOut = components['schemas']['ExecutionIdentityOut'];
@@ -12585,7 +12303,6 @@ export type SchemaLiveUsageSnapshotOut = components['schemas']['LiveUsageSnapsho
 export type SchemaLoadedWorkflowTemplate = components['schemas']['LoadedWorkflowTemplate'];
 export type SchemaLocalAgentChatCreateMessageInput = components['schemas']['LocalAgentChatCreateMessageInput'];
 export type SchemaLocalAgentChatMessageOut = components['schemas']['LocalAgentChatMessageOut'];
-export type SchemaLoginInput = components['schemas']['LoginInput'];
 export type SchemaMainAgentPreferences = components['schemas']['MainAgentPreferences'];
 export type SchemaMainRoleSettingsPatch = components['schemas']['MainRoleSettingsPatch'];
 export type SchemaMetricSnapshotOut = components['schemas']['MetricSnapshotOut'];
@@ -12612,7 +12329,6 @@ export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOu
 export type SchemaPageResponseRunPlanSummaryOut = components['schemas']['PageResponse_RunPlanSummaryOut_'];
 export type SchemaPageActionCallAuditOut = components['schemas']['Page_ActionCallAuditOut_'];
 export type SchemaPageScheduledRunOut = components['schemas']['Page_ScheduledRunOut_'];
-export type SchemaPasswordInput = components['schemas']['PasswordInput'];
 export type SchemaPatternDeleteInput = components['schemas']['PatternDeleteInput'];
 export type SchemaPatternDetail = components['schemas']['PatternDetail'];
 export type SchemaPatternGetInput = components['schemas']['PatternGetInput'];
@@ -12747,7 +12463,6 @@ export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaUsageIntervalOut = components['schemas']['UsageIntervalOut'];
 export type SchemaUsageSampleOut = components['schemas']['UsageSampleOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
-export type SchemaVerificationInput = components['schemas']['VerificationInput'];
 export type SchemaWorkDurationOut = components['schemas']['WorkDurationOut'];
 export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
 export type SchemaWorkflowExperienceSpec = components['schemas']['WorkflowExperienceSpec'];
@@ -13237,101 +12952,6 @@ export interface operations {
             };
         };
     };
-    verification_callback_api_v1_auth_callback_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            303: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    consume_callback_api_v1_auth_callback_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    login_api_v1_auth_login_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    logout_api_v1_auth_logout_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
     auth_oauth_callback_api_v1_auth_oauth_callback_get: {
         parameters: {
             query?: {
@@ -13353,41 +12973,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reset_password_api_v1_auth_password_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PasswordInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
             };
             /** @description Validation Error */
             422: {
@@ -13431,155 +13016,6 @@ export interface operations {
             };
         };
     };
-    recover_api_v1_auth_recover_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmailInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    refresh_api_v1_auth_refresh_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    register_api_v1_auth_register_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    resend_api_v1_auth_resend_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmailInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    user_session_api_v1_auth_session_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
     auth_telegram_application_status_api_v1_auth_telegram_application_get: {
         parameters: {
             query?: never;
@@ -13616,41 +13052,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UiTokenResponse"];
-                };
-            };
-        };
-    };
-    verify_api_v1_auth_verify_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VerificationInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15164,39 +14565,6 @@ export interface operations {
             };
         };
     };
-    download_project_file_api_v1_projects__project_id__files__source___file_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: number;
-                source: PathsApiV1ProjectsProject_idFilesSourceFile_idGetParametersPathSource;
-                file_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     query_learnings_api_v1_projects__project_id__learnings_get: {
         parameters: {
             query?: {
@@ -16290,10 +15658,6 @@ export enum PathsApiV1ProjectsProject_idArtifactsGetParametersQueryStatusAnyOf0 
     superseded = "superseded",
     archived = "archived"
 }
-export enum PathsApiV1ProjectsProject_idFilesSourceFile_idGetParametersPathSource {
-    artifact = "artifact",
-    action_output = "action-output"
-}
 export enum AccountConsoleInputResponse_mode {
     raw = "raw",
     standard = "standard",
@@ -16386,18 +15750,6 @@ export enum ActionListInputResponse_modeAnyOf0 {
     ack = "ack",
     standard = "standard",
     verbose = "verbose"
-}
-export enum ActionOutputDownloadInputResponse_modeAnyOf0 {
-    compact = "compact",
-    raw = "raw",
-    ack = "ack",
-    standard = "standard",
-    verbose = "verbose"
-}
-export enum ActiveExecutionOutConnection_stateAnyOf0 {
-    connected = "connected",
-    disconnected = "disconnected",
-    needs_attention = "needs_attention"
 }
 export enum ActiveTasksOutScope {
     project = "project",
@@ -17291,10 +16643,6 @@ export enum UsageIntervalOutKind {
 export enum UsageSampleOutSourceAnyOf0 {
     native = "native",
     final = "final"
-}
-export enum VerificationInputType {
-    signup = "signup",
-    recovery = "recovery"
 }
 export enum WorkDurationOutCoverage {
     complete = "complete",

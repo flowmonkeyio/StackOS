@@ -1068,9 +1068,6 @@ def _compact_action_execution(data: dict[str, Any]) -> dict[str, Any]:
             for key in (
                 "output_mode",
                 "path",
-                "uri",
-                "download_operation",
-                "download_arguments",
                 "content_type",
                 "schema_version",
                 "schema_ref",

@@ -36,11 +36,7 @@ def _surfaces(name: str, command: str | None = None) -> OperationSurfaces:
     }
     return OperationSurfaces(
         mcp=OperationSurface(enabled=True),
-        rest=OperationSurface(
-            enabled=True,
-            browser_safe=False,
-            path=f"/api/v1/operations/{name}/call",
-        ),
+        rest=OperationSurface(enabled=True, path=f"/api/v1/operations/{name}/call"),
         cli=OperationSurface(
             enabled=True,
             command=command or alias_commands.get(name) or f"ops call {name}",

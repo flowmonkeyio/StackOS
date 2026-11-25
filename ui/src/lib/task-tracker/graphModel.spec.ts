@@ -462,7 +462,7 @@ describe('buildTrackerFlowModel', () => {
     const stopped = structuredClone(snapshot)
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
     stopped.tasks[0]!.metadata_json = { delivery: {
-      status: 'stopped', ticket_key: 'deliver', reason: 'Browser access denied.', needs_attention: true,
+      status: 'stopped', ticket_key: 'deliver', reason: 'Browser access denied.',
       job_ref: 'task-delivery:1:10', delivery_agent: agent, review_agent: agent,
     } }
     const model = buildTrackerFlowModel(stopped, {
@@ -471,9 +471,8 @@ describe('buildTrackerFlowModel', () => {
     const selected = model.nodes.find(node => node.id === 'ticket:prepare')!
     const current = model.nodes.find(node => node.id === 'ticket:deliver')!
     expect(selected.class).toContain('tracker-node-selected')
-    expect(selected.data).toMatchObject({ active: false, deliveryStopped: false, taskDelivery: null })
+    expect(selected.data).toMatchObject({ active: false, deliveryStopped: false })
     expect(current.data).toMatchObject({ active: false, deliveryStopped: true, deliveryStopReason: 'Browser access denied.' })
-    expect(current.data?.taskDelivery).toMatchObject({ status: 'stopped', needsAttention: true })
     expect(stopped.tasks[0]!.status).toBe('in-progress')
     expect(current.data?.status).toBe('not-started')
   })

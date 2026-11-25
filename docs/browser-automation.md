@@ -94,24 +94,6 @@ Recheck page identity when accepting captures. Explicit `focus`, `connect`,
 
 ## Launcher Contract
 
-In an online environment, select the computer's private runtime environment
-file (`STACKOS_ENV_FILE`) for both native MCP and `stackos.browser`. The existing
-server browser repository retains profile/session metadata; server operations
-return `status=unavailable` and no native context. They never inspect, launch or
-stop a server browser. The connected CLI/MCP adapter validates the signed-in
-owner, exact computer/project/folder binding and selected local runtime health,
-then uses the existing local browser runtime. Missing, revoked, closed or foreign
-connections refuse before native execution; no server fallback is available.
-
-The selected computer supplies the executable, cwd, `BROWSE_STATE_FILE` and
-`CHROMIUM_PROFILE`. Server paths are never used as a native context. Local profile
-and state paths are partitioned by server/environment/owner beneath the selected
-data directory, preserving same-owner profile reuse without adopting another
-owner's cookies. Native binaries remain in the existing computer installation.
-Browser metadata responses keep server authorization and run-plan grants; the
-runtime bearer cannot call browser operations. A browser login alone cannot
-execute them on a computer.
-
 `stackos.browser` consumes only the leading `--session <full-ref>`. It resolves
 that exact project-scoped session with one authenticated `browser.session.status`
 request, applies its native working directory and environment, and replaces

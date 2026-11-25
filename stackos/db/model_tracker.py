@@ -13,12 +13,13 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     event,
+    func,
     inspect,
+    literal_column,
 )
 from sqlalchemy.types import JSON
 from sqlmodel import Field, SQLModel, col
 
-from stackos.db.json_expressions import json_kind, json_value
 from stackos.db.model_base import _enum_column, _utcnow
 from stackos.db.model_enums import (
     TrackerItemStatus,
@@ -559,15 +560,21 @@ class TrackerRevision(SQLModel, table=True):
 
 # Fixed paths must compile identically in the index and statistics queries.
 # Bound JSON path parameters prevent SQLite from covering these expressions.
-REVISION_BEFORE_STATUS = json_value(col(TrackerRevision.before_json), "status").as_string()
-REVISION_AFTER_STATUS = json_value(col(TrackerRevision.after_json), "status").as_string()
-REVISION_BEFORE_TYPE = json_kind(col(TrackerRevision.before_json))
-REVISION_BEFORE_DELIVERY_STATUS = json_value(
-    col(TrackerRevision.before_json), "metadata_json", "delivery", "status"
-).as_string()
-REVISION_AFTER_DELIVERY_STATUS = json_value(
-    col(TrackerRevision.after_json), "metadata_json", "delivery", "status"
-).as_string()
+REVISION_BEFORE_STATUS = func.json_extract(
+    col(TrackerRevision.before_json), literal_column("'$.\"status\"'")
+)
+REVISION_AFTER_STATUS = func.json_extract(
+    col(TrackerRevision.after_json), literal_column("'$.\"status\"'")
+)
+REVISION_BEFORE_TYPE = func.json_type(col(TrackerRevision.before_json))
+REVISION_BEFORE_DELIVERY_STATUS = func.json_extract(
+    col(TrackerRevision.before_json),
+    literal_column('\'$."metadata_json"."delivery"."status"\''),
+)
+REVISION_AFTER_DELIVERY_STATUS = func.json_extract(
+    col(TrackerRevision.after_json),
+    literal_column('\'$."metadata_json"."delivery"."status"\''),
+)
 REVISION_DELIVERY_STATS_INDEX = Index(
     "ix_tracker_revisions_delivery_stats",
     col(TrackerRevision.entity_kind),

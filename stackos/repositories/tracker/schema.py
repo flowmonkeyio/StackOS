@@ -220,8 +220,6 @@ class ActiveExecutionOut(ExecutionIdentityOut):
 
     invocation_id: str
     live_usage: LiveUsageOut | None = None
-    connection_state: Literal["connected", "disconnected", "needs_attention"] | None = None
-    stop_requested: bool = False
 
 
 class WorkDurationOut(BaseModel):
@@ -371,24 +369,6 @@ class TaskDeliveryStateOut(BaseModel):
     ticketKey: str | None = None
     reason: str | None = None
     stop_context: TaskDeliveryStopContextOut | None = None
-    needs_attention: bool = False
-    stop_unconfirmed: bool = False
-
-    @staticmethod
-    def attention_flags(delivery: dict[str, Any]) -> dict[str, bool]:
-        uncertain = delivery.get("uncertain_invocation")
-        cancellation = delivery.get("cancellation")
-        return {
-            "needs_attention": delivery.get("needs_attention") is True
-            or (
-                delivery.get("status") == "stopped"
-                and isinstance(uncertain, str)
-                and bool(uncertain.strip())
-            ),
-            "stop_unconfirmed": delivery.get("needs_attention") is not False
-            and isinstance(cancellation, dict)
-            and cancellation.get("status") == "stop_unconfirmed",
-        }
 
     @staticmethod
     def safe_reason(value: Any) -> str | None:
@@ -445,7 +425,6 @@ class TaskDeliveryStateOut(BaseModel):
                 return None
         return cls.model_validate(
             {
-                **cls.attention_flags(delivery),
                 "status": delivery["status"],
                 "ticketKey": delivery["ticket_key"].strip()
                 if nonempty(delivery.get("ticket_key"))

@@ -16,12 +16,10 @@ from stackos.db.models import (
     CredentialAccount,
     CredentialScope,
     CredentialUsageEvent,
-    Project,
     ProjectCredential,
 )
-from stackos.repositories.project_access import project_owner_filter
+from stackos.repositories.base import NotFoundError
 
-from .access import account_owner_filter, require_account_owner
 from .schema import AccountOut, AuthStatusOut, AuthTestOut
 
 
@@ -43,9 +41,7 @@ class CredentialStatusMixin:
                 provider_key=provider_key,
             )
         else:
-            stmt = select(Credential).where(
-                account_owner_filter(self._s), col(Credential.status) != "revoked"
-            )
+            stmt = select(Credential).where(col(Credential.status) != "revoked")
             if provider_key is not None:
                 stmt = stmt.where(col(Credential.provider_key) == provider_key)
             rows = self._s.exec(
@@ -79,7 +75,6 @@ class CredentialStatusMixin:
                 col(ProjectCredential.credential_id) == col(Credential.id),
             )
             .where(
-                account_owner_filter(self._s),
                 col(Credential.status) != "revoked",
                 col(ProjectCredential.project_id) == project_id,
             )
@@ -101,7 +96,8 @@ class CredentialStatusMixin:
         credential = self._s.exec(
             select(Credential).where(col(Credential.credential_ref) == credential_ref)
         ).first()
-        credential = require_account_owner(self._s, credential)
+        if credential is None:
+            raise NotFoundError(f"Account {credential_ref!r} not found")
         return self._account_out(credential)
 
     def _accounts_out(self, credentials: list[Credential]) -> list[AccountOut]:
@@ -132,11 +128,7 @@ class CredentialStatusMixin:
         project_ids_by_id: dict[int, list[int]] = {}
         for link_row in self._s.exec(
             select(ProjectCredential)
-            .join(Project, col(Project.id) == col(ProjectCredential.project_id))
-            .where(
-                col(ProjectCredential.credential_id).in_(credential_ids),
-                project_owner_filter(self._s),
-            )
+            .where(col(ProjectCredential.credential_id).in_(credential_ids))
             .order_by(col(ProjectCredential.project_id).asc())
         ).all():
             project_ids_by_id.setdefault(link_row.credential_id, []).append(link_row.project_id)
@@ -211,7 +203,6 @@ class CredentialStatusMixin:
         project_ids: list[int],
         last_test: AuthTestOut | None,
     ) -> AccountOut:
-        require_account_owner(self._s, credential)
         assert credential.id is not None
         has_backing = credential.integration_credential_id is not None
         status = (
@@ -337,11 +328,7 @@ class CredentialStatusMixin:
     def _project_ids_for_credential(self, credential_id: int) -> list[int]:
         rows = self._s.exec(
             select(ProjectCredential)
-            .join(Project, col(Project.id) == col(ProjectCredential.project_id))
-            .where(
-                col(ProjectCredential.credential_id) == credential_id,
-                project_owner_filter(self._s),
-            )
+            .where(col(ProjectCredential.credential_id) == credential_id)
             .order_by(col(ProjectCredential.project_id).asc())
         ).all()
         return [row.project_id for row in rows]

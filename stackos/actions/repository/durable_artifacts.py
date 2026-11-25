@@ -60,8 +60,6 @@ def attach_durable_action_artifact_pins(
             (asset_dir or Settings().generated_assets_dir).resolve(),
             artifact.uri,
             label="durable delivery artifact",
-            session=session,
-            project_id=project_id,
         )
         session.add(
             DurableActionArtifact(
@@ -102,13 +100,7 @@ def validate_durable_action_artifact_pins(
                 "durable delivery artifact changed or is no longer active",
                 data={"artifact_id": pin.artifact_id, "artifact_ref": pin.artifact_uri},
             )
-        path = artifact_path(
-            base,
-            pin.artifact_uri,
-            label="durable delivery artifact",
-            session=session,
-            project_id=project_id,
-        )
+        path = artifact_path(base, pin.artifact_uri, label="durable delivery artifact")
         if _sha256(path) != pin.content_sha256:
             raise ValidationError(
                 "durable delivery artifact bytes changed after the job was sealed",
