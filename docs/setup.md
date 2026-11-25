@@ -170,7 +170,8 @@ Selecting a server/runtime role refuses the standalone SQLite path. Existing
 standalone settings remain available for the current installation and isolated
 source test fixtures.
 No install, launchd, host registration or installed-app change is part of this
-preparation. Main owns later consolidation and installed-product proof.
+preparation. Source consolidation is complete; installed-product proof remains
+separate. See the [current server feature map](server-placement.md).
 
 ### Browser and desktop server sign-in
 
@@ -249,7 +250,7 @@ when local execution needs attention. `STACKOS_SERVER_URL` alone continues to
 select server browsing without starting an executor. Missing/invalid selected
 files stop startup; they never open the installed standalone console.
 
-These are source startup contracts. Main owns consolidation and later packaged
+These are source startup contracts. Main owns later packaged
 install/repair and installed-app restart proof; this source delivery does not
 replace or restart the current installation.
 
@@ -312,9 +313,10 @@ restart alone cannot reconstruct or confirm an invocation's outcome.
 This flow starts fresh; it performs no historical import, live data/key export
 or automatic rollback. Legacy backup/export/restore is unavailable for the
 online server and runtime; see [backup limits](backups.md#availability).
-Preserve the original installation and archives. Consolidation and installed-app
-proof are main-owned later work. Production Compose StackOS with hosted Supabase
-remains the separate deployment task798.
+Preserve the original installation and archives. Source consolidation is complete;
+installed-app proof remains main-owned later work. Production Compose StackOS with
+hosted Supabase remains the separate deployment workflow 798, whose planning must
+include the [current feature placement and gaps](server-placement.md).
 
 ## Package Or Operator Setup
 

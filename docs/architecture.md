@@ -183,6 +183,15 @@ the caller to stop. Daemon shutdown stops owned request processes and retains th
 registry until their final handoff. Project cleanup's existing native-invocation
 blocker also covers these calls. No second process registry or polling loop exists.
 
+## Server and Connected-Computer Placement
+
+The consolidated local client/server foundation shares the existing operation,
+repository and native execution owners. See the
+[current feature placement map](server-placement.md) for supported flows, missing
+connected adaptations and proposed ownership of features added since that
+foundation. It distinguishes source support from hosted deployment and installed
+proof; standalone operation remains available under the product contract.
+
 ## Native Desktop Schedule Admission
 
 Electron main owns one authenticated availability stream through
