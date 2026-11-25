@@ -125,6 +125,9 @@ async def tracker_start_delivery(
         replace_review=inp.replace_review.model_dump(exclude_none=True)
         if inp.replace_review
         else None,
+        reconcile_candidate=inp.reconcile_candidate.model_dump()
+        if inp.reconcile_candidate
+        else None,
         controller_run_id=ctx.run_id,
     )
     return WriteEnvelope(data=result, run_id=ctx.run_id, project_id=inp.project_id)

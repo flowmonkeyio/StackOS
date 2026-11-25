@@ -1279,6 +1279,16 @@ execution. Clear private search text and apply filters before analysis; read
 
 ## Automated delivery results and manual instruction adoption
 
+`tracker.startDelivery` also accepts explicit `reconcile_candidate` for a stopped
+archive delivery mistakenly enrolled in Git validation by a backend revision.
+The shared operation pins the failed receipt, attempt, sessions, backend and
+consumed repair count, verifies archive hashes and live file inventories, and
+resumes the retained independent reviewer. It preserves history and never
+accepts the work or resets repairs. See [archive candidate recovery](task-tracker.md#archive-candidates-and-explicit-enrollment-recovery)
+for the candidate and recovery fields. Git candidates retain ancestry checks;
+`backend_commit_sha` alone is prerequisite context. Compact/raw responses retain
+reconciliation identity and inspection refs; errors retain repair context.
+
 `tracker.startDelivery` accepts operator-authorized `replace_review` through the
 shared typed MCP, REST and CLI contract. See
 [review-only replacement](task-tracker.md#explicit-review-only-replacement) for

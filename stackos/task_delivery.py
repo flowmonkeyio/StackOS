@@ -69,6 +69,7 @@ from stackos.repositories.tracker.schema import (
 from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
+from stackos.task_candidates import archive_candidate, archive_layout, archive_source_digest
 from stackos.workflows.run_plan_schema import (
     find_run_plan_secret_findings,
     find_run_plan_secret_paths,
@@ -99,7 +100,10 @@ RESULT_SCHEMA = {
         "outputs": {
             "type": "string",
             "description": "JSON-encoded object of output values. "
-            "For ordinary Git candidate evidence include commit_sha; otherwise use {}.",
+            "For Git deliverables include commit_sha. For standalone archive deliverables "
+            "include candidate={kind:'archives',source:{path,sha256,root,exclude:[]},"
+            "build:{path,sha256,root,exclude:[]}}. Prerequisite revisions belong in "
+            "backend_commit_sha, never top-level commit_sha for archive candidates.",
         },
         "followups": {
             "type": "array",
@@ -946,6 +950,8 @@ def _validate_upgrade_checkpoint(
                 evidence["candidate"]["commit_sha"],
                 evidence["candidate"].get("base_commit_sha"),
             )
+        if phase == "review" and evidence.get("candidate", {}).get("kind") == "archives":
+            archive_candidate(str(directory), evidence["candidate"])
         role = state.get("agent_assignments", {}).get(checkpoint["ticket_key"], "delivery_agent")
         if ticket.status != TrackerItemStatus.IN_PROGRESS or ticket.blocked_by:
             raise ValidationError("Checkpoint ticket prerequisites or lifecycle changed")
@@ -1404,6 +1410,11 @@ def _owned_work_receipt(
 
 
 def _launch_baseline(project_dir, ticket_key, evidence, phase, native_session):
+    if evidence.get("candidate", {}).get("kind") == "archives":
+        candidate = evidence["candidate"]
+        if phase == "review":
+            archive_candidate(project_dir, candidate)
+        return deepcopy(candidate)
     receipt = evidence.get("owned_work")
     if "owned_work" in evidence:
         fields = {"ticket_key", "base_commit_sha", "session", "snapshot", "source", "captured_at"}
@@ -1498,6 +1509,31 @@ def _select_work(repo, plans, project_id, task_key, state):
     """Activate containers through their owner; dispatch only executable work."""
     tickets = repo.get(project_id=project_id, task_key=task_key, include_graph=False).tickets
     tickets_by_key = {ticket.key: ticket for ticket in tickets}
+    reconciliation = state.get("candidate_reconciliation", {})
+    reconciled = tickets_by_key.get(reconciliation.get("ticket_key"))
+    if reconciled:
+        retained = (reconciled.completion_evidence_json or {}).get("automatic_delivery", {})
+        marker = retained.get("candidate_reconciliation_pending") or retained.get(
+            "candidate_reconciliation_active"
+        )
+        if marker and marker == reconciliation.get("reconciliation_id"):
+            if (
+                reconciled.status != TrackerItemStatus.IN_PROGRESS
+                or reconciled.blocked_by
+                or reconciled.blocker_reason
+            ):
+                raise ValidationError("Reconciled candidate review prerequisites changed")
+            if reconciled.run_plan_step_id is not None:
+                bound = next(
+                    s
+                    for s in plans.get(reconciled.run_plan_id, project_id=project_id).steps
+                    if s.id == reconciled.run_plan_step_id
+                )
+                if bound.status != RunPlanStepStatus.RUNNING:
+                    raise ValidationError(
+                        "Reconciled candidate review attachment is no longer running"
+                    )
+            return reconciled, None, False
     cursor = state.get("upgrade_continuation") or state.get("runtime_continuation") or {}
     target = tickets_by_key.get(cursor.get("ticket_key"))
     if cursor.get("handoff_id") == state.get("handoff_id") and target and cursor.get("phase"):
@@ -1748,6 +1784,179 @@ def _retain_reservation(previous: dict[str, Any], admission_id: str) -> None:
         )
 
 
+def _candidate_reconciliation_replay(previous, request):
+    receipt = previous.get("candidate_reconciliation") or {}
+    digest = sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
+    if receipt.get("request_digest") == digest:
+        return True
+    if (
+        receipt.get("ticket_key") == request["ticket_key"]
+        and receipt.get("attempt") == request["expected_attempt"]
+    ):
+        raise ValidationError(
+            "Candidate reconciliation target already has different recovery intent"
+        )
+    return False
+
+
+def _prepare_candidate_reconciliation(session, repo, project_id, task, previous, request):
+    """Revalidate a stopped legacy artifact delivery; retain its original reviewer."""
+    from stackos.artifacts import redact_secret_text
+    from stackos.host_mcp.service import invocation_timings
+
+    if previous.get("slot_reserved") or any(
+        call["project_id"] == project_id and call.get("task_key") == task.key
+        for call in invocation_timings()
+    ):
+        raise ValidationError(
+            "Candidate reconciliation requires retired native and capacity owners"
+        )
+    ticket = repo.brief(project_id=project_id, ticket_key=request["ticket_key"]).ticket
+    evidence = deepcopy((ticket.completion_evidence_json or {}).get("automatic_delivery", {}))
+    delivery = evidence.get("delivery", {})
+    sessions = evidence.get("sessions", {})
+    writer, reviewer = sessions.get("delivery", {}), sessions.get("review", {})
+    value = delivery.get("result") or {}
+    prior = evidence.get("attempts", [])
+    if (
+        previous.get("status") != "stopped"
+        or not previous.get("handoff_id")
+        or previous.get("job_ref")
+        != f"task-delivery:{project_id}:{task.id}:{previous['handoff_id']}"
+        or previous.get("ticket_key") != ticket.key
+        or previous.get("stop_context", {}).get("code") != "candidate_validation"
+        or previous.get("stop_context", {}).get("phase") != "delivery"
+        or task.status not in {TrackerItemStatus.IN_PROGRESS, TrackerItemStatus.FAILED}
+        or ticket.task_id != task.id
+        or ticket.kind != TrackerTicketKind.TICKET
+        or ticket.status != TrackerItemStatus.FAILED
+        or ticket.blocked_by
+        or ticket.blocker_reason
+        or _workflow_step(RunPlanRepository(session), previous, ticket) is not None
+        or delivery.get("validated_outcome") is not None
+        or delivery.get("validation_error") != "Repair requires a new descendant commit"
+        or delivery.get("exit_code") != 0
+        or delivery.get("error") is not None
+        or value.get("status") != "success"
+        or not prior
+        or prior[-1].get("review", {}).get("validated_outcome") != "repair"
+        or evidence.get("review")
+        or not writer.get("thread_id")
+        or not reviewer.get("thread_id")
+        or (writer.get("host_key"), writer.get("thread_id"))
+        == (reviewer.get("host_key"), reviewer.get("thread_id"))
+        or evidence.get("candidate_reconciliation_pending")
+    ):
+        raise ValidationError(
+            "Candidate reconciliation requires the retained successful artifact repair "
+            "rejected only by Git descendant validation"
+        )
+    if (
+        evidence.get("attempt") != request["expected_attempt"]
+        or evidence.get("repair_count") != request["expected_repair_count"]
+        or writer["thread_id"] != request["expected_delivery_thread_id"]
+        or reviewer["thread_id"] != request["expected_review_thread_id"]
+        or delivery.get("thread_id") != writer["thread_id"]
+        or prior[-1].get("review", {}).get("thread_id") != reviewer["thread_id"]
+        or delivery.get("selected_role")
+        != previous.get("agent_assignments", {}).get(ticket.key, "delivery_agent")
+        or {
+            key: value
+            for key, value in writer.items()
+            if key not in {"thread_id", "agent_snapshot"}
+        }
+        != {
+            key: value
+            for key, value in delivery.get("launch", {}).items()
+            if key not in {"sandbox", "started_at", "resume_thread_id"}
+        }
+        or sha256(json.dumps(delivery, sort_keys=True).encode()).hexdigest()
+        != request["expected_delivery_receipt_digest"]
+    ):
+        raise ValidationError("Candidate reconciliation receipt, attempt, count or session changed")
+    outputs = _result_outputs(value.get("outputs", "{}"))
+    backend = request["expected_backend_commit_sha"]
+    if (
+        outputs.get("commit_sha") != backend
+        or evidence.get("candidate", {}).get("base_commit_sha") != backend
+    ):
+        raise ValidationError("Candidate reconciliation backend prerequisite changed")
+    _candidate_commit(previous["project_dir"], backend, backend)
+    candidate = archive_candidate(previous["project_dir"], request["candidate"])
+
+    if any(
+        not isinstance(outputs.get(output_key), dict)
+        or any(
+            candidate[key][field] != outputs[output_key].get(field) for field in ("path", "sha256")
+        )
+        for key, output_key in (("source", "source_archive"), ("build", "built_archive"))
+    ):
+        raise ValidationError(
+            "Recovered archive paths and hashes must match the retained delivery output"
+        )
+    prior_outputs = _result_outputs(
+        (prior[-1].get("delivery", {}).get("result") or {}).get("outputs", "{}")
+    )
+    prior_source = prior_outputs.get("source_archive")
+    if not isinstance(prior_source, dict) or not all(
+        prior_source.get(key) for key in ("path", "sha256")
+    ):
+        raise ValidationError("Rejected source archive identity is missing")
+    if archive_source_digest(previous["project_dir"], candidate) == archive_source_digest(
+        previous["project_dir"], {"source": prior_source}
+    ):
+        raise ValidationError("Recovered source must differ from the rejected source candidate")
+    recovery_id = uuid4().hex
+    recovery = {
+        "reconciliation_id": recovery_id,
+        "request_digest": sha256(json.dumps(request, sort_keys=True).encode()).hexdigest(),
+        "ticket_key": ticket.key,
+        "attempt": evidence["attempt"],
+        "repair_count": evidence["repair_count"],
+        "candidate": candidate,
+        "backend_commit_sha": backend,
+        "delivery_thread_id": writer["thread_id"],
+        "review_thread_id": reviewer["thread_id"],
+    }
+    evidence.setdefault("candidate_reconciliations", []).append(
+        {
+            **recovery,
+            "reason": redact_secret_text(request["reason"]),
+            "created_at": datetime.now(UTC).isoformat(),
+            "original_candidate": deepcopy(evidence.get("candidate", {})),
+            "original_delivery": deepcopy(delivery),
+        }
+    )
+    evidence["candidate"] = candidate
+    evidence["candidate_reconciliation_pending"] = recovery_id
+    evidence["delivery"] = {
+        **delivery,
+        "validated_outcome": "success",
+        "candidate_reconciliation": recovery_id,
+    }
+    evidence["delivery"].pop("validation_error", None)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=ticket.key,
+        patch_json={
+            "status": "in-progress",
+            "outcome": None,
+            "completion_evidence_json": {
+                **(ticket.completion_evidence_json or {}),
+                "automatic_delivery": evidence,
+            },
+        },
+        actor=ACTOR,
+        commit=False,
+    )
+    return {
+        "status": "queued",
+        "slot_reserved": False,
+        "reason": None,
+        "candidate_reconciliation": recovery,
+    }
+
+
 def _replacement_error(code, message):
     return ValidationError(
         message,
@@ -1976,6 +2185,14 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         task = _task(repo, project_id, task_key)
         previous = (task.metadata_json or {}).get("delivery", {})
         replacement = changes.pop("replace_review", None)
+        reconciliation = changes.pop("reconcile_candidate", None)
+        if reconciliation is not None:
+            replay = _candidate_reconciliation_replay(previous, reconciliation)
+            if replay:
+                session.rollback()
+                return previous, False
+            if previous.get("status") != "stopped":
+                raise ValidationError("Candidate reconciliation requires a stopped task")
         if replacement is not None:
             replay = _review_replacement_replay(previous, replacement)
             if replay:
@@ -2005,7 +2222,7 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
             changes.get("step_id"),
             starting=True,
         )
-        if replacement is None:
+        if replacement is None and reconciliation is None:
             _validate_start_placement(task, workflow=changes.get("run_plan_id") is not None)
         # Directory ownership spans this daemon's task jobs. Git metadata is
         # deliberately absent from this identity; non-Git directories work too.
@@ -2013,6 +2230,12 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         if replacement is not None:
             changes.update(
                 _prepare_review_replacement(session, repo, project_id, task, previous, replacement)
+            )
+        if reconciliation is not None:
+            changes.update(
+                _prepare_candidate_reconciliation(
+                    session, repo, project_id, task, previous, reconciliation
+                )
             )
         handoff_id = uuid4().hex
         changes.update(
@@ -2041,6 +2264,11 @@ def _receipt(task_key: str, state: dict[str, Any]) -> dict[str, Any]:
         "job_ref": state["job_ref"],
         "run_plan_id": state.get("run_plan_id"),
         "step_id": state.get("step_id"),
+        **(
+            {"candidate_reconciliation": state["candidate_reconciliation"]}
+            if state.get("candidate_reconciliation")
+            else {}
+        ),
         **(
             {"review_replacement": state["review_replacement"]}
             if state.get("review_replacement")
@@ -3387,6 +3615,7 @@ def start_delivery(
     mcp_config_ref: dict[str, str] | None = None,
     agents: Mapping[str, dict[str, Any]] | None = None,
     replace_review: dict[str, Any] | None = None,
+    reconcile_candidate: dict[str, Any] | None = None,
     _resolved_settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Freeze handoff settings; schedules may retain their internal preflight snapshot.
@@ -3398,6 +3627,28 @@ def start_delivery(
     task = _task(repo, project_id, task_key)
     previous = (task.metadata_json or {}).get("delivery", {})
     replaying = False
+    if reconcile_candidate is not None:
+        from stackos.operations.tracker.schemas import CandidateReconciliation
+
+        if (
+            replace_review is not None
+            or _resolved_settings is not None
+            or any(
+                value is not None
+                for value in (host_key, delivery_agent, review_agent, agents, agent_assignments)
+            )
+        ):
+            raise ValidationError("Candidate reconciliation cannot override execution settings")
+        reconcile_candidate = CandidateReconciliation.model_validate(
+            reconcile_candidate
+        ).model_dump(exclude_none=True)
+        if (previous.get("run_plan_id"), previous.get("step_id")) != (run_plan_id, step_id):
+            raise ValidationError(
+                "Candidate reconciliation must retain the admitted workflow scope"
+            )
+        if controller_run_id is not None and previous.get("controller_run_id") != controller_run_id:
+            raise ValidationError("Candidate reconciliation controller run changed")
+        replaying = _candidate_reconciliation_replay(previous, reconcile_candidate)
     if replace_review is not None:
         from stackos.operations.tracker.schemas import ReviewReplacement
 
@@ -3492,7 +3743,7 @@ def start_delivery(
     _retain_mcp_config(previous, mcp_config_ref)
     if previous.get("project_dir"):
         directory = Path(previous["project_dir"])
-    if replace_review is not None:
+    if replace_review is not None or reconcile_candidate is not None:
         with managed_launch_lock:
             state, queued = _queue_delivery(
                 session,
@@ -3507,6 +3758,7 @@ def start_delivery(
                 run_plan_id=run_plan_id,
                 step_id=step_id,
                 replace_review=replace_review,
+                reconcile_candidate=reconcile_candidate,
             )
         if queued:
             drain_delivery(session_factory=session_factory, scheduler=scheduler)
@@ -4086,6 +4338,9 @@ def run_delivery(
                     evidence.setdefault("repair_count", int(bool(evidence.get("repair_pass_used"))))
                 replacement = evidence.get("review_replacement_pending")
                 continuation = evidence.get("review_replacement_active")
+                reconciliation = evidence.get("candidate_reconciliation_pending") or evidence.get(
+                    "candidate_reconciliation_active"
+                )
                 review_only = replacement or continuation
                 cursor = state.get("upgrade_continuation") or runtime_cursor
                 upgrading = cursor.get("handoff_id") == handoff_id
@@ -4110,6 +4365,36 @@ def run_delivery(
                             "receipt": deepcopy(evidence.get(upgrade_phase)),
                         }
                     )
+                elif reconciliation:
+                    recovery = state.get("candidate_reconciliation", {})
+                    if (
+                        workflow_step is not None
+                        or recovery.get("reconciliation_id") != reconciliation
+                        or recovery.get("ticket_key") != ticket_key
+                        or recovery.get("attempt") != evidence.get("attempt")
+                        or recovery.get("repair_count") != evidence.get("repair_count")
+                        or recovery.get("candidate") != evidence.get("candidate")
+                        or recovery.get("review_thread_id")
+                        != evidence.get("sessions", {}).get("review", {}).get("thread_id")
+                    ):
+                        raise ValidationError("Candidate reconciliation transition changed")
+                    archive_candidate(state["project_dir"], evidence["candidate"])
+                    if evidence.get("candidate_reconciliation_active") and evidence.get("review"):
+                        receipt = evidence["review"]
+                        if any(
+                            key in receipt for key in ("exit_code", "result", "validation_error")
+                        ):
+                            raise ValidationError(
+                                "Candidate reconciliation review already returned"
+                            )
+                        evidence.setdefault("runtime_interruptions", []).append(
+                            {
+                                "handoff_id": handoff_id,
+                                "attempt": evidence["attempt"],
+                                "phase": "review",
+                                "receipt": deepcopy(receipt),
+                            }
+                        )
                 elif review_only:
                     recovery = state.get("review_replacement", {})
                     if (
@@ -4161,7 +4446,9 @@ def run_delivery(
 
             phase = upgrade_phase or (
                 "review"
-                if review_only or (workflow_step is not None and role == "review_agent")
+                if review_only
+                or reconciliation
+                or (workflow_step is not None and role == "review_agent")
                 else "delivery"
             )
             reporting_correction = None
@@ -4241,9 +4528,13 @@ def run_delivery(
                     resume_thread_id = native_session["thread_id"]
                 elif any(phase in attempt for attempt in evidence["attempts"]) and not replacement:
                     raise ValidationError(f"Cannot resume {phase}: missing native session ID")
+                if phase == "review" and evidence.get("candidate", {}).get("kind") == "archives":
+                    failure_code = "candidate_validation"
+                    archive_candidate(state["project_dir"], evidence["candidate"])
                 if baseline_pending:
                     candidate_required = bool(
                         workflow_step is None
+                        and evidence.get("candidate", {}).get("kind") != "archives"
                         and (
                             evidence.get("candidate", {}).get("commit_sha")
                             or any(
@@ -4362,6 +4653,9 @@ def run_delivery(
                         "launch": launch,
                         "occurrence": occurrence,
                     }
+                    if reconciliation:
+                        evidence.pop("candidate_reconciliation_pending", None)
+                        evidence["candidate_reconciliation_active"] = reconciliation
                     if replacement:
                         evidence.pop("review_replacement_pending")
                         evidence["review_replacement_active"] = replacement
@@ -4494,7 +4788,11 @@ def run_delivery(
                                 else (
                                     "Independently review this exact candidate and ticket outputs. "
                                     "Apply project guidance and assigned proof obligations. "
-                                    "Return any supplied commit_sha in outputs unchanged. "
+                                    "Return the supplied candidate in outputs unchanged for an "
+                                    "archive deliverable; source/build identity is authoritative. "
+                                    "A retained legacy delivery commit_sha reconciled to archives "
+                                    "is backend context only; report backend_commit_sha. "
+                                    "For Git deliverables return supplied commit_sha unchanged. "
                                     "Do not modify the reviewed outputs. "
                                     "Reject only for scoped repairs; "
                                     "put unrelated findings in followups. "
@@ -4685,6 +4983,80 @@ def run_delivery(
                         ):
                             raise ValidationError("Reporting correction changed report content")
                         returned_sha = outputs.get("commit_sha")
+                        if workflow_step is None and "candidate" in outputs:
+                            validation_code = "candidate_validation"
+                            if (
+                                not isinstance(outputs["candidate"], dict)
+                                or outputs["candidate"].get("kind") != "archives"
+                            ):
+                                raise ValidationError(
+                                    "Explicit ordinary candidate must use supported "
+                                    "archive identity"
+                                )
+                        archive_contract = workflow_step is None and (
+                            evidence.get("candidate", {}).get("kind") == "archives"
+                            or (
+                                isinstance(outputs.get("candidate"), dict)
+                                and outputs["candidate"].get("kind") == "archives"
+                            )
+                        )
+                        if archive_contract and decision in {"success", "repair", "blocked"}:
+                            validation_code = "candidate_validation"
+                            if "commit_sha" in outputs:
+                                raise ValidationError(
+                                    "Archive deliverables must report prerequisite revisions "
+                                    "separately from commit_sha"
+                                )
+                            prior_candidate = evidence.get("candidate", {})
+                            if prior_candidate.get("kind") != "archives" and (
+                                candidate_required
+                                or prior_candidate.get("commit_sha")
+                                or any(
+                                    attempt.get("candidate", {}).get("commit_sha")
+                                    or "commit_sha"
+                                    in _result_outputs(
+                                        (attempt.get("delivery", {}).get("result") or {}).get(
+                                            "outputs", "{}"
+                                        )
+                                    )
+                                    for attempt in evidence.get("attempts", [])
+                                )
+                            ):
+                                raise ValidationError(
+                                    "Enrolled Git candidate requires explicit "
+                                    "candidate reconciliation"
+                                )
+                            returned_candidate = outputs.get("candidate")
+                            if not isinstance(returned_candidate, dict):
+                                raise ValidationError(
+                                    "Archive deliverable must return its candidate"
+                                )
+                            current_candidate = archive_candidate(
+                                state["project_dir"], returned_candidate
+                            )
+                            if prior_candidate.get("kind") == "archives":
+                                if archive_layout(current_candidate) != archive_layout(
+                                    prior_candidate
+                                ):
+                                    raise ValidationError("Archive candidate live scope changed")
+                                if phase == "review" and current_candidate != prior_candidate:
+                                    raise ValidationError(
+                                        "Review archive candidate differs from delivery"
+                                    )
+                                if (
+                                    phase == "delivery"
+                                    and decision != "blocked"
+                                    and evidence.get("repair_count", 0)
+                                    and archive_source_digest(
+                                        state["project_dir"], current_candidate
+                                    )
+                                    == archive_source_digest(state["project_dir"], prior_candidate)
+                                ):
+                                    raise ValidationError(
+                                        "Archive source repair requires changed source bytes"
+                                    )
+                            if phase == "delivery":
+                                evidence["candidate"] = current_candidate
                         changed_candidate = False
                         if workflow_step is None:
                             # Proof-only approval must not erase a prior source change
@@ -4714,23 +5086,27 @@ def run_delivery(
                             )
                         )
                         if (
-                            decision in {"success", "repair"}
-                            or blocked_commit
-                            or (
-                                workflow_step is None
-                                and phase == "review"
-                                and decision == "blocked"
+                            not archive_contract
+                            and (
+                                decision in {"success", "repair"}
+                                or blocked_commit
+                                or (
+                                    workflow_step is None
+                                    and phase == "review"
+                                    and decision == "blocked"
+                                )
                             )
-                        ) and (
-                            "commit_sha" in outputs
-                            or candidate_required
-                            or evidence["candidate"].get("commit_sha")
-                            or changed_candidate
-                            or (
-                                workflow_step is None
-                                and any(
-                                    attempt.get("candidate", {}).get("commit_sha")
-                                    for attempt in evidence["attempts"]
+                            and (
+                                "commit_sha" in outputs
+                                or candidate_required
+                                or evidence["candidate"].get("commit_sha")
+                                or changed_candidate
+                                or (
+                                    workflow_step is None
+                                    and any(
+                                        attempt.get("candidate", {}).get("commit_sha")
+                                        for attempt in evidence["attempts"]
+                                    )
                                 )
                             )
                         ):
@@ -4829,6 +5205,8 @@ def run_delivery(
                     # Terminal results end this continuation even when blocked,
                     # invalid or rejected. Only controller loss retains it.
                     evidence.pop("review_replacement_active", None)
+                    evidence.pop("candidate_reconciliation_active", None)
+                    reconciliation = None
 
                 repair = (
                     valid
@@ -5176,9 +5554,14 @@ def run_delivery(
                         )
                         return
                 if repair:
+                    rejected_archive = (
+                        deepcopy(evidence["candidate"])
+                        if evidence["candidate"].get("kind") == "archives"
+                        else None
+                    )
                     rejected_sha = evidence["candidate"].get("commit_sha")
                     _archive_attempt(evidence)
-                    evidence["candidate"] = (
+                    evidence["candidate"] = rejected_archive or (
                         {"base_commit_sha": rejected_sha} if rejected_sha else {}
                     )
                     phase = "delivery"

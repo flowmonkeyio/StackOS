@@ -340,7 +340,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="tracker.startDelivery",
-            summary="Start task delivery or explicitly replace one stopped independent reviewer.",
+            summary="Start task delivery or explicitly recover a stopped candidate or reviewer.",
             input_model=TrackerStartDeliveryInput,
             output_model=WriteEnvelope[dict[str, Any]],
             handler=tracker_start_delivery,
@@ -351,7 +351,8 @@ def operation_specs() -> list[OperationSpec]:
                 default_mode="compact",
                 allowed_modes=("compact", "raw"),
                 compact_notes=(
-                    "Keep task, workflow scope, job, ticket, status, review_replacement refs "
+                    "Keep task, workflow scope, job, ticket, status, review_replacement and "
+                    "candidate_reconciliation refs "
                     "and inspection guidance.",
                 ),
             ),
@@ -374,6 +375,11 @@ def operation_specs() -> list[OperationSpec]:
                 "It preserves delivery, retired review/session/attempts "
                 "and consumed repair allowance. "
                 "Ordinary rehandoff never implicitly replaces a reviewer."
+                " Explicit reconcile_candidate corrects mistaken Git enrollment for one "
+                "stopped archive delivery, pinning its retained receipt, native sessions, "
+                "attempt and repair count. It verifies source/build archive hashes and "
+                "live file inventories, then resumes the same independent reviewer. "
+                "It never accepts work or resets repair allowance."
             ),
             prerequisites=(
                 "Prepare self-contained tickets and dependencies in an existing working directory. "
@@ -382,7 +388,9 @@ def operation_specs() -> list[OperationSpec]:
                 "each project's independent saved task limit, including worktrees sharing "
                 "Git metadata. "
                 "Lowering a limit only delays new admission; admitted work continues unchanged. "
-                "Git is optional; supplied candidate evidence requires clean matching HEAD. "
+                "Git is optional; supplied commit_sha requires clean matching HEAD. "
+                "Archive candidates instead pin source/build archives and live inventories; "
+                "backend_commit_sha is prerequisite context, not deliverable identity. "
                 "Source-change and repair commit obligations come from project guidance.",
                 "New assignments start fresh. Independent review never inherits delivery "
                 "history. Retained-session recovery requires the original native identity "
@@ -427,6 +435,39 @@ def operation_specs() -> list[OperationSpec]:
                 "the run-plan owner. Mirror repair stops. No automatic replacement tasks.",
             ),
             examples=(
+                OperationExample(
+                    title="Reconcile a stopped archive candidate and resume its reviewer",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "standalone-page",
+                        "project_dir": "/work/project",
+                        "reconcile_candidate": {
+                            "ticket_key": "page",
+                            "expected_attempt": 2,
+                            "expected_repair_count": 1,
+                            "expected_delivery_thread_id": "retained-delivery-thread",
+                            "expected_review_thread_id": "retained-review-thread",
+                            "expected_backend_commit_sha": "a" * 40,
+                            "expected_delivery_receipt_digest": "b" * 64,
+                            "candidate": {
+                                "kind": "archives",
+                                "source": {
+                                    "path": "proof/source.tar.gz",
+                                    "sha256": "c" * 64,
+                                    "root": "page",
+                                    "exclude": ["dist", "node_modules"],
+                                },
+                                "build": {
+                                    "path": "proof/build.tar.gz",
+                                    "sha256": "d" * 64,
+                                    "root": "page/dist",
+                                    "exclude": [],
+                                },
+                            },
+                            "reason": "Retained commit identifies a backend prerequisite.",
+                        },
+                    },
+                ),
                 OperationExample(
                     title="Use saved project defaults with a task reviewer override",
                     arguments={

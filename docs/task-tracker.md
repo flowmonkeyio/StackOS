@@ -928,8 +928,8 @@ resume that exact role session with task-frozen settings. Roles/tickets stay
 distinct. Persist the scoped rejection before repair, supplying occurrence
 phase/attempt/candidate and persisted `review_result` status/summary/outputs.
 Up to three automatic repair passes are allowed per ticket after the initial
-delivery. Each source-repair pass requires a separate new descendant commit,
-then the same reviewer rechecks that exact SHA. The runner increments the durable count before
+delivery. For Git candidates each source-repair pass requires a separate new
+descendant commit, then the same reviewer rechecks that exact SHA. The runner increments the durable count before
 launching a repair; explicit requeue preserves it and cannot bypass the limit.
 Legacy evidence with `repair_pass_used=true` and no count means one consumed
 repair, not a fresh allowance. Rejection after the third repair stops the task.
@@ -986,6 +986,59 @@ Blocked required verification, native/access/model/resume/schema failure or a
 dirty/mismatched candidate also stops the same task with history;
 there is no fresh-session, host or model fallback. Current independent approval
 completes the ordinary ticket; historical approval cannot satisfy a correction.
+
+### Archive candidates and explicit enrollment recovery
+
+A deliverable maintained outside Git may identify its source and build with
+`outputs.candidate` instead of `outputs.commit_sha`:
+
+```json
+{
+  "candidate": {
+    "kind": "archives",
+    "source": {
+      "path": "page/proof/source.tar.gz",
+      "sha256": "<64 lowercase hex>",
+      "root": "page",
+      "exclude": ["node_modules", "dist", "proof"]
+    },
+    "build": {
+      "path": "page/proof/build.tar.gz",
+      "sha256": "<64 lowercase hex>",
+      "root": "page/dist",
+      "exclude": []
+    }
+  },
+  "backend_commit_sha": "<prerequisite revision, not deliverable identity>"
+}
+```
+
+Paths must remain inside the retained delivery directory. Each tar archive
+identifies an exact live file inventory relative to its root, minus explicitly
+declared exclusions. Validation checks archive hashes and current file bytes;
+missing, extra, modified or unsafe entries reject. The reviewer returns the
+same candidate, and validation runs again before acceptance. Archive source
+repairs must change the source identity; changing only the build is insufficient.
+Normal Git ancestry and clean matching HEAD checks remain in force for Git work.
+Omitting a prior `commit_sha` or switching identity in a native report does not
+remove retained Git enrollment.
+
+For an already stopped delivery mistakenly enrolled by its backend revision,
+an explicitly authorized `tracker.startDelivery.reconcile_candidate` pins
+`ticket_key`, `expected_attempt`, `expected_repair_count`,
+`expected_delivery_thread_id`, `expected_review_thread_id`,
+`expected_backend_commit_sha`, `expected_delivery_receipt_digest`, `candidate`
+and `reason`. The receipt digest is SHA256 of the retained `automatic_delivery.delivery`
+object serialized with Python `json.dumps(value, sort_keys=True)`.
+The owner requires quiescent stopped candidate-validation failure, verifies the
+retained native result and proposed artifacts, and preserves the original
+receipt, sessions, attempts and repair allowance. It resumes the same independent
+reviewer on the verified archive candidate, then continues the existing task.
+It neither reruns delivery nor manually accepts the ticket. Stale pins or changed
+artifacts reject without resuming work. This cannot be combined with
+`replace_review` or execution-setting overrides. Read retained evidence through
+`tracker.get` or `tracker.brief`; compact recovery responses retain
+`candidate_reconciliation` identity and inspection references.
 
 Each new invocation receipt also records `selected_role` (`delivery_agent` or
 `review_agent`) at the actual call site, including one-phase workflow mirrors.

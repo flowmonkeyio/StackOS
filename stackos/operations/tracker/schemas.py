@@ -203,6 +203,38 @@ class ReviewReplacement(BaseModel):
     reviewer_source: ReviewReplacementSource | None = None
 
 
+class ArchiveCandidatePart(BaseModel):
+    """One archive and the exact live file inventory it identifies."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    root: str = Field(min_length=1)
+    exclude: list[str] = Field(default_factory=list)
+
+
+class ArchiveCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    kind: Literal["archives"]
+    source: ArchiveCandidatePart
+    build: ArchiveCandidatePart
+
+
+class CandidateReconciliation(BaseModel):
+    """Explicit correction of a stopped delivery's mistaken Git enrollment."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+    ticket_key: str = Field(min_length=1)
+    expected_attempt: int = Field(gt=0)
+    expected_repair_count: int = Field(ge=0, le=3)
+    expected_delivery_thread_id: str = Field(min_length=1)
+    expected_review_thread_id: str = Field(min_length=1)
+    expected_backend_commit_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    expected_delivery_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    candidate: ArchiveCandidate
+    reason: str = Field(min_length=1, max_length=4000)
+
+
 class TrackerStartDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     project_id: int
@@ -230,13 +262,24 @@ class TrackerStartDeliveryInput(MCPInput):
             "never restarts delivery."
         ),
     )
+    reconcile_candidate: CandidateReconciliation | None = Field(
+        default=None,
+        description=(
+            "Explicit operator-authorized recovery of a stopped Git candidate validation "
+            "failure for archive-identified delivery. Pins the retained receipt, attempt, "
+            "sessions and repair count; verifies archives and live inventories, then "
+            "resumes the retained independent reviewer without rerunning delivery."
+        ),
+    )
     response_mode: TrackerResponseMode = "compact"
 
     @model_validator(mode="after")
     def workflow_scope_pair(self):
         if (self.run_plan_id is None) != (self.step_id is None):
             raise ValueError("run_plan_id and step_id must be provided together")
-        if self.replace_review is not None and any(
+        if self.replace_review is not None and self.reconcile_candidate is not None:
+            raise ValueError("reconcile_candidate and replace_review are mutually exclusive")
+        if (self.replace_review is not None or self.reconcile_candidate is not None) and any(
             value is not None
             for value in (
                 self.host_key,
@@ -247,7 +290,7 @@ class TrackerStartDeliveryInput(MCPInput):
             )
         ):
             raise ValueError(
-                "replace_review cannot override agents, assignments or execution settings"
+                "Delivery recovery cannot override agents, assignments or execution settings"
             )
         return self
 
