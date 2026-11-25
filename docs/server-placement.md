@@ -1,7 +1,9 @@
 # Server and connected-computer responsibilities
 
 Source baseline: `74d140a8c82f7effd2063bbaa886741980720d4a`, consolidating
-workflow 796 into current main. This is the current capability map and proposed
+workflow 796 with current main. The reviewed work is retained on the separate
+`codex/server-consolidated-796` branch; it is not present in main's current tree.
+This is the current capability map and proposed
 placement for an explicitly selected server installation. It does not claim
 hosted deployment or complete feature parity. Update it with affected deliveries.
 
@@ -131,6 +133,10 @@ durable-action suites, plus 26 independent boundary tests. It threads persisted
 project identity through the existing resolver and removes duplicate parsers;
 it adds no provider-specific permission framework. Independent review approved
 source tree `02dcd4e784d8aac24089fc5e8d4190e7b7dc04f5`.
+
+The premature main merge was reverted without rewriting history. The separate
+server branch includes restored main and preserves the reviewed source; merging
+it into main requires a later explicit decision.
 
 No installed app was replaced, production database migrated or hosted service
 deployed, and workflow 798 was not started. Earlier browser-to-app return proof
