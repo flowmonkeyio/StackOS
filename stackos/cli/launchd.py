@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import time
@@ -20,10 +21,11 @@ from .constants import _DESKTOP_BUNDLE_IDENTIFIER, _LAUNCHD_LABEL
 
 @dataclass(frozen=True)
 class _LaunchdDaemonContext:
-    data_dir: Path
-    state_dir: Path
+    data_dir: Path | None
+    state_dir: Path | None
     host: str
     port: int
+    env_file: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,14 @@ def _launchd_loaded() -> tuple[bool, str]:
     except RuntimeError as exc:
         return False, str(exc)
     return _launchctl(["print", service])
+
+
+def _loaded_launchd_pid() -> int | None:
+    loaded, output = _launchd_loaded()
+    if not loaded:
+        return None
+    matches = re.findall(r"^\s*pid = ([1-9][0-9]*)\s*$", output, flags=re.MULTILINE)
+    return int(matches[0]) if len(matches) == 1 else None
 
 
 def _launchd_bootout(
@@ -215,6 +225,19 @@ def _read_launchd_context(plist_path: Path) -> _LaunchdDaemonContext | None:
 
     argument_host = _program_option(arguments, "--host")
     argument_port = _port(_program_option(arguments, "--port"))
+    selected = environment.get("STACKOS_ENV_FILE")
+    if selected is not None:
+        env_file = _absolute_path(selected)
+        if (
+            env_file is None
+            or not env_file.is_file()
+            or argument_host is None
+            or argument_port is None
+            or not daemon_processes._is_loopback_host(argument_host)
+            or any(f"STACKOS_{name.upper()}" in environment for name in Settings.model_fields)
+        ):
+            return None
+        return _LaunchdDaemonContext(None, None, argument_host, argument_port, env_file)
     environment_host = environment.get("STACKOS_HOST")
     environment_port = _port(environment.get("STACKOS_PORT"))
     data_dir = _absolute_path(environment.get("STACKOS_DATA_DIR"))
@@ -257,8 +280,18 @@ def _launchd_context_ownership(
         persisted is not None
         and data_dir is not None
         and state_dir is not None
-        and persisted.data_dir == data_dir
-        and persisted.state_dir == state_dir
+        and (
+            (
+                persisted.env_file is not None
+                and persisted.env_file == _absolute_path(os.environ.get("STACKOS_ENV_FILE"))
+            )
+            or (
+                persisted.env_file is None
+                and not os.environ.get("STACKOS_ENV_FILE")
+                and persisted.data_dir == data_dir
+                and persisted.state_dir == state_dir
+            )
+        )
         and persisted.host == host
         and persisted.port == port
     )
@@ -286,6 +319,24 @@ def _launchd_plist_content(
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONNOUSERSITE": "1",
     }
+    selected = os.environ.get("STACKOS_ENV_FILE")
+    if selected:
+        # Persist the explicit selection, never Supabase keys or a mixed overlay.
+        get_selected = Settings()
+        if get_selected != settings or (host, port, log_level) != (
+            settings.host,
+            settings.port,
+            settings.log_level,
+        ):
+            raise ValueError("launchd must preserve the selected environment settings")
+        environment = {
+            "HOME": str(home),
+            "STACKOS_ENV_FILE": selected,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONNOUSERSITE": "1",
+        }
+    elif settings.process_role != "standalone":
+        raise ValueError("online autostart requires an explicit STACKOS_ENV_FILE")
     for key in ("STACKOS_PACKAGED_CLI", "PYTHONHOME", "PLAYWRIGHT_BROWSERS_PATH"):
         value = os.environ.get(key)
         if value:

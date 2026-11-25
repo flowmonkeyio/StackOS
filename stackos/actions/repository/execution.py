@@ -186,6 +186,15 @@ class ActionExecutionMixin:
             runtime_context=runtime_context,
             default_external_file_output=default_external_file_output,
         )
+        from stackos.repositories.project_access import user_principal
+
+        if user_principal(self._s) is not None:
+            if effective_output_policy.get("directory_path"):
+                raise ValidationError(
+                    "output_policy_json.path is local-only; download the server output explicitly",
+                    data={"side_effect": "not_started"},
+                )
+            effective_output_policy["server_file"] = True
         if derived_workflow_idempotency and (
             manifest.risk_level == "read" or effective_output_policy["mode"] == "transient"
         ):
@@ -1127,6 +1136,19 @@ class ActionExecutionMixin:
             "operation": manifest.operation,
             "created_at": created_at,
         }
+        if policy.get("server_file"):
+            file_pointer.pop("path")
+            file_pointer["uri"] = (
+                "/generated-assets/"
+                + absolute_path.relative_to(
+                    (self._asset_dir or Settings().generated_assets_dir).resolve()
+                ).as_posix()
+            )
+            file_pointer["download_operation"] = "actionCall.download"
+            file_pointer["download_arguments"] = {
+                "project_id": project_id,
+                "action_call_id": row.id,
+            }
         row.response_json = {
             "output_mode": "file",
             "file": file_pointer,

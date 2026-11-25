@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ProjectPageHeader } from '@/components/domain'
 import { UiButton, UiCard, UiPageShell, UiSkeleton } from '@/components/ui'
+import ComputerConnection from '@/components/domain/ComputerConnection.vue'
+import { useAuthStore } from '@/stores/auth'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { usePolling } from '@/composables/usePolling'
 import { useProjectsStore } from '@/stores/projects'
@@ -16,6 +18,7 @@ import { useProjectSetup } from './project-setup/useProjectSetup'
 import ProjectSetupLaunchDialog from './project-setup/ProjectSetupLaunchDialog.vue'
 
 const { projectId } = useProjectRouteScope()
+const auth = useAuthStore()
 const router = useRouter()
 const setup = useProjectSetup(projectId, { retainReminder: true, summaryOnly: true })
 const { state: setupState, error: setupError, writing: setupWriting, actionLabel, reminder, reminderUpdateCount } = setup
@@ -94,6 +97,10 @@ async function refreshAll(): Promise<void> {
         </div>
       </template>
     </ProjectPageHeader>
+    <ComputerConnection
+      v-if="auth.mode === 'server'"
+      :project-id="projectId"
+    />
     <div class="home-setup-slot">
       <UiCard
         v-if="!setupState && !reminder && !setupError"

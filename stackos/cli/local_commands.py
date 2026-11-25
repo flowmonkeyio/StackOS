@@ -17,6 +17,126 @@ from .paths import _doctor_home
 
 
 @app.command()
+def login(email: Annotated[str, typer.Option(prompt=True)]) -> None:
+    """Sign in to the selected StackOS server for CLI and local stdio MCP."""
+    import httpx
+
+    from .server_session import ServerSession
+
+    try:
+        selected = ServerSession(get_settings())
+        password = typer.prompt("StackOS password", hide_input=True)
+        with httpx.Client(timeout=30, follow_redirects=False) as client:
+            response = client.post(
+                selected.origin + "/api/v1/auth/login",
+                headers={"Origin": selected.origin},
+                json={"email": email, "password": password},
+            )
+            if response.status_code != 200:
+                raise ValueError("sign-in refused")
+            selected.save(client, response.json())
+        typer.echo("Signed in to the selected StackOS server.")
+    except (ValueError, OSError, httpx.HTTPError):
+        typer.echo("Sign-in failed. Check the selected environment and verified account.", err=True)
+        raise typer.Exit(1) from None
+
+
+@app.command()
+def logout() -> None:
+    """Revoke this native client's server session before removing its local copy."""
+    import httpx
+
+    from .server_session import ServerSession
+
+    try:
+        selected = ServerSession(get_settings())
+        saved = selected.load()
+        with httpx.Client(timeout=15, follow_redirects=False) as client:
+            response = client.post(
+                selected.origin + "/api/v1/auth/logout",
+                headers={
+                    "Origin": selected.origin,
+                    "Cookie": saved.cookie.get_secret_value(),
+                    "X-CSRF-Token": saved.csrf_token.get_secret_value(),
+                },
+            )
+            if response.status_code != 200:
+                raise ValueError("logout not confirmed")
+        selected.path.unlink()
+        typer.echo("Signed out of the selected StackOS server.")
+    except (ValueError, OSError, httpx.HTTPError):
+        typer.echo(
+            "Sign-out not confirmed; local session retained. Check the selected server.", err=True
+        )
+        raise typer.Exit(1) from None
+
+
+@app.command(name="connect")
+def connect_computer(
+    project_id: Annotated[int, typer.Option(min=1)],
+    folder: Annotated[Path, typer.Option(exists=True, file_okay=False, resolve_path=True)],
+) -> None:
+    """Authorize this computer for one private project and deliberately chosen existing folder."""
+    import httpx
+
+    from stackos.local_runtime.connection import LocalConnectionStore, connect
+
+    from .server_session import ServerSession
+
+    try:
+        settings = get_settings()
+        if settings.process_role != "runtime":
+            raise ValueError("select the computer's runtime environment file")
+        selected = ServerSession(settings)
+        with httpx.Client(headers=selected.headers(), timeout=15, follow_redirects=False) as client:
+            binding = connect(
+                client,
+                LocalConnectionStore(settings.state_dir),
+                server_url=selected.origin,
+                environment_id=settings.environment_id or "",
+                project_id=project_id,
+                folder=folder,
+            )
+        typer.echo(f"Computer authorized for project {binding.project_id}; folder {binding.root}.")
+    except (ValueError, OSError, httpx.HTTPError):
+        typer.echo(
+            "Connection refused. Check sign-in, selected project, folder and runtime state.",
+            err=True,
+        )
+        raise typer.Exit(1) from None
+
+
+@app.command(name="disconnect")
+def disconnect_computer() -> None:
+    """Revoke this computer's connection, retaining local identity if the server is unavailable."""
+    import httpx
+
+    from stackos.local_runtime.connection import LocalConnectionStore, disconnect
+
+    from .server_session import ServerSession
+
+    try:
+        settings = get_settings()
+        if settings.process_role != "runtime":
+            raise ValueError("select the computer's runtime environment file")
+        selected = ServerSession(settings)
+        with httpx.Client(headers=selected.headers(), timeout=15, follow_redirects=False) as client:
+            store = LocalConnectionStore(settings.state_dir)
+            binding = store.load()
+            saved = selected.load()
+            if binding and any(
+                getattr(binding, key) != getattr(saved, key)
+                for key in ("server_url", "environment_id", "user_id")
+            ):
+                raise ValueError("connection belongs to another identity")
+            disconnect(client, store)
+        typer.echo("Computer authorization revoked.")
+    except (ValueError, OSError, httpx.HTTPError):
+        typer.echo("Disconnection not confirmed; local binding retained.", err=True)
+        raise typer.Exit(1) from None
+
+
+@app.command()
 def init(
     force: Annotated[bool, typer.Option("--force", help="Overwrite existing config")] = False,
 ) -> None:
@@ -43,9 +163,11 @@ def init(
 
     settings = get_settings()
     settings.ensure_dirs()
-    ensure_seed_file(settings.seed_path)
+    if settings.process_role != "runtime":
+        ensure_seed_file(settings.seed_path)
     ensure_token(settings.token_path)
-    typer.echo(f"init: state dir at {settings.state_dir}; seed + auth.token present (mode 0600).")
+    files = "auth.token" if settings.process_role == "runtime" else "seed + auth.token"
+    typer.echo(f"init: state dir at {settings.state_dir}; {files} present (mode 0600).")
 
 
 @app.command()
@@ -57,7 +179,8 @@ def migrate() -> None:
     result = upgrade_to_head(settings)
     if result.stamped_existing_schema:
         typer.echo("migrate: stamped existing create_all schema at alembic head.")
-    typer.echo(f"migrate: alembic upgraded to head ({settings.db_path}).")
+    target = "Postgres" if settings.process_role == "server" else str(settings.db_path)
+    typer.echo(f"migrate: alembic upgraded to head ({target}).")
 
 
 @app.command()
@@ -182,7 +305,11 @@ def install(
         ):
             typer.echo(f"install: {issue}", err=True)
             raise typer.Exit(code=1)
-        maintenance = prepare_for_upgrade(settings, runtime_identity())
+        maintenance = (
+            prepare_for_upgrade(settings, runtime_identity())
+            if settings.process_role == "standalone"
+            else None
+        )
         if maintenance:
             typer.echo(
                 f"==> Managed upgrade: {maintenance['status']}; run `stackos restart` after "
@@ -192,11 +319,19 @@ def install(
     from stackos.auth import ensure_token
     from stackos.crypto.seed import ensure_seed_file
 
-    ensure_seed_file(settings.seed_path)
+    if settings.process_role != "runtime":
+        ensure_seed_file(settings.seed_path)
     ensure_token(settings.token_path)
     typer.echo(f"==> Bootstrap state ready: {settings.state_dir}")
 
-    if not (skills_only or mcp_only or plugins_only or browser_launcher_only):
+    if settings.process_role == "runtime":
+        # Keep native subscription/tool setup local and intact. Connected app
+        # repair owns only service wiring and its StackOS MCP registration.
+        do_skills = do_plugins = do_browser_launcher = False
+
+    if settings.process_role != "runtime" and not (
+        skills_only or mcp_only or plugins_only or browser_launcher_only
+    ):
         from stackos.db.migrate import upgrade_to_head
 
         migration_result = upgrade_to_head(settings)

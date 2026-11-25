@@ -864,7 +864,7 @@ describe('Work board navigation', () => {
     graph().vm.$emit('openSelectedDetail')
     await flushPromises()
     for (const [index, agent, model] of [[1, 'Implementer', 'gpt-6.1-sol'], [2, 'Reviewer', 'gpt-6-astra'], [3, 'Implementer', 'gpt-6.1-sol'], [4, null, null]] as const) {
-      const execution = agent ? { live_usage: null, invocation_id: `call-${index}`, agent, model, host_key: 'codex', started_at: `2026-11-08T01:0${index}:00Z`, ticket_key: ticketA.key } : null
+      const execution = agent ? { live_usage: null, connection_state: null, stop_requested: false, invocation_id: `call-${index}`, agent, model, host_key: 'codex', started_at: `2026-11-08T01:0${index}:00Z`, ticket_key: ticketA.key } : null
       dataMock([{ ...taskA, active_execution: execution }], [{ ...ticketA, status: 'in-progress', active_execution: execution }], true, index + 1)
       mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 10000 + index, event_type: 'tracker.execution.changed', metadata_json: { task_key: taskA.key, ticket_key: ticketA.key } })
       await flushPromises()

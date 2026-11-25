@@ -659,6 +659,15 @@ existing compact fresh launch, and independent review receives no delivery
 history. Recovery retains the exact native session; missing identity, denial,
 partial execution or failed resume never triggers a fresh retry.
 
+For online server execution, select an owned `connection_id` instead of
+`project_dir`, with an optional full `base_commit_sha`. The runtime's private
+binding selects the existing local folder and MCP routes. The server reserves
+the connection and uses the same controller, role sessions, independent candidate
+review and repair allowance. A recent authenticated poll is required for new
+admission; unresolved or uncertain execution stops it, including after restart.
+Rehandoff cannot select another computer. Manual reconciliation remains explicit;
+there is no automatic reconstruction or replay of accepted local work.
+
 ### Task-local native tool routing
 
 For a task in a separate working tree, pass optional task-only

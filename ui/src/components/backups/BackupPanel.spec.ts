@@ -1,5 +1,7 @@
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
 import { configureBackups, createBackup, loadBackupStatus, type BackupStatus } from '@/lib/backups'
 import type { DesktopBackupResult } from '@/lib/desktop'
 import BackupPanel from './BackupPanel.vue'
@@ -86,6 +88,7 @@ function loseFocusToBody() {
 
 enableAutoUnmount(afterEach)
 beforeEach(() => {
+  setActivePinia(createPinia())
   vi.mocked(loadBackupStatus).mockReset().mockResolvedValue(fixture())
   vi.mocked(configureBackups)
     .mockReset()
@@ -97,6 +100,17 @@ beforeEach(() => {
       .mockResolvedValue({ ok: true, status: 'completed', message: 'Action complete.' })
   }
   vi.stubGlobal('stackosDesktop', native)
+})
+
+it('explains online limits without reading local policy or exposing native export/restore', async () => {
+  useAuthStore().mode = 'server'
+  const wrapper = mountPanel()
+  await flushPromises()
+  expect(wrapper.text()).toContain('Server backups unavailable')
+  expect(wrapper.text()).toContain('Postgres backup and history import are not implemented.')
+  expect(wrapper.findAll('button')).toHaveLength(0)
+  expect(loadBackupStatus).not.toHaveBeenCalled()
+  for (const action of Object.values(native)) expect(action).not.toHaveBeenCalled()
 })
 afterEach(() => vi.unstubAllGlobals())
 

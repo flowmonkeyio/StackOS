@@ -17,7 +17,7 @@ def test_patterns_and_setup_histories_converge_preserving_data(tmp_path, prior_h
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
     config = alembic_config(settings)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0053_revision_delivery_index"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0054_online_current_merge"]
     command.upgrade(config, prior_head)
     snapshots = {}
     with sqlite3.connect(settings.db_path) as db:
@@ -62,7 +62,7 @@ def test_patterns_and_setup_histories_converge_preserving_data(tmp_path, prior_h
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0053_revision_delivery_index",)
+            ("0054_online_current_merge",)
         ]
         assert {
             table: db.execute(f"SELECT * FROM {table}").fetchall() for table in snapshots

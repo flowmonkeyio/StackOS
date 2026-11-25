@@ -32,7 +32,7 @@ def test_revision_index_upgrade_and_writes_preserve_snapshots(settings):
     config = alembic_config(settings)
     command.upgrade(config, "0052_upgrade_receipts")
     engine = make_engine(settings.db_path)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         pid = (
             ProjectRepository(session)
             .create(slug="revision-index", name="Revision index", domain="test.invalid")
@@ -160,7 +160,7 @@ def test_existing_receipts_backfill_atomically(settings):
 def test_product_merge_rebuilds_cancelled_inputs_without_rewriting_sources(settings, prior_head):
     config = alembic_config(settings)
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0053_revision_delivery_index"]
+    assert script.get_heads() == ["0054_online_current_merge"]
     assert script.get_revision("0048_product_receipts_merge").down_revision == (
         "0046_receipt_trend_bounds",
         "0047_patterns_setup_merge",
@@ -191,7 +191,7 @@ def test_product_merge_rebuilds_cancelled_inputs_without_rewriting_sources(setti
     upgrade_to_head(settings)
     with engine.connect() as connection:
         assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").all() == [
-            ("0053_revision_delivery_index",)
+            ("0054_online_current_merge",)
         ]
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
     if prior_head != "base":

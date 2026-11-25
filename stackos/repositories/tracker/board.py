@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal
 from sqlalchemy import case, func
 from sqlmodel import Session, col, select
 
+from stackos.db.json_expressions import json_document, json_kind, json_value
 from stackos.db.models import ProjectEvent, TrackerReceiptProjection, TrackerTask, TrackerTicket
 from stackos.repositories.tracker.schema import TaskDeliveryStateOut, TrackerTaskSummaryOut
 
@@ -32,8 +33,9 @@ def nonempty_json_text(column, path: str):
         " \t\n\v\f\r\x1c\x1d\x1e\x1f\x85\xa0\u1680\u2000\u2001\u2002\u2003"
         "\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
     )
-    return (func.json_type(column, path) == "text") & (
-        func.json_quote(func.trim(func.json_extract(column, path), whitespace)) != '""'
+    keys = path.removeprefix("$.").split(".")
+    return (json_kind(column, *keys) == "text") & (
+        func.trim(json_value(column, *keys).as_string(), whitespace) != ""
     )
 
 
@@ -104,13 +106,13 @@ def task_columns(
         for project_id in {task.project_id for task in queued}:
             keys = {task.key: task.id for task in queued if task.project_id == project_id}
             event_keys = session.exec(
-                select(func.json_extract(ProjectEvent.metadata_json, "$.task_key"))
+                select(json_value(ProjectEvent.metadata_json, "task_key").as_string())
                 .where(
                     ProjectEvent.project_id == project_id,
                     ProjectEvent.event_type == "tracker.execution.changed",
                     ProjectEvent.source_type == "tracker_ticket",
-                    func.json_extract(ProjectEvent.metadata_json, "$.active") == 1,
-                    func.json_extract(ProjectEvent.metadata_json, "$.task_key").in_(keys),
+                    json_kind(ProjectEvent.metadata_json, "active") == "true",
+                    json_value(ProjectEvent.metadata_json, "task_key").as_string().in_(keys),
                 )
                 .distinct()
             ).all()
@@ -121,23 +123,22 @@ def task_columns(
         if missing and lightweight:
             # Board membership needs only actual invocation identity. Never load or
             # decode receipt/history payloads merely to discover a queued column.
-            receipt = TrackerReceiptProjection.receipt_json
-            prefix = case(
-                (
-                    func.json_type(receipt, "$.execution") == "object",
-                    case(
-                        (func.json_extract(receipt, "$.execution") != "{}", "$.execution."),
-                        else_="$.launch.",
-                    ),
-                ),
-                else_="$.launch.",
+            receipt = json_document(TrackerReceiptProjection.receipt_json)
+            has_execution = (json_kind(receipt, "execution") == "object") & (
+                json_value(receipt, "execution").as_string() != "{}"
             )
             fields = ("agent", "host_key", "model", "started_at", "invocation_id", "ticket_key")
             rows = session.execute(
                 select(
                     TrackerTicket.task_id,
                     TrackerTicket.key,
-                    *[func.json_extract(receipt, prefix + field) for field in fields],
+                    *[
+                        case(
+                            (has_execution, json_value(receipt, "execution", field).as_string()),
+                            else_=json_value(receipt, "launch", field).as_string(),
+                        )
+                        for field in fields
+                    ],
                 )
                 .join(
                     TrackerReceiptProjection,
@@ -146,13 +147,10 @@ def task_columns(
                 .where(
                     col(TrackerTicket.task_id).in_(missing),
                     TrackerReceiptProjection.inventory == "usage",
-                    (
-                        (func.json_type(receipt, "$.execution") == "object")
-                        & (func.json_extract(receipt, "$.execution") != "{}")
-                    )
-                    | (func.json_type(receipt, "$.exit_code") == "integer")
+                    has_execution
+                    | (json_kind(receipt, "exit_code") == "integer")
                     | nonempty_json_text(receipt, "$.thread_id")
-                    | (func.json_type(receipt, "$.result") == "object"),
+                    | (json_kind(receipt, "result") == "object"),
                 )
             ).all()
             for task_id, key, *values in rows:

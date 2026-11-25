@@ -18,11 +18,11 @@ from stackos.context import ContextRepository
 from tests.helpers.agent_statistics import seed_statistics_workload, seed_tracker_event_history
 
 
-def stream_request(disconnected=None):
+def stream_request(api, disconnected=None):
     async def connected():
         return disconnected is not None and disconnected.is_set()
 
-    return SimpleNamespace(is_disconnected=connected)
+    return SimpleNamespace(is_disconnected=connected, app=api.app, state=SimpleNamespace())
 
 
 async def stream(
@@ -38,7 +38,7 @@ async def stream(
 ):
     return await context.context_timeline_stream(
         project_id,
-        request or stream_request(),
+        request or stream_request(api),
         task_key=task_key,
         after=after,
         limit=limit,
@@ -168,7 +168,7 @@ async def test_stream_end_during_projection_retires_owned_session_without_late_f
 
     monkeypatch.setattr(context, "Session", OwnedSession)
     monkeypatch.setattr(context, "usage_refresh", slow)
-    response = await stream(api, project_id, after=0, request=stream_request(disconnected))
+    response = await stream(api, project_id, after=0, request=stream_request(api, disconnected))
     closed.clear()
     pending = asyncio.create_task(anext(response.body_iterator))
     try:
@@ -451,7 +451,7 @@ async def test_stream_phase_workload(
     async def open_stream(after=None):
         return await context.context_timeline_stream(
             project_id,
-            stream_request(),
+            stream_request(api),
             task_key="perf-task-0" if mode == "legacy" else None,
             after=after,
             limit=25,

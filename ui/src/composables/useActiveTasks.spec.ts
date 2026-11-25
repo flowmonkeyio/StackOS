@@ -87,7 +87,7 @@ describe('shared Home active-task reads', () => {
     await flushPromises()
     expect(state.feed.value.status).toBe('live')
     const started = task(1, 'work', 'running')
-    started.active_execution = { invocation_id: 'actual', agent: 'reviewer', host_key: 'codex', model: 'exact', started_at: '2026-11-11T00:00:00Z', ticket_key: 'child', live_usage: null }
+    started.active_execution = { invocation_id: 'actual', agent: 'reviewer', host_key: 'codex', model: 'exact', started_at: '2026-11-11T00:00:00Z', ticket_key: 'child', live_usage: null, connection_state: null, stop_requested: false }
     started.work_duration = { coverage: WorkDurationOutCoverage.partial, total_seconds: 840, observed_at: '2026-11-11T00:14:00Z', endpoint_at: '2026-11-11T00:14:00Z', recorded_intervals: 2, unavailable_intervals: 1, live: [started.active_execution] }
     vi.mocked(callOperation).mockResolvedValue(page([started, task(2)]))
     stream().onUsage?.()
@@ -96,7 +96,7 @@ describe('shared Home active-task reads', () => {
     expect(state.items.value[0]!.active_execution?.invocation_id).toBe('actual')
     expect(state.items.value[0]!.work_duration).toEqual(started.work_duration)
     expect(callOperation).toHaveBeenCalledTimes(3) // Companions coalesce, no per-row reads.
-    const stopped = { ...task(1, 'work', 'stopped'), work_duration: { ...started.work_duration, total_seconds: 960, live: [] } }
+    const stopped = { ...task(1, 'work', 'stopped'), work_duration: { ...started.work_duration!, total_seconds: 960, live: [] } }
     stopped.delivery!.stop_context = { code: 'agent_blocked', phase: 'review', facts: [], evidence_refs: ['tracker-ticket:1:2:attempt:1:review'], next_owner: 'main_agent', next_action: 'resolve_blocker', resume_condition: 'explicit_rehandoff' } as never
     vi.mocked(callOperation).mockResolvedValue(page([stopped, task(2)]))
     stream().onUsage?.()

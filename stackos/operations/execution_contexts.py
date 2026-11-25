@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import ConfigDict, Field
 
+from stackos.artifacts.files import generated_file_path
 from stackos.artifacts.json_path import select_json_path
 from stackos.config import Settings
 from stackos.mcp.context import MCPContext
@@ -418,12 +419,13 @@ async def execution_context_artifact_read(
     asset_root = Path(
         getattr(settings, "generated_assets_dir", Settings().generated_assets_dir)
     ).resolve()
-    relative = uri.removeprefix("/generated-assets/")
-    path = (asset_root / relative).resolve()
-    try:
-        path.relative_to(asset_root)
-    except ValueError as exc:
-        raise ValidationError("artifact path escaped generated assets") from exc
+    path = generated_file_path(
+        asset_root,
+        uri,
+        project_id=_project_id(inp.project_id, ctx)
+        if getattr(settings, "process_role", None) == "server"
+        else None,
+    )
     metadata_path = metadata.get("absolute_path")
     if isinstance(metadata_path, str) and Path(metadata_path).resolve() != path:
         return {

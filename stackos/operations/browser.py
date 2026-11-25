@@ -38,6 +38,22 @@ def _settings(ctx: MCPContext):
     return ctx.extras.get("settings") or get_settings()
 
 
+def _server(ctx: MCPContext) -> bool:
+    return getattr(_settings(ctx), "process_role", "standalone") == "server"
+
+
+def _remote_session(row: BrowserSessionOut) -> BrowserSessionOut:
+    # Server rows own identity only. Native observations and paths belong to the computer.
+    return row.model_copy(
+        update={
+            "status": "unavailable",
+            "healthy": None,
+            "native_cli": None,
+            "repair": "Use the connected computer's runtime CLI or native MCP session.",
+        }
+    )
+
+
 def _native_session_args(
     *, ctx: MCPContext, project_id: int, session_ref: str, profile_ref: str, profile_key: str
 ) -> dict[str, Any]:
@@ -80,6 +96,15 @@ async def _inspect_project_sessions(
 async def _browser_runtime_status(
     inp: BrowserRuntimeStatusInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> BrowserRuntimeStatusOut:
+    if _server(ctx):
+        return BrowserRuntimeStatusOut(
+            provider="gstack",
+            package_installed=False,
+            package_version=None,
+            browser_downloaded=False,
+            live_session_refs=[],
+            repair="Browser runtime readiness is available only on the connected computer.",
+        )
     states = {}
     if inp.project_id is not None:
         states = await _inspect_project_sessions(
@@ -133,6 +158,17 @@ async def _browser_session_start(
         profile_key=profile.profile_key,
         session_key=safe_browser_key(inp.session_key),
     )
+    if _server(ctx):
+        result = repo.create_or_update_session(
+            project_id=inp.project_id,
+            profile=profile,
+            session_ref=session_ref,
+            metadata_json=inp.metadata_json,
+            native_status="unavailable",
+        )
+        return WriteEnvelope(
+            data=_remote_session(result.data), run_id=ctx.run_id, project_id=inp.project_id
+        )
     runtime = get_browser_runtime()
     native_args = _native_session_args(
         ctx=ctx,
@@ -171,6 +207,12 @@ async def _browser_session_stop(
 ) -> WriteEnvelope[BrowserSessionOut]:
     repo = BrowserRepository(ctx.session)
     row, profile = repo.get_session(project_id=inp.project_id, session_ref=inp.session_ref)
+    if _server(ctx):
+        return WriteEnvelope(
+            data=_remote_session(repo.session_out(row, profile)),
+            run_id=ctx.run_id,
+            project_id=inp.project_id,
+        )
     state = await get_browser_runtime().stop_session(
         **_native_session_args(
             ctx=ctx,
@@ -192,6 +234,11 @@ async def _browser_session_list(
     inp: BrowserSessionListInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> Page[BrowserSessionOut]:
     repo = BrowserRepository(ctx.session)
+    if _server(ctx):
+        page = repo.list_sessions(project_id=inp.project_id)
+        return Page(
+            items=[_remote_session(row) for row in page.items], total_estimate=page.total_estimate
+        )
     states = await _inspect_project_sessions(repo, ctx, inp.project_id)
     page = repo.list_sessions(project_id=inp.project_id)
     return Page(
@@ -211,6 +258,8 @@ async def _browser_session_status(
 ) -> BrowserSessionOut:
     repo = BrowserRepository(ctx.session)
     row, profile = repo.get_session(project_id=inp.project_id, session_ref=inp.session_ref)
+    if _server(ctx):
+        return _remote_session(repo.session_out(row, profile))
     runtime = get_browser_runtime()
     native_args = _native_session_args(
         ctx=ctx,
@@ -303,6 +352,13 @@ def operation_specs():
             grant_policy=control if mutating else "direct-read",
             secret_policy="no-secret-output",
             category="browser",
+            prerequisites=(
+                "Online execution requires the selected computer's runtime CLI/MCP connection.",
+            ),
+            returns=(
+                "Server calls return profile/session metadata only; native state is unavailable.",
+                "Connected native clients inspect and execute locally; no server browser fallback.",
+            ),
         )
         for name, summary, input_model, output_model, handler, mutating in definitions
     ]

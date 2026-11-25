@@ -174,6 +174,10 @@ def _reporting_basis(
     repo, plans, project_id, ticket_key, state, workflow_step, *, reporting_receipt=None
 ) -> str:
     """Bind reporting to current work and authority, excluding receipt bookkeeping."""
+    if state.get("connection_id"):
+        raise ValidationError(
+            "Reporting-only continuation is not supported for connected computers"
+        )
     brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(mode="json")
     ignored = {
         "completion_evidence_json",
@@ -251,6 +255,10 @@ def abort_run_plan(
                     (ticket.completion_evidence_json or {}).get("automatic_delivery", {}).get(phase)
                 ]
             )
+            expected = expected or bool(
+                state.get("needs_attention")
+                and state.get("cancellation", {}).get("status") == "stop_unconfirmed"
+            )
         env = plans.abort(
             run_plan_id=run_plan_id, project_id=project_id, reason=reason, actor=actor
         )
@@ -262,6 +270,11 @@ def abort_run_plan(
                 task.key,
                 status="stopped",
                 reason=reason or "Run aborted.",
+                **(
+                    {"needs_attention": True, "cancellation": {"status": "stop_unconfirmed"}}
+                    if state.get("connection_id")
+                    else {}
+                ),
             )
     outcomes = [retire_invocation(call) for call in calls]
     retired = all(
@@ -280,6 +293,18 @@ def abort_run_plan(
         "prevented_count": outcomes.count("prevented"),
         "external_sessions_terminated": False,
     }
+    if state and state.get("connection_id"):
+        with managed_launch_lock:
+            session.expire_all()
+            current = (_task(repo, project_id, task.key).metadata_json or {}).get("delivery", {})
+            if current.get("handoff_id") == state.get("handoff_id"):
+                _update_delivery(
+                    repo,
+                    project_id,
+                    task.key,
+                    cancellation=cancellation,
+                    needs_attention=unconfirmed or bool(current.get("uncertain_invocation")),
+                )
     if unconfirmed:
         raise ConflictError(
             "Run aborted, but managed process termination could not be confirmed. "
@@ -489,7 +514,7 @@ def prepare_managed_upgrade(
 
     calls = {}
     with managed_launch_lock, session_factory() as session:
-        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        _lock_delivery_admission(session)
         upgrades = ManagedUpgradeRepository(session)
         row = session.get(ManagedUpgrade, upgrade_id)
         if row:
@@ -528,9 +553,9 @@ def prepare_managed_upgrade(
             AgentRequestRepository(session).require_native_quiescence()
             tasks = session.exec(
                 select(TrackerTask).where(
-                    func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
-                        ("queued", "running")
-                    ),
+                    col(TrackerTask.metadata_json)["delivery"]["status"]
+                    .as_string()
+                    .in_(("queued", "running")),
                     TrackerTask.status.notin_(TERMINAL_TRACKER_STATUSES),
                 )
             ).all()
@@ -710,7 +735,7 @@ def prepare_managed_upgrade(
         sleep(0.02)  # Bounded observation of the existing callback retirement acknowledgment.
 
     with managed_launch_lock, session_factory() as session:
-        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        _lock_delivery_admission(session)
         row = session.get(ManagedUpgrade, upgrade_id)
         if row.revision != revision or row.active != 1:
             raise ConflictError(
@@ -1027,7 +1052,7 @@ def finish_managed_upgrade(
             },
         )
     with managed_launch_lock, session_factory() as session:
-        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        _lock_delivery_admission(session)
         upgrades = ManagedUpgradeRepository(session)
         row = session.get(ManagedUpgrade, upgrade_id)
         if row is None:
@@ -1711,6 +1736,99 @@ def _same_directory(left: Path, right: Path) -> bool:
     return left == right or (left.exists() and right.exists() and left.samefile(right))
 
 
+def connection_execution_state(session: Session, connection, exchange) -> dict:
+    """Join transport observations to existing task uncertainty, never replay it."""
+    observed = exchange.snapshot(connection)
+    unresolved = []
+    for task in session.exec(
+        select(TrackerTask).where(TrackerTask.project_id == connection.project_id)
+    ).all():
+        state = (task.metadata_json or {}).get("delivery", {})
+        if state.get("connection_id") != connection.id:
+            continue
+        invocation_id = state.get("uncertain_invocation")
+        if (
+            state.get("needs_attention")
+            or (invocation_id and invocation_id != observed["invocation_id"])
+            or (invocation_id and observed["needs_attention"])
+            or (invocation_id and state.get("status") == "stopped")
+        ):
+            unresolved.append(
+                {
+                    "task_key": task.key,
+                    "handoff_id": state.get("handoff_id"),
+                    "invocation_id": invocation_id,
+                }
+            )
+    if unresolved:
+        observed.update(connection_state="needs_attention", needs_attention=True)
+        if observed["invocation_id"] is None:
+            observed["last_known_state"] = "unknown"
+    observed["unresolved_tasks"] = unresolved
+    observed["needed_action"] = (
+        "Confirm the native outcome and that owned work has stopped; reconcile explicitly."
+        if observed["needs_attention"]
+        else "Restore the connection and wait for the retained result; do not relaunch."
+        if observed["connection_state"] == "disconnected"
+        else None
+    )
+    return observed
+
+
+def mark_interrupted_connected_deliveries(session: Session) -> int:
+    """Startup fences lost controllers; it does not infer or change agent outcomes."""
+    repo = TrackerRepository(session)
+    changed = 0
+    for task in session.exec(select(TrackerTask)).all():
+        state = (task.metadata_json or {}).get("delivery", {})
+        if state.get("connection_id") and state.get("status") in {"queued", "running"}:
+            _update_delivery(
+                repo,
+                task.project_id,
+                task.key,
+                status="stopped",
+                needs_attention=True,
+                reason="Server restarted; confirm native outcome before explicit reconciliation",
+            )
+            changed += 1
+    return changed
+
+
+def reconcile_connected_delivery(
+    session: Session, connection, exchange, *, task_key, handoff_id, invocation_id, outcome_note
+) -> dict:
+    """Owner-attested release of an admission fence, never ticket acceptance."""
+    with managed_launch_lock:
+        repo = TrackerRepository(session)
+        task = _task(repo, connection.project_id, task_key)
+        state = (task.metadata_json or {}).get("delivery", {})
+        if (
+            state.get("connection_id") != connection.id
+            or state.get("handoff_id") != handoff_id
+            or state.get("uncertain_invocation") != invocation_id
+            or state.get("status") != "stopped"
+            or not (state.get("needs_attention") or invocation_id)
+        ):
+            raise ConflictError("Task outcome/identity changed or controller still active")
+        exchange.reconcile(connection, invocation_id)
+        _update_delivery(
+            repo,
+            connection.project_id,
+            task_key,
+            uncertain_invocation=None,
+            needs_attention=False,
+            reconciliation={
+                "invocation_id": invocation_id,
+                "handoff_id": handoff_id,
+                "outcome_note": outcome_note,
+                "confirmed_stopped": True,
+                "confirmed_at": datetime.now(UTC).isoformat(),
+                "confirmed_by": connection.owner_user_id,
+            },
+        )
+        return {"task_key": task_key, "connection_id": connection.id, "reconciled": True}
+
+
 def _retain_directory(state: dict[str, Any], directory: Path) -> None:
     previous = state.get("project_dir")
     if previous and not _same_directory(Path(previous).expanduser().resolve(), directory):
@@ -1834,6 +1952,11 @@ def _prepare_review_replacement(session, repo, project_id, task, previous, reque
         raise _replacement_error(
             "stale_target", "Stopped review attempt, native identity or candidate changed"
         )
+    if previous.get("connection_id"):
+        raise _replacement_error(
+            "unsupported_connection",
+            "Reviewer replacement is not supported for connected computers",
+        )
     directory = previous["project_dir"]
     try:
         _candidate_commit(directory, candidate["commit_sha"], candidate.get("base_commit_sha"))
@@ -1927,20 +2050,22 @@ def _prepare_review_replacement(session, repo, project_id, task, previous, reque
 def _require_delivery_directory(session, task, directory, admission_id):
     """Shared directory exclusion for ordinary and checkpoint admission."""
     active_directories = session.exec(
-        select(func.json_extract(TrackerTask.metadata_json, "$.delivery.project_dir")).where(
+        select(col(TrackerTask.metadata_json)["delivery"]["project_dir"].as_string()).where(
             TrackerTask.id != task.id,
             or_(
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
-                    ("queued", "running")
-                ),
+                col(TrackerTask.metadata_json)["delivery"]["status"]
+                .as_string()
+                .in_(("queued", "running")),
                 and_(
-                    func.json_extract(TrackerTask.metadata_json, "$.delivery.slot_reserved") == 1,
+                    col(TrackerTask.metadata_json)["delivery"]["slot_reserved"]
+                    .as_boolean()
+                    .is_(True),
                     or_(
-                        func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id")
+                        col(TrackerTask.metadata_json)["delivery"]["admission_id"].as_string()
                         == admission_id,
-                        func.json_extract(
-                            TrackerTask.metadata_json, "$.delivery.continuation_intent.status"
-                        )
+                        col(TrackerTask.metadata_json)["delivery"]["continuation_intent"][
+                            "status"
+                        ].as_string()
                         == "held",
                     ),
                 ),
@@ -1960,6 +2085,15 @@ def _require_delivery_directory(session, task, directory, admission_id):
         )
 
 
+def _lock_delivery_admission(session: Session) -> None:
+    """Serialize task admission on the selected database, never native I/O."""
+    connection = session.connection()
+    if connection.dialect.name == "postgresql":
+        connection.exec_driver_sql("LOCK TABLE tracker_tasks IN SHARE ROW EXCLUSIVE MODE")
+    else:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+
+
 def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_key, **changes):
     """Reserve a directory in the existing snapshot before scheduling its task job."""
     from stackos.repositories.projects import ProjectRepository
@@ -1967,9 +2101,9 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
     if session.new or session.dirty or session.deleted:
         raise ValidationError("Task delivery handoff requires a clean repository transaction")
     try:
-        # Serialize only admission, never execution. Reading and saving the queued
-        # snapshot in one SQLite writer transaction also protects concurrent calls.
-        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        # Serialize only admission, never execution. Reserve the table so even
+        # tasks in different projects cannot both claim an unowned directory.
+        _lock_delivery_admission(session)
         ManagedUpgradeRepository(session).require_unfenced()
         ProjectRepository(session).require_available(project_id)
         session.expire_all()
@@ -1985,9 +2119,26 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
                 raise _replacement_error(
                     "not_stopped", "Review replacement requires a stopped task"
                 )
-        directory = Path(changes["project_dir"])
-        _retain_directory(previous, directory)
-        _retain_mcp_config(previous, changes.get("mcp_config_ref"))
+        remote = changes.get("connection_id")
+        directory = Path(changes["project_dir"]) if not remote else None
+        if remote:
+            if previous and previous.get("connection_id") != remote:
+                raise ValidationError("Task delivery must retain its connected computer")
+            others = session.exec(select(TrackerTask).where(TrackerTask.id != task.id)).all()
+            for other in others:
+                other_state = (other.metadata_json or {}).get("delivery", {})
+                if other_state.get("connection_id") == remote and (
+                    other_state.get("status") in {"queued", "running"}
+                    or other_state.get("uncertain_invocation")
+                    or other_state.get("needs_attention")
+                ):
+                    raise ConflictError(
+                        "Computer has active or uncertain work; reconcile before admission"
+                    )
+        else:
+            assert directory is not None
+            _retain_directory(previous, directory)
+            _retain_mcp_config(previous, changes.get("mcp_config_ref"))
         if previous.get("status") in {"queued", "running"}:
             if (previous.get("run_plan_id"), previous.get("step_id")) != (
                 changes.get("run_plan_id"),
@@ -2009,7 +2160,8 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
             _validate_start_placement(task, workflow=changes.get("run_plan_id") is not None)
         # Directory ownership spans this daemon's task jobs. Git metadata is
         # deliberately absent from this identity; non-Git directories work too.
-        _require_delivery_directory(session, task, directory, changes["admission_id"])
+        if directory is not None:
+            _require_delivery_directory(session, task, directory, changes["admission_id"])
         if replacement is not None:
             changes.update(
                 _prepare_review_replacement(session, repo, project_id, task, previous, replacement)
@@ -2317,7 +2469,7 @@ def _assignment_occurrence(
 
 
 def _evidence_only_candidate(
-    occurrence: dict[str, Any], evidence: dict[str, Any], project_dir: str
+    occurrence: dict[str, Any], evidence: dict[str, Any], project_dir: str | None
 ) -> dict[str, Any] | None:
     intent = occurrence.get("correction_intent")
     if (
@@ -2326,6 +2478,8 @@ def _evidence_only_candidate(
         or intent["target_attempt"] != occurrence["attempt"]
     ):
         return None
+    if project_dir is None:
+        raise ValidationError("Evidence-only continuation is not supported for connected computers")
     # A prelaunch refusal has no native receipt to archive. Never search past
     # the latest real attempt, which may have superseded earlier blocked work.
     prior_attempt = evidence["attempts"][-1] if evidence["attempts"] else {}
@@ -2458,6 +2612,10 @@ def _save_evidence(
 
 def _runtime_checkpoint(session, task, state, evidence, *, phase):
     """Future handoffs opt in at their existing admission/phase writer only."""
+    if state.get("connection_id"):
+        # Native process/source identity lives on the connected computer. Keep
+        # its existing explicit reconciliation instead of inspecting server Git.
+        return None
     return {
         "schema_version": 1,
         "kind": "runtime",
@@ -2609,7 +2767,7 @@ def resolve_delivery_settings(
     session: Session,
     *,
     project_id: int,
-    project_dir: str,
+    project_dir: str | None,
     host_key: str | None = None,
     delivery_agent: dict[str, Any] | None = None,
     review_agent: dict[str, Any] | None = None,
@@ -2627,8 +2785,8 @@ def resolve_delivery_settings(
     Resolve current settings here; only start_delivery freezes them on a task.
     Its internal retained map resumes an already admitted pre-source task.
     """
-    directory = Path(project_dir).expanduser().resolve()
-    if not directory.is_dir():
+    directory = Path(project_dir).expanduser().resolve() if project_dir else None
+    if directory is not None and not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
     if _setup_bootstrap is not None:
         from stackos.project_setup_workflow import load_admission
@@ -2709,7 +2867,12 @@ def resolve_delivery_settings(
             defaults, role_host=choice.get("host_key"), host_key=host_key
         )
         explicit_effort = choice.get("model_reasoning_effort")
-        if choice["host_key"] == "codex" and _retained_agents is None and _setup_bootstrap is None:
+        if (
+            choice["host_key"] == "codex"
+            and _retained_agents is None
+            and _setup_bootstrap is None
+            and directory is not None
+        ):
             if not choice.get("source_ref"):
                 raise ValidationError(
                     f"Codex {role} adoption_required: select an exact project source_ref",
@@ -2815,7 +2978,7 @@ def resolve_delivery_settings(
             model_reasoning_effort=explicit_effort,
             provider=agent.get("provider"),
             profile=agent.get("profile"),
-            refresh=_retained_agents is None,
+            refresh=_retained_agents is None and directory is not None,
             retained=_retained_agents is not None,
         )
         if error:
@@ -2823,8 +2986,12 @@ def resolve_delivery_settings(
         resolved[role] = agent
     route_identities = {}
     if mcp_config_ref is not None or (
-        _verify_native_routes and any(agent["host_key"] != "codex" for agent in resolved.values())
+        _verify_native_routes
+        and directory is not None
+        and any(agent["host_key"] != "codex" for agent in resolved.values())
     ):
+        if directory is None:
+            raise ValidationError("Native MCP configuration requires a local directory")
         from stackos.host_mcp.service import task_mcp_route
         from stackos.host_mcp.toml_config import mcp_config_identity
         from stackos.repositories.workspaces import WorkspaceRepository
@@ -2853,7 +3020,7 @@ def resolve_delivery_settings(
         except ValueError as route_error:
             raise ValidationError(str(route_error)) from None
     return {
-        "project_dir": str(directory),
+        "project_dir": str(directory) if directory is not None else None,
         "host_key": host_key,
         "agents": resolved,
         **{
@@ -3039,22 +3206,22 @@ def _continue_delivery_task(session, task, scheduler, *, event):
 def continue_delivery(*, session_factory, scheduler):
     """One startup scan; no timer, liveness polling, or historical failure retry."""
     with managed_launch_lock, session_factory() as session:
-        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        _lock_delivery_admission(session)
         if ManagedUpgradeRepository(session).active():
             return
         generation = _admission_id(scheduler)
         tasks = session.exec(
             select(TrackerTask)
             .where(
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id")
+                col(TrackerTask.metadata_json)["delivery"]["admission_id"].as_string()
                 != generation,
-                func.json_extract(
-                    TrackerTask.metadata_json, "$.delivery.continuation_intent.schema_version"
-                )
+                col(TrackerTask.metadata_json)["delivery"]["continuation_intent"][
+                    "schema_version"
+                ].as_integer()
                 == 1,
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
-                    ("queued", "running")
-                ),
+                col(TrackerTask.metadata_json)["delivery"]["status"]
+                .as_string()
+                .in_(("queued", "running")),
             )
             .order_by(TrackerTask.id)
         ).all()
@@ -3090,13 +3257,10 @@ def delivery_capacity(
         projects = session.execute(query).all()
         if project_id is not None and not projects:
             raise NotFoundError("Project not found", data={"project_id": project_id})
-        reserved = (
-            func.coalesce(
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.slot_reserved"), 0
-            )
-            == 1
-        )
-        queued = func.json_extract(TrackerTask.metadata_json, "$.delivery.status") == "queued"
+        reserved = func.coalesce(
+            col(TrackerTask.metadata_json)["delivery"]["slot_reserved"].as_boolean(), False
+        ).is_(True)
+        queued = col(TrackerTask.metadata_json)["delivery"]["status"].as_string() == "queued"
         counts_query = (
             select(
                 TrackerTask.project_id,
@@ -3105,13 +3269,13 @@ def delivery_capacity(
             )
             .where(
                 or_(
-                    func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id")
+                    col(TrackerTask.metadata_json)["delivery"]["admission_id"].as_string()
                     == identity,
                     and_(
                         reserved,
-                        func.json_extract(
-                            TrackerTask.metadata_json, "$.delivery.continuation_intent.status"
-                        )
+                        col(TrackerTask.metadata_json)["delivery"]["continuation_intent"][
+                            "status"
+                        ].as_string()
                         == "held",
                     ),
                 )
@@ -3157,7 +3321,7 @@ def _reserve_delivery(session_factory, scheduler):
     from stackos.repositories.projects import ProjectRepository
 
     with managed_launch_lock, session_factory() as session:
-        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        _lock_delivery_admission(session)
         if ManagedUpgradeRepository(session).active():
             return None
         identity = _admission_id(scheduler)
@@ -3167,8 +3331,8 @@ def _reserve_delivery(session_factory, scheduler):
         tasks = session.exec(
             select(TrackerTask)
             .where(
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id") == identity,
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.status") == "queued",
+                col(TrackerTask.metadata_json)["delivery"]["admission_id"].as_string() == identity,
+                col(TrackerTask.metadata_json)["delivery"]["status"].as_string() == "queued",
             )
             .order_by(TrackerTask.id)
         ).all()
@@ -3241,6 +3405,11 @@ def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
                     "task_key": task_key,
                     "handoff_id": state["handoff_id"],
                     "scheduler": scheduler,
+                    **(
+                        {"local_invocations": scheduler.local_invocations}
+                        if state.get("connection_id")
+                        else {}
+                    ),
                 },
             )
         except Exception as error:
@@ -3325,10 +3494,10 @@ def missed_delivery_job(event, *, session_factory, scheduler):
     with managed_launch_lock, session_factory() as session:
         task = session.exec(
             select(TrackerTask).where(
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.job_ref") == event.job_id,
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id")
+                col(TrackerTask.metadata_json)["delivery"]["job_ref"].as_string() == event.job_id,
+                col(TrackerTask.metadata_json)["delivery"]["admission_id"].as_string()
                 == _admission_id(scheduler),
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.status") == "queued",
+                col(TrackerTask.metadata_json)["delivery"]["status"].as_string() == "queued",
             )
         ).first()
         if task:
@@ -3376,7 +3545,10 @@ def start_delivery(
     scheduler: BaseScheduler,
     project_id: int,
     task_key: str,
-    project_dir: str,
+    project_dir: str | None = None,
+    connection_id: str | None = None,
+    base_commit_sha: str | None = None,
+    local_invocations=None,
     host_key: str | None = None,
     delivery_agent: dict[str, Any] | None = None,
     review_agent: dict[str, Any] | None = None,
@@ -3472,14 +3644,32 @@ def start_delivery(
         RunPlanRepository(session).validate_delivery_controller(
             run_plan_id=plan.id, project_id=project_id, run_id=plan.run_id
         )
-    directory = Path(project_dir).expanduser().resolve()
-    if not directory.is_dir():
+    if (project_dir is None) == (connection_id is None):
+        raise ValidationError("select exactly one local directory or connected computer")
+    directory = Path(project_dir).expanduser().resolve() if project_dir else None
+    if directory is not None and not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
-    _retain_directory(previous, directory)
-    # Reject an already owned tree before native configuration preflight can
-    # obscure that ownership with a different project's route/binding error.
-    # The queue owner repeats this check atomically when admitting the task.
-    _require_delivery_directory(session, task, directory, _admission_id(scheduler))
+    previous = (task.metadata_json or {}).get("delivery", {})
+    if previous.get("uncertain_invocation") or previous.get("needs_attention"):
+        raise ConflictError("Invocation outcome needs manual reconciliation before admission")
+    if connection_id:
+        from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+        row = LocalRuntimeConnectionRepository(session).owned(project_id, connection_id)
+        if LocalRuntimeConnectionRepository.public(row)["status"] != "authorized":
+            raise ValidationError("Computer authorization unavailable")
+        if local_invocations is None:
+            raise ValidationError("Connected delivery requires the server invocation exchange")
+        scheduler.local_invocations = local_invocations
+        local_invocations.require_available(row)
+        if previous and previous.get("connection_id") != connection_id:
+            raise ValidationError("Task delivery must retain its connected computer")
+        if mcp_config_ref is not None:
+            raise ValidationError("Connected computer MCP configuration stays local")
+    else:
+        assert directory is not None
+        _retain_directory(previous, directory)
+        _require_delivery_directory(session, task, directory, _admission_id(scheduler))
     # Omission on rehandoff preserves the frozen route, including its digest.
     mcp_config_ref = mcp_config_ref or previous.get("mcp_config_ref")
     if mcp_config_ref is not None:
@@ -3644,7 +3834,7 @@ def start_delivery(
         settings = resolve_delivery_settings(
             session,
             project_id=project_id,
-            project_dir=str(directory),
+            project_dir=str(directory) if directory is not None else None,
             host_key=host_key,
             delivery_agent=delivery_agent,
             review_agent=review_agent,
@@ -3660,7 +3850,7 @@ def start_delivery(
     else:
         if _resolved_settings.get("project_id") != project_id or _resolved_settings.get(
             "project_dir"
-        ) != str(directory):
+        ) != (str(directory) if directory is not None else None):
             raise ValidationError("Preflight settings must match the handoff project and directory")
         settings = deepcopy(_resolved_settings)
         if selected_roles is not None:
@@ -3741,7 +3931,12 @@ def start_delivery(
         slot_reserved=False,
         ticket_key=None,
         reason=None,
-        project_dir=str(directory),
+        project_dir=str(directory) if directory is not None else None,
+        **(
+            {"connection_id": connection_id, "base_commit_sha": base_commit_sha}
+            if connection_id
+            else {}
+        ),
         **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
         **({"mcp_route_identities": route_identities} if route_identities else {}),
         host_key=host_key,
@@ -3938,6 +4133,72 @@ def _record_execution_transition(
             record_execution_change(session, call, active)
 
 
+def _run_connected_agent(
+    host_key,
+    project_dir,
+    instructions,
+    prompt,
+    output_schema,
+    *,
+    session_factory,
+    connection_id,
+    exchange,
+    candidate,
+    handoffs,
+    **kwargs,
+):
+    """Transport one existing controller invocation; no local lifecycle decisions."""
+    from stackos.local_runtime.exchange import NativeLaunch
+    from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+    def transport(call):
+        scope = call.scope
+        with session_factory() as session:
+            connection = LocalRuntimeConnectionRepository(session).owned(
+                scope.project_id, connection_id
+            )
+            session.expunge(connection)
+
+        def before_offer():
+            with session_factory() as session:
+                _update_delivery(
+                    TrackerRepository(session),
+                    scope.project_id,
+                    scope.task_key,
+                    uncertain_invocation=call.invocation_id,
+                )
+
+        return exchange.invoke(
+            connection,
+            call,
+            NativeLaunch(
+                instructions=instructions,
+                prompt=prompt,
+                output_schema=output_schema,
+                sandbox=kwargs.get("sandbox", "workspace-write"),
+                resume_thread_id=kwargs.get("resume_thread_id"),
+                candidate=candidate or None,
+                provider=kwargs.get("provider"),
+                profile=kwargs.get("profile"),
+                model_reasoning_effort=kwargs.get("model_reasoning_effort"),
+                native_settings=kwargs.get("native_settings"),
+            ),
+            launch_allowed=kwargs["launch_allowed"],
+            before_offer=before_offer,
+            on_offer=lambda handoff: handoffs.append((connection, call, handoff)),
+        )
+
+    return run_agent(
+        host_key,
+        project_dir,
+        instructions,
+        prompt,
+        output_schema,
+        invocation_transport=transport,
+        **kwargs,
+    )
+
+
 def run_delivery(
     *,
     session_factory: Callable[[], Session],
@@ -3945,6 +4206,7 @@ def run_delivery(
     task_key: str,
     handoff_id: str,
     scheduler: BaseScheduler | None = None,
+    local_invocations=None,
 ) -> None:
     cancellation: Event | None = None
 
@@ -4207,6 +4469,11 @@ def run_delivery(
                     "agent": agent["name"],
                     "host_key": host_key,
                     "project_dir": state["project_dir"],
+                    **(
+                        {"connection_id": state["connection_id"]}
+                        if state.get("connection_id")
+                        else {}
+                    ),
                     **selection,
                     **(
                         {
@@ -4258,7 +4525,16 @@ def run_delivery(
                         )
                     )
                     failure_code = "candidate_validation"
-                    if upgrade_phase:
+                    if state.get("connection_id"):
+                        evidence["candidate"] = deepcopy(
+                            evidence.get("candidate")
+                            or (
+                                {"base_commit_sha": state["base_commit_sha"]}
+                                if state.get("base_commit_sha")
+                                else {}
+                            )
+                        )
+                    elif upgrade_phase:
                         # The checkpoint validated the exact source and candidate.
                         # Do not replace the original delivery base or replay review.
                         if evidence.get("owned_work"):
@@ -4277,6 +4553,7 @@ def run_delivery(
                         )
                     baseline_clean = bool(
                         evidence["candidate"].get("base_commit_sha")
+                        and not state.get("connection_id")
                         and not _git(
                             state["project_dir"], "status", "--porcelain", "--untracked-files=all"
                         )
@@ -4328,6 +4605,7 @@ def run_delivery(
                         if (
                             phase == "delivery"
                             and candidate_required
+                            and not state.get("connection_id")
                             and not baseline_clean
                             and "owned_work" not in evidence
                         ):
@@ -4457,9 +4735,22 @@ def run_delivery(
                     ),
                     None,
                 )
-                result = run_agent(
+                handoffs: list = []
+                runner = (
+                    partial(
+                        _run_connected_agent,
+                        session_factory=session_factory,
+                        connection_id=state["connection_id"],
+                        exchange=local_invocations,
+                        candidate=evidence["candidate"],
+                        handoffs=handoffs,
+                    )
+                    if state.get("connection_id")
+                    else run_agent
+                )
+                result = runner(
                     host_key,
-                    state["project_dir"],
+                    state["project_dir"] or "",
                     f"{agent['instructions']}\n\n{LAUNCH_AUTHORITY_BOUNDARY}",
                     json.dumps(
                         _work_prompt_copy(
@@ -4584,6 +4875,7 @@ def run_delivery(
                     **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
                 )
                 # The shared schema owner also protects controlled/injected harnesses.
+                remote_handoff = handoffs[0] if handoffs else None
                 result = validate_agent_result(result, schema, host_key)
                 observed = evidence[phase]
                 if restart_of := observed.get("execution", {}).get("restart_of"):
@@ -4706,6 +4998,7 @@ def run_delivery(
                             and phase == "delivery"
                             and decision == "blocked"
                             and "commit_sha" in outputs
+                            and not state.get("connection_id")
                             and not _git(
                                 state["project_dir"],
                                 "status",
@@ -4736,6 +5029,7 @@ def run_delivery(
                         ):
                             evidence_only = (
                                 workflow_step is None
+                                and not state.get("connection_id")
                                 and _evidence_only_candidate(
                                     occurrence, evidence, state["project_dir"]
                                 )
@@ -4747,11 +5041,21 @@ def run_delivery(
                                 and intent.get("target_attempt") == occurrence["attempt"]
                             )
                             validation_code = "candidate_validation"
-                            sha = _candidate_commit(
-                                state["project_dir"],
-                                returned_sha,
-                                evidence["candidate"].get("base_commit_sha"),
-                            )
+                            if state.get("connection_id"):
+                                # The local runner validates clean HEAD and ancestry.
+                                if not isinstance(returned_sha, str) or not re.fullmatch(
+                                    r"[0-9a-f]{40}", returned_sha
+                                ):
+                                    raise ValidationError(
+                                        "Connected candidate requires an exact commit SHA"
+                                    )
+                                sha = returned_sha
+                            else:
+                                sha = _candidate_commit(
+                                    state["project_dir"],
+                                    returned_sha,
+                                    evidence["candidate"].get("base_commit_sha"),
+                                )
                             if (
                                 evidence_only
                                 and sha != occurrence["correction_intent"]["candidate_commit_sha"]
@@ -4813,8 +5117,15 @@ def run_delivery(
                     }
                     == {**identity, "thread_id": result.thread_id}
                 ):
-                    receipt = _owned_work_receipt(
-                        state["project_dir"], ticket_key, evidence, baseline_clean=baseline_clean
+                    receipt = (
+                        None
+                        if state.get("connection_id")
+                        else _owned_work_receipt(
+                            state["project_dir"],
+                            ticket_key,
+                            evidence,
+                            baseline_clean=baseline_clean,
+                        )
                     )
                     if receipt:
                         evidence["owned_work"] = receipt
@@ -4853,6 +5164,15 @@ def run_delivery(
                             "handoff_id"
                         ) == handoff_id:
                             _save_evidence(repo, project_id, ticket_key, evidence)
+                            if remote_handoff and remote_handoff[2].stop_confirmed.is_set():
+                                local_invocations.release(remote_handoff[0], remote_handoff[1])
+                                _update_delivery(
+                                    repo,
+                                    project_id,
+                                    task_key,
+                                    uncertain_invocation=None,
+                                    needs_attention=False,
+                                )
                         return
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
@@ -4955,6 +5275,14 @@ def run_delivery(
                             # of the newly pending occurrence (even for success).
                             evidence[phase]["superseded"] = True
                             _save_evidence(repo, project_id, ticket_key, evidence)
+                            if (
+                                remote_handoff is not None
+                                and remote_handoff[2].state == "completed"
+                            ):
+                                _update_delivery(
+                                    repo, project_id, task_key, uncertain_invocation=None
+                                )
+                                local_invocations.release(*remote_handoff[:2])
                             # Requeued children may still await activation by their
                             # pending parent. Detect persisted progress here; the next
                             # selection applies dependency readiness and claims it.
@@ -5083,6 +5411,7 @@ def run_delivery(
                             if (
                                 accepted
                                 and reporting_correction is None
+                                and not state.get("connection_id")
                                 and scan.classification_complete
                                 and scan.findings
                                 and all(item.kind == "key_name" for item in scan.findings)
@@ -5162,6 +5491,17 @@ def run_delivery(
                     else:
                         _save_evidence(
                             repo, project_id, ticket_key, evidence, accepted=accepted, **patch
+                        )
+                    # Clear uncertainty only after the owning attempt receipt is durable.
+                    if remote_handoff is not None and remote_handoff[2].state == "completed":
+                        _update_delivery(repo, project_id, task_key, uncertain_invocation=None)
+                        local_invocations.release(*remote_handoff[:2])
+                    if accepted and phase == "review" and state.get("connection_id"):
+                        _update_delivery(
+                            repo,
+                            project_id,
+                            task_key,
+                            base_commit_sha=evidence["candidate"].get("commit_sha"),
                         )
                     if not accepted and not repair:
                         _update_delivery(

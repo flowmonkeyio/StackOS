@@ -11,6 +11,26 @@ from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 
 
+def test_owned_reorder_never_reads_or_changes_another_users_catalog(session):
+    from stackos.auth import UserPrincipal
+
+    repo = ProjectRepository(session)
+    session.info["user_principal"] = UserPrincipal("owner-a", "integration")
+    first = repo.create(slug="a-first", name="First", domain="first.test").data
+    last = repo.create(slug="a-last", name="Last", domain="last.test").data
+    session.info["user_principal"] = UserPrincipal("owner-b", "integration")
+    foreign = repo.create(slug="foreign", name="Foreign", domain="foreign.test").data
+    session.info["user_principal"] = UserPrincipal("owner-a", "integration")
+    with pytest.raises(NotFoundError):
+        repo.move(last.id, placement="before", anchor_id=foreign.id)
+    with pytest.raises(NotFoundError):
+        repo.require_available(foreign.id, reserve=True)
+    repo.move(last.id, placement="top")
+    assert [row.id for row in repo.list().items] == [last.id, first.id]
+    session.info["user_principal"] = UserPrincipal("owner-b", "integration")
+    assert repo.get(foreign.id).order_index == foreign.order_index
+
+
 @pytest.mark.parametrize("name", ["", " \t\n", "x" * 201, None, 3])
 def test_names_reject_without_mutation(session, name):
     repo = ProjectRepository(session)

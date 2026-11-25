@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
+from sqlmodel import Session
 from stackos_connectors.connectors.telegram import payloads as native_payloads
 
 from stackos.actions.media_artifacts import artifact_path
@@ -40,7 +41,13 @@ async def formatted_text(client: TelegramRequester, text: str, format: Format) -
     return {"@type": "formattedText", "text": parsed["text"], "entities": parsed["entities"]}
 
 
-def input_file(file: TelegramFile, asset_dir: Path | None) -> dict[str, Any]:
+def input_file(
+    file: TelegramFile,
+    asset_dir: Path | None,
+    *,
+    session: Session | None = None,
+    project_id: int | None = None,
+) -> dict[str, Any]:
     if file.file_ref is not None:
         _credential_ref, file_id = parse_telegram_file_ref(file.file_ref)
         return {"@type": "inputFileId", "id": file_id}
@@ -49,7 +56,13 @@ def input_file(file: TelegramFile, asset_dir: Path | None) -> dict[str, Any]:
         return {"@type": "inputFileRemote", "id": file.url}
     if asset_dir is None or file.artifact_ref is None:
         raise ValidationError("Telegram upload requires a generated asset reference")
-    path = artifact_path(asset_dir, file.artifact_ref, label="Telegram upload")
+    path = artifact_path(
+        asset_dir,
+        file.artifact_ref,
+        label="Telegram upload",
+        session=session,
+        project_id=project_id,
+    )
     return {"@type": "inputFileLocal", "path": str(path)}
 
 
@@ -76,13 +89,18 @@ def send_options(options: TelegramOptions, *, sending_id: int) -> dict[str, Any]
 
 
 async def message_content(
-    client: TelegramRequester, content: TelegramContent, *, asset_dir: Path | None
+    client: TelegramRequester,
+    content: TelegramContent,
+    *,
+    asset_dir: Path | None,
+    session: Session | None = None,
+    project_id: int | None = None,
 ) -> dict[str, Any]:
     data = content.model_dump()
     for key in ("file", "thumbnail", "cover"):
         value = getattr(content, key, None)
         if value is not None:
-            data[key] = input_file(value, asset_dir)
+            data[key] = input_file(value, asset_dir, session=session, project_id=project_id)
     if content.kind == "text":
         data["text"] = await formatted_text(client, content.text, content.format)
     if isinstance(content, TelegramCaptionMedia | TelegramVoice):

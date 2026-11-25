@@ -18,6 +18,7 @@ from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from stackos.artifacts import redact_secret_text, redact_secrets
+from stackos.db.json_expressions import json_kind, json_value
 from stackos.db.models import (
     AGENT_REQUEST_STATUS_TRANSITIONS,
     AgentRequest,
@@ -254,31 +255,33 @@ class AgentRequestRepository:
         prompts, results or the request queue into maintenance evidence.
         """
         metadata = col(AgentRequest.metadata_json)
-        path = "$.native_execution"
+        path = ("native_execution",)
         rows = self._s.execute(
             sa_select(
                 col(AgentRequest.project_id),
                 col(AgentRequest.id),
-                func.json_type(metadata, path),
-                func.json_extract(metadata, path + ".execution.invocation_id"),
-                func.json_extract(metadata, path + ".finished_at"),
-                func.json_type(metadata, path + ".exit_code"),
-                func.json_extract(metadata, path + ".process_retirement.outcome"),
-                func.json_extract(metadata, path + ".stop_error"),
+                json_kind(metadata, *path),
+                json_value(metadata, *path, "execution", "invocation_id").as_json(),
+                json_value(metadata, *path, "finished_at").as_json(),
+                json_kind(metadata, *path, "exit_code"),
+                json_value(metadata, *path, "process_retirement", "outcome").as_json(),
+                json_value(metadata, *path, "stop_error").as_json(),
                 func.coalesce(
-                    func.json_extract(metadata, path + ".execution.host_key"),
-                    func.json_extract(metadata, path + ".snapshot.host_key"),
+                    json_value(metadata, *path, "execution", "host_key").as_string(),
+                    json_value(metadata, *path, "snapshot", "host_key").as_string(),
                 ),
-                func.json_extract(metadata, path + ".exit_code"),
-                func.json_type(metadata, path + ".cancelled"),
-                func.json_type(metadata, path + ".error"),
-                func.json_type(metadata, path + ".result"),
-                func.json_type(metadata, path + ".execution.finished"),
-                func.json_extract(metadata, path + ".execution.thread_id"),
-                func.json_extract(metadata, path + ".execution.model_observation.source"),
-                func.json_extract(metadata, path + ".execution.model_observation.status"),
-                func.json_extract(metadata, path + ".execution.model_observation.session_id"),
-            ).where(func.json_type(metadata, path).is_not(None))
+                json_value(metadata, *path, "exit_code").as_json(),
+                json_kind(metadata, *path, "cancelled"),
+                json_kind(metadata, *path, "error"),
+                json_kind(metadata, *path, "result"),
+                json_kind(metadata, *path, "execution", "finished"),
+                json_value(metadata, *path, "execution", "thread_id").as_json(),
+                json_value(metadata, *path, "execution", "model_observation", "source").as_json(),
+                json_value(metadata, *path, "execution", "model_observation", "status").as_json(),
+                json_value(
+                    metadata, *path, "execution", "model_observation", "session_id"
+                ).as_json(),
+            ).where(json_kind(metadata, *path).is_not(None))
         ).all()
         unresolved = []
         for (
@@ -401,16 +404,14 @@ class AgentRequestRepository:
         stmt = select(AgentRequest).where(
             col(AgentRequest.project_id) == project_id,
             func.coalesce(col(AgentRequest.source_kind), "") != "project_setup",
-            func.json_type(col(AgentRequest.metadata_json), "$.project_setup").is_(None),
+            json_kind(col(AgentRequest.metadata_json), "project_setup").is_(None),
             or_(
                 col(AgentRequest.status) == AgentRequestStatus.NEW,
                 (
                     (col(AgentRequest.status) == AgentRequestStatus.CLAIMED)
                     & col(AgentRequest.claim_expires_at).is_not(None)
                     & (col(AgentRequest.claim_expires_at) <= now)
-                    & func.json_type(col(AgentRequest.metadata_json), "$.native_execution").is_(
-                        None
-                    )
+                    & json_kind(col(AgentRequest.metadata_json), "native_execution").is_(None)
                 ),
             ),
         )

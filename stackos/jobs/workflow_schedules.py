@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from stackos.artifacts import redact_secret_text
 from stackos.db.models import (
     AgentRequest,
     AgentRequestStatus,
+    LocalRuntimeConnection,
     Project,
     RunPlan,
     ScheduledJob,
@@ -34,7 +36,9 @@ from stackos.db.models import (
 )
 from stackos.host_mcp import service as native_host
 from stackos.host_mcp.service import AgentExecutionScope
+from stackos.local_runtime.exchange import NativeLaunch
 from stackos.repositories.agent_requests import AgentRequestExecution, AgentRequestRepository
+from stackos.repositories.base import RepositoryError
 from stackos.repositories.projects import ScheduleConfiguration, ScheduledJobRepository
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES
 from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
@@ -65,7 +69,7 @@ Launch = Callable[[ScheduledJob, datetime, Callable[[], bool]], Awaitable[None]]
 
 @dataclass(frozen=True)
 class Registration:
-    generation: int
+    connection: object
     revision: object
     due: datetime
     config: dict[str, Any]
@@ -79,37 +83,42 @@ class WorkflowScheduleRuntime:
         *,
         launch: Launch | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        operation_services: dict[str, Any] | None = None,
     ) -> None:
         self.scheduler = scheduler
         self.session_factory = session_factory
         self.launch = launch or self._launch
         self.now = now
-        self.generation = 0
-        self.connection: object | None = None
+        self.operation_services = operation_services or {}
+        self.connections: dict[str | None, object] = {}
         self.registrations: dict[int, Registration] = {}
         self.revisions: dict[int, object] = {}
         scheduler.add_listener(self._missed, EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES)
 
-    def connect(self) -> object:
+    @property
+    def connection(self) -> object | None:
+        return self.connections.get(None)
+
+    def connect(self, *, connection_id: str | None = None) -> object:
         # The newest main-process stream owns presence. Superseded cleanup is inert.
-        self._clear()
-        self.generation += 1
-        self.connection = object()
+        previous = self.connections.get(connection_id)
+        if previous is not None:
+            self.disconnect(previous)
+        connection = self.connections[connection_id] = object()
         with self.session_factory() as session:
             rows = session.exec(select(ScheduledJob).where(ScheduledJob.enabled == True)).all()  # noqa: E712
             for row in rows:
-                self._arm(row)
-        return self.connection
+                if (row.execution_json or {}).get("connection_id") == connection_id:
+                    self._arm(row)
+        return connection
 
     def disconnect(self, connection: object) -> None:
-        if connection is self.connection:
-            self.connection = None
-            self.generation += 1
-            self._clear()
-
-    def _clear(self) -> None:
-        for row_id in list(self.registrations):
-            self._remove(row_id)
+        for key, current in list(self.connections.items()):
+            if connection is current:
+                del self.connections[key]
+                for row_id, registration in list(self.registrations.items()):
+                    if registration.connection is connection:
+                        self._remove(row_id)
 
     def _remove(self, row_id: int) -> None:
         self.registrations.pop(row_id, None)
@@ -128,11 +137,14 @@ class WorkflowScheduleRuntime:
             if row is not None and row.project_id != project_id:
                 return
             self._remove(job_id)
-            if self.connection is not None and row is not None:
+            if row is not None:
                 self._arm(row)
 
     def _arm(self, row: ScheduledJob) -> None:
         if not row.enabled or not row.goal or not row.timezone:
+            return
+        connection = self.connections.get((row.execution_json or {}).get("connection_id"))
+        if connection is None:
             return
         assert row.id is not None
         trigger = CronTrigger.from_crontab(row.cron_expr, timezone=ZoneInfo(row.timezone))
@@ -140,7 +152,7 @@ class WorkflowScheduleRuntime:
         if due is None:
             return
         registration = Registration(
-            self.generation,
+            connection,
             self.revisions.setdefault(row.id, object()),
             due.astimezone(UTC),
             self._config(row),
@@ -161,7 +173,8 @@ class WorkflowScheduleRuntime:
         )
 
     def _current(self, row_id: int, registration: Registration) -> ScheduledJob | None:
-        if self.connection is None or self.generation != registration.generation:
+        key = (registration.config.get("execution_json") or {}).get("connection_id")
+        if self.connections.get(key) is not registration.connection:
             return None
         if self.revisions.get(row_id) is not registration.revision:
             return None
@@ -200,8 +213,23 @@ class WorkflowScheduleRuntime:
         assert row_id is not None
         request_id = None
         claim_token = None
+        connection_id = None
+        principal = None
+        handoffs = []
+        persisted = False
+
+        def execution_session() -> Session:
+            session = self.session_factory()
+            session.info["operation_services"] = self.operation_services
+            if principal is not None:
+                session.info.update(
+                    user_principal=principal,
+                    server_environment_id=principal.environment_id,
+                )
+            return session
+
         try:
-            with self.session_factory() as session:
+            with execution_session() as session:
                 from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
 
                 if ManagedUpgradeRepository(session).active():
@@ -221,16 +249,47 @@ class WorkflowScheduleRuntime:
                 if self._unfinished(session, current):
                     self._result(session, current, due, "overlap")
                     return
+                connection_id = (current.execution_json or {}).get("connection_id")
+                if connection_id:
+                    from stackos.auth import UserPrincipal
+
+                    connection = session.get(LocalRuntimeConnection, connection_id)
+                    project = session.get(Project, row.project_id)
+                    server = self.operation_services["settings"]
+                    if (
+                        connection is None
+                        or project is None
+                        or server.process_role != "server"
+                        or connection.project_id != project.id
+                        or connection.owner_user_id != project.owner_user_id
+                        or connection.environment_id != project.environment_id
+                        or connection.environment_id != server.environment_id
+                    ):
+                        raise ValueError("Computer authorization unavailable")
+                    principal = UserPrincipal(connection.owner_user_id, connection.environment_id)
+                    session.info.update(
+                        user_principal=principal,
+                        server_environment_id=principal.environment_id,
+                    )
                 settings = ScheduledJobRepository(session).validate_configuration(
                     row.project_id, self._config(current)
                 )
                 assert settings is not None
+                if connection_id:
+                    from stackos.task_delivery import connection_execution_state
+
+                    exchange = self.operation_services["local_invocations"]
+                    exchange.require_available(connection)
+                    if connection_execution_state(session, connection, exchange)["needs_attention"]:
+                        raise ValueError("Computer work needs manual reconciliation")
+                    settings.pop("connection_id")
+                    settings["project_dir"] = None
                 if not admit():
                     return
                 # The due-time window ends at admission. Retain the existing
                 # generation/configuration identity for later native preparation.
                 admitted_registration = Registration(
-                    self.generation,
+                    self.connections.get(connection_id),
                     self.revisions.get(row_id),
                     due,
                     self._config(current),
@@ -264,7 +323,7 @@ class WorkflowScheduleRuntime:
                     **context,
                     "request_id": request_id,
                     "request_key": request_key,
-                    "project_dir": settings["project_dir"],
+                    **({"project_dir": settings["project_dir"]} if not connection_id else {}),
                 },
                 ensure_ascii=False,
             )
@@ -276,13 +335,57 @@ class WorkflowScheduleRuntime:
                     return False
                 from stackos.repositories.projects import ProjectRepository
 
-                with self.session_factory() as check:
+                with execution_session() as check:
                     from stackos.repositories.managed_upgrades import ManagedUpgradeRepository
 
                     if ManagedUpgradeRepository(check).active():
                         return False
+                    if connection_id:
+                        from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+                        try:
+                            current_connection = LocalRuntimeConnectionRepository(check).owned(
+                                row.project_id, connection_id
+                            )
+                        except RepositoryError:
+                            return False
+                        return (
+                            current_connection.revoked_at is None
+                            and current_connection.expires_at > time.time()
+                        )
                     project = ProjectRepository(check).get(row.project_id)
                     return project.project_dir == settings["project_dir"]
+
+            def transport(call):
+                from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+                with execution_session() as session:
+                    connection = LocalRuntimeConnectionRepository(session).owned(
+                        row.project_id, connection_id
+                    )
+                    session.expunge(connection)
+                return exchange.invoke(
+                    connection,
+                    call,
+                    NativeLaunch(
+                        instructions=MAIN_AGENT_BOOTSTRAP,
+                        prompt=prompt,
+                        output_schema=MAIN_AGENT_RESULT_SCHEMA,
+                        **{
+                            key: settings[key]
+                            for key in (
+                                "sandbox",
+                                "provider",
+                                "profile",
+                                "model_reasoning_effort",
+                                "native_settings",
+                            )
+                            if key in settings
+                        },
+                    ),
+                    launch_allowed=launch_allowed,
+                    on_offer=lambda handoff: handoffs.append((connection, call, handoff)),
+                )
 
             result = await asyncio.to_thread(
                 native_host.run_agent,
@@ -293,18 +396,20 @@ class WorkflowScheduleRuntime:
                     project_id=row.project_id,
                     request_id=request_id,
                     agent="project-main",
+                    attempt=1 if connection_id else None,
                 ),
                 request_execution=AgentRequestExecution(
                     project_id=row.project_id,
                     request_id=request_id,
                     claim_token=claim_token,
-                    session_factory=self.session_factory,
+                    session_factory=execution_session,
                     snapshot=context,
                 ),
                 launch_allowed=launch_allowed,
+                invocation_transport=transport if connection_id else None,
                 **settings,
             )
-            with self.session_factory() as session:
+            with execution_session() as session:
                 requests = AgentRequestRepository(session)
                 if not result.ok:
                     raise RuntimeError(
@@ -339,15 +444,21 @@ class WorkflowScheduleRuntime:
                 current = session.get(ScheduledJob, row.id)
                 if current is not None and current.last_request_id == request_id:
                     self._result(session, current, due, outcome)
+                persisted = True
         except Exception as error:
             # Never retry. Preserve unobserved native exit / persistence failures as unresolved.
-            with self.session_factory() as session:
+            with execution_session() as session:
                 if request_id is not None:
                     requests = AgentRequestRepository(session)
                     request = requests.get(project_id=row.project_id, request_id=request_id)
                     evidence = (request.metadata_json or {}).get("native_execution")
                     diagnostic = {"schedule_error": redact_secret_text(str(error))}
-                    if claim_token and (evidence is None or evidence.get("finished_at")):
+                    uncertain = any(handoff.state != "completed" for _, _, handoff in handoffs)
+                    if (
+                        claim_token
+                        and not uncertain
+                        and (evidence is None or evidence.get("finished_at"))
+                    ):
                         requests.complete(
                             project_id=row.project_id,
                             request_id=request_id,
@@ -369,6 +480,11 @@ class WorkflowScheduleRuntime:
                     request_id is None or current.last_request_id == request_id
                 ):
                     self._result(session, current, due, "failed" if request_id else "unavailable")
+                persisted = True
+        if persisted:
+            for connection, call, handoff in handoffs:
+                if handoff.state == "completed" and call.finished:
+                    exchange.release(connection, call)
 
     @staticmethod
     def _unfinished(session: Session, row: ScheduledJob) -> bool:

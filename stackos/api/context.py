@@ -24,6 +24,7 @@ from stackos.api.pagination import (
     page_response,
     pagination_params,
 )
+from stackos.api.project_access import authorize_stream_poll, bind_user_session
 from stackos.context import (
     ContextQueryOut,
     ContextRepository,
@@ -244,7 +245,7 @@ async def global_context_timeline_stream(
     ui_demand: str | None = Query(default=None, max_length=20000),
     engine: Engine = Depends(get_engine),
 ) -> StreamingResponse:
-    """The same local-admin tracker transport for Overview's global usage scope."""
+    """The shared tracker transport for Overview's authorized project scope."""
     return await run_in_threadpool(
         _timeline_stream,
         None,
@@ -286,10 +287,12 @@ def _timeline_stream(
         except ModelValidationError as exc:
             raise HTTPException(status_code=422, detail="Invalid bounded UI metric demand") from exc
         with Session(engine) as session:
+            bind_user_session(session, request, request.app.state.settings)
             _ui_usage_scope(session, project_id, task_key, demand)
 
     def latest_cursor():
         with Session(engine) as session:
+            bind_user_session(session, request, request.app.state.settings)
             return ContextRepository(session).latest_tracker_status_event_id(
                 project_id=project_id, task_key=task_key
             )
@@ -298,6 +301,7 @@ def _timeline_stream(
         # Construct, use and close each Session in its worker. Only detached
         # event models and a serialized transient snapshot cross the await.
         with Session(engine) as session:
+            bind_user_session(session, request, request.app.state.settings)
             read_token = usage_read_token(session, project_id) if demand is not None else None
             repository = ContextRepository(session)
             latest = repository.event_position(project_id=project_id)
@@ -330,6 +334,14 @@ def _timeline_stream(
                 scanned = (page.items[-1].id, page.items[-1].project_id)
 
             usage = usage_executions(project_id)
+            if request.app.state.settings.process_role == "server" and project_id is None:
+                from sqlmodel import select
+
+                from stackos.db.models import Project
+                from stackos.repositories.project_access import project_owner_filter
+
+                owned = set(session.exec(select(Project.id).where(project_owner_filter(session))))
+                usage = [call for call in usage if call["project_id"] in owned]
             if task_key:
                 usage = [call for call in usage if call["task_key"] == task_key]
             projects = None
@@ -420,12 +432,22 @@ def _timeline_stream(
                 )
             return page, usage, projects, frame, scanned
 
+    def authorized(project_ids=()):
+        if request.app.state.settings.process_role != "server":
+            return True
+        with Session(engine) as session:
+            return asyncio.run(
+                authorize_stream_poll(session, request, project_id, project_ids=project_ids)
+            )
+
     async def event_source():
         cursor = after
         emitted = 0
         next_heartbeat = time.monotonic() + heartbeat_ms / 1000
         previous_usage = None
         previous_projects = None
+        if not await run_in_threadpool(authorized):
+            return
         if cursor is None and not replay:
             cursor = await run_in_threadpool(latest_cursor)
         scan_anchor = None
@@ -439,6 +461,10 @@ def _timeline_stream(
             # or begin another operation. Worker cleanup owns the SQL lifetime.
             if await request.is_disconnected():
                 break
+            frame_projects = set(projects or ()) | {call["project_id"] for call in usage}
+            frame_projects.update(item.project_id for item in page.items)
+            if not await run_in_threadpool(authorized, frame_projects):
+                return
             scan_anchor = scanned
             if frame is not None:
                 yield frame
@@ -447,6 +473,10 @@ def _timeline_stream(
 
             if page.items:
                 for item in page.items:
+                    # A consumer can pause between frames. Do not release a
+                    # buffered event after logout or an ownership change.
+                    if not await run_in_threadpool(authorized, (item.project_id,)):
+                        return
                     cursor = item.id
                     emitted += 1
                     yield sse_frame(
@@ -579,10 +609,11 @@ def _ui_usage_scope(
     allow_removed_projects: bool = False,
 ) -> list[int]:
     """Validate admission; an admitted global stream may drop unavailable projects."""
-    from sqlalchemy import func
     from sqlmodel import col, select
 
+    from stackos.db.json_expressions import json_kind
     from stackos.db.models import Project, TaskTracker, TrackerTask, TrackerTicket
+    from stackos.repositories.project_access import project_owner_filter
     from stackos.repositories.projects import ProjectRepository
     from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
 
@@ -594,9 +625,10 @@ def _ui_usage_scope(
             session.exec(
                 select(Project.id)
                 .where(
+                    project_owner_filter(session),
                     col(Project.is_active).is_(True),
-                    func.json_type(Project.cleanup_json).is_(None)
-                    | (func.json_type(Project.cleanup_json) == "null"),
+                    json_kind(col(Project.cleanup_json)).is_(None)
+                    | (json_kind(col(Project.cleanup_json)) == "null"),
                 )
                 .order_by(col(Project.id))
             )

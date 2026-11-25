@@ -20,6 +20,15 @@ from stackos.server import create_app
 def _isolate_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear installed settings before test fixtures apply explicit overrides."""
     for key in (
+        "STACKOS_ENV_FILE",
+        "STACKOS_PROCESS_ROLE",
+        "STACKOS_ENVIRONMENT_ID",
+        "STACKOS_SERVER_URL",
+        "STACKOS_SUPABASE_WORKDIR",
+        "STACKOS_SUPABASE_URL",
+        "STACKOS_DATABASE_URL",
+        "STACKOS_SUPABASE_ANON_KEY",
+        "STACKOS_SUPABASE_SERVICE_ROLE_KEY",
         "STACKOS_DATA_DIR",
         "STACKOS_HOST",
         "STACKOS_LOG_LEVEL",

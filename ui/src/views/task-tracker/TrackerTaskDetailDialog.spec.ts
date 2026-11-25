@@ -60,6 +60,7 @@ describe('TrackerTaskDetailDialog', () => {
     const execution: ActiveExecution = {
       invocation_id: 'active', agent: 'Delivery', host_key: 'codex', model: 'gpt-6.1-sol',
       ticket_key: sourceTicket().key, started_at: '2026-11-08T01:00:00Z', live_usage: null,
+      connection_state: null, stop_requested: false,
     }
     const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: { ...record, active_execution: execution } } })
     const pane = popup().get('.tracker-task-detail')
@@ -314,7 +315,7 @@ describe('TrackerTaskDetailDialog', () => {
     own.reported_usage.cache_read = 0
     const execution: ActiveExecution = {
       invocation_id: 'active-call', agent: 'Delivery', host_key: 'codex', model: 'gpt-6.1-sol',
-      ticket_key: sourceTicket().key, started_at: '2026-11-08T01:00:00Z', live_usage: null,
+      ticket_key: sourceTicket().key, started_at: '2026-11-08T01:00:00Z', live_usage: null, connection_state: null, stop_requested: false,
     }
     const source = { ...sourceTicket(), agent_stats: own, active_execution: execution }
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }

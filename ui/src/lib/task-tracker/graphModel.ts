@@ -12,7 +12,7 @@ import type {
   TrackerTicket,
 } from './types'
 import { trackerStatusSortOrder } from './status'
-import { taskDeliveryState } from './delivery'
+import { taskDeliveryState, type TaskDeliveryState } from './delivery'
 
 export interface TrackerVueNodeData {
   label: string
@@ -33,6 +33,7 @@ export interface TrackerVueNodeData {
   taskAutomated?: boolean
   deliveryStopped?: boolean
   deliveryStopReason?: string | null
+  taskDelivery?: TaskDeliveryState | null
   active?: boolean
   recentlyUpdated?: boolean
   raw: TrackerTask | TrackerTicket | TrackerGraphNode
@@ -693,6 +694,7 @@ function vueNodeData(
     taskAutomated: delivery !== null,
     deliveryStopped,
     deliveryStopReason: deliveryStopped ? delivery?.reason : null,
+    taskDelivery: delivery?.ticketKey === ticket?.key ? delivery : null,
     active: Boolean(ticket?.active_execution),
     recentlyUpdated: options.recentNodeIds?.has(graphNode.id) === true,
     raw,

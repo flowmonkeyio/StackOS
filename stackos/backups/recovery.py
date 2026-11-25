@@ -36,7 +36,7 @@ from .format import (
     allowed_member_name,
     valid_project_id,
 )
-from .models import BackupError
+from .models import BackupError, require_standalone_backup
 
 
 def _inspect(archive: zipfile.ZipFile) -> tuple[dict[str, Any], list[zipfile.ZipInfo]]:
@@ -261,6 +261,7 @@ def _initialize_project_locks(output: Path, project_ids: list[int]) -> None:
 def restore_backup(
     settings: Settings, archive: Path, private_key_path: Path, output_dir: Path
 ) -> dict[str, Any]:
+    require_standalone_backup(settings)
     archive, output = canonical(archive), canonical(output_dir)
     if output.exists() or output.is_symlink():
         raise BackupError("output_exists", "Recovery requires a fresh output directory.")

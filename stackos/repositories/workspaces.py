@@ -7,15 +7,20 @@ singleton daemon, and the daemon resolves the durable StackOS project.
 
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
+import time
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, col, or_, select
 
-from stackos.db.models import AgentSession, Project, WorkspaceBinding
+from stackos.db.models import AgentSession, LocalRuntimeConnection, Project, WorkspaceBinding
 from stackos.repositories.base import Envelope, NotFoundError, ValidationError
+from stackos.repositories.project_access import require_project, user_principal
 from stackos.repositories.projects import ProjectOut, ProjectRepository
 from stackos.repositories.workspace_guidance import (
     _connect_required_next_step,
@@ -51,6 +56,122 @@ from stackos.workspace_identity import (
 from stackos.workspace_identity import (
     workspace_alias_from_fingerprint as _workspace_alias_from_fingerprint,
 )
+
+RUNTIME_CREDENTIAL_PREFIX = "stackos_runtime_"
+
+
+class LocalRuntimeConnectionRepository:
+    """One project-scoped credential owner, adjacent to workspace bindings.
+
+    A connection identifies authorization only. A server path or workspace ID
+    is never authority to open a folder on a connected computer.
+    """
+
+    def __init__(self, session: Session):
+        self._s = session
+
+    def authorize(self, project_id: int, server_origin: str) -> dict[str, Any]:
+        project = require_project(self._s, project_id)
+        principal = user_principal(self._s)
+        if principal is None:
+            raise ValidationError("verified owner required")
+        credential = RUNTIME_CREDENTIAL_PREFIX + secrets.token_urlsafe(32)
+        row = LocalRuntimeConnection(
+            id=str(uuid4()),
+            project_id=project_id,
+            owner_user_id=principal.user_id,
+            environment_id=principal.environment_id,
+            server_origin=server_origin,
+            credential_digest=hashlib.sha256(credential.encode()).hexdigest(),
+            expires_at=time.time() + 30 * 86400,
+        )
+        if project.owner_user_id != principal.user_id:
+            raise NotFoundError("connection not found")
+        self._s.add(row)
+        self._s.commit()
+        return self.public(row) | {"credential": credential}
+
+    def owned(self, project_id: int, connection_id: str) -> LocalRuntimeConnection:
+        require_project(self._s, project_id)
+        principal = user_principal(self._s)
+        row = self._s.get(LocalRuntimeConnection, connection_id)
+        if (
+            row is None
+            or principal is None
+            or (
+                row.project_id != project_id
+                or row.owner_user_id != principal.user_id
+                or row.environment_id != principal.environment_id
+            )
+        ):
+            raise NotFoundError("connection not found")
+        runtime_id = self._s.info.get("local_runtime_connection_id")
+        if runtime_id is not None and runtime_id != row.id:
+            raise NotFoundError("connection not found")
+        return row
+
+    def authenticate(
+        self, credential: str, *, environment_id: str, server_origin: str
+    ) -> LocalRuntimeConnection:
+        row = self._s.exec(
+            select(LocalRuntimeConnection).where(
+                LocalRuntimeConnection.credential_digest
+                == hashlib.sha256(credential.encode()).hexdigest()
+            )
+        ).first()
+        project = self._s.get(Project, row.project_id) if row is not None else None
+        if (
+            row is None
+            or row.revoked_at is not None
+            or row.expires_at <= time.time()
+            or row.environment_id != environment_id
+            or row.server_origin != server_origin
+            or project is None
+            or project.owner_user_id != row.owner_user_id
+            or project.environment_id != row.environment_id
+        ):
+            raise NotFoundError("connection unavailable")
+        return row
+
+    def revoke(self, project_id: int, connection_id: str) -> dict[str, Any]:
+        row = self.owned(project_id, connection_id)
+        if row.revoked_at is None:
+            row.revoked_at = _utcnow()
+            self._s.add(row)
+            self._s.commit()
+        return self.public(row)
+
+    def list(self, project_id: int) -> list[dict[str, Any]]:
+        require_project(self._s, project_id)
+        principal = user_principal(self._s)
+        if principal is None:
+            raise ValidationError("verified owner required")
+        return [
+            self.public(row)
+            for row in self._s.exec(
+                select(LocalRuntimeConnection).where(
+                    LocalRuntimeConnection.project_id == project_id,
+                    LocalRuntimeConnection.owner_user_id == principal.user_id,
+                    LocalRuntimeConnection.environment_id == principal.environment_id,
+                )
+            ).all()
+        ]
+
+    @staticmethod
+    def public(row: LocalRuntimeConnection) -> dict[str, Any]:
+        return {
+            "connection_id": row.id,
+            "project_id": row.project_id,
+            "user_id": row.owner_user_id,
+            "environment_id": row.environment_id,
+            "server_url": row.server_origin,
+            "expires_at": row.expires_at,
+            "status": "revoked"
+            if row.revoked_at
+            else "expired"
+            if row.expires_at <= time.time()
+            else "authorized",
+        }
 
 
 def _utcnow() -> datetime:
@@ -657,11 +778,18 @@ class WorkspaceRepository:
             and resolution.binding is None
         )
         if effective_global:
-            # SQLite's writer reservation serializes this decision with every
-            # canonical binding writer. Re-read after acquiring it: preflight
-            # absence is not authority, and lookup errors must fail closed.
+            # Reserve the binding decision against canonical binding writers,
+            # including inserts when no binding row exists yet. Re-read under
+            # the transaction lock; preflight absence is not authority.
             try:
-                self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+                connection = self._s.connection()
+                if connection.dialect.name == "postgresql":
+                    connection.exec_driver_sql(
+                        "LOCK TABLE workspace_bindings IN SHARE ROW EXCLUSIVE MODE"
+                    )
+                else:
+                    connection.exec_driver_sql("BEGIN IMMEDIATE")
+                self._s.expire_all()
                 resolution = self.resolve(
                     repo_fingerprint=repo_fingerprint,
                     git_remote_url=git_remote_url,

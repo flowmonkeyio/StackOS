@@ -39,7 +39,7 @@ def upgrade() -> None:
                 ["id"],
                 ondelete="SET NULL",
             )
-        op.execute(sa.text("UPDATE scheduled_jobs SET enabled = 0, next_run_at = NULL"))
+        op.execute(sa.text("UPDATE scheduled_jobs SET enabled = false, next_run_at = NULL"))
 
 
 def downgrade() -> None:

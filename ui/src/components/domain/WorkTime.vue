@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { SchemaExecutionIdentityOut, SchemaWorkDurationOut } from '@/api'
+import type { SchemaActiveExecutionOut, SchemaExecutionIdentityOut, SchemaWorkDurationOut } from '@/api'
 import { useUsageFeed } from '@/composables/useUsageFeed'
 import { formatWorkTime } from '@/lib/stackos/time'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
@@ -8,13 +8,14 @@ import { useUsageVisibility } from '@/composables/useUsageCanvas'
 
 const props = withDefaults(defineProps<{
   item: { status: string; work_duration?: SchemaWorkDurationOut | null }
-  execution?: SchemaExecutionIdentityOut | null
+  execution?: (SchemaExecutionIdentityOut & Partial<Pick<SchemaActiveExecutionOut, 'connection_state'>>) | null
   active?: boolean
 }>(), { active: true, execution: null })
 const feed = useUsageFeed()
 const root = ref<HTMLElement | null>(null)
 const visible = useUsageVisibility(root)
 const liveExecution = computed(() => isTerminalTrackerStatus(props.item.status) || !props.execution
+  || props.execution.connection_state === 'disconnected' || props.execution.connection_state === 'needs_attention'
   ? null : !feed || feed.value.status === 'live' ? props.execution : null)
 const elapsed = computed<string>(previous => {
   // Retain the footer slot, but do not read duration or the clock outside demand.

@@ -36,6 +36,8 @@ RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = RUN_PLAN_OWNER_TOOL_NAMES | froz
         "artifact.archive",
         "artifact.create",
         "artifact.read",
+        "artifact.download",
+        "actionCall.download",
         "artifact.supersede",
         "artifact.update",
         "browser.profile.create",

@@ -2,14 +2,18 @@
 import { computed, ref } from 'vue'
 import { UiBadge } from '@/components/ui'
 import { useUsageFeed } from '@/composables/useUsageFeed'
+import type { ActiveExecution } from '@/lib/task-tracker/types'
+import { executionAttention } from '@/lib/task-tracker/execution'
 import { useUsageVisibility } from '@/composables/useUsageCanvas'
 
-defineProps<{ active: boolean }>()
+const props = defineProps<{ active: boolean; execution?: ActiveExecution | null }>()
 const feed = useUsageFeed()
 const root = ref<HTMLElement | null>(null)
 const visible = useUsageVisibility(root)
-const live = computed(() => feed?.value.status === 'live')
-const label = computed(() => live.value ? 'Live' : feed?.value.status === 'connecting' ? 'Connecting' : 'Reconnecting')
+const attention = computed(() => executionAttention(props.execution))
+const live = computed(() => feed?.value.status === 'live' && !attention.value)
+const label = computed(() => attention.value?.label ?? (live.value ? 'Live' : feed?.value.status === 'connecting' ? 'Connecting' : feed?.value.status === 'paused' ? 'Paused' : 'Reconnecting'))
+const title = computed(() => [attention.value?.description, feed?.value.status === 'live' ? 'Live updates connected' : 'Updates paused; showing the last received totals'].filter(Boolean).join(' '))
 </script>
 
 <template>
@@ -18,13 +22,13 @@ const label = computed(() => live.value ? 'Live' : feed?.value.status === 'conne
     class="usage-live-indicator-slot"
   >
     <UiBadge
-      v-if="active && feed"
+      v-if="active && (feed || attention)"
       class="usage-live-indicator"
       :class="{ 'usage-live-indicator--live': live, 'usage-live-indicator--motion': live && visible }"
-      :tone="live ? 'danger' : 'neutral'"
+      :tone="attention?.tone ?? (live ? 'danger' : 'neutral')"
       variant="outline"
       dot
-      :title="live ? 'Live updates connected' : 'Updates paused; showing the last received totals'"
+      :title="title"
     >
       {{ label }}
     </UiBadge>

@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.triggers.cron import CronTrigger
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 from pydantic import ValidationError as SchemaValidationError
 from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, col, select
@@ -134,8 +134,17 @@ class ScheduleExecution(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     project_dir: str | None = Field(default=None, min_length=1)
+    connection_id: str | None = Field(default=None, min_length=36, max_length=36)
     host_key: str | None = Field(default=None, min_length=1)
     mcp_config_ref: TaskMcpConfigRef | None = None
+
+    @model_validator(mode="after")
+    def execution_target(self):
+        if self.project_dir is not None and self.connection_id is not None:
+            raise ValueError("select a local directory or connected computer, not both")
+        if self.connection_id is not None and self.mcp_config_ref is not None:
+            raise ValueError("connected computer MCP configuration stays local")
+        return self
 
 
 class ScheduleConfiguration(BaseModel):
@@ -228,6 +237,9 @@ class ProjectRepository:
         or commit between this check and that write. Reads use a fresh SELECT so
         an old Session identity map cannot authorize work after cleanup starts.
         """
+        from .project_access import require_project
+
+        require_project(self._s, project_id)
         if reserve:
             self._s.exec(update(Project).where(col(Project.id) == project_id).values(id=Project.id))
         row = self._s.exec(
@@ -254,12 +266,17 @@ class ProjectRepository:
         locale: str = "en-US",
         schedule_json: dict[str, Any] | None = None,
     ) -> Envelope[ProjectOut]:
+        from .project_access import user_principal
+
+        principal = user_principal(self._s)
         name = validate_project_name(name)
         self._lock_order()
         now = _utcnow()
         if self._s.exec(select(Project.id).where(Project.slug == slug)).first() is not None:
             raise ConflictError(f"project slug {slug!r} already exists")
         row = Project(
+            owner_user_id=principal.user_id if principal is not None else None,
+            environment_id=principal.environment_id if principal is not None else None,
             slug=slug,
             name=name,
             order_index=(self._s.exec(select(func.max(Project.order_index))).one() or 0) + 1,
@@ -428,7 +445,11 @@ class ProjectRepository:
             return self.get(project_slug)
         if project_name is None:
             raise ValidationError("one of project_id, project_slug, or project_name is required")
-        rows = self._s.exec(select(Project).where(Project.name == project_name)).all()
+        from .project_access import project_owner_filter
+
+        rows = self._s.exec(
+            select(Project).where(Project.name == project_name, project_owner_filter(self._s))
+        ).all()
         if len(rows) == 1:
             return self._out(rows[0])
         if len(rows) > 1:
@@ -444,7 +465,9 @@ class ProjectRepository:
         limit: int | None = None,
         after_id: int | None = None,
     ) -> Page[ProjectOut]:
-        stmt = select(Project)
+        from .project_access import project_owner_filter
+
+        stmt = select(Project).where(project_owner_filter(self._s))
         if active_only:
             stmt = stmt.where(col(Project.is_active).is_(True))
         size = _normalise_limit(limit)
@@ -557,8 +580,14 @@ class ProjectRepository:
         ):
             raise ValidationError("top requires no anchor; before/after require an anchor_id")
         self._lock_order()
+        from .project_access import project_owner_filter
+
         rows = list(
-            self._s.exec(select(Project).order_by(col(Project.order_index), col(Project.id))).all()
+            self._s.exec(
+                select(Project)
+                .where(project_owner_filter(self._s))
+                .order_by(col(Project.order_index), col(Project.id))
+            ).all()
         )
         target = next((row for row in rows if row.id == project_id and row.is_active), None)
         if target is None:
@@ -583,20 +612,27 @@ class ProjectRepository:
         # Serialize read/modify/write with moves and appends, including callers
         # whose dispatcher already owns a write transaction for idempotency.
         connection = self._s.connection()
-        driver = connection.connection.driver_connection
-        assert driver is not None
-        if not driver.in_transaction:
-            connection.exec_driver_sql("BEGIN IMMEDIATE")
+        if connection.dialect.name == "postgresql":
+            connection.exec_driver_sql("LOCK TABLE projects IN SHARE ROW EXCLUSIVE MODE")
+        else:
+            driver = connection.connection.driver_connection
+            assert driver is not None
+            if not driver.in_transaction:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
         self._s.expire_all()
 
     def _fetch_row(self, id_or_slug: int | str) -> Project:
+        from .project_access import project_owner_filter, require_project
+
         if isinstance(id_or_slug, int):
             row = self._s.get(Project, id_or_slug)
         else:
-            row = self._s.exec(select(Project).where(Project.slug == id_or_slug)).first()
+            row = self._s.exec(
+                select(Project).where(Project.slug == id_or_slug, project_owner_filter(self._s))
+            ).first()
         if row is None:
-            raise NotFoundError(f"project {id_or_slug!r} not found")
-        return row
+            raise NotFoundError("project or child not found")
+        return require_project(self._s, row.id)
 
 
 class IntegrationCredentialRepository:
@@ -669,6 +705,7 @@ class IntegrationCredentialRepository:
         return Envelope(data=IntegrationCredentialOut.model_validate(row))
 
     def get_decrypted(self, credential_id: int) -> bytes:
+        from stackos.auth_providers.repository.access import require_account_owner
         from stackos.crypto.aes_gcm import decrypt_account
 
         row = self._s.get(IntegrationCredential, credential_id)
@@ -682,6 +719,7 @@ class IntegrationCredentialRepository:
                 "Account identity for encrypted credential backing not found",
                 data={"integration_credential_id": credential_id},
             )
+        require_account_owner(self._s, account)
         return decrypt_account(
             row.encrypted_payload,
             nonce=row.nonce,
@@ -1002,6 +1040,26 @@ class ScheduledJobRepository:
             raise ValidationError(
                 "Schedule needs setup: " + ", ".join(missing), data={"missing_fields": missing}
             )
+        if self._s.info.get("server_environment_id") is not None:
+            from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+            if not execution.get("connection_id"):
+                raise ValidationError("Server schedules require a connected computer")
+            connection = LocalRuntimeConnectionRepository(self._s).owned(
+                project_id, execution["connection_id"]
+            )
+            if LocalRuntimeConnectionRepository.public(connection)["status"] != "authorized":
+                raise ValidationError("Computer authorization unavailable")
+            selection = resolve_preferences(
+                self._s,
+                project_id,
+                {"host_key": execution["host_key"]} if execution.get("host_key") else {},
+                validate_selection=False,
+                fallback_host_key="codex",
+            )
+            return {**selection, "connection_id": execution["connection_id"]}
+        if execution.get("connection_id"):
+            raise ValidationError("Connected schedules require the selected server")
         if not project.project_dir:
             raise ValidationError(
                 project.project_folder_issue or "Select the project folder in project setup"

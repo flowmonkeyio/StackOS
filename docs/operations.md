@@ -113,6 +113,182 @@ console through its browser-safe REST operation. The existing plugin repository
 owns validation and enablement; the console does not receive agent grants.
 `plugin.disable` and legacy plugin write routes remain daemon-admin only.
 
+
+On a selected online server, the shared dispatcher checks the verified principal
+against persisted project ownership before grants, handlers or idempotent replay.
+Admitted child IDs resolve their stored project; supplying another project ID
+does not override it. Project list/portfolio discovery includes only the current
+user's environment-owned projects. Other state operations require one owned
+project scope, explicitly or through an admitted persisted child. Resolved
+implicit scope is passed into the validated query input before pagination and
+counting; operations that cannot carry that project scope are refused. Payload
+JSON does not select authority. The finite setup boundary admits owned tracker
+preparation, run-plan validation/creation/start and granted step calls, workflow
+catalog/extension and preset discovery, and action discovery/validation/execution.
+Nested tracker list targets, workflow provenance and plan snapshot IDs are
+checked before mutation. Workflow tasks are created by `runPlan.create` through
+its existing mirror owner; direct `tracker.createTask` prepares manual work.
+Catalog calls cannot select a server `repo_root`;
+repository overlays stay local. Global administration and unadapted operations
+remain denied.
+
+Selected-server REST/CLI clients use these existing preparation operations and
+`action.run`/`action.execute` with the same owner and grant checks as MCP. Direct
+actions still need their existing confirmation/intent policy; workflow actions
+need the exact running step grant. Account attachment, payload-secret resolution,
+private output download and computer-credential restrictions retain their owning
+checks. `secret.set` remains write-only and MCP-only. Local browser tokens retain
+their existing read/browser-safe surface policy; verified users never receive
+local-admin authority. See [security](security.md).
+
+## Computer connection setup
+
+The REST-only `localRuntime.authorize`, `localRuntime.list`, `localRuntime.status`
+and `localRuntime.revoke` operations use the shared registry and dispatcher.
+They require a verified server owner and explicit `project_id`; status/revoke
+also require `connection_id`. They accept no run token or idempotency key and
+are raw-only. Authorization returns its scoped credential once, directly to
+the local caller; it is never persisted in an operation replay record. Safe
+status/list responses contain identity, expiry and authorization state, with
+no credential. A computer bearer may only inspect/revoke that same connection.
+Browser setup retains exact Origin and session CSRF enforcement.
+
+Status/list also expose `connection_state` (`connected`, `disconnected`, or
+`needs_attention`), `last_seen_at`, the retained `invocation_id` and
+`last_known_state`, `needed_action`, and `unresolved_tasks`. Authorization and
+transport presence are distinct. A poll/report within 30 seconds establishes
+presence; reads do not. An accepted worker polls only its exact invocation while
+native work runs. Lost presence retains the last-known work without killing it
+or allowing a duplicate. Temporary transport errors retain the same worker and
+pending report; identity, authorization and unknown-outcome errors stop it.
+If a consumer cannot identify already dispatched work, status/list retain that
+uncertainty and its needed action. An exact known late report can still resolve
+the transport outcome; a presence poll alone cannot clear uncertainty.
+
+After server restart, connected queued/running controllers become stopped with
+`needs_attention`; ticket outcomes, sessions, candidates and repair counts stay
+intact. Polling cannot clear that fence. After checking the native outcome and
+confirming no work remains active, the verified owner can call the REST-only,
+browser-safe, raw-only `localRuntime.reconcile` with project/connection IDs,
+`task_key`, the exact `handoff_id` and nullable `invocation_id` from
+`unresolved_tasks`, `confirmed_stopped=true` and a non-secret `outcome_note`.
+The operation rejects active controllers, unretired retained invocations and
+stale identities. It records confirmation in existing task delivery metadata
+and clears only admission uncertainty. It never accepts a result, reopens a
+failed ticket, starts work or sends a signal. A later handoff still requires
+normal ticket/workflow readiness and current computer presence. Runtime bearers
+cannot reconcile. There is no automatic process reattachment or reconstruction.
+
+Select the computer's private runtime environment file, then use the existing CLI:
+
+```bash
+export STACKOS_ENV_FILE=/absolute/private/runtime.env
+stackos login --email owner@example.test
+stackos connect --project-id 1 --folder /absolute/existing/project
+```
+
+The password is prompted locally and exchanged only with the selected StackOS
+server. The native session and computer credential have separate private local
+custody. Repeat `connect` to validate and reuse the exact binding; `disconnect`
+confirms server revocation before removing it. `logout` revokes the native
+session independently. All commands retain the same selected environment.
+Native host startup and invocation exchange keep their existing owners. Server
+workspace IDs and paths never select local filesystem access. See
+[CLI and stdio routing](setup.md#cli-and-stdio-mcp-server-routing).
+
+`localRuntime.poll` and `localRuntime.report` are REST-only, raw-only computer
+operations. They require that exact connection's bearer, project and connection
+IDs. A browser login cannot exchange invocations. Run tokens, dispatcher replay
+keys, MCP/CLI exposure and arbitrary command/file/proxy arguments are refused.
+Poll is a write because it consumes a pending launch before returning it.
+
+The app's `local_invocations` operation service holds one in-memory handoff per
+computer. The existing host/controller supplies `ActiveInvocation` and its exact
+attempt/scope, host, model and resume-session identity through `offer`; this is
+an internal handoff, with no enqueue operation for clients. Poll returns the
+finite host input once, without a server-selected folder or MCP config path.
+The runtime service attaches one outbound consumer. Its
+`OutboundWorker.exchange_once` uses the existing private folder binding and
+`NativeAgentRunner`, which checks the actual source/tools and delegates to
+`host_mcp.run_agent`. The worker passes the exact binding authenticated for its
+poll. The runner checks that binding after discovery and again through the
+host's registration and process-spawn guards, including credential and folder
+identity. A changed or missing binding never selects a replacement connection.
+The first connected flow supports Codex; unsupported hosts
+stop without substitution. The server process refuses native spawning.
+Host/model/provider/profile, schema, instructions and exact resume ID travel
+unchanged. Optional candidate evidence travels as `NativeLaunch.candidate` and
+is checked locally; returned commits must identify clean current HEAD descended
+from the supplied base. Native session, result and measured usage return through
+the existing report, separately from lifecycle acceptance. Delivery and review
+session selection remains with the server controller.
+
+Optional `STACKOS_NATIVE_MCP_CONFIG_REF` in the private runtime environment file
+is a JSON object with the existing absolute `path` and `sha256` route identity.
+It is local configuration, checked on each invocation, and cannot be supplied by
+the server launch payload. The existing task-route parser and native host own
+overrides and credential custody. No local database or workflow engine is added.
+Uncertain transport/source identity stops consumption for explicit attention;
+service shutdown fences new launches without claiming a running process stopped.
+
+Explicit abort uses this same exchange: only a poll naming the exact dispatched
+invocation receives `state=stop` with its attempt. The local consumer relays that
+intent to the existing native process control, which fences registration/spawn
+or confirms owned process-group exit. It never signals a session or searches
+for processes. Connection loss alone still sends no stop. A pending, unconsumed
+launch can be prevented on the server; dispatched work requires local confirmation.
+Unresolved-task admission fences do not suppress a stop for the exact retained
+invocation. Missing, stale or unidentified work remains unknown, and the same
+fence still prevents consuming a new launch.
+
+Reports contain `invocation_id`, `attempt`, `state=completed|unknown|stopped`, and
+an `outcome` for completed work, using the existing host result fields. A stopped
+report requires `stop_outcome=stopped|prevented` and may retain the native
+outcome/usage. Unconfirmed termination uses `state=unknown` with
+`stop_outcome=unconfirmed`. These reports are accepted only for the matching stop
+intent, including after controller retirement, and cannot accept work or revive a run.
+Supplied native outcomes must match the invocation's known resume/session identity
+before any stop confirmation or usage is retained. Launch prevention may omit
+the outcome or provide a sessionless error with no result or usage.
+Offline/unconfirmed abort stays `stop_unconfirmed` with needs attention in the
+existing delivery metadata; retirement or a second abort is not confirmation.
+Owner reconciliation resolves retained uncertainty before another handoff.
+The first terminal report signals the owning caller; identical repeats acknowledge
+`replayed=true`, and conflicting reports or session identities refuse with 409.
+Only the controller can release a known completed or confirmed-stopped handoff
+after persisting its result and finishing the existing invocation. This transport does not advance
+tracker/run state or decide whether a domain result succeeds.
+Known terminal handoffs are released after their evidence is durable even when
+validation rejects the candidate or the workflow occurrence was superseded.
+The rejected result remains failed; releasing transport ownership does not
+accept it. Unknown or live work retains its admission fence.
+
+A lost poll response returns `needs_attention` on subsequent polls without a
+second launch payload. A lost report response can resend the same retained result
+without rerunning native work. Unknown work blocks admission and requires
+explicit reconciliation; neither disconnect nor uncertainty sends process signals.
+After transport retirement/restart, a query naming an absent invocation returns
+`unknown`, and a late report refuses. There is no durable queue or automatic
+restart reconstruction. The controller must retain uncertainty in its existing
+attempt owner before considering further work; transport `idle` alone proves no
+prior outcome.
+
+On a selected server, `tracker.startDelivery` takes `connection_id` in place of
+`project_dir`. The verified owner selects an authorized computer that is actively
+polling. Optional `base_commit_sha` pins the initial local source; local candidate
+validation and independent review enforce the returned exact SHA. Folder and MCP
+configuration remain on that computer. Server input cannot select them.
+The existing server controller freezes role settings, dispatches invocations,
+persists results/usage, and alone accepts tickets and workflow steps. Separate
+native sessions, three repair passes, and correction rules retain their owners.
+
+Admission reserves that connection in the existing task snapshot. Before offering
+an invocation the controller marks its outcome uncertain there; only a persisted
+known result clears that marker. A disconnected computer, unresolved handoff or
+uncertainty surviving restart requires manual reconciliation before a new handoff.
+This fence covers every task sharing that connection, including stopped tasks.
+An idle transport after restart does not authorize replay. No process is killed
+or relaunched to resolve uncertainty.
 ## Project display names and catalog order
 
 `project.update` changes display names through the existing project repository.
@@ -533,7 +709,7 @@ It accepts `name`, `goal` (instructions), five-field `cron_expr`, IANA
 The main agent resolves concrete workflow inputs, method and roles; schedule
 setup does not validate business input completion or require role mappings.
 
-The actual launch folder always comes from project setup. Optional
+In standalone mode the actual launch folder comes from project setup. Optional
 `execution_json.host_key` constrains the shared main-agent preference resolver
 used by setup. New occurrences inherit saved `delivery.main_agent` model,
 reasoning, provider and profile choices supported by the selected host. Host
@@ -547,6 +723,16 @@ validated task-local route contract. The retained optional
 `execution_json.project_dir` only fences a saved legacy folder: if it differs
 from project setup, enabling fails until the operator confirms the configured
 folder and saves without the old fence. It cannot select a different target.
+
+On a selected server, `execution_json.connection_id` instead selects an owned,
+authorized computer. It cannot be combined with a server-selected `project_dir`
+or MCP config; the computer's private binding supplies both. The same main-agent
+preferences and request lifecycle apply. The server retains the request claim
+and final evidence while the shared invocation exchange transports one native
+launch and its result. The local process uses the exact remote invocation ID for
+attribution, without attempting to claim a request in a local database. Known
+terminal work releases transport ownership after persistence; unknown work stays
+fenced for inspection. No workflow is created by the scheduler.
 
 Schedules default to disabled and incomplete inert drafts are permitted.
 Supplied shape, cron/timezone, workflow reference and no-secret rules still
@@ -572,6 +758,11 @@ continues. Reconnection arms future instants only. The existing memory scheduler
 uses exact next cron instants, one-second jitter tolerance, and generation/config
 guards; edits/removal are checked again at native process spawn. No missed ticks
 are replayed.
+
+For connected schedules the runtime forwards that availability stream with its
+scoped computer credential. Presence applies only to schedules selecting that
+connection; admission also checks current authorization, polling and unresolved
+work. The browser user session cannot advertise native presence.
 The one-second jitter window gates request admission. Once admitted, native
 preparation may take longer; generation, configuration, presence and project-folder
 checks still fence registration and spawn.
@@ -706,7 +897,10 @@ limits agree; divergent limits reject before schema or preference changes.
 ## Local backup administration
 
 `backup.status`, `backup.configure` and `backup.create` share the generic
-encrypted local backup service. They are local-admin REST/CLI operations,
+encrypted local backup service for standalone SQLite installations. Online
+server/runtime calls refuse with `unsupported_backup_backend` before reading
+local state or keys; there is no Postgres full-instance archive/export/restore.
+They are local-admin REST/CLI operations,
 with explicitly browser-safe controls on Backups (`/setup`). They
 are excluded from MCP, project/workflow grants and derived agent-token
 authority. Their exact registered REST paths enforce the local-admin boundary.
@@ -875,6 +1069,13 @@ share `guide_url` and avoid inventing replacement instructions. Compact mode
 keeps the references and omits the document body.
 
 ## Response Modes
+
+`artifact.download` and `actionCall.download` are raw-only reads of existing
+project-owned files. They expose authenticated relative download URIs, bytes,
+and checksums. A native MCP caller may explicitly request `destination_path`;
+the bridge materializes and verifies a new local file before returning
+`local_path`. Workflow calls retain active step grants. REST/CLI callers omit
+that host-only argument. See [private files](resources-and-artifacts.md#private-files-and-explicit-local-downloads).
 
 Operation responses are shaped for agent decision-making. The canonical
 operation result is always the raw redacted payload. When an agent requests a
@@ -1126,6 +1327,14 @@ cache credentials; managed delivery workers resume through the shared continuati
 above, while external terminals require a manual restart.
 
 ## Browser Operations
+
+For online clients, the same operations retain metadata in the server's existing
+browser repository and execute native lifecycle work through the connected
+computer's CLI/MCP adapter. The server reports native state as unavailable and
+returns no native context; it never launches a browser. The local adapter checks
+the selected login, exact computer/project/folder and runtime health before using
+the existing browser runtime. Server authorization and run grants still precede
+local lifecycle work. See [online browser routing](browser-automation.md#launcher-contract).
 
 The browser operation surface owns runtime status, profile create/list, and
 session start/list/status/stop. Session discovery reconciles owned gstack state
@@ -1625,6 +1834,8 @@ index for common core operations, not a replacement for registry discovery.
 - `actionCall.get`
 - `artifact.create`
 - `artifact.read`
+- `artifact.download`
+- `actionCall.download`
 - `artifact.update`
 - `artifact.archive`
 - `artifact.supersede`

@@ -4,6 +4,8 @@ export interface TaskDeliveryState {
   status: 'queued' | 'running' | 'stopped' | 'complete'
   ticketKey: string | null
   reason: string | null
+  needsAttention?: boolean
+  stopUnconfirmed?: boolean
   stop_context?: TaskDeliveryStopContext | null
 }
 
@@ -66,7 +68,7 @@ export function stopContextResume(context: TaskDeliveryStopContext): string | nu
 }
 
 /** The persisted handoff identifies the delivery method even after execution ends. */
-type DeliveryTask = { delivery?: (Omit<TaskDeliveryState, 'stop_context'> & { stop_context?: unknown }) | null; metadata_json?: TrackerTask['metadata_json'] }
+type DeliveryTask = { delivery?: (Omit<TaskDeliveryState, 'stop_context'> & { stop_context?: unknown; needs_attention?: boolean; stop_unconfirmed?: boolean }) | null; metadata_json?: TrackerTask['metadata_json'] }
 
 export function isAutomaticDeliveryTask(task: DeliveryTask | null | undefined): boolean {
   return taskDeliveryState(task) !== null
@@ -76,9 +78,12 @@ export function isAutomaticDeliveryTask(task: DeliveryTask | null | undefined): 
 export function taskDeliveryState(task: DeliveryTask | null | undefined): TaskDeliveryState | null {
   if (task?.delivery !== undefined) {
     if (!task.delivery) return null
-    const { stop_context: raw, ...delivery } = task.delivery
+    const { stop_context: raw, needs_attention, stop_unconfirmed, ...delivery } = task.delivery
     const context = delivery.status === 'stopped' ? stopContext(raw) : null
-    return { ...delivery, reason: delivery.status === 'stopped' ? safeReason(delivery.reason) : null, ...(context ? { stop_context: context } : {}) }
+    return { ...delivery, reason: delivery.status === 'stopped' ? safeReason(delivery.reason) : null, ...(context ? { stop_context: context } : {}),
+      ...(needs_attention === true ? { needsAttention: true } : {}),
+      ...(stop_unconfirmed === true ? { stopUnconfirmed: true } : {}),
+    }
   }
   const metadata = task?.metadata_json
   if (!isRecord(metadata)) return null
@@ -95,6 +100,9 @@ export function taskDeliveryState(task: DeliveryTask | null | undefined): TaskDe
     ticketKey: nonemptyString(delivery.ticket_key) ? delivery.ticket_key.trim() : null,
     reason: delivery.status === 'stopped' ? safeReason(delivery.reason) : null,
     ...(context ? { stop_context: context } : {}),
+    ...(delivery.needs_attention === true || (delivery.status === 'stopped' && nonemptyString(delivery.uncertain_invocation)) ? { needsAttention: true } : {}),
+    // Reconciliation retains cancellation history but explicitly clears attention.
+    ...(delivery.needs_attention !== false && isRecord(delivery.cancellation) && delivery.cancellation.status === 'stop_unconfirmed' ? { stopUnconfirmed: true } : {}),
   }
 }
 

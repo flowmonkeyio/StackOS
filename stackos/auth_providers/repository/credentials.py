@@ -33,6 +33,7 @@ from stackos.db.models import (
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError, ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
 
+from .access import account_owner_filter, account_owner_values, require_account_owner
 from .schema import (
     AccountOut,
     AuthCredentialEditOut,
@@ -63,6 +64,10 @@ class CredentialStorageMixin:
         attach_project_id: int | None = None,
     ) -> Envelope[AuthCredentialSetOut]:
         """Create one global Account and optionally attach it to a project."""
+        if provider_key == "telegram" and account_owner_values(self._s):
+            from stackos.mcp.errors import ToolNotGrantedError
+
+            raise ToolNotGrantedError("native Account authorization remains local-only")
         provider = self._get_provider(provider_key)
         assert provider is not None
         if attach_project_id is not None:
@@ -76,6 +81,7 @@ class CredentialStorageMixin:
         name, name_key = self._account_name(display_name)
         existing = self._s.exec(
             select(Credential).where(
+                account_owner_filter(self._s),
                 col(Credential.provider_key) == provider.key,
                 col(Credential.display_name_key) == name_key,
             )
@@ -162,7 +168,10 @@ class CredentialStorageMixin:
         row = self._s.get(IntegrationCredential, env.data.id)
         if row is None:
             raise NotFoundError("stored credential row not found")
+        owner = account_owner_values(self._s)
         credential = Credential(
+            owner_user_id=owner.get("owner_user_id"),
+            environment_id=owner.get("environment_id"),
             auth_provider_id=provider.id,
             integration_credential_id=row.id,
             credential_ref=account_ref,
@@ -375,6 +384,7 @@ class CredentialStorageMixin:
             name, name_key = self._account_name(display_name)
             duplicate = self._s.exec(
                 select(Credential).where(
+                    account_owner_filter(self._s),
                     col(Credential.provider_key) == credential.provider_key,
                     col(Credential.display_name_key) == name_key,
                     col(Credential.id) != credential.id,
@@ -783,8 +793,7 @@ class CredentialStorageMixin:
         credential = self._s.exec(
             select(Credential).where(col(Credential.credential_ref) == credential_ref)
         ).first()
-        if credential is None:
-            raise NotFoundError(f"Account {credential_ref!r} not found")
+        credential = require_account_owner(self._s, credential)
         if credential.revoked_at is not None or credential.integration_credential_id is None:
             raise ConflictError(
                 "Account is revoked",
