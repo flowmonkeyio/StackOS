@@ -633,6 +633,88 @@ def _is_bridge_scope_error(envelope: dict[str, Any]) -> bool:
     return result["isError"] is True and result["structuredContent"]["code"] == -32007
 
 
+def test_nested_worktree_bridge_requires_connect_instead_of_capturing_ancestor(
+    mcp_client: MCPClient, mcp_settings: Settings, tmp_path: Path
+) -> None:
+    from stackos.cli.daemon_commands import _mcp_bridge_workspace_hints
+    from stackos.workspace_identity import path_fingerprint
+
+    ancestor = tmp_path / ".codex"
+    first, second, remote = same_remote_worktrees(
+        tmp_path, second_root=ancestor / "worktrees" / "abcd" / "myBrickStack"
+    )
+    owner = _create_project(mcp_client, "worktree-owner")
+    foreign = _create_project(mcp_client, "codex-container")
+    saved = []
+    for root, project_id, git_remote in ((ancestor, foreign, None), (first, owner, remote)):
+        saved.append(
+            mcp_client.call_tool_structured(
+                "workspace.connect",
+                {
+                    "project_id": project_id,
+                    "repo_fingerprint": path_fingerprint(root),
+                    "last_known_root": str(root),
+                    "git_remote_url": git_remote,
+                },
+            )["data"]
+        )
+    base, client = _bridge(mcp_client)
+    hints = _mcp_bridge_workspace_hints(second, workspace_root=second)
+    assert hints["cwd"] == str(second) and hints["git_remote_url"] == remote
+    proxy = AgentBridgeProxy(url=base.url, headers=base.headers, **hints)
+    _initialize(proxy, client)
+    assert proxy.scoped_project_id is None
+    for mode in ("raw", "compact"):
+        resolved = _operation_data(
+            _structured(_tool_call(proxy, client, "workspace.resolve", {"response_mode": mode}))
+        )
+        assert resolved["binding"] is None and resolved["project_id"] is None
+        assert resolved["needs_connect"]
+        assert resolved["repo_hints"]["git_boundary_root"] == str(second)
+        assert resolved["next_step"]["recommended_tool"] == "workspace.connect"
+        assert [p["id"] for p in resolved["candidate_projects"]] == [owner]
+    for mode in ("raw", "compact"):
+        started = _operation_data(
+            _structured(
+                _tool_call(proxy, client, "workspace.startSession", {"response_mode": mode})
+            )
+        )
+        assert started["needs_connect"] and started["project_id"] is None
+        assert started["workspace_binding_id"] is None and proxy.scoped_project_id is None
+        assert started["repo_hints"]["git_boundary_root"] == str(second)
+        assert started["next_step"]["recommended_tool"] == "workspace.connect"
+    connected = _structured(
+        _toolbox_call(
+            proxy, client, "workspace.connect", {"project_id": owner, "response_mode": "raw"}
+        )
+    )["data"]
+    assert connected["id"] not in {b["id"] for b in saved}
+    assert connected["last_known_root"] == str(second)
+    assert proxy.scoped_project_id == owner
+    started = _operation_data(
+        _structured(_tool_call(proxy, client, "workspace.startSession", {"response_mode": "raw"}))
+    )
+    assert started["project_id"] == owner and started["workspace_binding_id"] == connected["id"]
+    assert _is_bridge_scope_error(
+        _toolbox_call(proxy, client, "workspace.connect", {"project_id": foreign})
+    )
+    assert _is_bridge_scope_error(
+        _toolbox_call(
+            proxy, client, "workspace.connect", {"project_id": foreign, "rebind_existing": True}
+        )
+    )
+    engine = make_engine(mcp_settings.db_path)
+    with Session(engine) as session:
+        assert len(session.exec(select(Project)).all()) == 2
+        assert {s.project_id for s in session.exec(select(AgentSession)).all()} <= {None, owner}
+        bindings = session.exec(select(WorkspaceBinding)).all()
+        assert {b.id: (b.project_id, b.last_known_root) for b in bindings} == {
+            **{b["id"]: (b["project_id"], b["last_known_root"]) for b in saved},
+            connected["id"]: (owner, str(second)),
+        }
+    engine.dispose()
+
+
 def test_real_worktree_bridges_bind_actual_roots_and_preserve_scope(
     mcp_client: MCPClient,
     mcp_settings: Settings,

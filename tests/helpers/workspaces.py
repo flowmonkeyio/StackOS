@@ -4,7 +4,9 @@ import subprocess
 from pathlib import Path
 
 
-def same_remote_worktrees(tmp_path: Path) -> tuple[Path, Path, str]:
+def same_remote_worktrees(
+    tmp_path: Path, *, second_root: Path | None = None
+) -> tuple[Path, Path, str]:
     source = tmp_path / "source"
     source.mkdir()
 
@@ -26,7 +28,7 @@ def same_remote_worktrees(tmp_path: Path) -> tuple[Path, Path, str]:
     )
     remote = "https://example.test/approved/workspace.git"
     git("remote", "add", "origin", remote)
-    first, second = tmp_path / "first", tmp_path / "second"
+    first, second = tmp_path / "first", second_root or tmp_path / "second"
     for branch, root in (("first", first), ("second", second)):
         git("worktree", "add", "-b", branch, str(root))
     return first.resolve(), second.resolve(), remote

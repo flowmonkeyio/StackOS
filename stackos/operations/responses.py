@@ -403,6 +403,7 @@ _VERBATIM_KEEP_FIELDS = frozenset(
         "input_values_json",
         "project",
         "public",
+        "repo_hints",
         "step_context_json",
         "exposure",
         "provenance",

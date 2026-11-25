@@ -43,6 +43,9 @@ from stackos.workspace_identity import (
     named_workspace_fingerprint as _named_workspace_fingerprint,
 )
 from stackos.workspace_identity import (
+    nested_git_boundary as _nested_git_boundary,
+)
+from stackos.workspace_identity import (
     normalize_path as _normalize_path,
 )
 from stackos.workspace_identity import (
@@ -497,6 +500,7 @@ class WorkspaceRepository:
     ) -> WorkspaceResolutionOut:
         """Resolve directory scope; remote identity only suggests project candidates."""
         row: WorkspaceBinding | None = None
+        git_boundary_root: str | None = None
         normalized_cwd = _normalize_path(cwd)
         usable_cwd = normalized_cwd if _is_usable_workspace_root(normalized_cwd) else None
         effective_fingerprint = _effective_workspace_fingerprint(
@@ -525,6 +529,10 @@ class WorkspaceRepository:
             ]
             if matching:
                 row = max(matching, key=lambda candidate: len(candidate.last_known_root or ""))
+                git_boundary_root = _nested_git_boundary(usable_cwd, row.last_known_root or "")
+                if git_boundary_root is not None:
+                    # Every less-specific ancestor would cross this boundary too.
+                    row = None
         if row is None:
             hinted_projects = self._hinted_projects(effective_fingerprint, git_remote_url)
             next_step = _connect_required_next_step(
@@ -541,7 +549,7 @@ class WorkspaceRepository:
                 ),
                 has_workspace_identity=any((effective_fingerprint, git_remote_url, normalized_cwd)),
             )
-            if usable_cwd and hinted_projects:
+            if usable_cwd and (hinted_projects or git_boundary_root is not None):
                 next_step = {
                     "status": "connect_required",
                     "call_via": "toolbox.call",
@@ -553,19 +561,28 @@ class WorkspaceRepository:
                     ),
                     "recommended_arguments": {"project_id": "<operator-confirmed project id>"},
                 }
+                if git_boundary_root is not None:
+                    next_step["why"] = (
+                        "A nested Git checkout or worktree separates this directory from its "
+                        "saved ancestor binding. Confirm the project, then connect this actual "
+                        "directory; the ancestor binding is not reused or moved."
+                    )
+            repo_hints = _repo_hints(
+                repo_fingerprint=effective_fingerprint,
+                git_remote_url=git_remote_url,
+                cwd=cwd,
+                normalized_cwd=normalized_cwd,
+                workspace_root_usable=usable_cwd is not None,
+            )
+            if git_boundary_root is not None:
+                repo_hints["git_boundary_root"] = git_boundary_root
             return WorkspaceResolutionOut(
                 binding=None,
                 project_id=None,
                 needs_connect=True,
                 candidate_workspaces=self._named_workspace_candidates(),
                 candidate_projects=hinted_projects or self._project_candidates(),
-                repo_hints=_repo_hints(
-                    repo_fingerprint=effective_fingerprint,
-                    git_remote_url=git_remote_url,
-                    cwd=cwd,
-                    normalized_cwd=normalized_cwd,
-                    workspace_root_usable=usable_cwd is not None,
-                ),
+                repo_hints=repo_hints,
                 ui_paths=_ui_paths(None),
                 setup_state=_setup_state(binding=None, needs_connect=True),
                 next_step=next_step,
@@ -733,6 +750,7 @@ class WorkspaceRepository:
             and _is_usable_workspace_root(normalized_cwd)
             and has_derived_project_name
             and not self._hinted_projects(repo_fingerprint, git_remote_url)
+            and not resolution.repo_hints.get("git_boundary_root")
         ):
             bootstrap = self.bootstrap(
                 repo_fingerprint=repo_fingerprint,

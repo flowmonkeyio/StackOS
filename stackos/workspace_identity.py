@@ -33,6 +33,28 @@ def is_usable_workspace_root(path: str | Path | None) -> bool:
     return not any(part.lower().endswith(".app") for part in resolved.parts)
 
 
+def nested_git_boundary(path: str, ancestor: str) -> str | None:
+    """Find a Git marker below an ancestor, without requiring Git or reading it.
+
+    Inputs are normalized directory paths. The ancestor itself is excluded so
+    its explicit binding still owns ordinary descendants. A .git directory,
+    worktree/submodule file, or symlink all stop inherited ownership. Inspection
+    errors propagate: inability to check is not evidence of shared scope.
+    """
+    current, root = Path(path), Path(ancestor)
+    if not current.is_relative_to(root):
+        return None
+    while current != root:
+        try:
+            (current / ".git").lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        else:
+            return str(current)
+        current = current.parent
+    return None
+
+
 def path_fingerprint(path: str | Path | None) -> str | None:
     normalized = normalize_path(path)
     if not normalized or not is_usable_workspace_root(normalized):

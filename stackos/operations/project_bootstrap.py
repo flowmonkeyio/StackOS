@@ -233,7 +233,8 @@ def operation_specs() -> list[OperationSpec]:
                 "every later project-scoped call still needs its own explicit project_id."
                 " An unbound directory sharing an existing binding's Git remote waits for "
                 "explicit workspace.connect; the remote cannot select a directory or authorize "
-                "automatic project creation."
+                "automatic project creation. A nested Git boundary that excludes a saved "
+                "ancestor binding also requires explicit connection, even without a remote."
             ),
             when_to_use=(
                 "An agent starts work and needs the workspace-bound project_id.",
@@ -287,8 +288,9 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this as the read-only first check. It never creates projects or bindings; "
                 "a usable directory resolves by its exact or most specific containing binding, "
-                "never by another root's fingerprint or shared Git remote. When unbound it "
-                "returns project candidates and explicit connect/bootstrap next steps."
+                "without crossing a nested .git checkout/worktree boundary, never by another "
+                "root's fingerprint or shared Git remote. When unbound it returns project "
+                "candidates and explicit connect/bootstrap next steps."
             ),
             when_to_use=(
                 "An agent starts in a repository and needs to know whether StackOS already "
@@ -299,6 +301,9 @@ def operation_specs() -> list[OperationSpec]:
                 "Existing binding and project_id when found.",
                 "When unbound: needs_connect=true, candidate projects, repo hints, UI paths, "
                 "candidate named workspaces, and workspace bootstrap/connect guidance.",
+                "repo_hints.git_boundary_root is present only when a nested Git marker "
+                "excluded an ancestor binding; compact responses retain it and the connect "
+                "next step. It is diagnostic evidence, not project selection authority.",
             ),
             examples=(
                 OperationExample(

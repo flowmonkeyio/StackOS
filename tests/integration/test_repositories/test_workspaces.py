@@ -278,6 +278,110 @@ def test_same_remote_worktrees_resolve_and_bind_their_actual_roots(
     assert len(session.exec(select(Project)).all()) == 1
 
 
+@pytest.mark.parametrize("repository_kind", ["checkout", "worktree"])
+@pytest.mark.parametrize("remote_hint", ["known", "unknown", "missing", "ambiguous"])
+def test_git_boundary_prevents_ancestor_capture_and_automatic_project_selection(
+    session: Session, tmp_path: Path, repository_kind: str, remote_hint: str
+) -> None:
+    ancestor = tmp_path / ".codex"
+    first, worktree, remote = same_remote_worktrees(
+        tmp_path, second_root=ancestor / "worktrees" / "abcd" / "myBrickStack"
+    )
+    root = worktree if repository_kind == "worktree" else tmp_path / "source"
+    # A checkout is a .git directory, while a linked worktree is a .git file.
+    if repository_kind == "checkout":
+        ancestor = tmp_path
+        assert (root / ".git").is_dir()
+    else:
+        assert (root / ".git").is_file()
+    nested = root / "src"
+    nested.mkdir()
+    repo = WorkspaceRepository(session)
+    owner = _create_project(session)
+    foreign = _create_project(session, "ancestor")
+    original = repo.connect(
+        project_id=owner,
+        repo_fingerprint=path_fingerprint(first),
+        git_remote_url=remote,
+        last_known_root=str(first),
+    ).data
+    parent = repo.connect(
+        project_id=foreign,
+        repo_fingerprint=path_fingerprint(ancestor),
+        last_known_root=str(ancestor),
+    ).data
+    project = session.get(Project, owner)
+    project.primary_workspace_binding_id = original.id
+    session.add(project)
+    session.commit()
+    if remote_hint == "ambiguous":
+        repo.connect(project_id=foreign, repo_fingerprint="git:shared", git_remote_url=remote)
+    hint = {"unknown": "https://example.test/unknown.git", "missing": None}.get(remote_hint, remote)
+    before = {b.id: b.model_dump() for b in repo.list_bindings()}
+    for cwd in (root, nested):
+        resolved = repo.resolve(
+            cwd=str(cwd), repo_fingerprint=path_fingerprint(cwd), git_remote_url=hint
+        )
+        assert resolved.binding is None and resolved.project_id is None
+        assert resolved.needs_connect
+        assert resolved.next_step["recommended_tool"] == "workspace.connect"
+        assert resolved.repo_hints["git_boundary_root"] == str(root)
+        if remote_hint == "known":
+            assert [p.id for p in resolved.candidate_projects] == [owner]
+        elif remote_hint == "ambiguous":
+            assert {p.id for p in resolved.candidate_projects} == {owner, foreign}
+        started = repo.start_session(
+            runtime="codex",
+            cwd=str(cwd),
+            repo_fingerprint=path_fingerprint(cwd),
+            git_remote_url=hint,
+        )
+        assert started.data.needs_connect and started.project_id is None
+        assert started.data.workspace_binding_id is None
+    assert {b.id: b.model_dump() for b in repo.list_bindings()} == before
+    assert len(session.exec(select(Project)).all()) == 2
+
+    # Explicitly connect this directory; never move or rewrite the main checkout.
+    connected = repo.connect(
+        project_id=owner,
+        repo_fingerprint=path_fingerprint(root),
+        git_remote_url=remote,
+        last_known_root=str(root),
+    ).data
+    assert connected.id not in (original.id, parent.id)
+    for cwd in (root, nested):
+        resolved = repo.resolve(cwd=str(cwd), git_remote_url="https://example.test/foreign.git")
+        assert resolved.project_id == owner and resolved.binding.id == connected.id
+        assert "git_boundary_root" not in resolved.repo_hints
+    # A more-specific explicit binding inside the repository still owns its subtree.
+    subproject = repo.connect(
+        project_id=foreign,
+        repo_fingerprint=path_fingerprint(nested),
+        last_known_root=str(nested),
+    ).data
+    assert repo.resolve(cwd=str(nested)).binding.id == subproject.id
+    assert repo.resolve(cwd=str(ancestor)).binding.id == parent.id
+    assert repo.resolve(cwd=str(first)).binding.id == original.id
+    session.refresh(project)
+    assert project.primary_workspace_binding_id == original.id
+
+
+def test_fresh_git_workspace_without_ancestor_binding_still_bootstraps(
+    session: Session, tmp_path: Path
+) -> None:
+    root, _, remote = same_remote_worktrees(tmp_path)
+    repo = WorkspaceRepository(session)
+    started = repo.start_session(
+        runtime="codex",
+        cwd=str(root),
+        repo_fingerprint=path_fingerprint(root),
+        git_remote_url=remote,
+    )
+    assert started.project_id is not None and not started.data.needs_connect
+    assert started.data.auto_bootstrap and started.data.project_was_created
+    assert repo.resolve(cwd=str(root)).binding.id == started.data.workspace_binding_id
+
+
 def test_directory_binding_wins_over_foreign_fingerprint_and_remote(
     session: Session, tmp_path: Path
 ) -> None:

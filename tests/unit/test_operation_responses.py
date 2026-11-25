@@ -74,6 +74,37 @@ def test_task_inspection_compact_preserves_bounded_projection(name):
         resolve_response_mode(spec, {"response_mode": "ack"}, surface="mcp")
 
 
+@pytest.mark.parametrize("operation", ["workspace.resolve", "workspace.startSession"])
+@pytest.mark.parametrize("mode", ["compact", "raw"])
+def test_workspace_boundary_repair_retains_hints(operation: str, mode: str) -> None:
+    hints = {
+        "cwd": "/home/operator/.codex/worktrees/task/site",
+        "normalized_cwd": "/home/operator/.codex/worktrees/task/site",
+        "git_boundary_root": "/home/operator/.codex/worktrees/task/site",
+        "git_remote_url": None,
+        "repo_fingerprint": "path:worktree",
+    }
+    next_step = {
+        "recommended_tool": "workspace.connect",
+        "recommended_arguments": {"project_id": "<operator-confirmed project id>"},
+    }
+    payload = {
+        "data": {
+            "project_id": None,
+            "needs_connect": True,
+            "repo_hints": hints,
+            "next_step": next_step,
+        }
+    }
+    shaped = shape_operation_response(_spec(operation), payload, response_mode=mode)
+    assert shaped["data"]["repo_hints"] == hints
+    assert shaped["data"]["needs_connect"] is True
+    assert shaped["data"]["next_step"]["recommended_tool"] == "workspace.connect"
+    assert (
+        shaped["data"]["next_step"]["recommended_arguments"] == next_step["recommended_arguments"]
+    )
+
+
 def test_provider_side_effect_operations_are_raw_only() -> None:
     spec = _spec("communication.send")
 

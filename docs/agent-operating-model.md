@@ -689,6 +689,20 @@ binding when the same root is seen. A moved non-git directory without a remote
 looks like a new workspace unless intentionally connected to the existing
 project during unbound setup. An established bound bridge cannot rebind itself.
 
+An ancestor binding applies only until a nested `.git` checkout/worktree
+boundary. Exact saved bindings and ordinary descendants within the same
+repository keep their directory scope. A boundary that excludes a saved ancestor
+leaves the worktree unbound and requires explicit `workspace.connect`, including
+when its remote is missing or unknown; `repo_hints.git_boundary_root` explains
+the rejected inheritance. An operator can prebind the worktree's actual directory
+to the selected project through CLI/admin `workspace.connect`, preserving the
+main checkout binding and existing run. Alternatively, a fresh bridge started
+in the worktree can resolve and explicitly connect it before execution. The
+parent checkout's scoped bridge cannot supply a child root or fingerprint.
+Restart an already misbound bridge
+after correction: its live project scope is intentionally immutable. See
+[workspace recovery](setup.md#agent-setup-from-any-repo) for the setup context.
+
 The bridge only creates path fingerprints for usable roots; `/` is missing
 workspace context. Explicit `--workspace-root` or `STACKOS_WORKSPACE_ROOT`
 values express deliberate StackOS selection and cannot be downgraded to

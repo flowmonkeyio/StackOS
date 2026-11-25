@@ -613,6 +613,27 @@ deliberate workspace selection; `CLAUDE_PROJECT_DIR` and cwd are ambient hints.
 Global hosts can supply generated directories, so neither runtime nor path
 shape identifies a global chat. `/` is treated as missing workspace context.
 
+Directory binding inheritance stops at a nested Git checkout or worktree
+boundary (`.git` directory or file). For example, a binding for `~/.codex`
+does not own an unbound worktree under `~/.codex/worktrees/...`. An exact
+binding or a binding inside that repository still applies to ordinary
+subdirectories. Git remotes suggest projects but never choose one. When a Git
+boundary excludes a saved ancestor, startup waits for explicit connection even
+without a known remote; `workspace.resolve` reports `repo_hints.git_boundary_root`
+and the `workspace.connect` next step.
+
+When creating a worktree for an already selected project, an operator can use
+CLI/admin `workspace.connect` to create a distinct binding for its actual
+directory before launching the bridge. Alternatively, start a fresh bridge in
+the worktree, inspect the unbound resolution, and explicitly connect it to the
+confirmed project before execution. The parent checkout's scoped bridge cannot
+supply a different child root or fingerprint. Keep the original checkout binding
+and existing run unchanged. A bridge that
+already captured an incorrect ancestor retains its protected session scope:
+restart that bridge after upgrading or correcting the binding. Changing cwd
+or requesting `rebind_existing` inside the captured session cannot switch it.
+Historical exact bindings are not automatically reassigned.
+
 For a chosen working folder, call `workspace.startSession` normally; it creates
 or reuses the binding and the bridge injects `project_id`. Existing bindings
 and explicit StackOS roots stay protected. For known global intent, such as
